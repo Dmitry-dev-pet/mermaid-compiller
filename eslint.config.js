@@ -14,7 +14,9 @@ module.exports = [
         fetch: "readonly",
         document: "readonly",
         window: "readonly",
-        console: "readonly"
+        console: "readonly",
+        Blob: "readonly",
+        URL: "readonly"
       }
     },
     rules: {}

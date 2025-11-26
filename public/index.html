@@ -91,7 +91,13 @@
       <textarea id="prompt-input" placeholder="Describe your diagram..."></textarea>
       <label for="model-select" style="margin-top: 8px; display: block;">Model</label>
       <select id="model-select" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; margin-bottom: 8px;"></select>
-      <button id="generate-button">Generate</button>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px;">
+        <button id="generate-button">Generate</button>
+        <button id="download-button" disabled>Download .mmd</button>
+        <button id="undo-button" disabled>Revert</button>
+      </div>
+      <label for="model-reasoning-output" style="margin-top: 8px; display: block;">Model Reasoning</label>
+      <pre id="model-reasoning-output" class="code-output"></pre>
       <div id="status-messages" class="status info" aria-live="polite"></div>
     </div>
     <div class="card">

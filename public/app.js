@@ -3,15 +3,20 @@ const generateButton = document.getElementById("generate-button");
 const renderArea = document.getElementById("mermaid-render-area");
 const statusBox = document.getElementById("status-messages");
 const modelSelect = document.getElementById("model-select");
+const downloadButton = document.getElementById("download-button");
+const undoButton = document.getElementById("undo-button");
+const reasoningOutput = document.getElementById("model-reasoning-output");
 
 let currentDiagramCode = "";
 let originalUserPrompt = "";
 let retryCount = 0;
+let previousDiagramCode = "";
 const maxRetries = 5;
 const cliproxyApiUrl = "http://localhost:8317/v1/chat/completions";
 const cliproxyApiToken = "test";
 let cliproxyApiModel = "gpt-5.1-codex-mini";
 const cliproxyModelsUrl = "http://localhost:8317/v1/models";
+const docsSearchUrl = "/docs/search";
 
 mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
 
@@ -29,6 +34,21 @@ const displayRawCode = (code) => {
   const codeOutput = document.getElementById("mermaid-code-output");
   if (!codeOutput) return;
   codeOutput.textContent = code || "";
+};
+
+const displayReasoning = (text) => {
+  if (!reasoningOutput) return;
+  reasoningOutput.textContent = text || "";
+};
+
+const updateDownloadButtonState = () => {
+  if (!downloadButton) return;
+  downloadButton.disabled = !currentDiagramCode;
+};
+
+const updateUndoButtonState = () => {
+  if (!undoButton) return;
+  undoButton.disabled = !previousDiagramCode;
 };
 
 const renderMermaidDiagram = async (code) => {
@@ -54,12 +74,19 @@ const validateMermaidCode = async (code) => {
   }
 };
 
-const buildPrompt = (userPrompt, validationErrors, previousCode) => {
+const buildPrompt = (userPrompt, validationErrors, previousCode, docsContext) => {
+  const trimmedDocs = docsContext && typeof docsContext === "string" ? docsContext.trim() : "";
   if (previousCode && !validationErrors.length) {
-    return `${userPrompt}\n\nYou are updating an existing Mermaid diagram. Here is the current diagram:\n${previousCode}\n\nPlease update this diagram according to the new instructions while keeping it syntactically valid.`;
+    const docsBlock = trimmedDocs
+      ? `\n\nRelevant Mermaid documentation (snippets):\n${trimmedDocs}`
+      : "";
+    return `${userPrompt}\n\nYou are updating an existing Mermaid diagram. Here is the current diagram:\n${previousCode}${docsBlock}\n\nPlease update this diagram according to the new instructions while keeping it syntactically valid.`;
   }
   if (!validationErrors.length || !previousCode) return userPrompt;
-  return `${userPrompt}\n\nThe previous Mermaid code was invalid.\nErrors: ${validationErrors.join("; ")}\nPlease fix the diagram while keeping the intent.`;
+  const docsBlock = trimmedDocs
+    ? `\n\nRelevant Mermaid documentation (snippets):\n${trimmedDocs}`
+    : "";
+  return `${userPrompt}\n\nThe previous Mermaid code was invalid.\nErrors: ${validationErrors.join("; ")}${docsBlock}\nPlease fix the diagram while keeping the intent.`;
 };
 
 const extractMermaidCode = (text) => {
@@ -122,6 +149,29 @@ const initModelSelection = async () => {
   }
 };
 
+const fetchDocsContext = async (query) => {
+  try {
+    const trimmed = (query || "").trim();
+    if (!trimmed) return "";
+
+    const limitedQuery = trimmed.slice(0, 80);
+    const response = await fetch(`${docsSearchUrl}?q=${encodeURIComponent(limitedQuery)}`);
+    if (!response.ok) return "";
+
+    const data = await response.json();
+    const items = Array.isArray(data?.results) ? data.results : [];
+    if (!items.length) return "";
+
+    return items
+      .map((item) => item && typeof item.snippet === "string" ? item.snippet.trim() : "")
+      .filter((snippet) => snippet)
+      .slice(0, 3)
+      .join("\n---\n");
+  } catch {
+    return "";
+  }
+};
+
 const callCliproxyApi = async (promptMessage, contextDiagramCode) => {
   const systemPrompt =
     "You are an assistant that generates only valid Mermaid diagram code. " +
@@ -154,11 +204,13 @@ const callCliproxyApi = async (promptMessage, contextDiagramCode) => {
 
   const data = await response.json();
   const rawContent = data?.choices?.[0]?.message?.content;
+  const reasoning =
+    data?.choices?.[0]?.message?.reasoning_content || data?.choices?.[0]?.reasoning_content || "";
   const candidate = extractMermaidCode(rawContent);
   if (!candidate) {
     throw new Error("cliproxyapi response missing Mermaid code");
   }
-  return candidate.trim();
+  return { code: candidate.trim(), reasoning: reasoning || "" };
 };
 
 const generateAndCorrectDiagram = async (userPrompt) => {
@@ -178,6 +230,8 @@ const generateAndCorrectDiagram = async (userPrompt) => {
   let lastErrors = [];
   let workingDiagramCode = currentDiagramCode;
 
+  const docsContext = await fetchDocsContext(originalUserPrompt);
+
   while (retryCount < maxRetries) {
     try {
       const attemptNumber = retryCount + 1;
@@ -195,16 +249,30 @@ const generateAndCorrectDiagram = async (userPrompt) => {
         }
       }
 
-      const promptToSend = buildPrompt(originalUserPrompt, lastErrors, workingDiagramCode);
-      const candidateCode = await callCliproxyApi(promptToSend, workingDiagramCode);
+      const promptToSend = buildPrompt(
+        originalUserPrompt,
+        lastErrors,
+        workingDiagramCode,
+        docsContext,
+      );
+      const { code: candidateCode, reasoning } = await callCliproxyApi(
+        promptToSend,
+        workingDiagramCode,
+      );
+      displayReasoning(reasoning);
       const validation = await validateMermaidCode(candidateCode);
 
       if (validation.isValid) {
+        if (currentDiagramCode) {
+          previousDiagramCode = currentDiagramCode;
+        }
         currentDiagramCode = candidateCode;
         workingDiagramCode = candidateCode;
         await renderMermaidDiagram(currentDiagramCode);
         displayRawCode(currentDiagramCode);
         displayStatus("Diagram generated successfully.", "success");
+        updateDownloadButtonState();
+        updateUndoButtonState();
         setButtonState(false);
         return;
       }
@@ -229,6 +297,45 @@ generateButton.addEventListener("click", () => {
   generateAndCorrectDiagram(promptInput.value);
 });
 
+if (downloadButton) {
+  downloadButton.addEventListener("click", () => {
+    if (!currentDiagramCode) {
+      displayStatus("No diagram available to download.", "error");
+      return;
+    }
+
+    const blob = new Blob([currentDiagramCode], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "diagram.mmd";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  });
+}
+
+if (undoButton) {
+  undoButton.addEventListener("click", async () => {
+    if (!previousDiagramCode) return;
+
+    const target = previousDiagramCode;
+    currentDiagramCode = target;
+    previousDiagramCode = "";
+
+    try {
+      await renderMermaidDiagram(currentDiagramCode);
+      displayStatus("Reverted to previous diagram.", "info");
+    } catch (error) {
+      displayStatus(`Failed to render previous diagram: ${error?.message || error}`, "error");
+    }
+
+    updateDownloadButtonState();
+    updateUndoButtonState();
+  });
+}
+
 if (modelSelect) {
   modelSelect.addEventListener("change", () => {
     if (modelSelect.value) {
@@ -238,5 +345,8 @@ if (modelSelect) {
 }
 
 initModelSelection();
+
+updateDownloadButtonState();
+updateUndoButtonState();
 
 displayStatus("Waiting for a prompt.", "info");
