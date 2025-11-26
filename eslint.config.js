@@ -1,0 +1,22 @@
+const js = require("@eslint/js");
+const eslintConfigPrettier = require("eslint-config-prettier");
+
+module.exports = [
+  js.configs.recommended,
+  eslintConfigPrettier,
+  {
+    files: ["public/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "script",
+      globals: {
+        mermaid: "readonly",
+        fetch: "readonly",
+        document: "readonly",
+        window: "readonly",
+        console: "readonly"
+      }
+    },
+    rules: {}
+  }
+];

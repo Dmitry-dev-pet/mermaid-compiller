@@ -1,0 +1,17 @@
+node_modules/
+.DS_Store
+dist/
+build/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Env and local config
+.env
+.env.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
