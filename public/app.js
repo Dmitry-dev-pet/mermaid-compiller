@@ -2,6 +2,7 @@ const promptInput = document.getElementById("prompt-input");
 const generateButton = document.getElementById("generate-button");
 const renderArea = document.getElementById("mermaid-render-area");
 const statusBox = document.getElementById("status-messages");
+const modelSelect = document.getElementById("model-select");
 
 let currentDiagramCode = "";
 let originalUserPrompt = "";
@@ -9,7 +10,8 @@ let retryCount = 0;
 const maxRetries = 5;
 const cliproxyApiUrl = "http://localhost:8317/v1/chat/completions";
 const cliproxyApiToken = "test";
-const cliproxyApiModel = "gpt-5.1-codex-mini";
+let cliproxyApiModel = "gpt-5.1-codex-mini";
+const cliproxyModelsUrl = "http://localhost:8317/v1/models";
 
 mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
 
@@ -53,6 +55,9 @@ const validateMermaidCode = async (code) => {
 };
 
 const buildPrompt = (userPrompt, validationErrors, previousCode) => {
+  if (previousCode && !validationErrors.length) {
+    return `${userPrompt}\n\nYou are updating an existing Mermaid diagram. Here is the current diagram:\n${previousCode}\n\nPlease update this diagram according to the new instructions while keeping it syntactically valid.`;
+  }
   if (!validationErrors.length || !previousCode) return userPrompt;
   return `${userPrompt}\n\nThe previous Mermaid code was invalid.\nErrors: ${validationErrors.join("; ")}\nPlease fix the diagram while keeping the intent.`;
 };
@@ -64,6 +69,57 @@ const extractMermaidCode = (text) => {
     return fenced[1].trim();
   }
   return text.trim();
+};
+
+const initModelSelection = async () => {
+  if (!modelSelect) return;
+
+  const fallbackModel = cliproxyApiModel;
+  modelSelect.innerHTML = "";
+
+  const fallbackOption = document.createElement("option");
+  fallbackOption.value = fallbackModel;
+  fallbackOption.textContent = fallbackModel;
+  modelSelect.appendChild(fallbackOption);
+  modelSelect.value = fallbackModel;
+
+  try {
+    const response = await fetch(cliproxyModelsUrl, {
+      headers: {
+        Authorization: `Bearer ${cliproxyApiToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const data = await response.json();
+    const models = Array.isArray(data?.data) ? data.data : [];
+    if (!models.length) return;
+
+    modelSelect.innerHTML = "";
+
+    models
+      .filter((m) => m && typeof m.id === "string")
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .forEach((model) => {
+        const option = document.createElement("option");
+        option.value = model.id;
+        option.textContent = model.id;
+        modelSelect.appendChild(option);
+      });
+
+    if (models.some((m) => m.id === fallbackModel)) {
+      modelSelect.value = fallbackModel;
+      cliproxyApiModel = fallbackModel;
+    } else if (models[0]?.id) {
+      modelSelect.value = models[0].id;
+      cliproxyApiModel = models[0].id;
+    }
+  } catch {
+    // Use fallback option silently
+  }
 };
 
 const callCliproxyApi = async (promptMessage, contextDiagramCode) => {
@@ -112,29 +168,40 @@ const generateAndCorrectDiagram = async (userPrompt) => {
     return;
   }
 
+  const hasExistingDiagram = Boolean(currentDiagramCode);
+
   setButtonState(true);
   displayRawCode("");
   renderArea.innerHTML = "";
 
-  currentDiagramCode = "";
   retryCount = 0;
   let lastErrors = [];
+  let workingDiagramCode = currentDiagramCode;
 
   while (retryCount < maxRetries) {
     try {
       const attemptNumber = retryCount + 1;
       if (attemptNumber === 1) {
-        displayStatus(`Generating diagram (attempt ${attemptNumber} of ${maxRetries})...`, "info");
+        if (hasExistingDiagram) {
+          displayStatus(`Updating diagram (attempt ${attemptNumber} of ${maxRetries})...`, "info");
+        } else {
+          displayStatus(`Generating diagram (attempt ${attemptNumber} of ${maxRetries})...`, "info");
+        }
       } else {
-        displayStatus(`Retrying generation (attempt ${attemptNumber} of ${maxRetries})...`, "info");
+        if (hasExistingDiagram) {
+          displayStatus(`Retrying update (attempt ${attemptNumber} of ${maxRetries})...`, "info");
+        } else {
+          displayStatus(`Retrying generation (attempt ${attemptNumber} of ${maxRetries})...`, "info");
+        }
       }
 
-      const promptToSend = buildPrompt(originalUserPrompt, lastErrors, currentDiagramCode);
-      const candidateCode = await callCliproxyApi(promptToSend, currentDiagramCode);
+      const promptToSend = buildPrompt(originalUserPrompt, lastErrors, workingDiagramCode);
+      const candidateCode = await callCliproxyApi(promptToSend, workingDiagramCode);
       const validation = await validateMermaidCode(candidateCode);
 
       if (validation.isValid) {
         currentDiagramCode = candidateCode;
+        workingDiagramCode = candidateCode;
         await renderMermaidDiagram(currentDiagramCode);
         displayRawCode(currentDiagramCode);
         displayStatus("Diagram generated successfully.", "success");
@@ -143,7 +210,7 @@ const generateAndCorrectDiagram = async (userPrompt) => {
       }
 
       lastErrors = validation.errors;
-      currentDiagramCode = candidateCode;
+      workingDiagramCode = candidateCode;
       retryCount += 1;
       displayStatus(`Validation failed (attempt ${retryCount} of ${maxRetries}): ${lastErrors.join("; ")}`, "error");
     } catch (error) {
@@ -161,5 +228,15 @@ const generateAndCorrectDiagram = async (userPrompt) => {
 generateButton.addEventListener("click", () => {
   generateAndCorrectDiagram(promptInput.value);
 });
+
+if (modelSelect) {
+  modelSelect.addEventListener("change", () => {
+    if (modelSelect.value) {
+      cliproxyApiModel = modelSelect.value;
+    }
+  });
+}
+
+initModelSelection();
 
 displayStatus("Waiting for a prompt.", "info");

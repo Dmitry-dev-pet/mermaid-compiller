@@ -12,12 +12,11 @@
     - [ ] 2.2. Добавить `<textarea>` для ввода промпта пользователя (например, `id="prompt-input"`).
     - [ ] 2.3. Добавить `<button>` для запуска генерации (например, `id="generate-button"`).
     - [ ] 2.4. Добавить `<div>` для визуального рендеринга диаграммы Mermaid (например, `id="mermaid-render-area"`).
-    - [ ] 2.5. Добавить `<textarea>` или `<pre>` для отображения исходного кода Mermaid (например, `id="mermaid-code-output"`).
-    - [ ] 2.6. Добавить `<div>` для отображения статусных сообщений, ошибок валидации и обратной связи (например, `id="status-messages"`).
+    - [ ] 2.5. Добавить `<div>` для отображения статусных сообщений, ошибок валидации и обратной связи (например, `id="status-messages"`).
     - [ ] 2.7. Подключить библиотеку `mermaid.js` из CDN (например, `<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>`).
     - [ ] 2.8. Подключить `public/app.js` (`<script src="app.js"></script>`).
 - [ ] 3. **Разработка `public/app.js` - Основная Логика:**
-    - [ ] 3.1. **Глобальное Состояние:** Определить переменные для `currentDiagramCode`, `originalUserPrompt`, `retryCount`, `maxRetries` (например, 3) и `cliproxyApiUrl` (например, `http://localhost:8080/generate`).
+    - [ ] 3.1. **Глобальное Состояние:** Определить переменные для `currentDiagramCode`, `originalUserPrompt`, `retryCount`, `maxRetries` (например, 5) и `cliproxyApiUrl` (локальный OpenAI-совместимый endpoint `cliproxyapi`, например, `http://localhost:8317/v1/chat/completions`).
     - [ ] 3.2. **Функция `validateMermaidCode(code)`:**
         - [ ] 3.2.1. Реализовать с использованием `mermaid.parse()` для проверки синтаксиса.
         - [ ] 3.2.2. Возвращать `{ isValid: boolean, errors: string[] }`.
@@ -39,8 +38,7 @@
 - [ ] 4. **Разработка `public/app.js` - Взаимодействие с UI:**
     - [ ] 4.1. Получить ссылки на все элементы UI (`prompt-input`, `generate-button` и т.д.).
     - [ ] 4.2. **Функция `renderMermaidDiagram(code)`:**
-        - [ ] 4.2.1. Использовать `mermaid.run()` для рендеринга визуальной диаграммы.
-        - [ ] 4.2.2. Обновить `mermaid-code-output`.
+        - [ ] 4.2.1. Использовать `mermaid.render()` для рендеринга визуальной диаграммы.
     - [ ] 4.3. **Функция `displayStatus(message, type)`:** Обновить div `status-messages`.
     - [ ] 4.4. Добавить слушатель событий к `generate-button` для вызова `generateAndCorrectDiagram` со значением из `prompt-input`.
 - [ ] 5. **Тестирование и Доработка:**
