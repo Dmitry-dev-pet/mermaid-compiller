@@ -13,6 +13,7 @@
       background: #0f172a;
       color: #e2e8f0;
       line-height: 1.5;
+      min-height: 100vh;
     }
     h1 { margin-top: 0; font-size: 22px; }
     .header-row {
@@ -78,8 +79,11 @@
     .grid {
       display: grid;
       grid-template-columns: minmax(320px, 1fr) minmax(480px, 2fr);
+      grid-template-rows: minmax(0, 1fr);
       gap: 16px;
       margin-top: 16px;
+      min-height: calc(100vh - 96px);
+      align-items: stretch;
     }
     .card {
       background: #111827;
@@ -87,17 +91,23 @@
       border-radius: 12px;
       padding: 16px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
     }
     label { display: block; margin-bottom: 8px; font-weight: 600; }
     textarea {
       width: 100%;
-      min-height: 120px;
+      height: 140px;
+      min-height: 140px;
+      max-height: 140px;
       padding: 12px;
       border-radius: 8px;
       border: 1px solid #1f2937;
       background: #0b1220;
       color: #e2e8f0;
-      resize: vertical;
+      resize: none;
+      overflow: auto;
     }
     button {
       padding: 12px 16px;
@@ -114,12 +124,13 @@
     button:hover { transform: translateY(-1px); box-shadow: 0 16px 30px rgba(34,211,238,0.35); }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
     .render-area {
-      min-height: 480px;
+      min-height: 300px;
       background: #0b1220;
       border: 1px solid #1f2937;
       border-radius: 12px;
       padding: 16px;
       overflow: auto;
+      flex: 1 1 0;
     }
     pre.code-output {
       background: #0b1220;
@@ -128,7 +139,9 @@
       padding: 12px;
       white-space: pre-wrap;
       word-break: break-word;
-      min-height: 160px;
+      min-height: 80px;
+      overflow: auto;
+      flex: 1 1 0;
     }
     .status {
       min-height: 48px;
@@ -164,6 +177,49 @@
     .proxy-indicator-ok { background: #22c55e; }
     .proxy-indicator-error { background: #ef4444; }
     .proxy-indicator-unknown { background: #4b5563; }
+
+    .collapsible-label {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .collapsible-target.collapsed {
+      display: none;
+    }
+
+    .diagram-preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .diagram-tabs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .diagram-tab {
+      padding: 4px 8px;
+      border-radius: 9999px;
+      border: 1px solid #1f2937;
+      background: #020617;
+      color: #e2e8f0;
+      font-size: 12px;
+      line-height: 1.2;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .diagram-tab.diagram-tab-active {
+      background: #22d3ee;
+      color: #020617;
+      border-color: #0ea5e9;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -207,27 +263,45 @@
   <div class="grid">
     <div class="card">
       <label for="prompt-input">Prompt</label>
-      <textarea id="prompt-input" placeholder="Describe your diagram..."></textarea>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+      <textarea
+        id="prompt-input"
+        class="collapsible-target"
+        placeholder="Describe your diagram..."
+      ></textarea>
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px;">
+        <button id="new-generate-button">New</button>
         <button id="generate-button">Generate</button>
-        <button id="undo-button" disabled>Revert</button>
       </div>
       <label for="model-reasoning-output" style="margin-top: 8px; display: block;">Model Reasoning</label>
-      <pre id="model-reasoning-output" class="code-output"></pre>
+      <pre id="model-reasoning-output" class="code-output collapsible-target"></pre>
+      <label for="llm-conversation-output" style="margin-top: 8px; display: block;">LLM Conversation</label>
+      <pre id="llm-conversation-output" class="code-output collapsible-target"></pre>
+      <label for="docs-debug-output" style="margin-top: 8px; display: block;">Docs / Context7</label>
+      <pre id="docs-debug-output" class="code-output collapsible-target"></pre>
       <div id="status-messages" class="status info" aria-live="polite"></div>
     </div>
     <div class="card">
       <label>Diagram Preview</label>
-      <div style="margin-bottom: 8px;">
-        <button
-          id="download-button"
-          disabled
-          class="icon-button"
-          aria-label="Download Mermaid diagram as .mmd"
-          title="Download .mmd"
-        >
-          ⬇︎
-        </button>
+      <div class="diagram-preview-header">
+        <div id="diagram-tabs" class="diagram-tabs"></div>
+        <div class="diagram-view-toggle">
+          <button
+            type="button"
+            id="diagram-view-structure"
+            class="filter-button"
+            data-view="structure"
+          >
+            Structure
+          </button>
+          <button
+            type="button"
+            id="diagram-view-styled"
+            class="filter-button filter-active"
+            data-view="styled"
+          >
+            Styled
+          </button>
+        </div>
       </div>
       <div id="mermaid-render-area" class="render-area"></div>
     </div>
