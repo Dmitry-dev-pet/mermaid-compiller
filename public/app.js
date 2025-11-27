@@ -3,20 +3,28 @@ const generateButton = document.getElementById("generate-button");
 const renderArea = document.getElementById("mermaid-render-area");
 const statusBox = document.getElementById("status-messages");
 const modelSelect = document.getElementById("model-select");
+const proxyInput = document.getElementById("proxy-url-input");
+const proxyStatusIndicator = document.getElementById("proxy-status-indicator");
 const downloadButton = document.getElementById("download-button");
 const undoButton = document.getElementById("undo-button");
 const reasoningOutput = document.getElementById("model-reasoning-output");
+const vendorFilterButton = document.getElementById("vendor-filter");
 
 let currentDiagramCode = "";
 let originalUserPrompt = "";
 let retryCount = 0;
 let previousDiagramCode = "";
 const maxRetries = 5;
-const cliproxyApiUrl = "http://localhost:8317/v1/chat/completions";
 const cliproxyApiToken = "test";
-let cliproxyApiModel = "gpt-5.1-codex-mini";
-const cliproxyModelsUrl = "http://localhost:8317/v1/models";
+const defaultCliproxyBaseUrl = "http://localhost:8317";
+let cliproxyBaseUrl = defaultCliproxyBaseUrl;
+let cliproxyApiModel = "";
 const docsSearchUrl = "/docs/search";
+let allModels = [];
+let currentModelFilter = "all";
+
+const getCliproxyChatUrl = () => `${cliproxyBaseUrl}/v1/chat/completions`;
+const getCliproxyModelsUrl = () => `${cliproxyBaseUrl}/v1/models`;
 
 mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
 
@@ -49,6 +57,19 @@ const updateDownloadButtonState = () => {
 const updateUndoButtonState = () => {
   if (!undoButton) return;
   undoButton.disabled = !previousDiagramCode;
+};
+
+const setProxyStatus = (status) => {
+  if (!proxyStatusIndicator) return;
+  let className = "proxy-indicator";
+  if (status === "ok") {
+    className += " proxy-indicator-ok";
+  } else if (status === "error") {
+    className += " proxy-indicator-error";
+  } else {
+    className += " proxy-indicator-unknown";
+  }
+  proxyStatusIndicator.className = className;
 };
 
 const renderMermaidDiagram = async (code) => {
@@ -98,6 +119,142 @@ const extractMermaidCode = (text) => {
   return text.trim();
 };
 
+const extractRussianSummary = (text) => {
+  if (!text || typeof text !== "string") return "";
+  const marker = "RU_SUMMARY:";
+  const index = text.indexOf(marker);
+  if (index === -1) return "";
+  return text.slice(index + marker.length).trim();
+};
+
+const updateModelSelectWidth = () => {
+  if (!modelSelect || !allModels.length) return;
+  const maxLen = allModels.reduce((max, m) => {
+    const id = m.id || "";
+    return id.length > max ? id.length : max;
+  }, 0);
+
+  const minCh = 12;
+  const paddingCh = 4;
+  const widthCh = Math.max(minCh, maxLen + paddingCh);
+  modelSelect.style.minWidth = `${widthCh}ch`;
+};
+
+const getModelVendor = (model) => {
+  const id = (model.id || "").toLowerCase();
+  if (id.startsWith("gpt-")) return "gpt";
+  if (id.startsWith("gemini-")) return "gemini";
+  return "";
+};
+
+const pickLatestModelId = (models) => {
+  if (!models.length) return null;
+  let best = models[0];
+  for (const m of models) {
+    if (typeof m.created === "number" && typeof best.created === "number") {
+      if (m.created > best.created) {
+        best = m;
+      }
+    } else if ((m.id || "") > (best.id || "")) {
+      best = m;
+    }
+  }
+  return best.id || null;
+};
+
+const parseGptVersion = (id) => {
+  if (!id) return 0;
+  const match = id.match(/^gpt-(\d+(?:\.\d+)?)/i);
+  if (!match) return 0;
+  const value = Number.parseFloat(match[1]);
+  if (Number.isNaN(value)) return 0;
+  return value;
+};
+
+const pickLatestGptHighModelId = (models) => {
+  const gptModels = models.filter((m) => getModelVendor(m) === "gpt");
+  if (!gptModels.length) return null;
+
+  let candidates = gptModels.filter((m) => (m.id || "").toLowerCase().includes("high"));
+  if (!candidates.length) {
+    candidates = gptModels;
+  }
+
+  let best = candidates[0];
+  let bestVersion = parseGptVersion(best.id || "");
+
+  for (const m of candidates) {
+    const version = parseGptVersion(m.id || "");
+    if (version > bestVersion) {
+      best = m;
+      bestVersion = version;
+    } else if (version === bestVersion && (m.id || "") > (best.id || "")) {
+      best = m;
+    }
+  }
+
+  return best.id || null;
+};
+
+const applyModelFilter = (preferredModel) => {
+  if (!modelSelect || !allModels.length) return;
+
+  const filter = currentModelFilter;
+  let candidates = allModels;
+
+  if (filter === "gpt") {
+    candidates = allModels.filter((m) => getModelVendor(m) === "gpt");
+  } else if (filter === "gemini") {
+    candidates = allModels.filter((m) => getModelVendor(m) === "gemini");
+  }
+
+  if (!candidates.length) {
+    candidates = allModels;
+  }
+
+  const previousSelected = preferredModel || cliproxyApiModel;
+
+  let targetId = null;
+  if (previousSelected) {
+    const match = candidates.find((m) => m.id === previousSelected);
+    if (match) {
+      targetId = match.id;
+    }
+  }
+
+  if (!targetId) {
+    if (filter === "gpt") {
+      targetId = pickLatestGptHighModelId(allModels) || pickLatestModelId(allModels);
+    } else if (filter === "gemini") {
+      const geminiModels = allModels.filter((m) => getModelVendor(m) === "gemini");
+      targetId = pickLatestModelId(geminiModels) || pickLatestModelId(allModels);
+    } else {
+      targetId = pickLatestGptHighModelId(allModels) || pickLatestModelId(allModels);
+    }
+  }
+
+  if (!targetId) return;
+
+  // rebuild options list to show only filtered models
+  modelSelect.innerHTML = "";
+
+  candidates
+    .slice()
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .forEach((model) => {
+      const option = document.createElement("option");
+      option.value = model.id;
+      option.textContent = model.id;
+      modelSelect.appendChild(option);
+    });
+
+  if (modelSelect.querySelector(`option[value="${targetId}"]`)) {
+    modelSelect.value = targetId;
+  }
+  cliproxyApiModel = targetId;
+  updateModelSelectWidth();
+};
+
 const initModelSelection = async () => {
   if (!modelSelect) return;
 
@@ -111,7 +268,7 @@ const initModelSelection = async () => {
   modelSelect.value = fallbackModel;
 
   try {
-    const response = await fetch(cliproxyModelsUrl, {
+    const response = await fetch(getCliproxyModelsUrl(), {
       headers: {
         Authorization: `Bearer ${cliproxyApiToken}`,
       },
@@ -125,10 +282,12 @@ const initModelSelection = async () => {
     const models = Array.isArray(data?.data) ? data.data : [];
     if (!models.length) return;
 
+    allModels = models.filter((m) => m && typeof m.id === "string");
+
     modelSelect.innerHTML = "";
 
-    models
-      .filter((m) => m && typeof m.id === "string")
+    allModels
+      .slice()
       .sort((a, b) => a.id.localeCompare(b.id))
       .forEach((model) => {
         const option = document.createElement("option");
@@ -137,13 +296,8 @@ const initModelSelection = async () => {
         modelSelect.appendChild(option);
       });
 
-    if (models.some((m) => m.id === fallbackModel)) {
-      modelSelect.value = fallbackModel;
-      cliproxyApiModel = fallbackModel;
-    } else if (models[0]?.id) {
-      modelSelect.value = models[0].id;
-      cliproxyApiModel = models[0].id;
-    }
+    updateModelSelectWidth();
+    applyModelFilter(fallbackModel);
   } catch {
     // Use fallback option silently
   }
@@ -172,10 +326,30 @@ const fetchDocsContext = async (query) => {
   }
 };
 
+const checkProxyAvailability = async () => {
+  setProxyStatus("unknown");
+  try {
+    const response = await fetch(getCliproxyModelsUrl(), {
+      headers: {
+        Authorization: `Bearer ${cliproxyApiToken}`,
+      },
+    });
+    if (response.ok) {
+      setProxyStatus("ok");
+    } else {
+      setProxyStatus("error");
+    }
+  } catch {
+    setProxyStatus("error");
+  }
+};
+
 const callCliproxyApi = async (promptMessage, contextDiagramCode) => {
   const systemPrompt =
-    "You are an assistant that generates only valid Mermaid diagram code. " +
-    "Return only the Mermaid code without markdown fences or explanations.";
+    "Ты помощник, который генерирует только валидный код диаграмм Mermaid. " +
+    "Отвечай строго в таком формате: сначала блок ```mermaid ... ``` с кодом диаграммы, " +
+    "затем на новой строке 'RU_SUMMARY:' и одну-две короткие фразы по-русски, " +
+    "кратко описывающие, что изображает диаграмма.";
 
   const userContent = contextDiagramCode
     ? `${promptMessage}\n\nCurrent Mermaid diagram:\n${contextDiagramCode}`
@@ -189,7 +363,7 @@ const callCliproxyApi = async (promptMessage, contextDiagramCode) => {
     ],
   };
 
-  const response = await fetch(cliproxyApiUrl, {
+  const response = await fetch(getCliproxyChatUrl(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -204,13 +378,12 @@ const callCliproxyApi = async (promptMessage, contextDiagramCode) => {
 
   const data = await response.json();
   const rawContent = data?.choices?.[0]?.message?.content;
-  const reasoning =
-    data?.choices?.[0]?.message?.reasoning_content || data?.choices?.[0]?.reasoning_content || "";
   const candidate = extractMermaidCode(rawContent);
   if (!candidate) {
     throw new Error("cliproxyapi response missing Mermaid code");
   }
-  return { code: candidate.trim(), reasoning: reasoning || "" };
+  const summary = extractRussianSummary(rawContent);
+  return { code: candidate.trim(), reasoning: summary };
 };
 
 const generateAndCorrectDiagram = async (userPrompt) => {
@@ -313,6 +486,48 @@ if (downloadButton) {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  });
+}
+
+if (proxyInput) {
+  const initial = proxyInput.value.trim();
+  if (initial) {
+    cliproxyBaseUrl = initial;
+  } else {
+    proxyInput.value = cliproxyBaseUrl;
+  }
+
+  proxyInput.addEventListener("change", () => {
+    const value = proxyInput.value.trim();
+    cliproxyBaseUrl = value || defaultCliproxyBaseUrl;
+    if (!proxyInput.value.trim()) {
+      proxyInput.value = cliproxyBaseUrl;
+    }
+    initModelSelection();
+    checkProxyAvailability();
+  });
+
+  checkProxyAvailability();
+}
+
+if (vendorFilterButton) {
+  const order = ["all", "gpt", "gemini"];
+  const labels = {
+    all: "All",
+    gpt: "gpt",
+    gemini: "gemini",
+  };
+
+  vendorFilterButton.addEventListener("click", () => {
+    const current = vendorFilterButton.dataset.modelFilter || "all";
+    const index = order.indexOf(current);
+    const next = index === -1 ? "all" : order[(index + 1) % order.length];
+
+    vendorFilterButton.dataset.modelFilter = next;
+    vendorFilterButton.textContent = labels[next] || next;
+    currentModelFilter = next;
+
+    applyModelFilter();
   });
 }
 
