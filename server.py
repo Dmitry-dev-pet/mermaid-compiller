@@ -71,7 +71,7 @@ def _contains_cyrillic(text: str) -> bool:
     return False
 
 
-def _normalize_docs_query(query: str) -> dict:
+def _normalize_docs_query(query: str, model_id: str = "") -> dict:
     """Normalize user docs query for Context7 and styling.
 
     Returns a dict with:
@@ -88,7 +88,11 @@ def _normalize_docs_query(query: str) -> dict:
         return result
 
     base_url = os.environ.get("CLIPROXY_BASE_URL", "http://localhost:8317").strip()
-    model_id = os.environ.get("CLIPROXY_NORMALIZER_MODEL", "").strip()
+
+    # Use provided model_id or fall back to environment variable
+    if not model_id:
+        model_id = os.environ.get("CLIPROXY_NORMALIZER_MODEL", "").strip()
+
     api_key = os.environ.get("CLIPROXY_API_KEY", "test").strip()
     if not base_url or not model_id:
         return result
@@ -261,6 +265,8 @@ class StaticHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/docs/search":
             params = parse_qs(parsed.query)
             query = (params.get("q", [""])[0] or "").strip()
+            model_id = (params.get("model", [""])[0] or "").strip()
+
             if not query:
                 payload = {
                     "query": query,
@@ -269,7 +275,7 @@ class StaticHandler(SimpleHTTPRequestHandler):
                     "results": [],
                 }
             else:
-                normalized = _normalize_docs_query(query)
+                normalized = _normalize_docs_query(query, model_id)
                 search_query = normalized.get("search_query", query) or query
                 style_prefs = normalized.get("style_prefs", "")
 

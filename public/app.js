@@ -13,6 +13,7 @@ const docsDebugOutput = document.getElementById("docs-debug-output");
 const diagramTabs = document.getElementById("diagram-tabs");
 const viewStructureButton = document.getElementById("diagram-view-structure");
 const viewStyledButton = document.getElementById("diagram-view-styled");
+const styleButton = document.getElementById("style-button");
 
 let currentDiagramCode = "";
 let originalUserPrompt = "";
@@ -30,6 +31,7 @@ let lastDocsDebug = null;
 let diagramHistory = [];
 let activeDiagramIndex = -1;
 let diagramViewMode = "styled";
+let selectedDiagramType = "auto";
 
 const getCliproxyChatUrl = () => `${cliproxyBaseUrl}/v1/chat/completions`;
 const getCliproxyModelsUrl = () => `${cliproxyBaseUrl}/v1/models`;
@@ -41,8 +43,8 @@ const setButtonState = (isLoading) => {
   if (newGenerateButton) {
     newGenerateButton.disabled = isLoading;
   }
-  if (newGenerateButton) {
-    newGenerateButton.disabled = isLoading;
+  if (styleButton) {
+    styleButton.disabled = isLoading || activeDiagramIndex === -1;
   }
   generateButton.textContent = isLoading ? "Working..." : "Generate";
 };
@@ -58,9 +60,22 @@ const displayRawCode = (code) => {
   codeOutput.textContent = code || "";
 };
 
-const displayReasoning = (text) => {
+const updateReasoningHistoryView = () => {
   if (!reasoningOutput) return;
-  reasoningOutput.textContent = text || "";
+  reasoningOutput.textContent = "";
+
+  diagramHistory.forEach((entry, index) => {
+    const item = document.createElement("div");
+    item.className = "reasoning-item";
+    item.textContent = entry.reasoning || `Diagram ${index + 1}`;
+    if (index === activeDiagramIndex) {
+      item.classList.add("reasoning-item-active");
+    }
+    item.addEventListener("click", () => {
+      setActiveDiagramIndex(index);
+    });
+    reasoningOutput.appendChild(item);
+  });
 };
 
 const makeCollapsibleSection = (forId) => {
@@ -198,19 +213,25 @@ const syncUiWithActiveDiagram = async () => {
     currentDiagramCode = "";
     renderArea.innerHTML = "";
     displayRawCode("");
-    displayReasoning("");
+    if (reasoningOutput) reasoningOutput.textContent = "";
     conversationLog = [];
     lastDocsDebug = null;
     updateConversationView();
     updateDocsDebugView();
     rebuildDiagramTabs();
     updateViewToggleButtons();
+    updateReasoningHistoryView();
     return;
   }
 
-  const baseCode = diagramViewMode === "structure" && entry.structuralCode
-    ? entry.structuralCode
-    : entry.finalCode || entry.structuralCode || "";
+  const structural = entry.structuralCode || "";
+  const final = entry.finalCode || entry.structuralCode || "";
+
+  console.log(
+    `Syncing UI. Mode: ${diagramViewMode}. Structural len: ${structural.length}, Final len: ${final.length}`,
+  );
+
+  const baseCode = diagramViewMode === "structure" ? structural : final;
 
   currentDiagramCode = baseCode;
   try {
@@ -220,11 +241,10 @@ const syncUiWithActiveDiagram = async () => {
       renderArea.innerHTML = "";
     }
   } catch (error) {
-    displayStatus(`Failed to render diagram: ${error?.message || error}`, "error");
+    displayStatus(`Failed to render diagram: ${error.message || error}`, "error");
   }
 
   displayRawCode(currentDiagramCode);
-  displayReasoning(entry.reasoning || "");
 
   conversationLog = Array.isArray(entry.conversationLog)
     ? entry.conversationLog.slice()
@@ -234,6 +254,7 @@ const syncUiWithActiveDiagram = async () => {
   updateDocsDebugView();
   rebuildDiagramTabs();
   updateViewToggleButtons();
+  updateReasoningHistoryView();
 };
 
 const setActiveDiagramIndex = (index) => {
@@ -246,19 +267,22 @@ const setActiveDiagramIndex = (index) => {
 };
 
 const setDiagramViewMode = (mode) => {
+  console.log(`Setting diagram view mode to: ${mode}`);
   diagramViewMode = mode === "structure" ? "structure" : "styled";
   syncUiWithActiveDiagram();
 };
 
 const renderMermaidDiagram = async (code) => {
   try {
-    const { svg, bindFunctions } = await mermaid.render("diagram", code);
+    const id = `mermaid-diagram-${Date.now()}`;
+    const { svg, bindFunctions } = await mermaid.render(id, code);
     renderArea.innerHTML = svg;
     if (bindFunctions) {
       bindFunctions(renderArea);
     }
   } catch (error) {
-    renderArea.innerHTML = "";
+    console.error("Mermaid render error:", error);
+    renderArea.innerHTML = `<div style="color: #ef4444; padding: 1rem; border: 1px dashed #ef4444;">Failed to render diagram:<br>${error.message}</div>`;
     throw error;
   }
 };
@@ -275,26 +299,44 @@ const validateMermaidCode = async (code) => {
 
 const buildPrompt = (userPrompt, validationErrors, previousCode, docsContext) => {
   const trimmedDocs = docsContext && typeof docsContext === "string" ? docsContext.trim() : "";
-  if (previousCode && !validationErrors.length) {
-    const docsBlock = trimmedDocs
-      ? `\n\nRelevant Mermaid documentation (snippets):\n${trimmedDocs}`
-      : "";
-    return `${userPrompt}\n\nYou are updating an existing Mermaid diagram. Here is the current diagram:\n${previousCode}${docsBlock}\n\nPlease update this diagram according to the new instructions while keeping it syntactically valid.`;
-  }
-  if (!validationErrors.length || !previousCode) return userPrompt;
   const docsBlock = trimmedDocs
     ? `\n\nRelevant Mermaid documentation (snippets):\n${trimmedDocs}`
     : "";
-  return `${userPrompt}\n\nThe previous Mermaid code was invalid.\nErrors: ${validationErrors.join("; ")}${docsBlock}\nPlease fix the diagram while keeping the intent.`;
+
+  if (previousCode && !validationErrors.length) {
+    return `${userPrompt}\n\nYou are updating an existing Mermaid diagram. Here is the current diagram:\n${previousCode}${docsBlock}\n\nPlease update this diagram according to the new instructions while keeping it syntactically valid.`;
+  }
+
+  if (validationErrors.length && previousCode) {
+    return `${userPrompt}\n\nThe previous Mermaid code was invalid.\nErrors: ${validationErrors.join("; ")}${docsBlock}\nPlease fix the diagram while keeping the intent.`;
+  }
+
+  // Initial generation case
+  return `${userPrompt}${docsBlock}`;
 };
 
 const extractMermaidCode = (text) => {
   if (!text || typeof text !== "string") return "";
+
+  let code = "";
   const fenced = text.match(/```mermaid([\s\S]*?)```/i);
+  
   if (fenced && fenced[1].trim()) {
-    return fenced[1].trim();
+    code = fenced[1].trim();
+  } else {
+    code = text.trim();
   }
-  return text.trim();
+
+  // Safety: remove RU_SUMMARY if present (case-insensitive just in case, though we prompt for RU_SUMMARY)
+  const summaryIndex = code.indexOf("RU_SUMMARY:");
+  if (summaryIndex !== -1) {
+    code = code.substring(0, summaryIndex).trim();
+  }
+
+  // Clean up accidental remaining fences if regex failed or didn't match perfectly
+  code = code.replace(/^```mermaid/i, "").replace(/```$/, "").trim();
+
+  return code;
 };
 
 const extractRussianSummary = (text) => {
@@ -322,6 +364,7 @@ const getModelVendor = (model) => {
   const id = (model.id || "").toLowerCase();
   if (id.startsWith("gpt-")) return "gpt";
   if (id.startsWith("gemini-")) return "gemini";
+  if (id.startsWith("glm-")) return "glm";
   return "";
 };
 
@@ -384,6 +427,8 @@ const applyModelFilter = (preferredModel) => {
     candidates = allModels.filter((m) => getModelVendor(m) === "gpt");
   } else if (filter === "gemini") {
     candidates = allModels.filter((m) => getModelVendor(m) === "gemini");
+  } else if (filter === "glm") {
+    candidates = allModels.filter((m) => getModelVendor(m) === "glm");
   }
 
   if (!candidates.length) {
@@ -406,6 +451,9 @@ const applyModelFilter = (preferredModel) => {
     } else if (filter === "gemini") {
       const geminiModels = allModels.filter((m) => getModelVendor(m) === "gemini");
       targetId = pickLatestModelId(geminiModels) || pickLatestModelId(allModels);
+    } else if (filter === "glm") {
+      const glmModels = allModels.filter((m) => getModelVendor(m) === "glm");
+      targetId = pickLatestModelId(glmModels) || pickLatestModelId(allModels);
     } else {
       targetId = pickLatestGptHighModelId(allModels) || pickLatestModelId(allModels);
     }
@@ -483,15 +531,21 @@ const initModelSelection = async () => {
 
 const fetchDocsContext = async (query) => {
   try {
-    const trimmed = (query || "").trim();
+    let trimmed = (query || "").trim();
     if (!trimmed) {
       lastDocsDebug = null;
       updateDocsDebugView();
       return "";
     }
 
+    // Enhance query with diagram type if selected
+    if (selectedDiagramType !== "auto") {
+      trimmed = `${selectedDiagramType} syntax ${trimmed}`;
+    }
+
     const limitedQuery = trimmed.slice(0, 80);
-    const response = await fetch(`${docsSearchUrl}?q=${encodeURIComponent(limitedQuery)}`);
+    const modelParam = cliproxyApiModel ? `&model=${encodeURIComponent(cliproxyApiModel)}` : "";
+    const response = await fetch(`${docsSearchUrl}?q=${encodeURIComponent(limitedQuery)}${modelParam}`);
     if (!response.ok) {
       lastDocsDebug = { query: limitedQuery, results: [] };
       updateDocsDebugView();
@@ -501,12 +555,12 @@ const fetchDocsContext = async (query) => {
     const data = await response.json();
     const items = Array.isArray(data?.results) ? data.results : [];
 
-    const effectiveQuery =
+    const effectiveQuery = 
       typeof data?.search_query === "string" && data.search_query.trim()
         ? data.search_query.trim()
         : limitedQuery;
 
-    const stylePrefs =
+    const stylePrefs = 
       typeof data?.style_prefs === "string" && data.style_prefs.trim()
         ? data.style_prefs.trim()
         : "";
@@ -540,28 +594,43 @@ const fetchDocsContext = async (query) => {
 const checkProxyAvailability = async () => {
   setProxyStatus("unknown");
   try {
+    console.log("Checking proxy availability at:", getCliproxyModelsUrl());
     const response = await fetch(getCliproxyModelsUrl(), {
       headers: {
         Authorization: `Bearer ${cliproxyApiToken}`,
       },
     });
+    console.log("Proxy response status:", response.status);
     if (response.ok) {
       setProxyStatus("ok");
+      displayStatus("Proxy connection OK", "success");
     } else {
+      console.log("Proxy response not OK:", response.status, response.statusText);
       setProxyStatus("error");
+      displayStatus(`Proxy error: ${response.status} ${response.statusText}`, "error");
     }
-  } catch {
+  } catch (error) {
+    console.log("Proxy check error:", error);
     setProxyStatus("error");
+    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+      displayStatus("Proxy connection blocked. Check if cliproxyapi is running on port 8317.", "error");
+    } else {
+      displayStatus(`Proxy connection error: ${error.message}`, "error");
+    }
   }
 };
 
 const callCliproxyApiStructure = async (promptMessage, contextDiagramCode) => {
-  const systemPrompt =
+  let systemPrompt =
     "Ты помощник, который генерирует только валидный код диаграмм Mermaid. " +
     "На этом шаге сосредоточься только на структуре (сущности, связи, кардинальности) и используй максимально простое оформление без тем, цветов и сложных стилей. " +
     "Отвечай строго в таком формате: сначала блок ```mermaid ... ``` с кодом диаграммы, " +
     "затем на новой строке 'RU_SUMMARY:' и одну-две короткие фразы по-русски, " +
     "кратко описывающие, что изображает диаграмма.";
+
+  if (selectedDiagramType !== "auto") {
+    systemPrompt += `\n\nВАЖНО: Пользователь явно запросил тип диаграммы: ${selectedDiagramType}. Ты ОБЯЗАН сгенерировать диаграмму именно этого типа.`;
+  }
 
   const userContent = contextDiagramCode
     ? `${promptMessage}\n\nCurrent Mermaid diagram:\n${contextDiagramCode}`
@@ -601,9 +670,17 @@ const callCliproxyApiStructure = async (promptMessage, contextDiagramCode) => {
 const callCliproxyApiStyle = async (diagramCode, docsContext) => {
   const systemPrompt =
     "Ты помощник, который улучшает только визуальное оформление уже валидной диаграммы Mermaid. " +
-    "Не меняй сущности, связи и кардинальности. Ты можешь менять тему, цвета, direction/layout диаграммы, " +
-    "располагать связанные сущности ближе друг к другу и логически группировать таблицы в кластеры или зоны по доменам. " +
-    "Используй при необходимости classDef, стили и настройки раскладки, но не добавляй новых сущностей/связей и не удаляй существующие. " +
+    "Не меняй сущности, связи и кардинальности. " +
+    "Твоя задача - сделать диаграмму красивой, профессиональной и максимально читаемой.\n\n" +
+    "СТРАТЕГИЯ УЛУЧШЕНИЯ:\n" +
+    "1. Группировка: Если диаграмма позволяет (например, flowchart), обязательно группируй логически связанные узлы в `subgraph` с понятными заголовками.\n" +
+    "2. Макет: Подбери оптимальное направление (`direction TB` или `LR`), чтобы схема выглядела компактно и последовательно.\n" +
+    "3. Формы: Используй разнообразные формы узлов (цилиндры для БД `[()`, ромбы для условий `{}`, округлые для старта/финиша `()`) для семантической ясности.\n\n" +
+    "ВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+    "- Для 'graph' или 'flowchart': Активно используй 'classDef' и оператор ':::' для цветового кодирования типов узлов. Делай стили контрастными и приятными.\n" +
+    "- Для 'erDiagram', 'sequenceDiagram', 'gantt', 'journey': ЗАПРЕЩЕНО использовать 'classDef' или стили внутри узлов (это ломает рендер). " +
+    "Используй ТОЛЬКО директиву инициализации в первой строке: %%{init: {'theme': 'base', 'themeVariables': { ... }}}%%. " +
+    "Настраивай цвета через 'primaryColor', 'tertiaryColor', 'edgeLabelBackground' и другие переменные темы.\n\n" +
     "Отвечай в том же формате: блок ```mermaid ... ``` и затем строка 'RU_SUMMARY:'.";
 
   let userContent =
@@ -649,6 +726,168 @@ const callCliproxyApiStyle = async (diagramCode, docsContext) => {
   }
   const summary = extractRussianSummary(rawContent);
   return { code: candidate.trim(), reasoning: summary, rawContent, systemPrompt };
+};
+
+const callCliproxyApiFixStyle = async (badCode, errors) => {
+  const systemPrompt =
+    "Ты технический специалист по Mermaid.js. " +
+    "Твоя задача - исправить синтаксические ошибки в коде диаграммы, который пытались стилизовать. " +
+    "Оставь структуру без изменений. Исправь только синтаксис стилей (themeVariables, init directives). " +
+    "Если какие-то стили невозможно применить валидно (например classDef в erDiagram) - удали их, но верни валидный код. " +
+    "Отвечай только блоком ```mermaid ... ```.";
+
+  const userContent =
+    "The following Mermaid code is invalid:\n\n" +
+    "```mermaid\n" + badCode + "\n```\n\n" +
+    "Error message:\n" + errors.join("\n") + "\n\n" +
+    "Please fix the syntax errors.";
+
+  const payload = {
+    model: cliproxyApiModel,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ],
+  };
+
+  const response = await fetch(getCliproxyChatUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${cliproxyApiToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`cliproxyapi error (fix style): ${response.status}`);
+  }
+
+  const data = await response.json();
+  const rawContent = data?.choices?.[0]?.message?.content;
+  const candidate = extractMermaidCode(rawContent);
+  return { code: candidate.trim(), rawContent };
+};
+
+
+// Add diagram type buttons listeners
+const diagramTypeButtons = document.querySelectorAll("#diagram-type-filters .filter-button");
+diagramTypeButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    // Remove active class from all
+    diagramTypeButtons.forEach(b => b.classList.remove("filter-active"));
+    // Add active to clicked
+    btn.classList.add("filter-active");
+    selectedDiagramType = btn.dataset.type;
+    console.log("Selected diagram type:", selectedDiagramType);
+  });
+});
+
+const styleCurrentDiagram = async () => {
+  if (activeDiagramIndex === -1 || !diagramHistory[activeDiagramIndex]) {
+    displayStatus("No diagram to style.", "error");
+    return;
+  }
+
+  const entry = diagramHistory[activeDiagramIndex];
+  const structuralCode = entry.structuralCode;
+  if (!structuralCode) {
+    displayStatus("Current diagram has no structure code.", "error");
+    return;
+  }
+
+  setButtonState(true);
+  displayStatus("Applying styles...", "info");
+  styleButton.textContent = "Styling...";
+
+  const docsContext = lastDocsDebug ? lastDocsDebug.stylePrefs || "" : ""; 
+
+  try {
+    let { 
+      code: styledCode,
+      reasoning: styleReasoning,
+      rawContent: styleRawContent,
+      systemPrompt: styleSystemPrompt,
+    } = await callCliproxyApiStyle(structuralCode, docsContext);
+
+    console.log(`Structural code length: ${structuralCode.length}`);
+    console.log(`Styled code received. Length: ${styledCode.length}`);
+
+    // Append to conversation log of the entry
+    entry.conversationLog.push({
+      attempt: "style",
+      system: styleSystemPrompt,
+      user: "Apply visual styling to existing diagram based on docs/styling context.",
+      assistant:
+        typeof styleRawContent === "string"
+          ? styleRawContent
+          : JSON.stringify(styleRawContent, null, 2),
+    });
+    // Update global log for view
+    conversationLog = entry.conversationLog; 
+    updateConversationView();
+
+    let styleValidation = await validateMermaidCode(styledCode);
+    
+    let styleFixAttempts = 0;
+    const maxStyleFixAttempts = 5;
+
+    while (!styleValidation.isValid && styleFixAttempts < maxStyleFixAttempts) {
+      styleFixAttempts++;
+      console.warn(`Style validation failed (attempt ${styleFixAttempts}/${maxStyleFixAttempts}):`, styleValidation.errors);
+      displayStatus(`Style invalid. Auto-fixing (attempt ${styleFixAttempts}/${maxStyleFixAttempts})...`, "info");
+
+      try {
+          const fixResult = await callCliproxyApiFixStyle(styledCode, styleValidation.errors);
+          entry.conversationLog.push({
+              attempt: `style-fix-${styleFixAttempts}`,
+              system: "Fix invalid Mermaid syntax. Keep structure, fix styles only.",
+              user: "Fix errors in:\n```mermaid\n" + styledCode + "\n```\n\nErrors:\n" + styleValidation.errors.join("\n"),
+              assistant: fixResult.rawContent
+          });
+          conversationLog = entry.conversationLog;
+          updateConversationView();
+          
+          styledCode = fixResult.code;
+          styleValidation = await validateMermaidCode(styledCode);
+          
+          if (styleValidation.isValid) {
+              console.log("Style auto-fix successful.");
+          } else {
+              console.warn("Style auto-fix result still invalid:", styleValidation.errors);
+          }
+      } catch (fixErr) {
+          console.warn("Style fix API call failed:", fixErr);
+          break; 
+      }
+    }
+
+    if (styleValidation.isValid) {
+      if (styledCode.trim() !== structuralCode.trim()) {
+          entry.finalCode = styledCode;
+          entry.reasoning = styleReasoning || entry.reasoning; // Update reasoning if provided
+          console.log("Styled code applied.");
+          displayStatus("Diagram styled successfully.", "success");
+      } else {
+          console.log("Styled code is identical.");
+          displayStatus("Styling yielded identical code.", "warning");
+      }
+    } else {
+      displayStatus("Styling failed to produce valid code. Reverted to structure.", "error");
+    }
+
+    // Refresh UI
+    syncUiWithActiveDiagram();
+
+  } catch (err) {
+    console.warn("Style process failed:", err);
+    displayStatus(`Styling error: ${err.message || err}`, "error");
+  } finally {
+    styleButton.textContent = "Style";
+    setButtonState(false);
+    // Enable style button again because we have a valid structure
+    if (styleButton) styleButton.disabled = false; 
+  }
 };
 
 const generateAndCorrectDiagram = async (userPrompt) => {
@@ -713,57 +952,31 @@ const generateAndCorrectDiagram = async (userPrompt) => {
             : JSON.stringify(structuralRawContent, null, 2),
       });
       updateConversationView();
-      displayReasoning(structuralReasoning);
       const structuralValidation = await validateMermaidCode(structuralCode);
 
       if (structuralValidation.isValid) {
-        let finalCode = structuralCode;
-        let finalReasoning = structuralReasoning;
+        workingDiagramCode = structuralCode;
 
-        try {
-          const {
-            code: styledCode,
-            reasoning: styleReasoning,
-            rawContent: styleRawContent,
-            systemPrompt: styleSystemPrompt,
-          } = await callCliproxyApiStyle(structuralCode, docsContext);
-
-          conversationLog.push({
-            attempt: `${attemptNumber} (style)`,
-            system: styleSystemPrompt,
-            user: "Apply visual styling to existing diagram based on docs/styling context.",
-            assistant:
-              typeof styleRawContent === "string"
-                ? styleRawContent
-                : JSON.stringify(styleRawContent, null, 2),
-          });
-          updateConversationView();
-
-          const styleValidation = await validateMermaidCode(styledCode);
-          if (styleValidation.isValid) {
-            finalCode = styledCode;
-            finalReasoning = styleReasoning || structuralReasoning;
-          }
-        } catch {
-          // If styling step fails, keep structural diagram
-        }
-
-        workingDiagramCode = finalCode;
-
+        // Create history entry
         const entry = {
           id: diagramHistory.length + 1,
           label: `D${diagramHistory.length + 1}`,
           structuralCode,
-          finalCode,
+          finalCode: structuralCode, // Initially final is same as structure
           createdAt: Date.now(),
-          reasoning: finalReasoning,
+          reasoning: structuralReasoning,
           conversationLog: conversationLog.slice(),
           docsDebug: lastDocsDebug ? { ...lastDocsDebug } : null,
+          docsContext: docsContext // Store context for later styling
         };
         diagramHistory.push(entry);
         setActiveDiagramIndex(diagramHistory.length - 1);
-        displayStatus("Diagram generated successfully.", "success");
+        
+        displayStatus("Structure generated. Click 'Style' to apply visuals.", "success");
+        
         setButtonState(false);
+        if (styleButton) styleButton.disabled = false;
+        
         return;
       }
 
@@ -790,6 +1003,12 @@ const generateAndCorrectDiagram = async (userPrompt) => {
   setButtonState(false);
 };
 
+if (styleButton) {
+  styleButton.addEventListener("click", () => {
+    styleCurrentDiagram();
+  });
+}
+
 generateButton.addEventListener("click", () => {
   generateAndCorrectDiagram(promptInput.value);
 });
@@ -804,7 +1023,6 @@ if (newGenerateButton) {
     lastDocsDebug = null;
     renderArea.innerHTML = "";
     displayRawCode("");
-    displayReasoning("");
     updateConversationView();
     updateDocsDebugView();
     rebuildDiagramTabs();
@@ -835,11 +1053,12 @@ if (proxyInput) {
 }
 
 if (vendorFilterButton) {
-  const order = ["all", "gpt", "gemini"];
+  const order = ["all", "gpt", "gemini", "glm"];
   const labels = {
     all: "All",
     gpt: "gpt",
     gemini: "gemini",
+    glm: "glm",
   };
 
   vendorFilterButton.addEventListener("click", () => {
@@ -867,12 +1086,14 @@ initModelSelection();
 
 if (viewStructureButton) {
   viewStructureButton.addEventListener("click", () => {
+    console.log("View Structure clicked");
     setDiagramViewMode("structure");
   });
 }
 
 if (viewStyledButton) {
   viewStyledButton.addEventListener("click", () => {
+    console.log("View Styled clicked");
     setDiagramViewMode("styled");
   });
 }

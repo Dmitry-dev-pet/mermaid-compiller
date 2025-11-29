@@ -68,7 +68,7 @@ async def _fetch_docs_via_mcp(
 def search_mermaid_docs_via_mcp(
     query: str, max_results: int = 5
 ) -> List[Dict[str, str]]:
-    library_id = os.environ.get("CONTEXT7_LIBRARY_ID", "").strip()
+    library_id = os.environ.get("CONTEXT7_LIBRARY_ID", "/mermaid-js/mermaid").strip()
     if not library_id:
         return []
 

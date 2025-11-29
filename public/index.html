@@ -215,10 +215,22 @@
       white-space: nowrap;
     }
 
-    .diagram-tab.diagram-tab-active {
-      background: #22d3ee;
-      color: #020617;
-      border-color: #0ea5e9;
+    .reasoning-item {
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      border: 1px solid transparent;
+    }
+
+    .reasoning-item:hover {
+      background-color: #1f2937;
+    }
+
+    .reasoning-item.reasoning-item-active {
+      background-color: #1e40af;
+      border-color: #2563eb;
+      cursor: default;
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
@@ -262,18 +274,30 @@
   </div>
   <div class="grid">
     <div class="card">
+      <label>Diagram Type</label>
+      <div id="diagram-type-filters" class="model-filters" style="flex-wrap: wrap; margin-bottom: 12px; margin-left: 0;">
+        <button type="button" class="filter-button filter-active" data-type="auto">Auto</button>
+        <button type="button" class="filter-button" data-type="flowchart">Flowchart</button>
+        <button type="button" class="filter-button" data-type="sequenceDiagram">Sequence</button>
+        <button type="button" class="filter-button" data-type="classDiagram">Class</button>
+        <button type="button" class="filter-button" data-type="stateDiagram-v2">State</button>
+        <button type="button" class="filter-button" data-type="erDiagram">ER</button>
+        <button type="button" class="filter-button" data-type="gantt">Gantt</button>
+        <button type="button" class="filter-button" data-type="mindmap">Mindmap</button>
+      </div>
       <label for="prompt-input">Prompt</label>
       <textarea
         id="prompt-input"
         class="collapsible-target"
         placeholder="Describe your diagram..."
       ></textarea>
-      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px;">
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px;">
         <button id="new-generate-button">New</button>
         <button id="generate-button">Generate</button>
+        <button id="style-button" disabled>Style</button>
       </div>
       <label for="model-reasoning-output" style="margin-top: 8px; display: block;">Model Reasoning</label>
-      <pre id="model-reasoning-output" class="code-output collapsible-target"></pre>
+      <div id="model-reasoning-output" class="code-output collapsible-target"></div>
       <label for="llm-conversation-output" style="margin-top: 8px; display: block;">LLM Conversation</label>
       <pre id="llm-conversation-output" class="code-output collapsible-target"></pre>
       <label for="docs-debug-output" style="margin-top: 8px; display: block;">Docs / Context7</label>
