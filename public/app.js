@@ -560,7 +560,7 @@ const fetchDocsContext = async (query) => {
         ? data.search_query.trim()
         : limitedQuery;
 
-    const stylePrefs = 
+    const stylePrefs =
       typeof data?.style_prefs === "string" && data.style_prefs.trim()
         ? data.style_prefs.trim()
         : "";
@@ -769,7 +769,6 @@ const callCliproxyApiFixStyle = async (badCode, errors) => {
   return { code: candidate.trim(), rawContent };
 };
 
-
 // Add diagram type buttons listeners
 const diagramTypeButtons = document.querySelectorAll("#diagram-type-filters .filter-button");
 diagramTypeButtons.forEach(btn => {
@@ -803,7 +802,7 @@ const styleCurrentDiagram = async () => {
   const docsContext = lastDocsDebug ? lastDocsDebug.stylePrefs || "" : ""; 
 
   try {
-    let { 
+    let {
       code: styledCode,
       reasoning: styleReasoning,
       rawContent: styleRawContent,
@@ -1105,3 +1104,4 @@ makeCollapsibleSection("llm-conversation-output");
 makeCollapsibleSection("docs-debug-output");
 
 displayStatus("Waiting for a prompt.", "info");
+
