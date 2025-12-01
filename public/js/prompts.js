@@ -23,7 +23,8 @@ export const prompts = {
       common:
         "СТРАТЕГИЯ УЛУЧШЕНИЯ:\n" +
         "1. Читаемость: Сделай диаграмму аккуратной и понятной.\n" +
-        "2. Цвета: Используй гармоничную палитру.\n",
+        "2. Цвета: Используй гармоничную палитру с ВЫСОКИМ КОНТРАСТОМ (читаемый текст на фоне).\n" +
+        "3. Доступность: Избегай цветовых сочетаний, которые трудно различать (например, красный/зеленый).\n",
       flowchart:
         "СТРАТЕГИЯ УЛУЧШЕНИЯ:\n" +
         "1. Группировка: Обязательно группируй логически связанные узлы в `subgraph` с понятными заголовками.\n" +
@@ -100,6 +101,82 @@ export const prompts = {
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
           "- Настраивай цвета и толщину линий только через `themeVariables` в директиве `%%{init: ... }%%`.\n",
+        journey:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
+          "- Стилизация через `themeVariables` в директиве `%%{init: ... }%%`.\n",
+        timeline:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
+          "- Стилизация через `themeVariables` (cScale0, cScale1, ...) в директиве `%%{init: ... }%%`.\n",
+        zenuml:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
+          "- Стилизация через `themeVariables` в директиве `%%{init: ... }%%`.\n",
+        sankey:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
+          "- Стилизация через `themeVariables` и `config.sankey` в директиве `%%{init: ... }%%`.\n" +
+          "- Цвета связей через `sankey.linkColor`.\n",
+        xy:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
+          "- Стилизация через `themeVariables.xyChart` в директиве `%%{init: ... }%%`.\n" +
+          "- Цвета линий/столбцов через `plotColorPalette`.\n",
+        block:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- Используй `classDef` и `class A className`.\n" +
+          "- Используй `style ID key:value,key:value` для индивидуальных стилей.\n" +
+          "- Помни про `columns` для контроля расположения блоков.\n",
+        quadrant:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- Используй `classDef` и `:::className` для точек.\n" +
+          "- Стилизация квадрантов и осей через `themeVariables` в директиве `%%{init: ... }%%`.\n",
+        requirement:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- Используй `classDef` и `class NAME className` или `NAME:::className`.\n" +
+          "- Используй `style NAME key:value` для индивидуальных стилей.\n",
+        c4:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
+          "- Используй `UpdateElementStyle(elementName, $key=value)` и `UpdateRelStyle(from, to, $key=value)`.\n" +
+          "- Для макета используй `UpdateLayoutConfig($c4ShapeInRow=NUM)`.\n",
+        kanban:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
+          "- Стилизация через `themeVariables` и `config.kanban` в директиве `%%{init: ... }%%`.\n",
+        architecture:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
+          "- Стилизация через `themeVariables` в директиве `%%{init: ... }%%`.\n" +
+          "- Стиль элементов определяется типом (e.g., `(cloud)`, `(database)`).\n",
+        packet:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
+          "- Стилизация через `themeVariables.packet` в директиве `%%{init: ... }%%`.\n",
+        radar:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
+          "- Стилизация через `themeVariables` (cScale0, cScale1, ...) и `themeVariables.radar` в директиве `%%{init: ... }%%`.\n",
+        treemap:
+          common +
+          "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
+          "- Используй `:::class` для стилизации узлов.\n" +
+          "- Используй `classDef`.\n" +
+          "- Стилизация через `themeVariables` и `config.treemap` в директиве `%%{init: ... }%%`.\n",
       };
 
       return this.strategies[type] || specific[type] || this.strategies.auto;
