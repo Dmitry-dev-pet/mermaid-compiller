@@ -50,6 +50,12 @@ const DIAGRAM_DOCS_MAP = {
     "packet": "packet.md",
     "radar": "radar.md",
     "treemap": "treemap.md",
+    "config": "../config/configuration.md",
+    "configuration": "../config/configuration.md",
+    "directives": "../config/directives.md",
+    "theme": "../config/theming.md",
+    "theming": "../config/theming.md",
+    "styling": "../config/theming.md",
 };
 
 // Utils
