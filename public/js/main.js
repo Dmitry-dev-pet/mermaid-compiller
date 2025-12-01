@@ -1,4 +1,3 @@
-import { sanitizeMermaidCode } from "./sanitize.js";
 import {
   getState,
   updateCliproxyBaseUrl,
@@ -11,16 +10,20 @@ import {
   getActiveIteration,
   createIterationEntry,
   prepareUserPrompt,
+  subscribe,
 } from "./state.js";
 import {
   fetchDocsContext,
-  fetchStyleDocsContext,
-  callCliproxyApiStructure,
-  callCliproxyApiStyle,
-  callCliproxyApiFixStyle,
-  buildPrompt,
   getCliproxyModelsUrl,
 } from "./api.js";
+import {
+  runStructureFlow,
+  runStyleFlow,
+} from "./workflows.js";
+import {
+  selectBestModel,
+  getModelVendor,
+} from "./modelManager.js";
 import {
   setButtonState as setUIButtonState,
   displayStatus as displayStatusBox,
@@ -55,6 +58,8 @@ const iterations = state.iterations;
 
 mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
 
+// --- UI Helpers ---
+
 const setButtonState = (isLoading, loadingLabel = "Работаю...") => {
   setUIButtonState(generateButton, isLoading, loadingLabel);
 };
@@ -86,6 +91,8 @@ const updateModelSelectWidth = () => {
   updateModelSelectWidthUI(modelSelect, state.allModels);
 };
 
+// --- Event Listeners (Global UI) ---
+
 if (modalClose) {
   modalClose.addEventListener("click", () => closeModal());
 }
@@ -104,121 +111,23 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-const validateMermaidCode = async (code) => {
-  try {
-    const result = await mermaid.parse(code);
-    return { isValid: Boolean(result), errors: [] };
-  } catch (error) {
-    const message = error?.message || String(error);
-    return { isValid: false, errors: [message] };
-  }
-};
-
-// prompt helpers provided by api.js
-
-const getModelVendor = (model) => {
-  const id = (model.id || "").toLowerCase();
-  if (id.startsWith("gpt-")) return "gpt";
-  if (id.startsWith("gemini-")) return "gemini";
-  if (id.startsWith("glm-")) return "glm";
-  return "";
-};
-
-const pickLatestModelId = (models) => {
-  if (!models.length) return null;
-  let best = models[0];
-  for (const m of models) {
-    if (typeof m.created === "number" && typeof best.created === "number") {
-      if (m.created > best.created) {
-        best = m;
-      }
-    } else if ((m.id || "") > (best.id || "")) {
-      best = m;
-    }
-}
-  return best.id || null;
-};
-
-const parseGptVersion = (id) => {
-  if (!id) return 0;
-  const match = id.match(/^gpt-(\d+(?:\.\d+)?)/i);
-  if (!match) return 0;
-  const value = Number.parseFloat(match[1]);
-  if (Number.isNaN(value)) return 0;
-  return value;
-};
-
-const pickLatestGptHighModelId = (models) => {
-  const gptModels = models.filter((m) => getModelVendor(m) === "gpt");
-  if (!gptModels.length) return null;
-
-  let candidates = gptModels.filter((m) => (m.id || "").toLowerCase().includes("high"));
-  if (!candidates.length) {
-    candidates = gptModels;
-  }
-
-  let best = candidates[0];
-  let bestVersion = parseGptVersion(best.id || "");
-
-  for (const m of candidates) {
-    const version = parseGptVersion(m.id || "");
-    if (version > bestVersion) {
-      best = m;
-      bestVersion = version;
-    } else if (version === bestVersion && (m.id || "") > (best.id || "")) {
-      best = m;
-    }
-  }
-
-  return best.id || null;
-};
+// --- Model Selection Logic ---
 
 const applyModelFilter = (preferredModel) => {
   const models = state.allModels;
   if (!modelSelect || !models.length) return;
 
   const filter = state.currentModelFilter;
-  let candidates = models;
-
-  if (filter === "gpt") {
-    candidates = models.filter((m) => getModelVendor(m) === "gpt");
-  } else if (filter === "gemini") {
-    candidates = models.filter((m) => getModelVendor(m) === "gemini");
-  } else if (filter === "glm") {
-    candidates = models.filter((m) => getModelVendor(m) === "glm");
-  }
-
-  if (!candidates.length) {
-    candidates = models;
-  }
-
-  const previousSelected = preferredModel || state.cliproxyApiModel;
-  let targetId = null;
-  if (previousSelected) {
-    const match = candidates.find((m) => m.id === previousSelected);
-    if (match) {
-      targetId = match.id;
-    }
-  }
-
-  if (!targetId) {
-    if (filter === "gpt") {
-      targetId = pickLatestGptHighModelId(models) || pickLatestModelId(models);
-    } else if (filter === "gemini") {
-      const geminiModels = models.filter((m) => getModelVendor(m) === "gemini");
-      targetId = pickLatestModelId(geminiModels) || pickLatestModelId(models);
-    } else if (filter === "glm") {
-      const glmModels = models.filter((m) => getModelVendor(m) === "glm");
-      targetId = pickLatestModelId(glmModels) || pickLatestModelId(models);
-    } else {
-      targetId = pickLatestGptHighModelId(models) || pickLatestModelId(models);
-    }
-  }
+  const targetId = selectBestModel(models, filter, preferredModel || state.cliproxyApiModel);
 
   if (!targetId) return;
 
+  // Update UI options based on filter
+  const candidates = filter === "all" ? models : models.filter(m => getModelVendor(m) === filter);
+  const finalCandidates = candidates.length ? candidates : models;
+
   modelSelect.innerHTML = "";
-  candidates
+  finalCandidates
     .slice()
     .sort((a, b) => a.id.localeCompare(b.id))
     .forEach((model) => {
@@ -253,28 +162,14 @@ const initModelSelection = async () => {
       },
     });
 
-    if (!response.ok) {
-      return;
-    }
+    if (!response.ok) return;
 
     const data = await response.json();
     const models = Array.isArray(data?.data) ? data.data : [];
     if (!models.length) return;
 
     setAllModels(models.filter((m) => m && typeof m.id === "string"));
-    const normalizedModels = state.allModels;
-    modelSelect.innerHTML = "";
-
-    normalizedModels
-      .slice()
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .forEach((model) => {
-        const option = document.createElement("option");
-        option.value = model.id;
-        option.textContent = model.id;
-        modelSelect.appendChild(option);
-      });
-
+    
     updateModelSelectWidth();
     applyModelFilter(fallbackModel);
   } catch {
@@ -286,9 +181,7 @@ const checkProxyAvailability = async () => {
   setProxyStatus("unknown");
   try {
     const response = await fetch(getCliproxyModelsUrl(), {
-      headers: {
-        Authorization: `Bearer ${state.cliproxyApiToken}`,
-      },
+      headers: { Authorization: `Bearer ${state.cliproxyApiToken}` },
     });
     if (response.ok) {
       setProxyStatus("ok");
@@ -307,12 +200,12 @@ const checkProxyAvailability = async () => {
   }
 };
 
-
+// --- Rendering & State Sync ---
 
 const renderIterationPanel = () => {
   renderIterationListUI({
     container: iterationList,
-    iterations,
+    iterations: state.iterations,
     activeIterationIndex: state.activeIterationIndex,
     onSelectIteration: (index) => setActiveIteration(index),
     onStyleIteration: (index, buttonEl) => handleStyleRequest(index, buttonEl),
@@ -336,196 +229,48 @@ const syncDiagramPreview = async () => {
 };
 
 const setActiveIteration = (index) => {
-  if (index < 0 || index >= iterations.length) {
-    setActiveIterationIndex(-1);
-  } else {
-    setActiveIterationIndex(index);
-  }
-  renderIterationPanel();
+  const validIndex = (index < 0 || index >= state.iterations.length) ? -1 : index;
+  setActiveIterationIndex(validIndex);
+  // renderIterationPanel is triggered by subscription
   syncDiagramPreview();
 };
 
-const runStructureFlow = async (iteration, { prompt, previousCode, docsContextText }) => {
-  let workingCode = previousCode || "";
-  let lastErrors = [];
+// Subscribe to state changes to update UI
+subscribe((newState) => {
+  renderIterationPanel();
+  // Optionally sync preview if active iteration changed?
+  // For now, we call syncDiagramPreview manually when changing active iteration or finishing a flow.
+});
 
-  for (let attempt = 0; attempt < state.maxStructureRetries; attempt += 1) {
-    const promptToSend = buildPrompt(prompt, lastErrors, workingCode, docsContextText);
-    const stageInfo = await callCliproxyApiStructure(promptToSend, workingCode);
-    const sanitizedCode = sanitizeMermaidCode(stageInfo.code);
-    const validation = await validateMermaidCode(sanitizedCode);
 
-    const stage = {
-      id: `${iteration.id}-structure-${attempt + 1}`,
-      type: attempt === 0 ? "structure" : "fix",
-      scope: "structure",
-      label: attempt === 0 ? "Structure" : `Fix ${attempt}`,
-      status: validation.isValid ? "success" : "error",
-      prompts: {
-        system: stageInfo.systemPrompt,
-        user: stageInfo.userPrompt,
-      },
-      assistantRaw: stageInfo.rawContent,
-      rawCode: stageInfo.code,
-      code: sanitizedCode,
-      validation,
-      reasoning: stageInfo.reasoning || "",
-    };
-
-    iteration.stages.push(stage);
-    if (stageInfo.reasoning) {
-      iteration.summary = stageInfo.reasoning;
-    }
-
-    renderIterationPanel();
-    await syncDiagramPreview();
-
-    if (validation.isValid) {
-      iteration.activeCode = sanitizedCode;
-      return { success: true };
-    }
-
-    lastErrors = validation.errors;
-    workingCode = sanitizedCode;
-    displayStatus(`Структура невалидна: ${validation.errors.join("; ")}`, "error");
-  }
-
-  return { success: false };
-};
+// --- Workflow Handlers ---
 
 const handleStyleRequest = async (iterationIndex, buttonEl) => {
-  const parentIteration = iterations[iterationIndex];
-  if (!parentIteration || !parentIteration.activeCode) {
-    displayStatus("Нет валидной структуры для стилизации.", "error");
-    if (buttonEl) buttonEl.disabled = false;
-    return;
-  }
-
-  const stylePrompt = `${parentIteration.prompt} (стиль)`;
-  const styleIteration = createIterationEntry(
-    stylePrompt,
-    parentIteration.promptOriginal || parentIteration.prompt,
-    parentIteration.promptPrepared || parentIteration.promptOriginal || parentIteration.prompt,
-    parentIteration.docsMeta,
-    parentIteration.docsContextText,
-    parentIteration.diagramType,
-  );
-  styleIteration.originIterationId = parentIteration.id;
-  styleIteration.activeCode = parentIteration.activeCode;
-  styleIteration.baseStructureCode = parentIteration.activeCode;
-  const styleIterationIndex = addIteration(styleIteration);
-  setActiveIteration(styleIterationIndex);
-  renderIterationPanel();
-
+  const parentIteration = state.iterations[iterationIndex];
+  
   setButtonState(true, "Стилизуем...");
-  displayStatus("Запуск стилизации...", "info");
   if (buttonEl) buttonEl.disabled = true;
 
-  try {
-    const styleDocsResult = await fetchStyleDocsContext(parentIteration);
-    const styleDocsMeta = styleDocsResult.meta || {
-      rawQuery: "",
-      searchQuery: "",
-      stylePrefs: "",
-      snippets: [],
-    };
-    const styleDocsText = styleDocsResult.text || "";
-    const effectiveDocsContext = styleDocsText || parentIteration.docsContextText || "";
-    styleIteration.styleDocsMeta = styleDocsMeta;
-    styleIteration.styleDocsContextText = styleDocsText;
+  const callbacks = {
+    onStageAdded: (iter) => {
+      // State update triggers render, but we might need to ensure preview sync
+      syncDiagramPreview(); 
+    },
+    onStatusUpdate: (msg, type) => displayStatus(msg, type)
+  };
 
-    let { code: styledCode, reasoning, rawContent, systemPrompt, userPrompt } = await callCliproxyApiStyle(
-      parentIteration.activeCode,
-      effectiveDocsContext,
-      parentIteration.promptPrepared || parentIteration.promptOriginal || parentIteration.prompt,
-      parentIteration.diagramType
-    );
+  await runStyleFlow(parentIteration, callbacks);
 
-    const rawStyledCode = styledCode;
-    styledCode = sanitizeMermaidCode(rawStyledCode);
-    let validation = await validateMermaidCode(styledCode);
-    styleIteration.stages.push({
-      id: `${styleIteration.id}-style-${Date.now()}`,
-      type: "style",
-      scope: "style",
-      label: "Style",
-      status: validation.isValid ? "success" : "error",
-      prompts: { system: systemPrompt, user: userPrompt },
-      assistantRaw: rawContent,
-      rawCode: rawStyledCode,
-      code: styledCode,
-      validation,
-      reasoning: reasoning || "",
-    });
-
-    if (reasoning) {
-      styleIteration.summary = reasoning;
-    }
-
-    let attempt = 0;
-    while (!validation.isValid && attempt < state.maxStyleFixAttempts) {
-      attempt += 1;
-      displayStatus(`Стиль невалиден. Авто-фиксация (${attempt}/${state.maxStyleFixAttempts})...`, "error");
-
-      try {
-        const previousAttemptCode = styledCode;
-        const diagramLabel = parentIteration.diagramType || "diagram";
-        const fixResult = await callCliproxyApiFixStyle(
-          styledCode,
-          validation.errors,
-          diagramLabel,
-          styleIteration.baseStructureCode,
-        );
-        const rawFixCode = fixResult.code;
-        styledCode = sanitizeMermaidCode(rawFixCode);
-        const codeChanged = styledCode.trim() !== previousAttemptCode.trim();
-        validation = await validateMermaidCode(styledCode);
-        styleIteration.stages.push({
-          id: `${styleIteration.id}-style-fix-${attempt}`,
-          type: "fix",
-          scope: "style",
-          label: `Style Fix ${attempt}`,
-          status: validation.isValid ? "success" : "error",
-          prompts: { system: fixResult.systemPrompt, user: fixResult.userPrompt },
-          assistantRaw: fixResult.rawContent,
-          rawCode: rawFixCode,
-          code: styledCode,
-          validation,
-          duplicate: !codeChanged,
-        });
-
-        if (!codeChanged) {
-          displayStatus("Авто-фиксер вернул тот же код. Останавливаем цикл.", "error");
-          break;
-        }
-      } catch (fixError) {
-        displayStatus(`Style fix error: ${fixError.message || fixError}`, "error");
-        break;
-      }
-    }
-
-    if (validation.isValid) {
-      styleIteration.activeCode = styledCode;
-      displayStatus("Диаграмма стилизована.", "success");
-    } else {
-      displayStatus("Не удалось получить валидный стиль.", "error");
-      if (buttonEl) buttonEl.disabled = false;
-    }
-  } catch (error) {
-    displayStatus(`Ошибка стилизации: ${error.message || error}`, "error");
-    if (buttonEl) buttonEl.disabled = false;
-  } finally {
-    renderIterationPanel();
-    await syncDiagramPreview();
-    setButtonState(false);
-    if (buttonEl) buttonEl.disabled = false;
-  }
+  setButtonState(false);
+  if (buttonEl) buttonEl.disabled = false;
+  await syncDiagramPreview();
 };
 
 const handleGenerate = async () => {
   const rawPrompt = promptInput?.value || "";
   const diagramType = state.selectedDiagramType;
   const { original: promptOriginal, prepared: promptPrepared } = prepareUserPrompt(rawPrompt, diagramType);
+  
   if (!promptPrepared && !promptOriginal.trim()) {
     displayStatus("Введите описание диаграммы.", "error");
     return;
@@ -549,14 +294,23 @@ const handleGenerate = async () => {
     docsContextText,
     diagramType,
   );
+  
   const iterationIndex = addIteration(iteration);
   setActiveIteration(iterationIndex);
+
+  const callbacks = {
+    onStageAdded: () => {
+       renderIterationPanel(); // Force immediate update or rely on sub? Sub handles it.
+       syncDiagramPreview();
+    },
+    onStatusUpdate: (msg, type) => displayStatus(msg, type)
+  };
 
   const result = await runStructureFlow(iteration, {
     prompt: docsQuery,
     previousCode,
     docsContextText,
-  });
+  }, callbacks);
 
   if (result.success) {
     displayStatus("Структура готова. Можно запускать стилизацию.", "success");
@@ -565,8 +319,9 @@ const handleGenerate = async () => {
   }
 
   setButtonState(false);
-  renderIterationPanel();
 };
+
+// --- Controls Initialization ---
 
 const diagramTypeButtons = document.querySelectorAll("#diagram-type-filters .filter-button");
 if (diagramTypeButtons.length) {

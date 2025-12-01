@@ -41,30 +41,47 @@ const state = {
   maxStyleFixAttempts: 5,
 };
 
+const listeners = new Set();
+
+export const subscribe = (listener) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
+const notify = () => {
+  listeners.forEach((listener) => listener(state));
+};
+
 export const getState = () => state;
 
 export const updateCliproxyBaseUrl = (value) => {
   state.cliproxyBaseUrl = value || state.defaultCliproxyBaseUrl;
+  notify();
 };
 
 export const setCliproxyApiModel = (modelId) => {
   state.cliproxyApiModel = modelId;
+  notify();
 };
 
 export const setSelectedDiagramType = (type) => {
   state.selectedDiagramType = type || "auto";
+  notify();
 };
 
 export const setAllModels = (models) => {
   state.allModels = models;
+  notify();
 };
 
 export const setModelFilter = (filter) => {
   state.currentModelFilter = filter;
+  notify();
 };
 
 export const addIteration = (iteration) => {
   state.iterations.push(iteration);
+  notify();
   return state.iterations.length - 1;
 };
 
@@ -72,6 +89,7 @@ export const getIterations = () => state.iterations;
 
 export const setActiveIterationIndex = (index) => {
   state.activeIterationIndex = index;
+  notify();
 };
 
 export const getActiveIteration = () =>
