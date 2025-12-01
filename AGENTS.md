@@ -3,7 +3,7 @@
 ## Spec-first workflow
 
 - Before making **any code or configuration changes** in this repository, the agent **must first read and respect** the following specification files:
-  - `memory/constitution.md`
+  - `docs/constitution.md`
   - `features/001-mermaid-core/spec.md`
   - `features/001-mermaid-core/plan.md`
   - `features/001-mermaid-core/tasks.md`

@@ -8,7 +8,7 @@ module.exports = [
     files: ["public/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",
-      sourceType: "script",
+      sourceType: "module",
       globals: {
         mermaid: "readonly",
         fetch: "readonly",
