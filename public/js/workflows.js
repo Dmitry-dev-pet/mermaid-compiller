@@ -15,6 +15,7 @@ import {
   setActiveIterationIndex,
 } from "./state.js";
 import { validateMermaidCode } from "./validation.js";
+import { detectDiagramType } from "./utils.js";
 
 export const runStructureFlow = async (iteration, { prompt, previousCode, docsContextText }, callbacks = {}) => {
   const state = getState();
@@ -57,6 +58,12 @@ export const runStructureFlow = async (iteration, { prompt, previousCode, docsCo
 
       if (validation.isValid) {
         iteration.activeCode = sanitizedCode;
+        
+        // Auto-detect diagram type if not set
+        if (!iteration.diagramType || iteration.diagramType === "auto") {
+          iteration.diagramType = detectDiagramType(sanitizedCode);
+        }
+
         return { success: true };
       }
 
