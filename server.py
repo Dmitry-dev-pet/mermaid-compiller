@@ -1,67 +1,41 @@
 import json
 import os
+import re
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import List
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
-
-try:
-    from context7_mcp_client import search_mermaid_docs_via_mcp
-except Exception:  # pragma: no cover - MCP client optional
-    search_mermaid_docs_via_mcp = None  # type: ignore[assignment]
 
 
 ROOT = Path(__file__).parent / "public"
-DOCS_ROOT = Path(__file__).parent / "memory" / "mermaid-full-docs"
+DOCS_ROOT = Path(__file__).parent / "memory" / "mermaid-docs" / "syntax"
 
-
-def _search_mermaid_docs_local(query: str, max_results: int = 5) -> List[dict]:
-    """Fallback text search over local Mermaid docs, returning small snippets."""
-
-    results: List[dict] = []
-    lowered = query.lower()
-    if not lowered or not DOCS_ROOT.exists():
-        return results
-
-    candidate_dirs = [
-        DOCS_ROOT / "docs",
-        DOCS_ROOT / "packages-mermaid-src-docs",
-    ]
-
-    for base in candidate_dirs:
-        if not base.exists():
-            continue
-        for path in base.rglob("*.md"):
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                continue
-
-            if lowered not in text.lower():
-                continue
-
-            lines = text.splitlines()
-            idx = next(
-                (i for i, line in enumerate(lines) if lowered in line.lower()),
-                None,
-            )
-            if idx is None:
-                continue
-
-            start = max(0, idx - 3)
-            end = min(len(lines), idx + 4)
-            snippet = "\n".join(lines[start:end]).strip()
-
-            relative = path.relative_to(DOCS_ROOT)
-            results.append(
-                {"file": str(relative), "snippet": snippet, "source": "local"}
-            )
-
-            if len(results) >= max_results:
-                return results
-
-    return results
+DIAGRAM_DOCS_MAP = {
+    "flowchart": "flowchart.md",
+    "sequence": "sequenceDiagram.md",
+    "class": "classDiagram.md",
+    "state": "stateDiagram.md",
+    "er": "entityRelationshipDiagram.md",
+    "entity": "entityRelationshipDiagram.md",
+    "gantt": "gantt.md",
+    "mindmap": "mindmap.md",
+    "pie": "pie.md",
+    "gitgraph": "gitgraph.md",
+    "journey": "userJourney.md",
+    "timeline": "timeline.md",
+    "zenuml": "zenuml.md",
+    "sankey": "sankey.md",
+    "xy": "xyChart.md",
+    "block": "block.md",
+    "quadrant": "quadrantChart.md",
+    "requirement": "requirementDiagram.md",
+    "c4": "c4.md",
+    "kanban": "kanban.md",
+    "architecture": "architecture.md",
+    "packet": "packet.md",
+    "radar": "radar.md",
+    "treemap": "treemap.md",
+}
 
 
 def _contains_cyrillic(text: str) -> bool:
@@ -71,15 +45,60 @@ def _contains_cyrillic(text: str) -> bool:
     return False
 
 
+def _search_mermaid_docs_local(query: str, max_chars: int = 8000) -> list:
+    """Search for relevant documentation locally based on diagram type keywords."""
+    query_lower = query.lower()
+    print(f"[DEBUG] Docs search query: '{query}'")
+    
+    found_file = None
+    
+    # 1. Try to find explicit diagram type in query
+    for key, filename in DIAGRAM_DOCS_MAP.items():
+        # Use word boundaries to avoid partial matches (e.g. "er" in "mermaid")
+        if re.search(r'\b' + re.escape(key) + r'\b', query_lower):
+            found_file = filename
+            print(f"[DEBUG] Match found for key '{key}': {filename}")
+            break
+    
+    # 2. Fallback for 'auto' or generic queries if 'examples' exists
+    if not found_file and "basics" in query_lower:
+         if (DOCS_ROOT / "examples.md").exists():
+             found_file = "examples.md"
+
+    if not found_file:
+        print("[DEBUG] No matching file found in map.")
+        return []
+
+    file_path = DOCS_ROOT / found_file
+    print(f"[DEBUG] Checking file path: {file_path}")
+    
+    if not file_path.exists():
+        print(f"[DEBUG] File does not exist: {file_path}")
+        return []
+
+    try:
+        content = file_path.read_text(encoding="utf-8", errors="replace")
+        # Simple truncation for now. 
+        # Ideally, we might want to prioritize syntax blocks, but raw top text is usually good.
+        snippet = content[:max_chars]
+        print(f"[DEBUG] Read {len(content)} chars, returning snippet of {len(snippet)}")
+        
+        return [{
+            "file": found_file,
+            "source": "local_docs",
+            "snippet": snippet
+        }]
+    except Exception as e:
+        print(f"Error reading docs file {file_path}: {e}")
+        return []
+
+
 def _normalize_docs_query(query: str, model_id: str = "") -> dict:
-    """Normalize user docs query for Context7 and styling.
+    """Normalize user docs query for styling.
 
     Returns a dict with:
       - search_query: short English topic for docs search
       - style_prefs: optional English description of styling preferences
-
-    If normalizer is not configured or fails, falls back to the
-    original query as search_query and empty style_prefs.
     """
 
     trimmed = (query or "").strip()
@@ -98,11 +117,15 @@ def _normalize_docs_query(query: str, model_id: str = "") -> dict:
         return result
 
     system_prompt = (
-        "You normalize user requests (possibly in Russian) for generating Mermaid diagrams. "
+        "You normalize user requests (possibly in Russian) "
+        "for generating Mermaid diagrams. "
         "Respond with a strict JSON object only, no extra text:\n"
         "{\n"
-        '  "search_topic": "short English phrase for documentation search about the diagram intent",\n'
-        '  "style_prefs": "short English description of visual styling preferences (colors, layout, theme, shapes) or empty if none"\n'
+        '  "search_topic": '
+        '"short English phrase for documentation search about the diagram intent",\n'
+        '  "style_prefs": '
+        '"short English description of visual styling preferences '
+        '(colors, layout, theme, shapes) or empty if none"\n'
         "}\n"
         "Do not explain anything, do not add comments or markdown."
     )
@@ -156,106 +179,6 @@ def _normalize_docs_query(query: str, model_id: str = "") -> dict:
     return result
 
 
-def _search_mermaid_docs_via_context7(query: str, max_results: int = 5) -> List[dict]:
-    """Try Context7 MCP client first, then HTTP API if configured.
-
-    1. If context7_mcp_client is available and CONTEXT7_LIBRARY_ID is set,
-       use MCP (`get-library-docs` tool) to fetch snippets.
-    2. Otherwise (or if MCP returns nothing), fall back to direct HTTP API
-       via CONTEXT7_SEARCH_URL, if задан.
-    """
-
-    trimmed_query = (query or "").strip()
-    if not trimmed_query:
-        return []
-
-    # 1) MCP client
-    if search_mermaid_docs_via_mcp is not None:
-        try:
-            mcp_results = search_mermaid_docs_via_mcp(trimmed_query, max_results)
-        except Exception:
-            mcp_results = []
-        if mcp_results:
-            return mcp_results
-
-    # 2) HTTP API as fallback
-    base_url = os.environ.get("CONTEXT7_SEARCH_URL", "").strip()
-    if not base_url:
-        return []
-
-    topic = trimmed_query[:80]
-
-    params = {
-        "q": trimmed_query,
-        "topic": topic,
-        "limit": max_results,
-    }
-
-    page = os.environ.get("CONTEXT7_PAGE", "").strip()
-    if page:
-        params["page"] = page
-
-    url = f"{base_url.rstrip('/') }?{urlencode(params)}"
-
-    headers = {"Accept": "*/*"}
-    api_key = os.environ.get("CONTEXT7_API_KEY", "").strip()
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    try:
-        with urlopen(Request(url, headers=headers, method="GET"), timeout=15) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-    except Exception:
-        return []
-
-    text = raw.strip()
-    if not text:
-        return []
-
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return [{"file": "context7", "snippet": text, "source": "context7_http"}]
-
-    results: List[dict] = []
-
-    if isinstance(parsed, dict):
-        items = None
-        if isinstance(parsed.get("results"), list):
-            items = parsed["results"]
-        elif isinstance(parsed.get("snippets"), list):
-            items = parsed["snippets"]
-        if items is None:
-            return [{"file": "context7", "snippet": text, "source": "context7_http"}]
-    elif isinstance(parsed, list):
-        items = parsed
-    else:
-        return [{"file": "context7", "snippet": text, "source": "context7_http"}]
-
-    for item in items:
-        if isinstance(item, dict):
-            snippet = str(
-                item.get("snippet") or item.get("content") or item.get("text") or "",
-            ).strip()
-            file_label = str(item.get("file", "")).strip() or "context7"
-        else:
-            snippet = str(item).strip()
-            file_label = "context7"
-
-        if not snippet:
-            continue
-        results.append(
-            {"file": file_label, "snippet": snippet, "source": "context7_http"}
-        )
-        if len(results) >= max_results:
-            break
-
-    if not results:
-        return [{"file": "context7", "snippet": text, "source": "context7_http"}]
-
-    return results
-
-
 class StaticHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
@@ -279,10 +202,9 @@ class StaticHandler(SimpleHTTPRequestHandler):
                 search_query = normalized.get("search_query", query) or query
                 style_prefs = normalized.get("style_prefs", "")
 
-                results = _search_mermaid_docs_via_context7(search_query)
-                if not results:
-                    # Fallback to local docs if context7 is unavailable
-                    results = _search_mermaid_docs_local(search_query)
+                # Local file search based on query keywords (diagram types)
+                results = _search_mermaid_docs_local(search_query)
+                
                 payload = {
                     "query": query,
                     "search_query": search_query,
