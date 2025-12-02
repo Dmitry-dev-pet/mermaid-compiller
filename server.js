@@ -199,7 +199,34 @@ function searchMermaidDocsLocal(query, docsRoot) {
         }
     }
 
-    // 2. Fallback
+    // 2. Mandatory Core Docs Injection
+    // Always inject these if not already present, to ensure LLM knows about config/styling
+    const CORE_DOCS = [
+        "../config/directives.md",
+        "../config/theming.md"
+    ];
+
+    for (const coreFile of CORE_DOCS) {
+        if (!seenFiles.has(coreFile)) {
+             const filePath = path.join(docsRoot, coreFile);
+             if (fs.existsSync(filePath)) {
+                try {
+                    const content = fs.readFileSync(filePath, 'utf8');
+                    // Lower priority, append to end
+                    results.push({
+                        file: coreFile,
+                        source: "core_docs",
+                        snippet: content.substring(0, 8000)
+                    });
+                    seenFiles.add(coreFile);
+                } catch (e) {
+                    // ignore
+                }
+             }
+        }
+    }
+
+    // 3. Fallback (only if absolutely nothing found)
     if (results.length === 0 && queryLower.includes("basics")) {
         const fallbackFile = "examples.md";
         if (fs.existsSync(path.join(docsRoot, fallbackFile))) {
@@ -220,7 +247,7 @@ function searchMermaidDocsLocal(query, docsRoot) {
         console.log("[DEBUG] No matching file found in map.");
     }
 
-    return results.slice(0, 3); // Limit to 3 results
+    return results.slice(0, 5); // Increased limit to fit specific docs + core docs
 }
 
 async function normalizeDocsQuery(query, modelId) {
