@@ -217,10 +217,32 @@ const renderIterationPanel = () => {
 
 const syncDiagramPreview = async () => {
   const iteration = getActiveIteration();
-  const code = iteration?.activeCode || "";
+  let code = iteration?.activeCode || "";
   if (showCodeButton) {
     showCodeButton.disabled = !code;
   }
+
+  // Inject default theme if not present
+  if (code) {
+    const frontmatterRegex = /^---\n([\s\S]*?)\n---/m;
+    const themeConfigRegex = /^\s*config:\s*\n[\s\S]*?^\s*theme:\s*['"].*?['"]/m;
+    let modifiedCode = code;
+
+    if (!themeConfigRegex.test(code)) { // If theme config is NOT present
+        const match = code.match(frontmatterRegex);
+        if (match) {
+            // Frontmatter exists, but no theme config, inject theme into it
+            const frontmatterContent = match[1];
+            const newFrontmatterContent = frontmatterContent + "\nconfig:\n  theme: 'base'";
+            modifiedCode = code.replace(frontmatterRegex, `---\n${newFrontmatterContent}\n---`);
+        } else {
+            // No frontmatter, prepend a new one with default theme
+            modifiedCode = `---\nconfig:\n  theme: 'base'\n---\n` + code;
+        }
+    }
+    code = modifiedCode;
+  }
+
   try {
     await renderMermaidDiagram(code);
   } catch (error) {
