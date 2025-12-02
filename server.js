@@ -154,53 +154,73 @@ function searchMermaidDocsLocal(query, docsRoot) {
     const queryLower = query.toLowerCase();
     console.log(`[DEBUG] Docs search query: '${query}'`);
     
-    let foundFile = null;
+    const results = [];
+    const seenFiles = new Set();
 
     // 1. Try to find explicit diagram type in query
     for (const [key, filename] of Object.entries(DIAGRAM_DOCS_MAP)) {
         // Correctly using word boundaries for regex
         const regex = new RegExp('\\b' + key + '\\b', 'i');
         if (regex.test(queryLower)) {
-            foundFile = filename;
+            if (seenFiles.has(filename)) continue;
+            
             console.log(`[DEBUG] Match found for key '${key}': ${filename}`);
-            break;
+            
+            // Determine if file is in syntax/ or config/ (based on relative path in MAP)
+            let filePath;
+            if (filename.startsWith("..")) {
+                // It's a relative path from syntax/ (e.g. ../config/directives.md)
+                filePath = path.join(docsRoot, filename);
+            } else {
+                // It's a file in syntax/
+                filePath = path.join(docsRoot, filename);
+            }
+
+            console.log(`[DEBUG] Checking file path: ${filePath}`);
+
+            if (fs.existsSync(filePath)) {
+                try {
+                    const content = fs.readFileSync(filePath, 'utf8');
+                    const snippet = content.substring(0, 8000);
+                    console.log(`[DEBUG] Read ${content.length} chars, returning snippet of ${snippet.length}`);
+                    
+                    results.push({
+                        file: filename,
+                        source: "local_docs",
+                        snippet: snippet
+                    });
+                    seenFiles.add(filename);
+                } catch (e) {
+                    console.error(`Error reading docs file ${filePath}: ${e.message}`);
+                }
+            } else {
+                console.log(`[DEBUG] File does not exist: ${filePath}`);
+            }
         }
     }
 
     // 2. Fallback
-    if (!foundFile && queryLower.includes("basics")) {
-        if (fs.existsSync(path.join(docsRoot, "examples.md"))) {
-            foundFile = "examples.md";
+    if (results.length === 0 && queryLower.includes("basics")) {
+        const fallbackFile = "examples.md";
+        if (fs.existsSync(path.join(docsRoot, fallbackFile))) {
+             try {
+                const content = fs.readFileSync(path.join(docsRoot, fallbackFile), 'utf8');
+                results.push({
+                    file: fallbackFile,
+                    source: "local_docs",
+                    snippet: content.substring(0, 8000)
+                });
+             } catch (e) {
+                 // ignore
+             }
         }
     }
 
-    if (!foundFile) {
+    if (results.length === 0) {
         console.log("[DEBUG] No matching file found in map.");
-        return [];
     }
 
-    const filePath = path.join(docsRoot, foundFile);
-    console.log(`[DEBUG] Checking file path: ${filePath}`);
-
-    if (!fs.existsSync(filePath)) {
-        console.log(`[DEBUG] File does not exist: ${filePath}`);
-        return [];
-    }
-
-    try {
-        const content = fs.readFileSync(filePath, 'utf8');
-        const snippet = content.substring(0, 8000);
-        console.log(`[DEBUG] Read ${content.length} chars, returning snippet of ${snippet.length}`);
-        
-        return [{
-            file: foundFile,
-            source: "local_docs",
-            snippet: snippet
-        }];
-    } catch (e) {
-        console.error(`Error reading docs file ${filePath}: ${e.message}`);
-        return [];
-    }
+    return results.slice(0, 3); // Limit to 3 results
 }
 
 async function normalizeDocsQuery(query, modelId) {
