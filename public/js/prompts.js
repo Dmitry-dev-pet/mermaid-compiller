@@ -55,7 +55,15 @@ export const prompts = {
         "3. Цвета: Используй палитру с ВЫСОКИМ КОНТРАСТОМ (читаемый текст).\n\n" +
         "ВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
         "- Для 'graph'/'flowchart': Используй 'classDef' и ':::'.\n" +
-        "- Для остальных (erDiagram, sequence, gantt): ЗАПРЕЩЕНО использовать 'classDef' внутри узлов. Используй %%{init: {'theme': 'base', 'themeVariables': { ... }}}%%.\n",
+        "- Для остальных (erDiagram, sequence, gantt): ЗАПРЕЩЕНО использовать 'classDef' внутри узлов. Используй Frontmatter config:\n" +
+        "```yaml\n" +
+        "---\n" +
+        "config:\n" +
+        "  theme: base\n" +
+        "  themeVariables:\n" +
+        "    primaryColor: \"#ff0000\"\n" +
+        "---\n" +
+        "```\n",
     },
     getStrategy: function (diagramType) {
       const type = (diagramType || "auto").toLowerCase();
@@ -66,17 +74,41 @@ export const prompts = {
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- Используй 'classDef' и оператор ':::' для стилизации сущностей.\n" +
           "- ОБЯЗАТЕЛЬНО применяй классы к сущностям: `ENTITY:::myClass`.\n" +
-          "- Для глобальных настроек цветов используй директиву инициализации: %%{init: {'theme': 'base', 'themeVariables': { ... }}}%%.\n",
+          "- Для глобальных настроек цветов используй Frontmatter config (в начале файла):\n" +
+          "```yaml\n" +
+          "---\n" +
+          "config:\n" +
+          "  theme: base\n" +
+          "  themeVariables:\n" +
+          "    primaryColor: \"...\"\n" +
+          "---\n" +
+          "```\n",
         sequencediagram:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- Используй 'rect rgb(r, g, b) ... end' для выделения логических блоков цветом.\n" +
-          "- Используй директиву инициализации для глобальной темы: %%{init: {'theme': 'base', 'themeVariables': { ... }}}%%.\n" +
+          "- Используй Frontmatter config для глобальной темы:\n" +
+          "```yaml\n" +
+          "---\n" +
+          "config:\n" +
+          "  theme: base\n" +
+          "  themeVariables:\n" +
+          "    actorBorder: \"...\"\n" +
+          "---\n" +
+          "```\n" +
           "- Можно использовать 'actor', 'participant' и 'box' для группировки.\n",
         gantt:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
-          "- Используй директиву инициализации: %%{init: {'theme': 'base', 'gantt': { ... }}}%% для настройки цветов.\n",
+          "- Используй Frontmatter config для настройки цветов:\n" +
+          "```yaml\n" +
+          "---\n" +
+          "config:\n" +
+          "  theme: base\n" +
+          "  gantt:\n" +
+          "    titleTopMargin: 25\n" +
+          "---\n" +
+          "```\n",
         state:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
@@ -100,38 +132,60 @@ export const prompts = {
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Настраивай цвета веток только через `themeVariables` (git0, git1, ... git7) в директиве `%%{init: ... }%%`.\n",
+          "- Настраивай цвета веток только через `themeVariables` в Frontmatter config:\n" +
+          "```yaml\n" +
+          "---\n" +
+          "config:\n" +
+          "  theme: base\n" +
+          "  themeVariables:\n" +
+          "    git0: \"#ff0000\"\n" +
+          "---\n" +
+          "```\n",
         pie:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Настраивай цвета и толщину линий только через `themeVariables` в директиве `%%{init: ... }%%`.\n",
+          "- Настраивай цвета только через `themeVariables` в Frontmatter config:\n" +
+          "```yaml\n" +
+          "---\n" +
+          "config:\n" +
+          "  theme: base\n" +
+          "  themeVariables:\n" +
+          "    pie1: \"#ff0000\"\n" +
+          "---\n" +
+          "```\n",
         journey:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Стилизация через `themeVariables` в директиве `%%{init: ... }%%`.\n",
+          "- Стилизация через `themeVariables` в Frontmatter config.\n",
         timeline:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Стилизация через `themeVariables` (cScale0, cScale1, ...) в директиве `%%{init: ... }%%`.\n",
+          "- Стилизация через `themeVariables` (cScale0, ...) в Frontmatter config.\n",
         zenuml:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Стилизация через `themeVariables` в директиве `%%{init: ... }%%`.\n",
+          "- Стилизация через `themeVariables` в Frontmatter config.\n",
         sankey:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Стилизация через `themeVariables` и `config.sankey` в директиве `%%{init: ... }%%`.\n" +
-          "- Цвета связей через `sankey.linkColor`.\n",
+          "- Стилизация через `themeVariables` и `sankey` в Frontmatter config:\n" +
+          "```yaml\n" +
+          "---\n" +
+          "config:\n" +
+          "  sankey:\n" +
+          "    linkColor: gradient\n" +
+          "---\n" +
+          "```\n",
         xy:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Стилизация через `themeVariables.xyChart` в директиве `%%{init: ... }%%`.\n" +
+          "- Стилизация через `themeVariables.xyChart` в Frontmatter config.\n" +
           "- Цвета линий/столбцов через `plotColorPalette`.\n",
         block:
           common +
@@ -143,7 +197,7 @@ export const prompts = {
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- Используй `classDef` и `:::className` для точек.\n" +
-          "- Стилизация квадрантов и осей через `themeVariables` в директиве `%%{init: ... }%%`.\n",
+          "- Стилизация квадрантов и осей через `themeVariables` в Frontmatter config.\n",
         requirement:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
@@ -159,29 +213,29 @@ export const prompts = {
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Стилизация через `themeVariables` и `config.kanban` в директиве `%%{init: ... }%%`.\n",
+          "- Стилизация через `themeVariables` и `kanban` в Frontmatter config.\n",
         architecture:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Стилизация через `themeVariables` в директиве `%%{init: ... }%%`.\n" +
+          "- Стилизация через `themeVariables` в Frontmatter config.\n" +
           "- Стиль элементов определяется типом (e.g., `(cloud)`, `(database)`).\n",
         packet:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Стилизация через `themeVariables.packet` в директиве `%%{init: ... }%%`.\n",
+          "- Стилизация через `themeVariables.packet` в Frontmatter config.\n",
         radar:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- ЗАПРЕЩЕНО использовать 'classDef'.\n" +
-          "- Стилизация через `themeVariables` (cScale0, cScale1, ...) и `themeVariables.radar` в директиве `%%{init: ... }%%`.\n",
+          "- Стилизация через `themeVariables` (cScale0...) и `themeVariables.radar` в Frontmatter config.\n",
         treemap:
           common +
           "\nВАЖНО ПО СИНТАКСИСУ СТИЛЕЙ:\n" +
           "- Используй `:::class` для стилизации узлов.\n" +
           "- Используй `classDef`.\n" +
-          "- Стилизация через `themeVariables` и `config.treemap` в директиве `%%{init: ... }%%`.\n",
+          "- Стилизация через `themeVariables` и `treemap` в Frontmatter config.\n",
       };
 
       return this.strategies[type] || specific[type] || this.strategies.auto;
