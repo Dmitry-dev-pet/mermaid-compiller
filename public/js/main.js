@@ -37,6 +37,7 @@ import {
   formatStageModalContent,
   formatContextModalContent,
 } from "./ui.js";
+import { docsManager } from "./docsManager.js"; // Import docsManager
 
 const promptInput = document.getElementById("prompt-input");
 const generateButton = document.getElementById("generate-button");
@@ -57,6 +58,9 @@ const state = getState();
 const iterations = state.iterations;
 
 mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
+
+// Initialize docsManager right after mermaid.initialize
+await docsManager.init();
 
 // --- UI Helpers ---
 

@@ -1,6 +1,7 @@
 import { getState } from "./state.js";
 import { sanitizeMermaidCode } from "./sanitize.js";
 import { prompts } from "./prompts.js";
+import { docsManager } from "./docsManager.js"; // Import docsManager
 
 export const getCliproxyChatUrl = () => `${getState().cliproxyBaseUrl}/v1/chat/completions`;
 export const getCliproxyModelsUrl = () => `${getState().cliproxyBaseUrl}/v1/models`;
@@ -27,27 +28,17 @@ export const fetchDocsContext = async (diagramType, kind = "structure") => {
 
     const limitedQuery = preparedQuery.slice(0, 80);
     meta.rawQuery = limitedQuery;
-    const { cliproxyApiModel, docsSearchUrl } = getState();
-    const modelParam = cliproxyApiModel ? `&model=${encodeURIComponent(cliproxyApiModel)}` : "";
-    const response = await fetch(`${docsSearchUrl}?q=${encodeURIComponent(limitedQuery)}${modelParam}`);
-    if (!response.ok) {
-      return { text: "", meta };
-    }
 
-    const data = await response.json();
-    const items = Array.isArray(data?.results) ? data.results : [];
+    // --- Start: Replaced backend call with docsManager ---
+    // Initialize docsManager if not already initialized
+    await docsManager.init();
+    const items = await docsManager.searchDocs(limitedQuery);
+    // --- End: Replaced backend call with docsManager ---
 
-    meta.searchQuery =
-      typeof data?.search_query === "string" && data.search_query.trim()
-        ? data.search_query.trim()
-        : limitedQuery;
+    meta.searchQuery = limitedQuery; // No LLM normalization on client, so just use limitedQuery
+    meta.stylePrefs = ""; // No LLM normalization on client
 
-    meta.stylePrefs =
-      typeof data?.style_prefs === "string" && data.style_prefs.trim()
-        ? data.style_prefs.trim()
-        : "";
-
-    meta.snippets = items.slice(0, 3);
+    meta.snippets = items.slice(0, 3); // Take top 3 snippets
 
     let docsText = items
       .map((item) => (item && typeof item.snippet === "string" ? item.snippet.trim() : ""))
@@ -55,13 +46,15 @@ export const fetchDocsContext = async (diagramType, kind = "structure") => {
       .slice(0, 3)
       .join("\n---\n");
 
-    if (meta.stylePrefs) {
-      const styleBlock = `Diagram styling preferences:\n${meta.stylePrefs}`;
-      docsText = docsText ? `${docsText}\n---\n${styleBlock}` : styleBlock;
-    }
+    // The stylePrefs logic is removed because client-side docsManager doesn't generate stylePrefs
+    // if (meta.stylePrefs) {
+    //   const styleBlock = `Diagram styling preferences:\n${meta.stylePrefs}`;
+    //   docsText = docsText ? `${docsText}\n---\n${styleBlock}` : styleBlock;
+    // }
 
     return { text: docsText, meta };
-  } catch {
+  } catch(e) {
+    console.error("Error fetching docs context:", e);
     return { text: "", meta };
   }
 };
