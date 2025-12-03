@@ -2,6 +2,7 @@ import {
   callCliproxyApiStructure,
   callCliproxyApiStyle,
   callCliproxyApiFixStyle,
+  callCliproxyApiFixStructure, // <-- Import new fix structure API call
   fetchStyleDocsContext,
   buildPrompt,
 } from "./api.js";
@@ -16,6 +17,105 @@ import {
 } from "./state.js";
 import { validateMermaidCode } from "./validation.js";
 import { detectDiagramType } from "./utils.js";
+
+// --- STRUCTURE FIX FLOW ---
+export const runStructureFixFlow = async (parentIteration, { prompt, previousCode, docsContextText }, callbacks = {}) => {
+  const state = getState();
+  const { onStageAdded, onStatusUpdate } = callbacks;
+
+  if (!parentIteration || !previousCode) {
+    if (onStatusUpdate) onStatusUpdate("Нет кода для исправления структуры.", "error");
+    return { success: false };
+  }
+
+  const fixIteration = createIterationEntry(
+    `Fix: ${parentIteration.prompt}`,
+    parentIteration.promptOriginal,
+    parentIteration.promptPrepared,
+    parentIteration.docsMeta,
+    parentIteration.docsContextText,
+    parentIteration.diagramType,
+  );
+  fixIteration.originIterationId = parentIteration.id;
+  fixIteration.activeCode = previousCode; // Start with the code that needs fixing
+  
+  const fixIterationIndex = addIteration(fixIteration);
+  setActiveIterationIndex(fixIterationIndex);
+  if (onStageAdded) onStageAdded(fixIteration);
+
+  if (onStatusUpdate) onStatusUpdate("Запуск исправления структуры...", "info");
+
+  let workingCode = previousCode;
+  let lastErrors = [];
+
+  for (let attempt = 0; attempt < state.maxStructureRetries; attempt += 1) {
+    try {
+      const fixResult = await callCliproxyApiFixStructure(
+        workingCode,
+        lastErrors, // Pass previous errors to LLM
+        fixIteration.diagramType, // Pass diagram type for system prompt context
+        "", // No separate structure code for structure fix
+        fixIteration.docsContextText // Pass documentation context
+      );
+      const rawFixCode = fixResult.code;
+      const sanitizedCode = sanitizeMermaidCode(rawFixCode);
+      const validation = await validateMermaidCode(sanitizedCode);
+
+      const stage = {
+        id: `${fixIteration.id}-fix-structure-${attempt + 1}`,
+        type: "fix",
+        scope: "structure",
+        label: `Fix ${attempt + 1}`,
+        status: validation.isValid ? "success" : "error",
+        prompts: {
+          system: fixResult.systemPrompt,
+          user: fixResult.userPrompt,
+        },
+        assistantRaw: fixResult.rawContent,
+        rawCode: rawFixCode,
+        code: sanitizedCode,
+        validation,
+        reasoning: fixResult.reasoning || "",
+      };
+
+      fixIteration.stages.push(stage);
+      if (fixResult.reasoning) {
+        fixIteration.summary = fixResult.reasoning;
+      }
+      if (onStageAdded) onStageAdded(fixIteration);
+
+      if (validation.isValid) {
+        fixIteration.activeCode = sanitizedCode;
+        if (!fixIteration.diagramType || fixIteration.diagramType === "auto") {
+          fixIteration.diagramType = detectDiagramType(sanitizedCode);
+        }
+        if (onStatusUpdate) onStatusUpdate("Структура диаграммы исправлена.", "success");
+        return { success: true };
+      }
+
+      const codeChanged = sanitizedCode.trim() !== workingCode.trim();
+      lastErrors = validation.errors;
+      workingCode = sanitizedCode;
+      
+      if (!codeChanged) {
+        if (onStatusUpdate) onStatusUpdate("Авто-фиксер вернул тот же код. Останавливаем цикл.", "error");
+        fixIteration.activeCode = workingCode; // Save last code for user
+        return { success: false };
+      }
+      
+      if (onStatusUpdate) onStatusUpdate(`Структура невалидна. Авто-фиксация (${attempt + 1}/${state.maxStructureRetries})...`, "error");
+
+    } catch (error) {
+      if (onStatusUpdate) onStatusUpdate(`Ошибка исправления структуры: ${error.message}`, "error");
+      fixIteration.activeCode = workingCode; // Save last code for user
+      return { success: false, error };
+    }
+  }
+
+  if (onStatusUpdate) onStatusUpdate("Не удалось исправить структуру диаграммы после всех попыток.", "error");
+  fixIteration.activeCode = workingCode; // Save last code for user
+  return { success: false };
+};
 
 export const runStructureFlow = async (iteration, { prompt, previousCode, docsContextText }, callbacks = {}) => {
   const state = getState();
@@ -75,6 +175,13 @@ export const runStructureFlow = async (iteration, { prompt, previousCode, docsCo
       if (onStatusUpdate) onStatusUpdate(`Error in structure flow: ${error.message}`, "error");
       return { success: false, error };
     }
+  }
+
+  // If we reached here, all retries failed.
+  // Save the last working code anyway so the user can see it and try to fix it manually.
+  iteration.activeCode = workingCode;
+  if (!iteration.diagramType || iteration.diagramType === "auto") {
+      iteration.diagramType = detectDiagramType(workingCode);
   }
 
   return { success: false };

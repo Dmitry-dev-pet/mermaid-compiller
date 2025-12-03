@@ -1,0 +1,240 @@
+.model-filters {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 4px;
+}
+
+.filter-button {
+  padding: 4px 8px;
+  border-radius: 9999px;
+  border: 1px solid #1f2937;
+  background: #020617;
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  width: auto;
+  min-width: 64px;
+  text-align: center;
+}
+
+.filter-button.filter-active {
+  background: #22d3ee;
+  color: #020617;
+  border-color: #0ea5e9;
+}
+
+.iteration-card {
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  padding: 12px;
+  background: #0b1220;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.iteration-card-active {
+  border-color: #2563eb;
+  background: #0f172a;
+}
+
+.iteration-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.iteration-label {
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.iteration-summary {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.iteration-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mini-button {
+  border: 1px solid #1f2937;
+  background: #020617;
+  color: #e2e8f0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  width: auto;
+  box-shadow: none;
+}
+
+.mini-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.iteration-badges {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.iteration-stage-row {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #1f2937;
+  background: #020617;
+  font-size: 12px;
+}
+
+.iteration-style-button {
+  align-self: flex-start;
+  padding: 8px 12px;
+  font-size: 13px;
+  width: auto;
+}
+
+.icon-button {
+  width: auto;
+  padding: 6px 8px;
+  border-radius: 9999px;
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 12px rgba(34, 211, 238, 0.25);
+}
+
+.proxy-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: #4b5563;
+  display: inline-block;
+  box-shadow: 0 0 0 1px #020617;
+}
+
+.proxy-indicator-ok {
+  background: #22c55e;
+}
+
+.proxy-indicator-error {
+  background: #ef4444;
+}
+
+.proxy-indicator-unknown {
+  background: #4b5563;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-content {
+  background: #0f172a;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 16px;
+  width: min(720px, 90vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+.modal-body {
+  background: #020617;
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid #1f2937;
+  color: #e2e8f0;
+  overflow: auto;
+  max-height: 60vh;
+  white-space: pre-wrap;
+}
+
+.modal-close {
+  align-self: flex-end;
+  background: transparent;
+  border: none;
+  color: #e2e8f0;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.cache-status-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid #1f2937;
+  background: #0b1220;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cache-status-btn:hover {
+  background: #1e293b;
+}
+
+.cache-status-ok {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.cache-status-missing {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.cache-status-loading {
+  background: rgba(234, 179, 8, 0.1);
+  border-color: #eab308;
+  color: #eab308;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+.fix-count-badge {
+  background: #f97316; /* Orange color */
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 9999px; /* Pill shape */
+  font-size: 10px;
+  font-weight: 600;
+  margin-left: 8px;
+  line-height: 1;
+}

@@ -69,7 +69,9 @@ export const extractMermaidCode = (text) => {
   if (!text || typeof text !== "string") return "";
 
   let code = "";
-  const fenced = text.match(/```mermaid([\s\S]*?)```/i);
+  // Match any triple backtick block, optionally with a language identifier
+  // This handles ```mermaid, ```marmaid, or just ```
+  const fenced = text.match(/```(?:\w+)?([\s\S]*?)```/i);
   if (fenced && fenced[1].trim()) {
     code = fenced[1].trim();
   } else {
@@ -81,7 +83,9 @@ export const extractMermaidCode = (text) => {
     code = code.substring(0, summaryIndex).trim();
   }
 
-  return code.replace(/^```mermaid/i, "").replace(/```$/, "").trim();
+  // Also cleanup any leading regex match leftovers if they leaked through
+  // (though the regex match group 1 should exclude the backticks)
+  return code.replace(/^```(?:\w+)?/i, "").replace(/```$/, "").trim();
 };
 
 export const extractRussianSummary = (text) => {
@@ -227,7 +231,110 @@ export const fetchModels = async () => {
 
   if (!response.ok) {
     throw new Error(`cliproxyapi error: ${response.status}`);
-  }
+    }
+    return response.json();
+  };
+  
+  export const callCliproxyApiFixStructure = async (badCode, errors, diagramTypeLabel = "diagram", structureCode = "", docsContext = "") => {
+    const state = getState();
+    const sanitizedBadCode = sanitizeMermaidCode(badCode || "");
+    
+    // For structure fix, syntaxRules might be general Mermaid rules or specific type rules
+    const syntaxRules = prompts.structure.getStrategy ? prompts.structure.getStrategy(diagramTypeLabel) : ""; // Assuming structure might have strategies too, if not, use empty.
+    const systemPrompt = prompts.fix.system(syntaxRules);
+    const userContent = prompts.fix.user(diagramTypeLabel, structureCode, sanitizedBadCode, errors, docsContext);
+  
+    const payload = {
+      model: state.cliproxyApiModel,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+    };
+  
+    const response = await fetch(getCliproxyChatUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${state.cliproxyApiToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  
+    if (!response.ok) {
+      throw new Error(`cliproxyapi error (fix structure): ${response.status}`);
+    }
+  
+    const data = await response.json();
+    const rawContent = data?.choices?.[0]?.message?.content;
+    const candidate = extractMermaidCode(rawContent);
+    return {
+      code: sanitizeMermaidCode(candidate?.trim() || ""),
+      rawContent,
+      systemPrompt: systemPrompt,
+      userPrompt: userContent,
+    };
+  };
 
-  return response.json();
+export const analyzePrompt = async (userPrompt) => {
+  const state = getState();
+  // System prompt to classify intent and type
+  const systemPrompt = `You are an intelligent assistant for a Mermaid diagram generator.
+Determine the most likely Mermaid diagram type and the user's intent.
+
+STRICT RULES for "diagramType":
+1. Must be ONE of these supported types: flowchart, sequence, class, state, er, gantt, mindmap, pie, gitgraph, journey, timeline, c4, kanban, architecture, zenuml, sankey, xy, block, quadrant, requirement.
+2. If the user asks for a topic (e.g. "hospital system", "login flow") WITHOUT specifying a diagram type, YOU MUST CHOOSE the single best type from the supported list (e.g. "class", "sequence", or "flowchart").
+3. NEVER return the topic name (e.g. "главврач", "database") as the diagramType.
+4. If you are unable to determine a specific type, default to "flowchart" as a general-purpose choice.
+
+Return a STRICT JSON object:
+{
+  "diagramType": "string", 
+  "intent": "string", // "create", "fix", "style"
+  "confidence": number
+}
+`;
+
+  const payload = {
+    model: state.cliproxyApiModel,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt.slice(0, 2000) }, // Limit context
+    ],
+    temperature: 0.0, // Deterministic
+    response_format: { type: "json_object" } // If supported, otherwise we parse text
+  };
+
+  try {
+    const response = await fetch(getCliproxyChatUrl(), {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${state.cliproxyApiToken}`,
+        },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) throw new Error("Analysis failed");
+
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content || "{}";
+    
+    // Clean up potential markdown wrappers if the model didn't respect json_object or it wasn't supported
+    const cleaned = content.replace(/```json/g, "").replace(/```/g, "").trim();
+    
+    try {
+        const result = JSON.parse(cleaned);
+        // Normalize type names if needed (e.g. "sequenceDiagram" -> "sequence")
+        // But our prompt asked for specific keys.
+        return result;
+    } catch (e) {
+        console.warn("Failed to parse analysis JSON", e);
+        return { diagramType: "auto", intent: "create", confidence: 0 };
+    }
+  } catch (e) {
+      console.error("Prompt analysis error:", e);
+      return { diagramType: "auto", intent: "create", confidence: 0 };
+  }
 };

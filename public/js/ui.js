@@ -230,6 +230,15 @@ export const renderIterationList = ({
     titleWrap.appendChild(labelSpan);
     titleWrap.appendChild(summarySpan);
 
+    const fixCount = iteration.stages.filter(s => s.type === "fix").length;
+    if (fixCount > 0) {
+      const fixBadge = document.createElement("span");
+      fixBadge.className = "fix-count-badge";
+      fixBadge.textContent = `Fixes: ${fixCount}`;
+      titleWrap.appendChild(fixBadge);
+    }
+
+
     const buttonWrap = document.createElement("div");
     buttonWrap.className = "iteration-buttons";
 
