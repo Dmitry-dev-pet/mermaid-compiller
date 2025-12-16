@@ -1,20 +1,17 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# diagram-compiler (React/Vite)
 
-# Run and deploy your AI Studio app
+Это основное SPA-приложение (React + Vite + TypeScript) для генерации/редактирования диаграмм Mermaid.
 
-This contains everything you need to run your app locally.
+## Запуск
 
-View your app in AI Studio: https://ai.studio/apps/temp/3
+**Требования:** Node.js
 
-## Run Locally
+1. Установить зависимости: `npm install`
+2. Запустить dev-сервер: `npm run dev`
+3. Сборка/превью: `npm run build` / `npm run preview`
 
-**Prerequisites:**  Node.js
+## UX
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- **Chat**: отвечает только текстом (уточнения, рекомендации), диаграмму не меняет.
+- **Build**: генерирует/обновляет диаграмму из истории чата + текущего кода редактора; запускается даже без нового промпта.
+- **Auto-fix**: после Build при невалидном коде выполняется автофикс (до 5 попыток); кнопка Fix показывает лимит попыток.
