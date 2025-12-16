@@ -1,0 +1,12 @@
+
+> mermaid-graph-gen@0.0.0 dev
+> vite
+
+
+  VITE v6.4.1  ready in 116 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: http://192.168.1.17:3000/
+23:47:25 [vite] (client) hmr update /App.tsx
+23:52:25 [vite] (client) hmr update /App.tsx
+16:39:15 [vite] (client) hmr update /App.tsx

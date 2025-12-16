@@ -13,7 +13,10 @@
 ## Архитектура
 
 - **Тип приложения:** Static Single Page Application (SPA).
-- **Клиент** (`public/`): Vanilla JS (ES Modules). Управляет всем: UI, стейт, вызовы LLM, валидация.
+- **Клиент** (`public/`): Vanilla JS (ES Modules).
+    - `main.js`: Инициализация и связывание UI.
+    - `controller.js`: Бизнес-логика и оркестрация потоков.
+    - `api.js`, `docsManager.js`, `workflows.js`: Сервисные модули.
 - **Документация:**
   - Загружается клиентом напрямую из репозитория `mermaid-js/mermaid` через GitHub API.
   - Кэшируется в браузере (`localStorage` / Memory).

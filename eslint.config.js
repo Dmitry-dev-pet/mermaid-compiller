@@ -5,7 +5,7 @@ module.exports = [
   js.configs.recommended,
   eslintConfigPrettier,
   {
-    files: ["public/**/*.js"],
+    files: ["public/**/*.js", "public-next/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
@@ -16,9 +16,21 @@ module.exports = [
         window: "readonly",
         console: "readonly",
         Blob: "readonly",
-        URL: "readonly"
+        URL: "readonly",
+        localStorage: "readonly",
+        clearTimeout: "readonly",
+        setTimeout: "readonly",
+        confirm: "readonly",
+        alert: "readonly",
+        navigator: "readonly",
+        crypto: "readonly"
       }
     },
-    rules: {}
+    rules: {
+      "no-unused-vars": ["error", { 
+        "argsIgnorePattern": "^(newState|iter|userPrompt|contextDocs)$",
+        "varsIgnorePattern": "^(iterations|docsQuery|extracted)$" 
+      }]
+    }
   }
 ];

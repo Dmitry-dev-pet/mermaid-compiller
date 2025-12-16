@@ -1,81 +1,83 @@
-# План Реализации: Генератор Диаграмм Mermaid (Обновленный)
+# План Реализации: Генератор Диаграмм Mermaid (v2.0 - React/Vite)
 
 ## 1. Обзор Архитектуры
 
-Система следует клиент-центричной архитектуре с тонким Node.js бэкендом. Основная логика генерации, валидации и управления состоянием находится на клиенте.
+Система представляет собой одностраничное приложение (SPA) на базе React и TypeScript, собранное с помощью Vite.
+Архитектура была переработана для улучшения разделения ответственности: вся бизнес-логика и управление состоянием вынесены в кастомный хук `useDiagramStudio`, а `App.tsx` отвечает только за композицию UI.
 
 ```mermaid
 graph TD
-    Пользователь -->|1. Промпт/Действие| UI(Интерфейс)
-    UI -->|2. Обновление State| StateManager(State.js + Pub/Sub)
-    StateManager -->|3. Уведомление подписчиков| UI
-    UI -->|4. Запуск Workflow| Workflows(Workflows.js)
-    Workflows -->|5. Подготовка Промпта| Prompts(Prompts.js)
-    Workflows -->|6. Запрос контекста доков| API(Api.js)
-    API -->|7. Поиск в документации| NodeServer(Node.js Server)
-    Workflows -->|8. Запрос к LLM| API
-    API -->|9. Проксирование запроса| LocalProxy(Local cliproxyapi)
-    LocalProxy -->|10. Ответ LLM| API
-    Workflows -->|11. Валидация| Validator(Validation.js + Mermaid.parse)
-    Validator -->|12. Результат (OK/Fail)| Workflows
-    Workflows -->|13. Обновление State (Итерация/Стадия)| StateManager
+    App(App.tsx) -->|Use Hook| Hook(useDiagramStudio.ts)
+    Hook -->|State & Logic| Header(Header.tsx)
+    Hook -->|State & Logic| Chat(ChatColumn.tsx)
+    Hook -->|State & Logic| Editor(EditorColumn.tsx)
+    Hook -->|State & Logic| Preview(PreviewColumn.tsx)
+    
+    Hook -->|Methods| LLMService(llmService.ts)
+    Hook -->|Validation| MermaidService(mermaidService.ts)
+    Hook -->|Docs| DocsService(docsContextService.ts)
+    
+    LLMService -->|Strategy| Strategy{LLM Strategy}
+    Strategy -->|OpenRouter| OpenRouter[OpenRouterStrategy]
+    Strategy -->|Cliproxy| Cliproxy[CliproxyStrategy]
 ```
 
 ## 2. Технический Стек
 
-*   **Фронтенд:** 
-    *   HTML5, CSS3.
-    *   JavaScript (ES6 Modules).
-    *   Mermaid.js (рендеринг и парсинг).
-*   **Бэкенд:** 
-    *   Node.js (v18+).
-    *   Express (веб-сервер).
-    *   adm-zip (работа с архивами документации).
-    *   node-fetch (HTTP запросы).
-*   **Взаимодействие с LLM:** `cliproxyapi` (локальный сервис).
+*   **Фронтенд:**
+    *   **Framework:** React 19 + TypeScript.
+    *   **Build Tool:** Vite.
+    *   **Styling:** Tailwind CSS (Dark Mode support).
+    *   **Icons:** Lucide React.
+    *   **Editor:** `react-simple-code-editor` + `prismjs` (One Dark theme).
+    *   **Diagramming:** Mermaid.js (npm package).
+*   **Архитектура:**
+    *   **State Management:** Custom Hook (`useDiagramStudio`) + `useState` + `localStorage`.
+    *   **LLM Integration:** Strategy Pattern (`OpenRouterStrategy`, `CliproxyStrategy`).
 
-## 3. Структура Модулей Фронтенда
+## 3. Структура Проекта (`diagram-compiler/src/`)
 
-*   **`main.js`:** Точка входа. Инициализация слушателей событий UI, подписка на изменения состояния, связывание компонентов.
-*   **`state.js`:** Центральное хранилище состояния (State Store). Реализует паттерн Pub/Sub. Содержит данные о моделях, итерациях, настройках.
-*   **`api.js`:** Слой взаимодействия с внешними сервисами (`cliproxyapi` и собственный бэкенд `/docs/search`).
-*   **`ui.js`:** Функции для манипуляции DOM (рендер списков, модальные окна, статусы). "Глупые" компоненты, не знающие о бизнес-логике.
-*   **`workflows.js`:** Реализация бизнес-процессов (оркестрация): `runStructureFlow` (генерация структуры) и `runStyleFlow` (стилизация). Управляет циклами повторных попыток.
-*   **`modelManager.js`:** Логика выбора, фильтрации и сортировки моделей LLM.
-*   **`prompts.js`:** Шаблонизатор промптов. Содержит системные и пользовательские промпты для разных этапов и типов диаграмм.
-*   **`validation.js`:** Обертка над `mermaid.parse` для проверки корректности кода.
-*   **`sanitize.js`:** Утилиты для очистки и нормализации кода Mermaid (удаление markdown-оберток и т.д.).
+### 3.1. Компоненты (`components/`)
+*   **`Header.tsx`:** Настройки подключения, выбор провайдера, переключение темы (Dark/Light).
+*   **`ChatColumn.tsx`:** Чат с ИИ. Отображение истории, ввод промптов, выбор типа диаграммы.
+*   **`EditorColumn.tsx`:** Редактор кода Mermaid с подсветкой синтаксиса, панель инструментов (Language, Analyze, Fix, Run).
+*   **`PreviewColumn.tsx`:** Рендеринг SVG диаграммы.
 
-## 4. Бэкенд (Node.js)
+### 3.2. Хуки (`hooks/`)
+*   **`useDiagramStudio.ts`:**
+    *   Центральный контроллер приложения.
+    *   Управление состоянием (`aiConfig`, `connection`, `mermaidCode`, `appState`).
+    *   Логика чата (`handleSendMessage`), компиляции (`handleRecompile`), анализа (`handleAnalyze`).
+    *   Авто-подключение и восстановление сессии.
+    *   Управление темой и языком.
 
-*   **`server.js`:**
-    *   Раздача статики из `public/`.
-    *   `GET /docs/search`: Эндпоинт поиска по документации.
-    *   Автоматическое скачивание и распаковка документации Mermaid с GitHub при старте (если нет локально).
-    *   Нормализация поисковых запросов через LLM (опционально).
+### 3.3. Сервисы (`services/`)
+*   **`llmService.ts`:** Фасад для работы с LLM. Делегирует вызовы стратегиям.
+    *   `llm/OpenRouterStrategy.ts`: Реализация для OpenRouter.
+    *   `llm/CliproxyStrategy.ts`: Реализация для локального прокси.
+*   **`mermaidService.ts`:** Валидация кода, инициализация Mermaid, парсинг ответов.
+*   **`docsContextService.ts`:** Загрузка локальной документации (параллельная).
 
-## 5. Процессы (Workflows)
+## 4. Основные Процессы
 
-### 5.1. Генерация Структуры (`runStructureFlow`)
-1.  Получение промпта пользователя.
-2.  Поиск релевантной документации (через бэкенд).
-3.  Формирование промпта (User Prompt + Docs Context).
-4.  Вызов LLM (Structure Agent).
-5.  Валидация полученного кода.
-6.  Если невалидно -> цикл исправлений (Self-correction loop).
-7.  Сохранение результата в историю итераций.
+### 4.1. Интеллектуальный Чат
+1.  Пользователь отправляет сообщение.
+2.  Система определяет язык пользователя (или использует выбранный).
+3.  Загружается контекст документации.
+4.  Отправляется запрос в LLM (режим `chat`): "Проанализируй, построй диаграмму или задай вопрос".
+5.  Если ответ содержит код Mermaid -> обновляется редактор и превью.
+6.  Ответ ИИ (текст) добавляется в чат (код вырезается из текста сообщения для чистоты).
 
-### 5.2. Стилизация (`runStyleFlow`)
-1.  Берется валидная структура из предыдущего этапа.
-2.  Запрашивается контекст документации по стилям.
-3.  Формируется промпт для Style Agent.
-4.  Вызов LLM.
-5.  Валидация + специфичные проверки (запрещенные директивы для определенных типов диаграмм).
-6.  Цикл авто-исправления стилей (Fix Style Agent).
-7.  Сохранение стилизованной версии.
+### 4.2. Анализ и Исправление
+*   **Analyze:** Отправляет текущий код диаграммы в LLM с просьбой объяснить структуру.
+*   **Fix Syntax:** Отправляет код и текст ошибки валидации в LLM для исправления.
 
-## 6. Тестирование и Качество
+### 4.3. Настройки и Персонализация
+*   **Dark Mode:** Переключение тем (синхронизация с Mermaid theme и редактором кода).
+*   **Language:** Выбор языка общения с ИИ (Auto/EN/RU).
+*   **Auto-Connect:** Приложение автоматически подключается при старте, если сохранены ключи.
 
-*   **ESLint + Prettier:** Линтинг и форматирование JS кода.
-*   **Модульность:** Строгое разделение ответственности позволяет тестировать модули изолированно (в будущем).
-*   **Обработка ошибок:** Все асинхронные операции обернуты в try/catch с уведомлением пользователя через UI.
+## 5. Запуск
+
+*   `npm install`
+*   `npm run dev`

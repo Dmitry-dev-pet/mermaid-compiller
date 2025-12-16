@@ -1,0 +1,83 @@
+/* One Dark inspired theme for Prism in Dark Mode */
+
+.dark code[class*="language-"],
+.dark pre[class*="language-"] {
+	color: #abb2bf;
+	text-shadow: none;
+	font-family: 'Fira Code', 'Fira Mono', Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+	direction: ltr;
+	text-align: left;
+	white-space: pre;
+	word-spacing: normal;
+	word-break: normal;
+	line-height: 1.5;
+	-moz-tab-size: 4;
+	-o-tab-size: 4;
+	tab-size: 4;
+	-webkit-hyphens: none;
+	-moz-hyphens: none;
+	-ms-hyphens: none;
+	hyphens: none;
+}
+
+.dark :not(pre) > code[class*="language-"],
+.dark pre[class*="language-"] {
+	background: transparent;
+}
+
+.dark .token.comment,
+.dark .token.prolog,
+.dark .token.doctype,
+.dark .token.cdata {
+	color: #7f848e; /* Lighter grey for better visibility than 5c6370 */
+	font-style: italic;
+}
+
+.dark .token.punctuation {
+	color: #abb2bf;
+}
+
+.dark .token.keyword {
+    color: #c678dd; /* Purple */
+}
+
+.dark .token.string,
+.dark .token.char {
+	color: #98c379; /* Green */
+}
+
+.dark .token.operator {
+	color: #56b6c2; /* Cyan */
+}
+
+.dark .token.arrow {
+    color: #56b6c2; /* Cyan */
+}
+
+.dark .token.variable {
+	color: #e06c75; /* Red/Pink */
+}
+
+.dark .token.boolean,
+.dark .token.number,
+.dark .token.constant,
+.dark .token.symbol {
+	color: #d19a66; /* Orange */
+}
+
+.dark .token.function {
+    color: #61afef; /* Blue */
+}
+
+.dark .token.class-name {
+    color: #e5c07b; /* Gold */
+}
+
+.dark .token.important,
+.dark .token.bold {
+	font-weight: bold;
+}
+
+.dark .token.italic {
+	font-style: italic;
+}
