@@ -17,7 +17,8 @@ function App() {
     connectAI,
     disconnectAI,
     handleMermaidChange,
-    handleSendMessage,
+    handleChatMessage,
+    handleBuildFromPrompt,
     handleRecompile,
     handleFixSyntax,
     handleAnalyze,
@@ -49,7 +50,8 @@ function App() {
         <div style={{ width: `${appState.columnWidths[0]}%` }} className="flex flex-col min-w-[260px]">
            <ChatColumn 
               messages={messages}
-              onSendMessage={handleSendMessage}
+              onChat={handleChatMessage}
+              onBuild={handleBuildFromPrompt}
               onClear={clearMessages}
               isProcessing={isProcessing}
               diagramType={appState.diagramType}

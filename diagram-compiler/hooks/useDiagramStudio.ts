@@ -1,209 +1,233 @@
-import { useState, useEffect, useCallback, useLayoutEffect } from 'react';
-import { AIConfig, AppState, ConnectionState, MermaidState, Message, DiagramType } from '../types';
-import { DEFAULT_AI_CONFIG, DEFAULT_APP_STATE, DEFAULT_MERMAID_STATE, INITIAL_CHAT_MESSAGE } from '../constants';
-import { validateMermaid, extractMermaidCode, initializeMermaid } from '../services/mermaidService';
-import { fetchModels, generateDiagram, fixDiagram, chat, analyzeDiagram } from '../services/llmService';
+import { useState } from 'react';
+import { useAI } from './useAI';
+import { useMermaid } from './useMermaid';
+import { useLayout } from './useLayout';
+import { useChat } from './useChat';
+import { validateMermaid, extractMermaidCode } from '../services/mermaidService';
+import { generateDiagram, fixDiagram, chat, analyzeDiagram } from '../services/llmService';
 import { fetchDocsContext } from '../services/docsContextService';
-
-// Simple ID generator
-const generateId = () => Math.random().toString(36).substring(2, 9);
-
-// Helper function to strip Mermaid code blocks from a string
-const stripMermaidCode = (text: string): string => {
-  // Remove ```mermaid ... ``` blocks
-  let strippedText = text.replace(/```mermaid\n([\s\S]*?)```/g, '');
-  // Remove generic ``` ... ``` blocks that might contain code
-  strippedText = strippedText.replace(/```\n([\s\S]*?)```/g, '');
-  return strippedText.trim();
-};
-
-const detectLanguage = (text: string): string => {
-  const cyrillicPattern = /[а-яА-ЯёЁ]/;
-  return cyrillicPattern.test(text) ? 'Russian' : 'English';
-};
-
-const safeParse = <T>(key: string, fallback: T): T => {
-  try {
-    const saved = localStorage.getItem(key);
-    if (!saved) return fallback;
-    return { ...fallback, ...JSON.parse(saved) };
-  } catch (e) {
-    console.error(`Failed to parse ${key} from localStorage`, e);
-    return fallback;
-  }
-};
+import { stripMermaidCode, detectLanguage } from '../utils';
+import type { Message } from '../types';
+import { AUTO_FIX_MAX_ATTEMPTS } from '../constants';
 
 export const useDiagramStudio = () => {
-  // --- State ---
-  const [aiConfig, setAiConfig] = useState<AIConfig>(() => safeParse('dc_ai_config', DEFAULT_AI_CONFIG));
-
-  const [connectionState, setConnectionState] = useState<ConnectionState>({
-    status: 'disconnected',
-    availableModels: []
-  });
-
-  const [mermaidState, setMermaidState] = useState<MermaidState>(DEFAULT_MERMAID_STATE);
-  
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 'init', role: 'assistant', content: INITIAL_CHAT_MESSAGE, timestamp: Date.now() }
-  ]);
-
-  const [appState, setAppState] = useState<AppState>(() => safeParse('dc_app_state', DEFAULT_APP_STATE));
+  const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
+  const { mermaidState, setMermaidState, handleMermaidChange } = useMermaid();
+  const { appState, setAppState, startResize, setDiagramType, toggleTheme, setLanguage } = useLayout();
+  const { messages, setMessages, addMessage, clearMessages, getMessages } = useChat();
 
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // --- Persistence ---
-  useEffect(() => {
-    localStorage.setItem('dc_ai_config', JSON.stringify(aiConfig));
-  }, [aiConfig]);
+  const truncate = (text: string, maxLen: number) => {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= maxLen) return normalized;
+    return `${normalized.slice(0, maxLen - 1)}…`;
+  };
 
-  useEffect(() => {
-    localStorage.setItem('dc_app_state', JSON.stringify(appState));
-  }, [appState]);
+  const toBriefSummary = (text: string) => {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    const parts = normalized.split(/(?<=[.!?])\s+/).filter(Boolean);
+    return truncate(parts.slice(0, 2).join(' '), 220);
+  };
 
-  // --- Theme Effect ---
-  useLayoutEffect(() => {
-    const root = window.document.documentElement;
-    if (appState.theme === 'dark') {
-      root.classList.add('dark');
-      initializeMermaid('dark');
-    } else {
-      root.classList.remove('dark');
-      initializeMermaid('default');
-    }
-  }, [appState.theme]);
+  const resolveLanguage = (text?: string): string => {
+    if (appState.language !== 'auto') return appState.language;
 
-  // --- Logic: AI Service ---
-  const connectAI = useCallback(async () => {
-    setConnectionState(prev => ({ ...prev, status: 'connecting', error: undefined }));
-    try {
-      const models = await fetchModels(aiConfig);
-      
-      if (models.length === 0) {
-        throw new Error("No models found. Check endpoint/key.");
-      }
+    const basis =
+      text?.trim() ||
+      getMessages()
+        .slice()
+        .reverse()
+        .find((m) => m.id !== 'init' && m.role === 'user' && m.content.trim().length > 0)?.content;
 
-      setConnectionState({
-        status: 'connected',
-        availableModels: models
-      });
-      
-      // Auto-select first model if none selected or current not in list
-      if (!aiConfig.selectedModelId || !models.find(m => m.id === aiConfig.selectedModelId)) {
-        setAiConfig(prev => ({ ...prev, selectedModelId: models[0].id }));
-      }
+    if (!basis) return 'English';
 
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      setConnectionState({
-        status: 'failed',
-        error: message || 'Connection failed',
-        availableModels: []
-      });
-    }
-  }, [aiConfig]);
+    const detected = detectLanguage(basis);
+    setLanguage(detected);
+    return detected;
+  };
 
-  const disconnectAI = useCallback(() => {
-    setConnectionState({ status: 'disconnected', availableModels: [] });
-  }, []);
 
-  // Auto-connect on mount
-  useEffect(() => {
-    if (aiConfig.openRouterKey || aiConfig.proxyEndpoint) {
-        connectAI();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  const handleMermaidChange = useCallback((newCode: string) => {
-    // 1. Immediate update of code to keep UI responsive and cursor in place
-    setMermaidState(prev => ({
-      ...prev,
-      code: newCode,
-      status: 'edited' 
-    }));
+  const getDiagramContextMessage = (): Message | null => {
+    const code = mermaidState.code.trim();
+    if (!code) return null;
 
-    // 2. Validate asynchronously without awaiting in the main thread
-    validateMermaid(newCode).then(validation => {
-       setMermaidState(prev => {
-           // Verify we are still validating the latest code to avoid race conditions
-           if (prev.code !== newCode) return prev; 
-           
-           return {
-               ...prev,
-               isValid: validation.isValid ?? false,
-               lastValidCode: validation.lastValidCode ?? prev.lastValidCode,
-               errorMessage: validation.errorMessage,
-               errorLine: validation.errorLine,
-               status: newCode.trim() ? (validation.isValid ? 'valid' : 'invalid') : 'empty',
-               source: prev.source === 'compiled' ? 'user-override' : prev.source,
-           };
-       });
-    });
-  }, []);
+    return {
+      id: 'diagram-context',
+      role: 'user',
+      content: `Current Mermaid diagram code (context only; do not output Mermaid code in Chat mode and do not repeat this verbatim):
+\`\`\`mermaid
+${code}
+\`\`\``,
+      timestamp: Date.now(),
+    };
+  };
 
-  const handleSendMessage = async (text: string) => {
-    const newUserMsg: Message = { id: generateId(), role: 'user', content: text, timestamp: Date.now() };
-    const updatedMessages = [...messages, newUserMsg];
-    setMessages(updatedMessages);
-
+  const handleChatMessage = async (text: string) => {
+    addMessage('user', text);
     if (connectionState.status !== 'connected') {
-        setTimeout(() => {
-             setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: "I'm offline. Connect AI to generate diagrams.", timestamp: Date.now() }]);
-        }, 500);
-        return;
+      addMessage('assistant', "I'm offline. Connect AI to generate diagrams.");
+      return;
     }
 
-    // Determine language
-    let currentLanguage = appState.language;
-    if (currentLanguage === 'auto') {
-        const detected = detectLanguage(text);
-        if (detected) {
-            currentLanguage = detected;
-            setAppState(prev => ({ ...prev, language: detected }));
-        } else {
-            currentLanguage = 'English';
-        }
-    }
+    const language = resolveLanguage(text);
 
     setIsProcessing(true);
     try {
         const docs = await fetchDocsContext(appState.diagramType);
-        const relevantMessages = updatedMessages.filter(m => m.id !== 'init');
-        const responseText = await chat(relevantMessages, aiConfig, appState.diagramType, docs, currentLanguage);
-        const extractedCode = extractMermaidCode(responseText);
-        
-        if (extractedCode) {
-             const validation = await validateMermaid(extractedCode);
-             setMermaidState(prev => ({
-                ...prev,
-                code: extractedCode,
-                isValid: validation.isValid ?? false,
-                lastValidCode: validation.lastValidCode,
-                errorMessage: validation.errorMessage,
-                errorLine: validation.errorLine,
-                status: validation.isValid ? 'valid' : 'invalid',
-                source: 'compiled'
-             }));
-        }
+        const relevantMessages = getMessages().filter(m => m.id !== 'init');
 
-        setMessages(prev => [...prev, {
-            id: generateId(), 
-            role: 'assistant', 
-            content: stripMermaidCode(responseText),
-            timestamp: Date.now()
-        }]);
+
+        const diagramContext = getDiagramContextMessage();
+        const llmMessages = diagramContext ? [...relevantMessages, diagramContext] : relevantMessages;
+        const responseText = await chat(llmMessages, aiConfig, appState.diagramType, docs, language);
+        addMessage('assistant', stripMermaidCode(responseText));
 
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
-        setMessages(prev => [...prev, {
-            id: generateId(), 
-            role: 'assistant', 
-            content: `Error: ${message}`,
-            timestamp: Date.now()
-        }]);
+        addMessage('assistant', `Error: ${message}`);
     } finally {
         setIsProcessing(false);
+    }
+  };
+
+  const handleBuildFromPrompt = async (text?: string) => {
+    const prompt = text?.trim() ?? '';
+    if (prompt) addMessage('user', prompt);
+
+    if (connectionState.status !== 'connected') {
+      addMessage('assistant', "I'm offline. Connect AI to generate diagrams.");
+      return;
+    }
+
+    const language = resolveLanguage(prompt);
+
+    setIsProcessing(true);
+    try {
+      const docs = await fetchDocsContext(appState.diagramType);
+      const relevantMessages = getMessages().filter((m) => m.id !== 'init');
+
+      const hasUserContext = relevantMessages.some(
+        (m) => m.role === 'user' && m.content.trim().length > 0
+      );
+      if (!hasUserContext) {
+        addMessage('assistant', 'Nothing to build yet. Send a message first.');
+        return;
+      }
+
+      const currentDiagramCode = mermaidState.code.trim();
+      const diagramContext = getDiagramContextMessage();
+      const llmMessages = diagramContext ? [...relevantMessages, diagramContext] : relevantMessages;
+
+      const lastUserText =
+        relevantMessages
+          .slice()
+          .reverse()
+          .find((m) => m.role === 'user' && m.content.trim().length > 0)?.content ?? '';
+
+      const beforeSummarySource = prompt || lastUserText;
+
+      let fullChatSummary = '';
+      try {
+        const summaryReq: Message = {
+          id: 'build-summary-req',
+          role: 'user',
+          content:
+            'Summarize the entire chat so far into 2-3 short sentences describing what diagram should be built next.\n' +
+            'Include the current diagram (if any) and what should change.\n' +
+            'TEXT ONLY. No Mermaid. No code blocks.',
+          timestamp: Date.now(),
+        };
+        const summaryText = await chat(
+          [...llmMessages, summaryReq],
+          aiConfig,
+          appState.diagramType,
+          docs,
+          language
+        );
+        fullChatSummary = toBriefSummary(stripMermaidCode(summaryText));
+      } catch {
+        fullChatSummary = '';
+      }
+
+      const fallbackLines = [
+        `Will ${currentDiagramCode ? 'update' : 'create'} a ${appState.diagramType} diagram using chat context${currentDiagramCode ? ' + current code' : ''}.`,
+        beforeSummarySource ? `Request: ${truncate(beforeSummarySource, 160)}` : '',
+      ].filter(Boolean);
+
+      addMessage('assistant', `Build (before): ${fullChatSummary || fallbackLines.join(' ')}`);
+      const rawCode = await generateDiagram(llmMessages, aiConfig, appState.diagramType, docs, language);
+      const cleanCode = extractMermaidCode(rawCode);
+
+      if (!cleanCode.trim()) {
+        addMessage('assistant', 'Build failed: no Mermaid code returned.');
+        return;
+      }
+
+      let currentCode = cleanCode;
+      let validation = await validateMermaid(currentCode);
+      let autoFixAttempts = 0;
+
+      const applyResult = (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => {
+        setMermaidState((prev) => ({
+          ...prev,
+          code,
+          isValid: v.isValid ?? false,
+          lastValidCode: v.lastValidCode ?? prev.lastValidCode,
+          errorMessage: v.errorMessage,
+          errorLine: v.errorLine,
+          status: v.isValid ? 'valid' : 'invalid',
+          source: 'compiled',
+        }));
+      };
+
+      applyResult(currentCode, validation);
+
+      while (!validation.isValid && autoFixAttempts < AUTO_FIX_MAX_ATTEMPTS) {
+        autoFixAttempts += 1;
+
+        const fixedRaw = await fixDiagram(
+          currentCode,
+          validation.errorMessage || 'Unknown error',
+          aiConfig,
+          docs,
+          language
+        );
+        const fixedCode = extractMermaidCode(fixedRaw);
+        if (!fixedCode.trim()) break;
+
+        currentCode = fixedCode;
+        validation = await validateMermaid(currentCode);
+        applyResult(currentCode, validation);
+
+        if (validation.isValid) break;
+      }
+
+      const autoFixNote =
+        autoFixAttempts === 0
+          ? ''
+          : validation.isValid
+            ? ` Auto-fixed (${autoFixAttempts}).`
+            : ` Auto-fix attempted (${autoFixAttempts}), still invalid.`;
+
+      let afterSummary = '';
+      try {
+        const explanation = await analyzeDiagram(currentCode, aiConfig, docs, language);
+        afterSummary = toBriefSummary(explanation);
+      } catch {
+        afterSummary = '';
+      }
+
+      addMessage(
+        'assistant',
+        `Build (after): Built ${appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}${autoFixNote}${afterSummary ? `\nSummary: ${afterSummary}` : ''}`
+      );
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      addMessage('assistant', `Build failed: ${message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -217,7 +241,7 @@ export const useDiagramStudio = () => {
     try {
         const docs = await fetchDocsContext(appState.diagramType);
         const language = appState.language === 'auto' ? 'English' : appState.language;
-        const relevantMessages = messages.filter(m => m.id !== 'init');
+        const relevantMessages = getMessages().filter(m => m.id !== 'init');
         const rawCode = await generateDiagram(relevantMessages, aiConfig, appState.diagramType, docs, language);
         const cleanCode = extractMermaidCode(rawCode);
         const validation = await validateMermaid(cleanCode);
@@ -233,22 +257,12 @@ export const useDiagramStudio = () => {
             source: 'compiled'
         }));
 
-        setMessages(prev => [...prev, {
-            id: generateId(), 
-            role: 'assistant', 
-            content: `Generated ${appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}`,
-            timestamp: Date.now()
-        }]);
+        addMessage('assistant', `Generated ${appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}`);
 
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
         alert(`Generation failed: ${message}`);
-        setMessages(prev => [...prev, {
-            id: generateId(), 
-            role: 'assistant', 
-            content: `Error generating diagram: ${message}`,
-            timestamp: Date.now()
-        }]);
+        addMessage('assistant', `Error generating diagram: ${message}`);
     } finally {
         setIsProcessing(false);
     }
@@ -260,19 +274,37 @@ export const useDiagramStudio = () => {
     try {
         const docs = await fetchDocsContext(appState.diagramType);
         const language = appState.language === 'auto' ? 'English' : appState.language;
-        const fixedRaw = await fixDiagram(mermaidState.code, mermaidState.errorMessage || "Unknown error", aiConfig, docs, language);
-        const fixedCode = extractMermaidCode(fixedRaw);
-        
-        const validation = await validateMermaid(fixedCode);
-        setMermaidState(prev => ({
+
+        let currentCode = mermaidState.code;
+        let validation = await validateMermaid(currentCode);
+        let attempts = 0;
+
+        while (!validation.isValid && attempts < AUTO_FIX_MAX_ATTEMPTS) {
+          attempts += 1;
+          const fixedRaw = await fixDiagram(
+            currentCode,
+            validation.errorMessage || mermaidState.errorMessage || 'Unknown error',
+            aiConfig,
+            docs,
+            language
+          );
+          const fixedCode = extractMermaidCode(fixedRaw);
+          if (!fixedCode.trim()) break;
+
+          currentCode = fixedCode;
+          validation = await validateMermaid(currentCode);
+          setMermaidState((prev) => ({
             ...prev,
-            code: fixedCode,
+            code: currentCode,
             isValid: validation.isValid ?? false,
-            lastValidCode: validation.lastValidCode,
+            lastValidCode: validation.lastValidCode ?? prev.lastValidCode,
             errorMessage: validation.errorMessage,
             errorLine: validation.errorLine,
             status: validation.isValid ? 'valid' : 'invalid',
-        }));
+          }));
+
+          if (validation.isValid) break;
+        }
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
         alert(`Fix failed: ${message}`);
@@ -288,91 +320,19 @@ export const useDiagramStudio = () => {
     }
     setIsProcessing(true);
     try {
-        const docs = await fetchDocsContext(appState.diagramType); // Context might be useful for explanation
+        const docs = await fetchDocsContext(appState.diagramType);
         const language = appState.language === 'auto' ? 'English' : appState.language;
         const explanation = await analyzeDiagram(mermaidState.code, aiConfig, docs, language);
         
-        setMessages(prev => [...prev, {
-            id: generateId(), 
-            role: 'assistant', 
-            content: explanation, 
-            timestamp: Date.now()
-        }]);
+        addMessage('assistant', explanation);
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
         alert(`Analysis failed: ${message}`);
-        setMessages(prev => [...prev, {
-            id: generateId(), 
-            role: 'assistant', 
-            content: `Error analyzing diagram: ${message}`,
-            timestamp: Date.now()
-        }]);
+        addMessage('assistant', `Error analyzing diagram: ${message}`);
     } finally {
         setIsProcessing(false);
     }
   };
-
-  // --- Resizing Logic ---
-  const startResize = (index: number) => {
-    setAppState(prev => ({ ...prev, isResizing: index }));
-  };
-
-  const onMouseMove = useCallback((e: MouseEvent) => {
-    if (appState.isResizing === null) return;
-    const totalWidth = window.innerWidth;
-    const newPerc = (e.clientX / totalWidth) * 100;
-    
-    setAppState(prev => {
-        const widths = [...prev.columnWidths] as [number, number, number];
-        
-        if (prev.isResizing === 0) {
-            const w1 = Math.max(20, Math.min(newPerc, 40)); 
-            const diff = w1 - widths[0];
-            widths[0] = w1;
-            widths[1] = widths[1] - diff; 
-        } else if (prev.isResizing === 1) {
-             const splitPerc = (e.clientX / totalWidth) * 100;
-             let w2 = splitPerc - widths[0];
-             w2 = Math.max(20, w2);
-             if (100 - (widths[0] + w2) < 20) return prev;
-             widths[1] = w2;
-             widths[2] = 100 - widths[0] - widths[1];
-        }
-        
-        return { ...prev, columnWidths: widths };
-    });
-  }, [appState.isResizing]);
-
-  const onMouseUp = useCallback(() => {
-    setAppState(prev => ({ ...prev, isResizing: null }));
-  }, []);
-
-  useEffect(() => {
-    if (appState.isResizing !== null) {
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-  }, [appState.isResizing, onMouseMove, onMouseUp]);
-
-  const setDiagramType = useCallback((type: DiagramType) => {
-    setAppState(prev => ({ ...prev, diagramType: type }));
-  }, []);
-
-  const clearMessages = useCallback(() => {
-    setMessages([]);
-  }, []);
-
-  const toggleTheme = useCallback(() => {
-    setAppState(prev => ({ ...prev, theme: prev.theme === 'light' ? 'dark' : 'light' }));
-  }, []);
-
-  const setLanguage = useCallback((lang: string) => {
-    setAppState(prev => ({ ...prev, language: lang }));
-  }, []);
 
   return {
     aiConfig,
@@ -380,14 +340,15 @@ export const useDiagramStudio = () => {
     connectionState,
     mermaidState,
     messages,
-    setMessages,
+    setMessages, // Kept for compatibility if needed, though addMessage/clearMessages is preferred
     appState,
     setAppState,
     isProcessing,
     connectAI,
     disconnectAI,
     handleMermaidChange,
-    handleSendMessage,
+    handleChatMessage,
+    handleBuildFromPrompt,
     handleRecompile,
     handleFixSyntax,
     handleAnalyze,

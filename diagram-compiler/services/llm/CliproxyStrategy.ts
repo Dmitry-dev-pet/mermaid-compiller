@@ -7,6 +7,8 @@ interface CliproxyModel {
   context_length?: number;
 }
 
+type CliproxyModelEntry = CliproxyModel | string;
+
 const getLanguageInstruction = (lang: string) => 
   (lang && lang !== 'auto') ? `\nIMPORTANT: Respond in ${lang}.` : '';
 
@@ -110,16 +112,19 @@ export class CliproxyStrategy implements LLMProviderStrategy {
       return [];
     }
 
-    let rawList: CliproxyModel[] = [];
-    if (Array.isArray(data.data)) rawList = data.data as CliproxyModel[];
-    else if (Array.isArray(data)) rawList = data as CliproxyModel[];
+    const hasDataArray = (value: unknown): value is { data: unknown } =>
+      typeof value === 'object' && value !== null && 'data' in value;
+
+    let rawList: CliproxyModelEntry[] = [];
+    if (hasDataArray(data) && Array.isArray(data.data)) rawList = data.data as CliproxyModelEntry[];
+    else if (Array.isArray(data)) rawList = data as CliproxyModelEntry[];
 
     // Apply filtering if necessary, Cliproxy might return a pre-filtered list or not support it.
     // For now, assuming raw list directly maps.
     return rawList.map((m) => ({
       id: typeof m === 'string' ? m : m.id,
       name: typeof m === 'string' ? m : (m.name || m.id),
-      contextLength: m.context_length || 0,
+      contextLength: typeof m === 'string' ? 0 : (m.context_length || 0),
       isFree: false, // Cliproxy typically proxies paid models or local ones
     }));
   }
@@ -194,29 +199,20 @@ Fix it.`,
       ? `Preferred Diagram Type: ${diagramType}.`
       : `Default to 'flowchart TD' if unspecified.`;
 
-    const systemPrompt = `You are an expert Mermaid.js diagram assistant.
-Your goal is to help the user create diagrams.
+    const systemPrompt = `You are a Mermaid.js diagram assistant in CHAT mode.
 
-PROCESS:
-1. Analyze the user's latest request.
-2. IF the request is clear and contains enough information to build a diagram:
-   - Generate VALID Mermaid code inside a \`\`\`mermaid\`\`\` block.
-   - Provide a BRIEF technical summary of what the diagram represents (1-2 sentences).
-   - RESPECT the ${typeRule} unless the user explicitly asks for a different type.
-   - Use the provided Docs Context for syntax reference.
-3. IF the request is VAGUE, AMBIGUOUS, or lacks sufficient detail:
-   - DO NOT generate a diagram.
-   - Ask specific clarifying questions to guide the user.${getLanguageInstruction(language)}
+GOAL:
+- Help the user reason about the diagram and requirements using TEXT ONLY.
 
-FORMAT:
-- Text response...
-- \`\`\`mermaid
-  ... code ...
-  \`\`\`
-- Text response...
+RULES:
+1. Output plain text only. Do NOT output Mermaid code or any fenced code blocks.
+2. You may receive the current Mermaid diagram code in the conversation context; use it to answer, but do not quote it verbatim.
+3. If the user asks to generate/update/simplify the diagram, explain what to change and tell them to press the Build button to apply it.
+4. Ask clarifying questions when the request is ambiguous.
+5. Respect the ${typeRule} in your guidance unless the user explicitly asks for a different type.${getLanguageInstruction(language)}
 
 Docs Context:
-${docsContext.slice(0, 2000)}...
+${docsContext.slice(0, 1200)}...
 `;
 
     return this.fetchCompletion(messages, config, systemPrompt);

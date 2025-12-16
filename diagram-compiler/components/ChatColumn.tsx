@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Trash2, MessageSquare } from 'lucide-react';
+import { MessageSquare, Play, Trash2 } from 'lucide-react';
 import { Message, DiagramType } from '../types';
 
 interface ChatColumnProps {
   messages: Message[];
-  onSendMessage: (text: string) => void;
+  onChat: (text: string) => void;
+  onBuild: (text?: string) => void;
   onClear: () => void;
   isProcessing: boolean;
   diagramType: DiagramType;
@@ -14,7 +15,8 @@ interface ChatColumnProps {
 
 const ChatColumn: React.FC<ChatColumnProps> = ({
   messages,
-  onSendMessage,
+  onChat,
+  onBuild,
   onClear,
   isProcessing,
   diagramType,
@@ -23,6 +25,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hasChatContext = messages.some((m) => m.id !== 'init' && m.role === 'user' && m.content.trim().length > 0);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -32,17 +35,39 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     scrollToBottom();
   }, [messages]);
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = (mode: 'chat' | 'build', e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim() || isProcessing) return;
-    onSendMessage(input);
+    if (isProcessing) return;
+
+    if (mode === 'chat') {
+      if (!input.trim()) return;
+      onChat(input);
+      setInput('');
+      return;
+    }
+
+    const prompt = input.trim();
+    if (prompt) {
+      onBuild(prompt);
+      setInput('');
+      return;
+    }
+
+    if (!hasChatContext) return;
+    onBuild(undefined);
     setInput('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      handleSubmit('build');
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      handleSubmit('chat');
     }
   };
 
@@ -120,13 +145,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
             placeholder="Type specification..."
             className="w-full resize-none rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 max-h-32 min-h-[80px]"
           />
-          <button 
-            onClick={() => handleSubmit()}
-            disabled={!input.trim() || isProcessing}
-            className="absolute bottom-2 right-2 p-1.5 bg-blue-600 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
-          >
-            <Send size={14} />
-          </button>
         </div>
         <div className="flex justify-between items-center mt-2">
            <button 
@@ -136,14 +154,35 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
             >
              <Trash2 size={12} /> Clear spec
            </button>
+           <div className="flex items-center gap-2">
+             <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline">
+               Enter: Chat • Ctrl/Cmd+Enter: Build
+             </span>
+             <button
+               onClick={() => handleSubmit('chat')}
+               disabled={!input.trim() || isProcessing}
+               className="px-2.5 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors inline-flex items-center gap-1.5"
+               title="Chat (text only)"
+             >
+               <MessageSquare size={14} /> Chat
+             </button>
+             <button
+               onClick={() => handleSubmit('build')}
+               disabled={(!input.trim() && !hasChatContext) || isProcessing}
+               className="px-2.5 py-1.5 text-xs rounded-md bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5"
+               title={input.trim() ? 'Build diagram from this prompt' : 'Build diagram from chat context'}
+             >
+               <Play size={14} /> Build
+             </button>
+           </div>
            <div className="text-[10px] font-medium">
              {mermaidStatus === 'edited' ? (
                 <span className="text-amber-600 dark:text-amber-500 flex items-center gap-1">
-                  ⚠ Spec ignored (manual override)
+                  ⚠ Diagram manually edited
                 </span>
              ) : (
                 <span className="text-green-600 dark:text-green-500 flex items-center gap-1">
-                  ✓ Used for next compile
+                  ✓ Used for next build
                 </span>
              )}
            </div>

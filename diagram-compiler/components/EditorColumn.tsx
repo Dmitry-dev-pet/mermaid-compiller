@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { Play, Check, Copy, PenTool, RefreshCw } from 'lucide-react';
 import { MermaidState } from '../types';
+import { AUTO_FIX_MAX_ATTEMPTS } from '../constants';
 import Editor from 'react-simple-code-editor';
 import { highlight, languages } from 'prismjs';
 import 'prismjs/themes/prism.css';
@@ -104,9 +105,9 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               onClick={onFixSyntax}
               disabled={!isAIReady || mermaidState.isValid || isProcessing}
               className="px-2 py-1 text-[10px] font-medium text-white bg-amber-600 hover:bg-amber-700 rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-              title="Attempt to fix syntax errors"
+              title={`Attempt to fix syntax errors (up to ${AUTO_FIX_MAX_ATTEMPTS} tries)`}
             >
-               <RefreshCw size={10} className={isProcessing ? "animate-spin" : ""} /> Fix
+               <RefreshCw size={10} className={isProcessing ? "animate-spin" : ""} /> Fix ({AUTO_FIX_MAX_ATTEMPTS})
             </button>
 
             <button 
