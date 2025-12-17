@@ -1,12 +1,10 @@
 // Simple ID generator
 export const generateId = () => Math.random().toString(36).substring(2, 9);
 
-// Helper function to strip Mermaid code blocks from a string
+// Helper function to strip Mermaid code blocks from a string (safety-net; prompts should prevent them)
 export const stripMermaidCode = (text: string): string => {
-  // Remove ```mermaid ... ``` blocks
-  let strippedText = text.replace(/```mermaid\n([\s\S]*?)```/g, '');
-  // Remove generic ``` ... ``` blocks that might contain code
-  strippedText = strippedText.replace(/```\n([\s\S]*?)```/g, '');
+  // Remove fenced Mermaid blocks only; do not strip other code fences (users may want to see them).
+  const strippedText = text.replace(/```mermaid\s*[\r\n]([\s\S]*?)```/gi, '');
   return strippedText.trim();
 };
 
@@ -25,5 +23,4 @@ export const safeParse = <T>(key: string, fallback: T): T => {
     return fallback;
   }
 };
-
 
