@@ -12,10 +12,12 @@ graph TD
     Hook -->|State & Logic| Chat(ChatColumn.tsx)
     Hook -->|State & Logic| Editor(EditorColumn.tsx)
     Hook -->|State & Logic| Preview(PreviewColumn.tsx)
+    Hook -->|History| HistoryHook(useHistory.ts)
     
     Hook -->|Methods| LLMService(llmService.ts)
     Hook -->|Validation| MermaidService(mermaidService.ts)
     Hook -->|Docs| DocsService(docsContextService.ts)
+    HistoryHook -->|Store| HistoryStore(services/history/*)
     
     LLMService -->|Strategy| Strategy{LLM Strategy}
     Strategy -->|OpenRouter| OpenRouter[OpenRouterStrategy]
@@ -32,7 +34,7 @@ graph TD
     *   **Editor:** `react-simple-code-editor` + `prismjs` (One Dark theme).
     *   **Diagramming:** Mermaid.js (npm package).
 *   **Архитектура:**
-    *   **State Management:** Custom Hook (`useDiagramStudio`) + `useState` + `localStorage`.
+    *   **State Management:** Custom Hook (`useDiagramStudio`) + `useState`; настройки в `localStorage`, история в IndexedDB.
     *   **LLM Integration:** Strategy Pattern (`OpenRouterStrategy`, `CliproxyStrategy`).
 
 ## 3. Структура Проекта (`diagram-compiler/src/`)
@@ -50,6 +52,10 @@ graph TD
     *   Логика чата (`handleSendMessage`), компиляции (`handleRecompile`), анализа (`handleAnalyze`).
     *   Авто-подключение и восстановление сессии.
     *   Управление темой и языком.
+*   **`useHistory.ts`:**
+    *   Работа с историей (Session/TimeStep/DiagramRevision).
+    *   Восстановление состояния при старте.
+    *   Метки ревизий для навигации из чата.
 
 ### 3.3. Сервисы (`services/`)
 *   **`llmService.ts`:** Фасад для работы с LLM. Делегирует вызовы стратегиям.
@@ -57,6 +63,7 @@ graph TD
     *   `llm/CliproxyStrategy.ts`: Реализация для локального прокси.
 *   **`mermaidService.ts`:** Валидация кода, инициализация Mermaid, парсинг ответов.
 *   **`docsContextService.ts`:** Загрузка локальной документации (параллельная).
+*   **`services/history/*`:** Хранилище истории (IndexedDB) для шагов и ревизий.
 
 ## 4. Основные Процессы
 
