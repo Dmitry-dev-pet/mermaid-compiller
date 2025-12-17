@@ -30,7 +30,9 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
     if (!apiKey) throw new Error("OpenRouter API Key not configured");
 
 
-    const endpoint = `${baseUrl}/chat/completions`;
+    const v1BaseUrl = baseUrl.endsWith('/v1') ? baseUrl : `${baseUrl}/v1`;
+
+    const endpoint = `${v1BaseUrl}/chat/completions`;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -91,7 +93,9 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
     };
 
     try {
-      const response = await fetch(`${baseUrl}/v1/models`, { headers });
+      const v1BaseUrl = baseUrl.endsWith('/v1') ? baseUrl : `${baseUrl}/v1`;
+
+      const response = await fetch(`${v1BaseUrl}/models`, { headers });
       if (!response.ok) {
         // If authentication fails, or other error, return empty
         console.warn("Failed to fetch OpenRouter models:", response.status, await response.text());

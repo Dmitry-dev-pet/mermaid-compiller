@@ -62,6 +62,12 @@ const Header: React.FC<HeaderProps> = ({
     onConfigChange({ ...aiConfig, ...updates });
   };
 
+  const switchProvider = (provider: AIConfig['provider']) => {
+    if (aiConfig.provider === provider) return;
+    onDisconnect();
+    updateConfig({ provider, selectedModelId: '' });
+  };
+
   const filteredModels = connectionState.availableModels.filter(m => {
     if (aiConfig.filters.freeOnly && !m.isFree) return false;
     if (aiConfig.filters.context8k && (m.contextLength || 0) < 8000) return false;
@@ -97,7 +103,7 @@ const Header: React.FC<HeaderProps> = ({
                       type="radio" 
                       name="provider" 
                       checked={aiConfig.provider === 'openrouter'}
-                      onChange={() => updateConfig({ provider: 'openrouter' })}
+                      onChange={() => switchProvider('openrouter')}
                       className="text-blue-600 focus:ring-blue-500"
                     />
                     <span className="text-sm">OpenRouter</span>
@@ -107,7 +113,7 @@ const Header: React.FC<HeaderProps> = ({
                       type="radio" 
                       name="provider" 
                       checked={aiConfig.provider === 'cliproxy'}
-                      onChange={() => updateConfig({ provider: 'cliproxy' })}
+                      onChange={() => switchProvider('cliproxy')}
                       className="text-blue-600 focus:ring-blue-500"
                     />
                     <span className="text-sm">My Proxy</span>
