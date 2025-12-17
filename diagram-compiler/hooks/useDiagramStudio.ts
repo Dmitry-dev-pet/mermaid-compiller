@@ -5,13 +5,15 @@ import { useLayout } from './useLayout';
 import { useChat } from './useChat';
 import { createStudioActions } from './studioActions';
 import { useHistory } from './useHistory';
+import type { DiagramMarker } from './useHistory';
 
 export const useDiagramStudio = () => {
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
   const { mermaidState, setMermaidState, handleMermaidChange } = useMermaid();
   const { appState, setAppState, startResize, setDiagramType, toggleTheme, setLanguage } = useLayout();
   const { messages, setMessages, addMessage, clearMessages, getMessages } = useChat();
-  const { isHistoryReady, historyLoadResult, appendTimeStep } = useHistory();
+  const { isHistoryReady, historyLoadResult, appendTimeStep, diagramMarkers, selectedStepId, selectDiagramStep } =
+    useHistory();
 
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -110,6 +112,28 @@ export const useDiagramStudio = () => {
       recordTimeStep: appendTimeStep,
     });
 
+  const goToDiagramStep = async (marker: Pick<DiagramMarker, 'stepId'> | string) => {
+    const stepId = typeof marker === 'string' ? marker : marker.stepId;
+    const revision = await selectDiagramStep(stepId);
+    if (!revision) return;
+
+    lastManualRecordedCodeRef.current = revision.mermaid;
+    setMermaidState((prev) => ({
+      ...prev,
+      code: revision.mermaid,
+      isValid: revision.diagnostics?.isValid ?? true,
+      lastValidCode: revision.diagnostics?.isValid === false ? prev.lastValidCode : revision.mermaid,
+      errorMessage: revision.diagnostics?.errorMessage,
+      errorLine: revision.diagnostics?.errorLine,
+      status: revision.mermaid.trim()
+        ? (revision.diagnostics?.isValid ?? true)
+          ? 'valid'
+          : 'invalid'
+        : 'empty',
+      source: 'compiled',
+    }));
+  };
+
   return {
     aiConfig,
     setAiConfig,
@@ -128,6 +152,9 @@ export const useDiagramStudio = () => {
     handleRecompile,
     handleFixSyntax,
     handleAnalyze,
+    diagramMarkers,
+    selectedStepId,
+    goToDiagramStep,
     startResize,
     setDiagramType,
     clearMessages,

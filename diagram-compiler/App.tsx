@@ -22,6 +22,9 @@ function App() {
     handleRecompile,
     handleFixSyntax,
     handleAnalyze,
+    diagramMarkers,
+    selectedStepId,
+    goToDiagramStep,
     startResize,
     setDiagramType,
     clearMessages,
@@ -57,6 +60,9 @@ function App() {
               diagramType={appState.diagramType}
               onDiagramTypeChange={setDiagramType}
               mermaidStatus={mermaidState.status}
+              diagramMarkers={diagramMarkers}
+              selectedStepId={selectedStepId}
+              onSelectDiagramStep={goToDiagramStep}
            />
         </div>
 

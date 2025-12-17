@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, Play, Trash2 } from 'lucide-react';
 import { Message, DiagramType } from '../types';
+import type { DiagramMarker } from '../hooks/useHistory';
 
 interface ChatColumnProps {
   messages: Message[];
@@ -11,6 +12,9 @@ interface ChatColumnProps {
   diagramType: DiagramType;
   onDiagramTypeChange: (type: DiagramType) => void;
   mermaidStatus: 'empty' | 'valid' | 'invalid' | 'edited';
+  diagramMarkers?: DiagramMarker[];
+  selectedStepId?: string | null;
+  onSelectDiagramStep?: (stepId: string) => void | Promise<void>;
 }
 
 const ChatColumn: React.FC<ChatColumnProps> = ({
@@ -21,7 +25,10 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   isProcessing,
   diagramType,
   onDiagramTypeChange,
-  mermaidStatus
+  mermaidStatus,
+  diagramMarkers = [],
+  selectedStepId = null,
+  onSelectDiagramStep
 }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -89,6 +96,47 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {diagramMarkers.length > 0 && (
+          <div className="sticky top-0 -mt-4 -mx-4 px-4 py-2 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200/70 dark:border-slate-800/70 z-10">
+            <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+              Diagram renders
+            </div>
+            <div className="flex gap-1 overflow-x-auto pb-1">
+              {diagramMarkers.map((m) => {
+                const isSelected = m.stepId === selectedStepId;
+                const label =
+                  m.type === 'build'
+                    ? 'Build'
+                    : m.type === 'fix'
+                      ? 'Fix'
+                      : m.type === 'recompile'
+                        ? 'Run'
+                        : m.type === 'manual_edit'
+                          ? 'Edit'
+                          : m.type === 'seed'
+                            ? 'Seed'
+                            : m.type;
+
+                return (
+                  <button
+                    key={m.stepId}
+                    type="button"
+                    onClick={() => onSelectDiagramStep?.(m.stepId)}
+                    className={`shrink-0 px-2 py-1 rounded-full text-[10px] border transition-colors ${
+                      isSelected
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+                    }`}
+                    title={`Step #${m.stepIndex + 1} • ${label}`}
+                  >
+                    #{m.stepIndex + 1} {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500 text-sm text-center px-4">
              <MessageSquare size={32} className="mb-2 opacity-50" />
@@ -97,12 +145,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           </div>
         ) : (
           <>
-            {messages.length > 5 && (
-              <div className="text-center">
-                 <span className="text-xs text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full">Earlier messages collapsed</span>
-              </div>
-            )}
-            {messages.slice(-5).map((msg) => (
+            {messages.map((msg) => (
               <div 
                 key={msg.id} 
                 className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
