@@ -18,6 +18,8 @@ export type DiagramMarker = {
   revisionId: string;
 };
 
+export type DiagramStepAnchors = Record<string, string>;
+
 export const useHistory = () => {
   const [isHistoryReady, setIsHistoryReady] = useState(false);
   const [historySession, setHistorySession] = useState<HistorySession | null>(null);
@@ -117,6 +119,18 @@ export const useHistory = () => {
     return out;
   }, [historySteps]);
 
+  const diagramStepAnchors = useMemo<DiagramStepAnchors>(() => {
+    const map: DiagramStepAnchors = {};
+    for (const step of historySteps) {
+      const msgs = step.messages ?? [];
+      const lastAssistant = msgs.slice().reverse().find((m) => m.role === 'assistant')?.id;
+      const last = msgs[msgs.length - 1]?.id;
+      const best = lastAssistant ?? last;
+      if (best) map[step.id] = best;
+    }
+    return map;
+  }, [historySteps]);
+
   const selectDiagramStep = useCallback(async (stepId: string): Promise<DiagramRevision | null> => {
     const step = stepsRef.current.find((s) => s.id === stepId);
     if (!step) return null;
@@ -132,6 +146,7 @@ export const useHistory = () => {
     historyLoadResult,
     historySteps,
     diagramMarkers,
+    diagramStepAnchors,
     selectedStepId,
     loadHistory,
     appendTimeStep,

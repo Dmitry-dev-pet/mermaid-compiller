@@ -23,6 +23,7 @@ function App() {
     handleFixSyntax,
     handleAnalyze,
     diagramMarkers,
+    diagramStepAnchors,
     selectedStepId,
     goToDiagramStep,
     startResize,
@@ -61,6 +62,7 @@ function App() {
               onDiagramTypeChange={setDiagramType}
               mermaidStatus={mermaidState.status}
               diagramMarkers={diagramMarkers}
+              diagramStepAnchors={diagramStepAnchors}
               selectedStepId={selectedStepId}
               onSelectDiagramStep={goToDiagramStep}
            />

@@ -13,6 +13,7 @@ interface ChatColumnProps {
   onDiagramTypeChange: (type: DiagramType) => void;
   mermaidStatus: 'empty' | 'valid' | 'invalid' | 'edited';
   diagramMarkers?: DiagramMarker[];
+  diagramStepAnchors?: Record<string, string>;
   selectedStepId?: string | null;
   onSelectDiagramStep?: (stepId: string) => void | Promise<void>;
 }
@@ -27,11 +28,13 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onDiagramTypeChange,
   mermaidStatus,
   diagramMarkers = [],
+  diagramStepAnchors = {},
   selectedStepId = null,
   onSelectDiagramStep
 }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   const hasChatContext = messages.some((m) => m.id !== 'init' && m.role === 'user' && m.content.trim().length > 0);
 
   const scrollToBottom = () => {
@@ -41,6 +44,20 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    if (!focusedMessageId) return;
+    const t = window.setTimeout(() => setFocusedMessageId(null), 1600);
+    return () => window.clearTimeout(t);
+  }, [focusedMessageId]);
+
+  const scrollToMessage = (messageId: string) => {
+    const el = document.getElementById(`chat-msg-${messageId}`);
+    if (!el) return false;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFocusedMessageId(messageId);
+    return true;
+  };
 
   const handleSubmit = (mode: 'chat' | 'build', e?: React.FormEvent) => {
     e?.preventDefault();
@@ -121,7 +138,16 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                   <button
                     key={m.stepId}
                     type="button"
-                    onClick={() => onSelectDiagramStep?.(m.stepId)}
+                    onClick={() => {
+                      onSelectDiagramStep?.(m.stepId);
+                      const anchor = diagramStepAnchors[m.stepId];
+                      if (anchor) {
+                        // Let the UI repaint before scrolling, so highlight feels instant.
+                        requestAnimationFrame(() => scrollToMessage(anchor));
+                      } else {
+                        requestAnimationFrame(() => scrollToBottom());
+                      }
+                    }}
                     className={`shrink-0 px-2 py-1 rounded-full text-[10px] border transition-colors ${
                       isSelected
                         ? 'bg-blue-600 text-white border-blue-600'
@@ -151,7 +177,10 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                 className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
               >
                 <div 
-                  className={`max-w-[90%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap ${
+                  id={`chat-msg-${msg.id}`}
+                  className={`max-w-[90%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap transition-shadow ${
+                    focusedMessageId === msg.id ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-50 dark:ring-offset-slate-900' : ''
+                  } ${
                     msg.role === 'user' 
                       ? 'bg-blue-600 text-white rounded-br-none shadow-sm' 
                       : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none shadow-sm'

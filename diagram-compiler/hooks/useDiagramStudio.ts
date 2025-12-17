@@ -12,7 +12,15 @@ export const useDiagramStudio = () => {
   const { mermaidState, setMermaidState, handleMermaidChange } = useMermaid();
   const { appState, setAppState, startResize, setDiagramType, toggleTheme, setLanguage } = useLayout();
   const { messages, setMessages, addMessage, clearMessages, getMessages } = useChat();
-  const { isHistoryReady, historyLoadResult, appendTimeStep, diagramMarkers, selectedStepId, selectDiagramStep } =
+  const {
+    isHistoryReady,
+    historyLoadResult,
+    appendTimeStep,
+    diagramMarkers,
+    diagramStepAnchors,
+    selectedStepId,
+    selectDiagramStep,
+  } =
     useHistory();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -153,6 +161,7 @@ export const useDiagramStudio = () => {
     handleFixSyntax,
     handleAnalyze,
     diagramMarkers,
+    diagramStepAnchors,
     selectedStepId,
     goToDiagramStep,
     startResize,
