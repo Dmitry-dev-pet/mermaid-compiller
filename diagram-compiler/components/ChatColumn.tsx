@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { MessageSquare, Play, Trash2 } from 'lucide-react';
 import { Message, DiagramType } from '../types';
 import type { DiagramMarker } from '../hooks/useHistory';
@@ -33,16 +33,19 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onSelectDiagramStep
 }) => {
   const [input, setInput] = useState('');
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   const hasChatContext = messages.some((m) => m.id !== 'init' && m.role === 'user' && m.content.trim().length > 0);
+  const messageElsRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const isAtBottomRef = useRef(true);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
-    scrollToBottom();
+    if (isAtBottomRef.current) scrollToBottom();
   }, [messages]);
 
   useEffect(() => {
@@ -52,11 +55,48 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   }, [focusedMessageId]);
 
   const scrollToMessage = (messageId: string) => {
-    const el = document.getElementById(`chat-msg-${messageId}`);
+    const el = messageElsRef.current[messageId];
     if (!el) return false;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setFocusedMessageId(messageId);
     return true;
+  };
+
+  const onMessagesScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const thresholdPx = 64;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < thresholdPx;
+  };
+
+  const markersUi = useMemo(() => {
+    return diagramMarkers.map((m) => {
+      const isSelected = m.stepId === selectedStepId;
+      const label =
+        m.type === 'build'
+          ? 'Build'
+          : m.type === 'fix'
+            ? 'Fix'
+            : m.type === 'recompile'
+              ? 'Run'
+              : m.type === 'manual_edit'
+                ? 'Edit'
+                : m.type === 'seed'
+                  ? 'Seed'
+                  : m.type;
+
+      return { ...m, isSelected, label };
+    });
+  }, [diagramMarkers, selectedStepId]);
+
+  const handleMarkerClick = (stepId: string) => {
+    onSelectDiagramStep?.(stepId);
+    const anchor = diagramStepAnchors[stepId];
+    if (anchor) {
+      requestAnimationFrame(() => scrollToMessage(anchor));
+    } else {
+      requestAnimationFrame(() => scrollToBottom());
+    }
   };
 
   const handleSubmit = (mode: 'chat' | 'build', e?: React.FormEvent) => {
@@ -112,42 +152,19 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={messagesContainerRef} onScroll={onMessagesScroll} className="flex-1 overflow-y-auto p-4 space-y-4">
         {diagramMarkers.length > 0 && (
           <div className="sticky top-0 -mt-4 -mx-4 px-4 py-2 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200/70 dark:border-slate-800/70 z-10">
             <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
               Diagram renders
             </div>
             <div className="flex gap-1 overflow-x-auto pb-1">
-              {diagramMarkers.map((m) => {
-                const isSelected = m.stepId === selectedStepId;
-                const label =
-                  m.type === 'build'
-                    ? 'Build'
-                    : m.type === 'fix'
-                      ? 'Fix'
-                      : m.type === 'recompile'
-                        ? 'Run'
-                        : m.type === 'manual_edit'
-                          ? 'Edit'
-                          : m.type === 'seed'
-                            ? 'Seed'
-                            : m.type;
-
+              {markersUi.map((m) => {
                 return (
                   <button
                     key={m.stepId}
                     type="button"
-                    onClick={() => {
-                      onSelectDiagramStep?.(m.stepId);
-                      const anchor = diagramStepAnchors[m.stepId];
-                      if (anchor) {
-                        // Let the UI repaint before scrolling, so highlight feels instant.
-                        requestAnimationFrame(() => scrollToMessage(anchor));
-                      } else {
-                        requestAnimationFrame(() => scrollToBottom());
-                      }
-                    }}
+                    onClick={() => handleMarkerClick(m.stepId)}
                     className={`shrink-0 px-2 py-1 rounded-full text-[10px] border transition-colors ${
                       isSelected
                         ? 'bg-blue-600 text-white border-blue-600'
@@ -177,7 +194,9 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                 className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
               >
                 <div 
-                  id={`chat-msg-${msg.id}`}
+                  ref={(el) => {
+                    messageElsRef.current[msg.id] = el;
+                  }}
                   className={`max-w-[90%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap transition-shadow ${
                     focusedMessageId === msg.id ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-50 dark:ring-offset-slate-900' : ''
                   } ${
