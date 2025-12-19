@@ -8,7 +8,7 @@
     "preview": "npm --prefix diagram-compiler run preview",
     "start": "node server.js",
     "lint": "eslint public public-next --ext .js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm --prefix diagram-compiler test"
   },
   "keywords": [],
   "author": "",

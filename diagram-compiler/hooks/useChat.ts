@@ -29,6 +29,10 @@ export const useChat = () => {
     setMessages([]);
   }, [setMessages]);
 
+  const resetMessages = useCallback(() => {
+    setMessages(INITIAL_MESSAGES);
+  }, [setMessages]);
+
   const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
     const nextMessage: Message = {
       id: generateId(),
@@ -48,6 +52,7 @@ export const useChat = () => {
     setMessages, // Exposed for bulk updates or specialized logic
     addMessage,
     clearMessages,
+    resetMessages,
     getMessages,
   };
 };

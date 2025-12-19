@@ -4,14 +4,22 @@ const DOCS_BASE_URL = '/mermaid-docs';
 
 const commonDocs = [
   'packages/mermaid/src/docs/intro/getting-started.md',
-  'packages/mermaid/src/docs/config/setup/README.md',
+  'packages/mermaid/src/docs/intro/syntax-reference.md',
+  'packages/mermaid/src/docs/config/configuration.md',
 ];
 
-const diagramDocs: Record<string, string[]> = {
+const diagramDocs: Record<DiagramType, string[]> = {
   flowchart: ['packages/mermaid/src/docs/syntax/flowchart.md'],
   sequence: ['packages/mermaid/src/docs/syntax/sequenceDiagram.md'],
-  er: ['packages/mermaid/src/docs/syntax/erDiagram.md', 'packages/mermaid/src/docs/syntax/entityRelationshipDiagram.md'],
-  // Add others as needed mapping from DiagramType
+  er: ['packages/mermaid/src/docs/syntax/entityRelationshipDiagram.md'],
+  c4: ['packages/mermaid/src/docs/syntax/c4.md'],
+  class: ['packages/mermaid/src/docs/syntax/classDiagram.md'],
+  state: ['packages/mermaid/src/docs/syntax/stateDiagram.md'],
+  gantt: ['packages/mermaid/src/docs/syntax/gantt.md'],
+  mindmap: ['packages/mermaid/src/docs/syntax/mindmap.md'],
+  pie: ['packages/mermaid/src/docs/syntax/pie.md'],
+  timeline: ['packages/mermaid/src/docs/syntax/timeline.md'],
+  userJourney: ['packages/mermaid/src/docs/syntax/userJourney.md'],
 };
 
 const fetchLocalDoc = async (path: string): Promise<{ path: string; text: string }> => {

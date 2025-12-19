@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, MermaidState } from '../types';
-import { ensureActiveSession, getRevision, loadActiveSessionState, recordStep } from '../services/history/store';
+import { createSession, ensureActiveSession, getRevision, loadActiveSessionState, recordStep } from '../services/history/store';
 import type { DiagramRevision, HistorySession, StepMeta, TimeStep, TimeStepType } from '../services/history/types';
 
 export type HistoryLoadResult = {
@@ -140,6 +140,21 @@ export const useHistory = () => {
     return getRevision(revId);
   }, []);
 
+  const startNewSession = useCallback(async (): Promise<HistorySession> => {
+    const session = await createSession();
+    sessionIdRef.current = session.id;
+    setHistorySession(session);
+    stepsRef.current = [];
+    setHistorySteps([]);
+    setSelectedStepId(null);
+    setHistoryLoadResult({
+      session,
+      messages: [],
+      currentRevisionMermaid: null,
+    });
+    return session;
+  }, []);
+
   return {
     isHistoryReady,
     historySession,
@@ -151,5 +166,6 @@ export const useHistory = () => {
     loadHistory,
     appendTimeStep,
     selectDiagramStep,
+    startNewSession,
   };
 };

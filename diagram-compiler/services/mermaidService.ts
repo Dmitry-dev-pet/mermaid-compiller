@@ -60,7 +60,22 @@ export const extractMermaidCode = (rawText: string): string => {
   const codeMatch = rawText.match(/```\n([\s\S]*?)```/);
   if (codeMatch && codeMatch[1]) return codeMatch[1].trim();
 
-  const keywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'erDiagram', 'gantt', 'pie', 'mindmap'];
+  const keywords = [
+    'graph',
+    'flowchart',
+    'sequenceDiagram',
+    'classDiagram',
+    'stateDiagram',
+    'erDiagram',
+    'gantt',
+    'pie',
+    'mindmap',
+    'C4Context',
+    'C4Container',
+    'C4Component',
+    'C4Dynamic',
+    'C4Deployment',
+  ];
   const firstWord = rawText.trim().split(/\s+/)[0];
   
   if (keywords.some(k => rawText.trim().startsWith(k)) || keywords.includes(firstWord)) {

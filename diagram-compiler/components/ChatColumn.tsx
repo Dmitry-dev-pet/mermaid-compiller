@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
-import { MessageSquare, Play, Trash2 } from 'lucide-react';
+import { MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
 import { Message, DiagramType } from '../types';
 import type { DiagramMarker } from '../hooks/useHistory';
 
@@ -8,6 +8,7 @@ interface ChatColumnProps {
   onChat: (text: string) => void;
   onBuild: (text?: string) => void;
   onClear: () => void;
+  onNewProject: () => void;
   isProcessing: boolean;
   diagramType: DiagramType;
   onDiagramTypeChange: (type: DiagramType) => void;
@@ -23,6 +24,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onChat,
   onBuild,
   onClear,
+  onNewProject,
   isProcessing,
   diagramType,
   onDiagramTypeChange,
@@ -147,7 +149,15 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         >
           <option value="sequence">Sequence Diagram</option>
           <option value="flowchart">Flowchart</option>
+          <option value="class">Class Diagram</option>
+          <option value="state">State Diagram</option>
           <option value="er">Entity Relationship</option>
+          <option value="gantt">Gantt</option>
+          <option value="mindmap">Mindmap</option>
+          <option value="pie">Pie</option>
+          <option value="timeline">Timeline</option>
+          <option value="userJourney">User Journey</option>
+          <option value="c4">C4 (experimental)</option>
         </select>
       </div>
 
@@ -159,23 +169,23 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
               Diagram renders
             </div>
             <div className="flex gap-1 overflow-x-auto pb-1">
-              {markersUi.map((m) => {
-                return (
-                  <button
-                    key={m.stepId}
-                    type="button"
-                    onClick={() => handleMarkerClick(m.stepId)}
-                    className={`shrink-0 px-2 py-1 rounded-full text-[10px] border transition-colors ${
-                      isSelected
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
-                    }`}
-                    title={`Step #${m.stepIndex + 1} • ${label}`}
-                  >
-                    #{m.stepIndex + 1} {label}
-                  </button>
-                );
-              })}
+	              {markersUi.map((m) => {
+	                return (
+	                  <button
+	                    key={m.stepId}
+	                    type="button"
+	                    onClick={() => handleMarkerClick(m.stepId)}
+	                    className={`shrink-0 px-2 py-1 rounded-full text-[10px] border transition-colors ${
+	                      m.isSelected
+	                        ? 'bg-blue-600 text-white border-blue-600'
+	                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+	                    }`}
+	                    title={`Step #${m.stepIndex + 1} • ${m.label}`}
+	                  >
+	                    #{m.stepIndex + 1} {m.label}
+	                  </button>
+	                );
+	              })}
             </div>
           </div>
         )}
@@ -227,28 +237,39 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       </div>
 
       {/* Composer */}
-      <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
-        <div className="relative">
-          <textarea
+	      <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
+	        <div className="relative">
+	          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type specification..."
             className="w-full resize-none rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 max-h-32 min-h-[80px]"
           />
-        </div>
-        <div className="flex justify-between items-center mt-2">
-           <button 
-             onClick={onClear} 
-             className="text-xs text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors"
-             title="Clear chat history"
-            >
-             <Trash2 size={12} /> Clear spec
-           </button>
-           <div className="flex items-center gap-2">
-             <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline">
-               Enter: Chat • Ctrl/Cmd+Enter: Build
-             </span>
+	        </div>
+	        <div className="flex justify-between items-center mt-2">
+	           <div className="flex items-center gap-3">
+	             <button
+	               onClick={onNewProject}
+	               className="text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 transition-colors"
+	               title="Новый проект (сброс чата, диаграммы и истории)"
+	               type="button"
+	             >
+	               <Plus size={12} /> Новый проект
+	             </button>
+	             <button
+	               onClick={onClear}
+	               className="text-xs text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors"
+	               title="Clear chat history"
+	               type="button"
+	             >
+	               <Trash2 size={12} /> Clear spec
+	             </button>
+	           </div>
+	           <div className="flex items-center gap-2">
+	             <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline">
+	               Enter: Chat • Ctrl/Cmd+Enter: Build
+	             </span>
              <button
                onClick={() => handleSubmit('chat')}
                disabled={!input.trim() || isProcessing}

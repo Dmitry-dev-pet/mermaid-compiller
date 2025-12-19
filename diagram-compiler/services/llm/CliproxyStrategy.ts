@@ -1,5 +1,6 @@
 import { AIConfig, Message, Model, DiagramType } from '../../types';
 import { LLMProviderStrategy } from './LLMProviderStrategy';
+import { buildSystemPrompt } from './prompts';
 
 interface CliproxyModel {
   id: string;
@@ -9,8 +10,6 @@ interface CliproxyModel {
 
 type CliproxyModelEntry = CliproxyModel | string;
 
-const getLanguageInstruction = (lang: string) => 
-  (lang && lang !== 'auto') ? `\nIMPORTANT: Respond in ${lang}.` : '';
 
 /**
  * Cliproxy-specific implementation of LLMProviderStrategy
@@ -136,23 +135,7 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     docsContext: string,
     language: string
   ): Promise<string> {
-    const typeRule = diagramType 
-      ? `You MUST generate a ${diagramType} diagram.`
-      : `Default to 'flowchart TD' if unspecified.`;
-
-    const systemPrompt = `You are an expert Mermaid.js generator.
-Goal: Generate VALID Mermaid code based on the conversation history.
-
-Rules:
-1. Output ONLY Mermaid code inside 
-
-2. No chatter.
-3. ${typeRule}
-4. Use provided documentation context if relevant.${getLanguageInstruction(language)}
-
-Docs Context:
-${docsContext.slice(0, 2000)}... (truncated)
-`;
+    const systemPrompt = buildSystemPrompt('generate', { diagramType, docsContext, language });
     return this.fetchCompletion(messages, config, systemPrompt);
   }
 
@@ -163,12 +146,7 @@ ${docsContext.slice(0, 2000)}... (truncated)
     docsContext: string,
     language: string
   ): Promise<string> {
-    const systemPrompt = `You are a Mermaid code repair assistant.
-Fix the syntax error in the provided code.
-Return ONLY the corrected code block.${getLanguageInstruction(language)}
-
-Docs Context:
-${docsContext.slice(0, 1000)}...`;
+    const systemPrompt = buildSystemPrompt('fix', { docsContext, language });
 
     const fixMsg: Message = {
       id: 'fix-req',
@@ -195,26 +173,7 @@ Fix it.`,
     docsContext: string,
     language: string
   ): Promise<string> {
-    const typeRule = diagramType 
-      ? `Preferred Diagram Type: ${diagramType}.`
-      : `Default to 'flowchart TD' if unspecified.`;
-
-    const systemPrompt = `You are a Mermaid.js diagram assistant in CHAT mode.
-
-GOAL:
-- Help the user reason about the diagram and requirements using TEXT ONLY.
-
-RULES:
-1. Output plain text only. Do NOT output Mermaid code or any fenced code blocks.
-2. You may receive the current Mermaid diagram code in the conversation context; use it to answer, but do not quote it verbatim.
-3. If the user asks to generate/update/simplify the diagram, explain what to change and tell them to press the Build button to apply it.
-4. Ask clarifying questions when the request is ambiguous.
-5. Respect the ${typeRule} in your guidance unless the user explicitly asks for a different type.${getLanguageInstruction(language)}
-
-Docs Context:
-${docsContext.slice(0, 1200)}...
-`;
-
+    const systemPrompt = buildSystemPrompt('chat', { diagramType, docsContext, language });
     return this.fetchCompletion(messages, config, systemPrompt);
   }
 
@@ -224,16 +183,7 @@ ${docsContext.slice(0, 1200)}...
     docsContext: string,
     language: string
   ): Promise<string> {
-    const systemPrompt = `You are an expert Mermaid.js diagram explainer.
-Explain the provided Mermaid code in a concise and clear manner.
-Focus on describing the structure, components, and relationships.
-If there are any syntax errors or unusual patterns, highlight them.
-DO NOT generate any Mermaid code.
-Use the provided documentation context if relevant.${getLanguageInstruction(language)}
-
-Docs Context:
-${docsContext.slice(0, 1000)}...
-`;
+    const systemPrompt = buildSystemPrompt('analyze', { docsContext, language });
 
     const analyzeMsg: Message = {
       id: 'analyze-req',
