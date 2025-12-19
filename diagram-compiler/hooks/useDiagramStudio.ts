@@ -6,12 +6,13 @@ import { useChat } from './useChat';
 import { createStudioActions } from './studioActions';
 import { useHistory } from './useHistory';
 import type { DiagramMarker } from './useHistory';
+import { DEFAULT_MERMAID_STATE } from '../constants';
 
 export const useDiagramStudio = () => {
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
   const { mermaidState, setMermaidState, handleMermaidChange } = useMermaid();
-  const { appState, setAppState, startResize, setDiagramType, toggleTheme, setLanguage } = useLayout();
-  const { messages, setMessages, addMessage, clearMessages, getMessages } = useChat();
+  const { appState, setAppState, startResize, setDiagramType, toggleTheme, setLanguage, togglePreviewFullScreen } = useLayout();
+  const { messages, setMessages, addMessage, clearMessages, resetMessages, getMessages } = useChat();
   const {
     isHistoryReady,
     historyLoadResult,
@@ -20,6 +21,7 @@ export const useDiagramStudio = () => {
     diagramStepAnchors,
     selectedStepId,
     selectDiagramStep,
+    startNewSession,
   } =
     useHistory();
 
@@ -142,6 +144,14 @@ export const useDiagramStudio = () => {
     }));
   };
 
+  const startNewProject = async () => {
+    if (isProcessing) return;
+    await startNewSession();
+    resetMessages();
+    lastManualRecordedCodeRef.current = '';
+    setMermaidState(DEFAULT_MERMAID_STATE);
+  };
+
   return {
     aiConfig,
     setAiConfig,
@@ -167,7 +177,9 @@ export const useDiagramStudio = () => {
     startResize,
     setDiagramType,
     clearMessages,
+    startNewProject,
     toggleTheme,
     setLanguage,
+    togglePreviewFullScreen,
   };
 };

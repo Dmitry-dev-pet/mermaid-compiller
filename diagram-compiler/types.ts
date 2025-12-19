@@ -1,6 +1,17 @@
 export type Provider = 'openrouter' | 'cliproxy';
 
-export type DiagramType = 'sequence' | 'flowchart' | 'er';
+export type DiagramType =
+  'sequence'
+  | 'flowchart'
+  | 'er'
+  | 'c4'
+  | 'class'
+  | 'state'
+  | 'gantt'
+  | 'mindmap'
+  | 'pie'
+  | 'timeline'
+  | 'userJourney';
 
 export interface Model {
   id: string;
@@ -51,6 +62,7 @@ export interface AppState {
   diagramType: DiagramType;
   columnWidths: [number, number, number]; // percentages
   isResizing: number | null;
+  isPreviewFullScreen: boolean;
   theme: 'light' | 'dark';
   language: string;
 }

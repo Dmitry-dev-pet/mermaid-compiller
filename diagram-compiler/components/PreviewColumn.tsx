@@ -1,69 +1,58 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
-import { RotateCcw, Scan, ZoomIn, ZoomOut } from 'lucide-react';
+import { Maximize2, Minimize2, RotateCcw, Scan, ZoomIn, ZoomOut } from 'lucide-react';
+import svgPanZoom from 'svg-pan-zoom';
 import { MermaidState } from '../types';
 
 interface PreviewColumnProps {
   mermaidState: MermaidState;
   theme: 'light' | 'dark';
+  isFullScreen: boolean;
+  onToggleFullScreen: () => void;
 }
 
 type ViewBox = { x: number; y: number; width: number; height: number };
 
-const MIN_SCALE = 0.15;
-const MAX_SCALE = 6;
 const FIT_PADDING_RATIO = 0.05;
 
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const parseViewBoxAttr = (value: string | null): ViewBox | null => {
+  if (!value) return null;
+  const parts = value
+    .trim()
+    .split(/[\s,]+/)
+    .map((p) => Number(p));
+  if (parts.length !== 4) return null;
+  const [x, y, width, height] = parts;
+  if (![x, y, width, height].every((n) => Number.isFinite(n))) return null;
+  if (!(width > 0 && height > 0)) return null;
+  return { x, y, width, height };
+};
 
-const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme }) => {
+const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFullScreen, onToggleFullScreen }) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const svgMountRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const bindFunctionsRef = useRef<((element: Element) => void) | null>(null);
+  const panZoomRef = useRef<ReturnType<typeof svgPanZoom> | null>(null);
+  const baseZoomRef = useRef<number | null>(null);
+  const basePanRef = useRef<{ x: number; y: number } | null>(null);
 
   const [svgMarkup, setSvgMarkup] = useState<string>('');
-  const [fitViewBox, setFitViewBox] = useState<ViewBox | null>(null);
-  const [currentViewBox, setCurrentViewBox] = useState<ViewBox | null>(null);
-  const [isPanning, setIsPanning] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [zoomPercent, setZoomPercent] = useState<number>(100);
+  const [canReset, setCanReset] = useState(false);
 
-  const fitViewBoxRef = useRef<ViewBox | null>(null);
-  const currentViewBoxRef = useRef<ViewBox | null>(null);
-  const panStartRef = useRef<{ startViewBox: ViewBox; startPoint: { x: number; y: number } } | null>(null);
+  const updateZoomPercent = useCallback((nextZoom?: number) => {
+    const base = baseZoomRef.current;
+    const instance = panZoomRef.current;
+    const zoom = typeof nextZoom === 'number' ? nextZoom : instance?.getZoom();
 
-  useEffect(() => {
-    fitViewBoxRef.current = fitViewBox;
-  }, [fitViewBox]);
-
-  useEffect(() => {
-    currentViewBoxRef.current = currentViewBox;
-  }, [currentViewBox]);
-
-  const getSvgPoint = useCallback((clientX: number, clientY: number) => {
-    const svg = svgRef.current;
-    if (!svg) return null;
-    const ctm = svg.getScreenCTM();
-    if (!ctm) return null;
-    const pt = svg.createSVGPoint();
-    pt.x = clientX;
-    pt.y = clientY;
-    const svgPt = pt.matrixTransform(ctm.inverse());
-    return { x: svgPt.x, y: svgPt.y };
-  }, []);
-
-  const applyViewBox = useCallback((vb: ViewBox, opts?: { setAsFit?: boolean }) => {
-    const svg = svgRef.current;
-    if (!svg) return;
-
-    svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.width} ${vb.height}`);
-    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-
-    currentViewBoxRef.current = vb;
-    setCurrentViewBox(vb);
-
-    if (opts?.setAsFit) {
-      fitViewBoxRef.current = vb;
-      setFitViewBox(vb);
+    if (!base || !zoom) {
+      setZoomPercent(100);
+      return;
     }
+
+    setZoomPercent(Math.max(1, Math.round((zoom / base) * 100)));
   }, []);
 
   const computeFitViewBoxFromBBox = useCallback((): ViewBox | null => {
@@ -81,118 +70,75 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme }) =>
   }, []);
 
   const fitToViewport = useCallback(() => {
-    const vb = computeFitViewBoxFromBBox();
-    if (!vb) return;
-    applyViewBox(vb, { setAsFit: true });
-    setIsPanning(false);
-  }, [applyViewBox, computeFitViewBoxFromBBox]);
+    const instance = panZoomRef.current;
+    if (!instance) return;
+    instance.resize();
+    instance.fit();
+    instance.center();
+    baseZoomRef.current = instance.getZoom();
+    basePanRef.current = instance.getPan();
+    setZoomPercent(100);
+    setCanReset(true);
+  }, []);
 
   const resetView = useCallback(() => {
-    const fit = fitViewBoxRef.current;
-    if (!fit) return;
-    applyViewBox(fit);
-    setIsPanning(false);
-  }, [applyViewBox]);
+    const instance = panZoomRef.current;
+    const baseZoom = baseZoomRef.current;
+    const basePan = basePanRef.current;
+    if (!instance || !baseZoom || !basePan) return;
 
-  const zoomAtClientPoint = useCallback(
-    (clientX: number, clientY: number, factor: number) => {
-      const fit = fitViewBoxRef.current;
-      const cur = currentViewBoxRef.current;
-      if (!fit || !cur) return;
+    instance.zoom(baseZoom);
+    instance.pan(basePan);
+    updateZoomPercent(baseZoom);
+  }, [updateZoomPercent]);
 
-      const p = getSvgPoint(clientX, clientY);
-      if (!p) return;
+  const zoomIn = useCallback(() => {
+    const instance = panZoomRef.current;
+    if (!instance) return;
+    instance.zoomIn();
+    updateZoomPercent();
+  }, [updateZoomPercent]);
 
-      const currentScale = fit.width / cur.width;
-      const nextScale = clamp(currentScale * factor, MIN_SCALE, MAX_SCALE);
-      const effectiveFactor = nextScale / currentScale;
-
-      const nextWidth = cur.width / effectiveFactor;
-      const nextHeight = cur.height / effectiveFactor;
-
-      const relX = cur.width > 0 ? (p.x - cur.x) / cur.width : 0.5;
-      const relY = cur.height > 0 ? (p.y - cur.y) / cur.height : 0.5;
-
-      const nextX = p.x - relX * nextWidth;
-      const nextY = p.y - relY * nextHeight;
-
-      applyViewBox({ x: nextX, y: nextY, width: nextWidth, height: nextHeight });
-    },
-    [applyViewBox, getSvgPoint]
-  );
-
-  const zoomByFactor = useCallback(
-    (factor: number) => {
-      const viewport = viewportRef.current;
-      if (!viewport) return;
-      const rect = viewport.getBoundingClientRect();
-      zoomAtClientPoint(rect.left + rect.width / 2, rect.top + rect.height / 2, factor);
-    },
-    [zoomAtClientPoint]
-  );
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!svgMarkup) return;
-      if (e.button !== 0) return;
-      if (!currentViewBoxRef.current) return;
-
-      const p = getSvgPoint(e.clientX, e.clientY);
-      if (!p) return;
-
-      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-      panStartRef.current = { startViewBox: currentViewBoxRef.current, startPoint: p };
-      setIsPanning(true);
-    },
-    [getSvgPoint, svgMarkup]
-  );
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      const start = panStartRef.current;
-      if (!start) return;
-
-      const p = getSvgPoint(e.clientX, e.clientY);
-      if (!p) return;
-
-      const dx = p.x - start.startPoint.x;
-      const dy = p.y - start.startPoint.y;
-
-      applyViewBox({
-        x: start.startViewBox.x - dx,
-        y: start.startViewBox.y - dy,
-        width: start.startViewBox.width,
-        height: start.startViewBox.height,
-      });
-    },
-    [applyViewBox, getSvgPoint]
-  );
-
-  const handlePointerUpOrCancel = useCallback(() => {
-    panStartRef.current = null;
-    setIsPanning(false);
-  }, []);
+  const zoomOut = useCallback(() => {
+    const instance = panZoomRef.current;
+    if (!instance) return;
+    instance.zoomOut();
+    updateZoomPercent();
+  }, [updateZoomPercent]);
 
   useEffect(() => {
     const renderDiagram = async () => {
       if (!mermaidState.isValid || !mermaidState.code.trim()) {
         if (!mermaidState.code.trim()) {
           setSvgMarkup('');
-          setFitViewBox(null);
-          setCurrentViewBox(null);
-          fitViewBoxRef.current = null;
-          currentViewBoxRef.current = null;
+          setRenderError(null);
+          bindFunctionsRef.current = null;
           svgRef.current = null;
+          panZoomRef.current?.destroy();
+          panZoomRef.current = null;
+          baseZoomRef.current = null;
+          basePanRef.current = null;
+          setZoomPercent(100);
+          setCanReset(false);
           if (svgMountRef.current) svgMountRef.current.replaceChildren();
         }
         return;
       }
-
       try {
+        setRenderError(null);
         const id = `mermaid-${Date.now()}`;
-        const { svg } = await mermaid.render(id, mermaidState.code);
+        const { svg, bindFunctions } = await mermaid.render(id, mermaidState.code);
+        bindFunctionsRef.current = bindFunctions ?? null;
+
+        if (!svg || !svg.includes('<svg')) {
+          throw new Error('Mermaid returned empty SVG');
+        }
+
         setSvgMarkup(svg);
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setRenderError(message);
+        setSvgMarkup('');
         console.error('Render failed', error);
       }
     };
@@ -206,10 +152,17 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme }) =>
     const mount = svgMountRef.current;
     if (!mount) return;
 
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgMarkup, 'image/svg+xml');
-    const svgEl = doc.querySelector('svg');
+    // Use the browser's SVG/HTML parser (better for foreignObject-heavy diagrams like C4).
+    mount.innerHTML = svgMarkup;
+    const svgEl = mount.querySelector('svg');
     if (!svgEl) return;
+
+    panZoomRef.current?.destroy();
+    panZoomRef.current = null;
+    baseZoomRef.current = null;
+    basePanRef.current = null;
+    setZoomPercent(100);
+    setCanReset(false);
 
     svgEl.setAttribute('width', '100%');
     svgEl.setAttribute('height', '100%');
@@ -218,61 +171,107 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme }) =>
     (svgEl as unknown as SVGSVGElement).style.maxWidth = 'none';
     (svgEl as unknown as SVGSVGElement).style.maxHeight = 'none';
 
-    mount.replaceChildren(svgEl);
     svgRef.current = svgEl as unknown as SVGSVGElement;
 
+    // Bind interactions (if any) after SVG is mounted.
+    try {
+      bindFunctionsRef.current?.(mount);
+    } catch (e) {
+      console.error('Failed to bind Mermaid interactions', e);
+    }
+
     let rafId = 0;
+    let didInit = false;
     let attempts = 0;
-    const tryAutoFit = () => {
+    let isActive = true;
+    const ensureViewBoxAndInit = () => {
+      if (didInit) return;
       attempts += 1;
-      const vb = computeFitViewBoxFromBBox();
-      if (vb) {
-        applyViewBox(vb, { setAsFit: true });
-        setIsPanning(false);
+
+      const initialViewBox = parseViewBoxAttr(svgEl.getAttribute('viewBox'));
+      if (!initialViewBox) {
+        const vb = computeFitViewBoxFromBBox();
+        if (vb) {
+          svgEl.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.width} ${vb.height}`);
+        }
+      }
+
+      const viewBoxAfter = parseViewBoxAttr(svgEl.getAttribute('viewBox'));
+      if (viewBoxAfter) {
+        didInit = true;
+        const instance = svgPanZoom(svgEl as unknown as SVGSVGElement, {
+          panEnabled: true,
+          zoomEnabled: true,
+          fit: true,
+          center: true,
+          controlIconsEnabled: false,
+          dblClickZoomEnabled: false,
+          mouseWheelZoomEnabled: true,
+          preventMouseEventsDefault: false,
+          minZoom: 0.15,
+          maxZoom: 6,
+          onZoom: (newZoom) => updateZoomPercent(newZoom),
+        });
+
+        panZoomRef.current = instance;
+
+        // Some SVGs (esp. foreignObject-heavy) need one paint before fit/center stabilizes.
+        requestAnimationFrame(() => {
+          if (!isActive) return;
+          instance.resize();
+          instance.fit();
+          instance.center();
+          baseZoomRef.current = instance.getZoom();
+          basePanRef.current = instance.getPan();
+          setZoomPercent(100);
+          setCanReset(true);
+        });
+
         return;
       }
-      if (attempts < 30) rafId = requestAnimationFrame(tryAutoFit);
+
+      if (attempts < 30) rafId = requestAnimationFrame(ensureViewBoxAndInit);
     };
 
-    rafId = requestAnimationFrame(tryAutoFit);
-    return () => cancelAnimationFrame(rafId);
-  }, [applyViewBox, computeFitViewBoxFromBBox, svgMarkup]);
+    rafId = requestAnimationFrame(ensureViewBoxAndInit);
+    return () => {
+      isActive = false;
+      cancelAnimationFrame(rafId);
+      panZoomRef.current?.destroy();
+      panZoomRef.current = null;
+      baseZoomRef.current = null;
+      basePanRef.current = null;
+    };
+  }, [computeFitViewBoxFromBBox, svgMarkup, updateZoomPercent]);
 
   useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-
-    const onWheel = (e: WheelEvent) => {
-      if (!svgMarkup) return;
-      if (!fitViewBoxRef.current || !currentViewBoxRef.current) return;
-      e.preventDefault();
-
-      const factor = Math.exp(-e.deltaY * 0.001);
-      zoomAtClientPoint(e.clientX, e.clientY, factor);
-    };
-
-    viewport.addEventListener('wheel', onWheel, { passive: false, capture: true });
-    return () => viewport.removeEventListener('wheel', onWheel, true);
-  }, [svgMarkup, zoomAtClientPoint]);
-
-  const zoomPercent = (() => {
-    const fit = fitViewBox;
-    const cur = currentViewBox;
-    if (!fit || !cur) return 100;
-    return Math.round((fit.width / cur.width) * 100);
-  })();
+    if (!svgMarkup) return;
+    if (!panZoomRef.current) return;
+    const rafId = requestAnimationFrame(() => {
+      fitToViewport();
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [fitToViewport, isFullScreen, svgMarkup]);
 
   return (
     <div className="h-full flex flex-col bg-slate-50/30 dark:bg-slate-900/30">
       <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center justify-between gap-3">
         <div>Preview</div>
-
         <div className="flex items-center gap-1.5 normal-case tracking-normal">
           <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono w-12 text-right">{zoomPercent}%</span>
 
           <button
             type="button"
-            onClick={() => zoomByFactor(1 / 1.2)}
+            onClick={onToggleFullScreen}
+            className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+            title={isFullScreen ? 'Exit full screen' : 'Full screen'}
+          >
+            {isFullScreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+
+          <button
+            type="button"
+            onClick={zoomOut}
             disabled={!svgMarkup}
             className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
             title="Zoom out"
@@ -282,7 +281,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme }) =>
 
           <button
             type="button"
-            onClick={() => zoomByFactor(1.2)}
+            onClick={zoomIn}
             disabled={!svgMarkup}
             className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
             title="Zoom in"
@@ -303,7 +302,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme }) =>
           <button
             type="button"
             onClick={resetView}
-            disabled={!svgMarkup || !fitViewBox}
+            disabled={!svgMarkup || !canReset}
             className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
             title="Reset view"
           >
@@ -314,13 +313,19 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme }) =>
 
       <div
         ref={viewportRef}
-        className={`flex-1 relative overflow-hidden flex items-center justify-center ${svgMarkup ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUpOrCancel}
-        onPointerCancel={handlePointerUpOrCancel}
-        style={{ touchAction: 'none' }}
+        className="flex-1 relative overflow-hidden flex items-center justify-center"
       >
+
+        {renderError && mermaidState.status !== 'invalid' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
+            <div className="text-center p-6 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-lg max-w-sm">
+              <h3 className="text-red-700 dark:text-red-400 font-medium mb-1">Render failed</h3>
+              <p className="text-xs text-red-600 dark:text-red-300 font-mono text-left bg-white dark:bg-slate-950 p-2 rounded border border-red-100 dark:border-red-900 overflow-auto max-h-32">
+                {renderError}
+              </p>
+            </div>
+          </div>
+        )}
         {mermaidState.status === 'invalid' && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
             <div className="text-center p-6 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-lg max-w-sm">

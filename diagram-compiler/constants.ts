@@ -1,6 +1,6 @@
 import { AIConfig, AppState, MermaidState } from './types';
 
-export const MERMAID_VERSION = "v11.4.1";
+export const MERMAID_VERSION = "v11.12.2";
 
 export const AUTO_FIX_MAX_ATTEMPTS = 5;
 
@@ -23,6 +23,7 @@ export const DEFAULT_APP_STATE: AppState = {
   diagramType: 'sequence',
   columnWidths: [25, 40, 35],
   isResizing: null,
+  isPreviewFullScreen: false,
   theme: 'light',
   language: 'auto',
 };

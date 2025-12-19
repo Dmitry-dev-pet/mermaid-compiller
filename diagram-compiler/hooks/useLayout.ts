@@ -26,6 +26,7 @@ export const useLayout = () => {
 
   // --- Resizing Logic ---
   const startResize = (index: number) => {
+    if (appState.isPreviewFullScreen) return;
     setAppState(prev => ({ ...prev, isResizing: index }));
   };
 
@@ -82,12 +83,21 @@ export const useLayout = () => {
     setAppState(prev => ({ ...prev, language: lang }));
   }, []);
 
+  const togglePreviewFullScreen = useCallback(() => {
+    setAppState(prev => ({
+      ...prev,
+      isPreviewFullScreen: !prev.isPreviewFullScreen,
+      isResizing: null,
+    }));
+  }, []);
+
   return {
     appState,
     setAppState, // Exposed if needed for other direct updates
     startResize,
     setDiagramType,
     toggleTheme,
-    setLanguage
+    setLanguage,
+    togglePreviewFullScreen,
   };
 };
