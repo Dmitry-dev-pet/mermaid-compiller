@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
-import { Message, DiagramType } from '../types';
+import { DiagramType, LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
 import type { DiagramMarker } from '../hooks/useHistory';
 
 interface ChatColumnProps {
@@ -10,9 +10,19 @@ interface ChatColumnProps {
   onClear: () => void;
   onNewProject: () => void;
   isProcessing: boolean;
+  hasIntent: boolean;
+  onSetPromptPreview: (
+    mode: PromptPreviewMode,
+    title: string,
+    redactedContent: string,
+    rawContent: string,
+    tokenCounts?: PromptTokenCounts
+  ) => void;
   diagramType: DiagramType;
   onDiagramTypeChange: (type: DiagramType) => void;
   mermaidStatus: 'empty' | 'valid' | 'invalid' | 'edited';
+  onPreviewPrompt: (mode: PromptPreviewMode, input: string) => Promise<LLMRequestPreview>;
+  buildDocsSelectionKey: string;
   diagramMarkers?: DiagramMarker[];
   diagramStepAnchors?: Record<string, string>;
   selectedStepId?: string | null;
@@ -26,21 +36,32 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onClear,
   onNewProject,
   isProcessing,
+  hasIntent,
+  onSetPromptPreview,
   diagramType,
   onDiagramTypeChange,
   mermaidStatus,
+  onPreviewPrompt,
   diagramMarkers = [],
   diagramStepAnchors = {},
   selectedStepId = null,
+  buildDocsSelectionKey,
   onSelectDiagramStep
 }) => {
   const [input, setInput] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
-  const hasChatContext = messages.some((m) => m.id !== 'init' && m.role === 'user' && m.content.trim().length > 0);
   const messageElsRef = useRef<Record<string, HTMLDivElement | null>>({});
   const isAtBottomRef = useRef(true);
+  const previewRequestRef = useRef(0);
+  const previewTimerRef = useRef<number | null>(null);
+  const lastMessageTimestamp = messages[messages.length - 1]?.timestamp ?? 0;
+  const estimateTokens = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return 0;
+    return Math.max(1, Math.ceil(trimmed.length / 4));
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -101,6 +122,46 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     }
   };
 
+  const updatePromptPreview = async (mode: PromptPreviewMode, promptInput: string, requestId: number) => {
+    const title = mode === 'chat' ? 'LLM request (Chat)' : 'LLM request (Build)';
+    try {
+      const preview = await onPreviewPrompt(mode, promptInput);
+      if (requestId !== previewRequestRef.current) return;
+      const systemTokens = estimateTokens(preview.systemPrompt);
+      const messagesTokens = preview.messages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
+      const tokenCounts: PromptTokenCounts = {
+        system: systemTokens,
+        messages: messagesTokens,
+        total: systemTokens + messagesTokens,
+      };
+      const redacted = formatRequestPreview(preview, { redactDocs: true });
+      const raw = formatRequestPreview(preview, { redactDocs: false });
+      onSetPromptPreview(mode, title, redacted, raw, tokenCounts);
+    } catch (error: unknown) {
+      if (requestId !== previewRequestRef.current) return;
+      const message = error instanceof Error ? error.message : String(error);
+      const errorText = `Error: ${message}`;
+      onSetPromptPreview(mode, title, errorText, errorText);
+    }
+  };
+
+  useEffect(() => {
+    const requestId = ++previewRequestRef.current;
+    if (previewTimerRef.current) {
+      window.clearTimeout(previewTimerRef.current);
+    }
+    previewTimerRef.current = window.setTimeout(() => {
+      void updatePromptPreview('chat', input, requestId);
+      void updatePromptPreview('build', input, requestId);
+    }, 250);
+
+    return () => {
+      if (previewTimerRef.current) {
+        window.clearTimeout(previewTimerRef.current);
+      }
+    };
+  }, [diagramType, hasIntent, input, lastMessageTimestamp, messages.length, onPreviewPrompt, buildDocsSelectionKey]);
+
   const handleSubmit = (mode: 'chat' | 'build', e?: React.FormEvent) => {
     e?.preventDefault();
     if (isProcessing) return;
@@ -119,7 +180,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       return;
     }
 
-    if (!hasChatContext) return;
+    if (!hasIntent) return;
     onBuild(undefined);
     setInput('');
   };
@@ -137,6 +198,78 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     }
   };
 
+  const formatMessagesForPreview = (previewMessages: Message[]) => {
+    if (previewMessages.length === 0) return '(no messages)';
+    return previewMessages
+      .map((msg, index) => {
+        const header = `[${index + 1}] ${msg.role}`;
+        return `${header}\n${msg.content.trim()}`;
+      })
+      .join('\n\n');
+  };
+
+  const parseDocsContext = (docsContext: string) => {
+    const entries: Array<{ path: string; fileName: string; text: string; tokens: number }> = [];
+    const lines = docsContext.split('\n');
+    let currentPath: string | null = null;
+    let buffer: string[] = [];
+
+    const flush = () => {
+      if (!currentPath) return;
+      const text = buffer.join('\n').trim();
+      entries.push({
+        path: currentPath,
+        fileName: currentPath.split('/').pop() || currentPath,
+        text,
+        tokens: estimateTokens(text),
+      });
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const match = trimmed.match(/^--- (.+) ---$/);
+      if (match) {
+        flush();
+        currentPath = match[1];
+        buffer = [];
+        continue;
+      }
+      if (currentPath) buffer.push(line);
+    }
+    flush();
+
+    return entries;
+  };
+
+  const formatRequestPreview = (preview: LLMRequestPreview, options: { redactDocs: boolean }) => {
+    const docsEntries = parseDocsContext(preview.docsContext);
+    const docsTotalTokens = docsEntries.reduce((sum, entry) => sum + entry.tokens, 0);
+    const docsSummaryBlock = docsEntries.length
+      ? docsEntries.map((entry) => `--- ${entry.fileName} --- (~${entry.tokens} tok)`).join('\n')
+      : '';
+    const systemPromptValue =
+      options.redactDocs && preview.docsContext && docsSummaryBlock
+        ? preview.systemPrompt.replace(preview.docsContext, docsSummaryBlock)
+        : preview.systemPrompt;
+    const lines = [
+      preview.error ? `Error: ${preview.error}` : '',
+      docsEntries.length
+        ? `Docs files: ${docsEntries.map((entry) => `${entry.fileName} (~${entry.tokens} tok)`).join(', ')}`
+        : 'Docs files: (none)',
+      docsEntries.length ? `Docs tokens total: ~${docsTotalTokens} tok` : '',
+      `Mode: ${preview.mode}`,
+      `Diagram type: ${preview.diagramType}`,
+      `Language: ${preview.language}`,
+      '',
+      '--- System Prompt ---',
+      systemPromptValue.trim() || '(empty)',
+      '',
+      '--- Messages ---',
+      formatMessagesForPreview(preview.messages),
+    ].filter((line) => line !== '');
+    return lines.join('\n');
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50">
       {/* Type Selector */}
@@ -147,17 +280,29 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           onChange={(e) => onDiagramTypeChange(e.target.value as DiagramType)}
           className="w-full text-sm p-1.5 border border-slate-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
+          <option value="architecture">Architecture</option>
+          <option value="block">Block</option>
+          <option value="c4">C4 (experimental)</option>
+          <option value="class">Class Diagram</option>
+          <option value="er">Entity Relationship</option>
           <option value="sequence">Sequence Diagram</option>
           <option value="flowchart">Flowchart</option>
-          <option value="class">Class Diagram</option>
-          <option value="state">State Diagram</option>
-          <option value="er">Entity Relationship</option>
           <option value="gantt">Gantt</option>
+          <option value="gitGraph">Git Graph</option>
+          <option value="kanban">Kanban</option>
           <option value="mindmap">Mindmap</option>
+          <option value="packet">Packet</option>
           <option value="pie">Pie</option>
+          <option value="quadrantChart">Quadrant Chart</option>
+          <option value="radar">Radar</option>
+          <option value="requirementDiagram">Requirement Diagram</option>
+          <option value="sankey">Sankey</option>
+          <option value="state">State Diagram</option>
           <option value="timeline">Timeline</option>
+          <option value="treemap">Treemap</option>
           <option value="userJourney">User Journey</option>
-          <option value="c4">C4 (experimental)</option>
+          <option value="xychart">XY Chart</option>
+          <option value="zenuml">ZenUML</option>
         </select>
       </div>
 
@@ -198,7 +343,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           </div>
         ) : (
           <>
-            {messages.map((msg) => (
+            {messages.map((msg) => {
+              const isErrorMessage =
+                msg.role === 'assistant' &&
+                /^(Error|Build failed|Analysis failed|Fix failed|Generation failed|Error generating diagram|Error analyzing diagram)(?:\s*\(.*?\))?:/.test(msg.content);
+              return (
               <div 
                 key={msg.id} 
                 className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
@@ -207,12 +356,14 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                   ref={(el) => {
                     messageElsRef.current[msg.id] = el;
                   }}
-                  className={`max-w-[90%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap transition-shadow ${
+                  className={`max-w-[90%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap break-words transition-shadow ${
                     focusedMessageId === msg.id ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-50 dark:ring-offset-slate-900' : ''
                   } ${
                     msg.role === 'user' 
                       ? 'bg-blue-600 text-white rounded-br-none shadow-sm' 
-                      : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none shadow-sm'
+                      : isErrorMessage
+                        ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-200 rounded-bl-none shadow-sm font-mono text-[12px] leading-relaxed'
+                        : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none shadow-sm'
                   }`}
                 >
                   {msg.content}
@@ -221,7 +372,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                   {msg.role === 'user' ? 'You' : 'Assistant'}
                 </span>
               </div>
-            ))}
+            );
+            })}
             {isProcessing && (
               <div className="flex items-start">
                 <div className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-3 py-2 rounded-lg rounded-bl-none text-xs flex gap-1 items-center">
@@ -266,7 +418,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 	               <Trash2 size={12} /> Clear spec
 	             </button>
 	           </div>
-	           <div className="flex items-center gap-2">
+           <div className="flex items-center gap-2">
 	             <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline">
 	               Enter: Chat • Ctrl/Cmd+Enter: Build
 	             </span>
@@ -280,23 +432,23 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
              </button>
              <button
                onClick={() => handleSubmit('build')}
-               disabled={(!input.trim() && !hasChatContext) || isProcessing}
+               disabled={(!input.trim() && !hasIntent) || isProcessing}
                className="px-2.5 py-1.5 text-xs rounded-md bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5"
-               title={input.trim() ? 'Build diagram from this prompt' : 'Build diagram from chat context'}
+               title={input.trim() ? 'Build diagram from this prompt' : 'Build diagram from intent'}
              >
                <Play size={14} /> Build
              </button>
            </div>
-           <div className="text-[10px] font-medium">
-             {mermaidStatus === 'edited' ? (
-                <span className="text-amber-600 dark:text-amber-500 flex items-center gap-1">
-                  ⚠ Diagram manually edited
-                </span>
-             ) : (
-                <span className="text-green-600 dark:text-green-500 flex items-center gap-1">
-                  ✓ Used for next build
-                </span>
-             )}
+          <div className="text-[10px] font-medium">
+            {mermaidStatus === 'edited' ? (
+               <span className="text-amber-600 dark:text-amber-500 flex items-center gap-1">
+                 ⚠ Diagram manually edited
+               </span>
+            ) : (
+               <span className="text-green-600 dark:text-green-500 flex items-center gap-1">
+                 ✓ Used for next build
+               </span>
+            )}
            </div>
         </div>
       </div>

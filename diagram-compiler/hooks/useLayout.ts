@@ -83,6 +83,10 @@ export const useLayout = () => {
     setAppState(prev => ({ ...prev, language: lang }));
   }, []);
 
+  const setAnalyzeLanguage = useCallback((lang: string) => {
+    setAppState(prev => ({ ...prev, analyzeLanguage: lang }));
+  }, []);
+
   const togglePreviewFullScreen = useCallback(() => {
     setAppState(prev => ({
       ...prev,
@@ -98,6 +102,7 @@ export const useLayout = () => {
     setDiagramType,
     toggleTheme,
     setLanguage,
+    setAnalyzeLanguage,
     togglePreviewFullScreen,
   };
 };

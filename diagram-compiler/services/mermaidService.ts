@@ -1,5 +1,16 @@
 import mermaid from 'mermaid';
 import { MermaidState } from '../types';
+import { applyInlineDirectionCommand } from '../utils/inlineDirectionCommand';
+import { applyInlineThemeAndLookCommands } from '../utils/inlineLookCommand';
+
+export const isMarkdownLike = (code: string): boolean => {
+  if (!code.trim()) return false;
+  if (code.includes('```')) return true;
+  if (/^#{1,6}\s+/m.test(code)) return true;
+  if (/^\s*[-*]\s+/m.test(code)) return true;
+  if (/^\s*\d+\.\s+/m.test(code)) return true;
+  return false;
+};
 
 export const initializeMermaid = (theme: 'default' | 'dark' = 'default') => {
   mermaid.initialize({
@@ -19,9 +30,21 @@ export const validateMermaid = async (code: string): Promise<Partial<MermaidStat
     };
   }
 
+  if (isMarkdownLike(code)) {
+    return {
+      isValid: true,
+      status: 'valid',
+      errorLine: undefined,
+      errorMessage: undefined,
+      lastValidCode: code,
+    };
+  }
+
   try {
     // parse throws an error if invalid
-    await mermaid.parse(code);
+    const withDirection = applyInlineDirectionCommand(code).code;
+    const withThemeAndLook = applyInlineThemeAndLookCommands(withDirection).code;
+    await mermaid.parse(withThemeAndLook);
     return {
       isValid: true,
       status: 'valid',

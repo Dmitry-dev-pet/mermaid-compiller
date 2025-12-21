@@ -11,11 +11,21 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   proxyKey: '',
   proxyEndpoint: import.meta.env.VITE_PROXY_ENDPOINT ?? 'http://localhost:8317',
   selectedModelId: '',
-  filters: {
-    freeOnly: true,
-    context8k: true,
-    testedOnly: true,
-    experimental: false,
+  selectedModelIdByProvider: {
+    openrouter: '',
+    cliproxy: '',
+  },
+  filtersByProvider: {
+    openrouter: {
+      vendor: '',
+      freeOnly: true,
+      testedOnly: true,
+      experimental: false,
+      minContextWindow: 0,
+    },
+    cliproxy: {
+      vendor: '',
+    },
   },
 };
 
@@ -26,6 +36,7 @@ export const DEFAULT_APP_STATE: AppState = {
   isPreviewFullScreen: false,
   theme: 'light',
   language: 'auto',
+  analyzeLanguage: 'auto',
 };
 
 export const DEFAULT_MERMAID_STATE: MermaidState = {

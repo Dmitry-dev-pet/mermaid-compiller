@@ -3,26 +3,39 @@ import { DiagramType } from '../types';
 const DOCS_BASE_URL = '/mermaid-docs';
 
 const commonDocs = [
-  'packages/mermaid/src/docs/intro/getting-started.md',
   'packages/mermaid/src/docs/intro/syntax-reference.md',
   'packages/mermaid/src/docs/config/configuration.md',
 ];
 
 const diagramDocs: Record<DiagramType, string[]> = {
-  flowchart: ['packages/mermaid/src/docs/syntax/flowchart.md'],
-  sequence: ['packages/mermaid/src/docs/syntax/sequenceDiagram.md'],
-  er: ['packages/mermaid/src/docs/syntax/entityRelationshipDiagram.md'],
+  architecture: ['packages/mermaid/src/docs/syntax/architecture.md'],
+  block: ['packages/mermaid/src/docs/syntax/block.md'],
   c4: ['packages/mermaid/src/docs/syntax/c4.md'],
   class: ['packages/mermaid/src/docs/syntax/classDiagram.md'],
-  state: ['packages/mermaid/src/docs/syntax/stateDiagram.md'],
+  er: ['packages/mermaid/src/docs/syntax/entityRelationshipDiagram.md'],
+  flowchart: ['packages/mermaid/src/docs/syntax/flowchart.md'],
   gantt: ['packages/mermaid/src/docs/syntax/gantt.md'],
+  gitGraph: ['packages/mermaid/src/docs/syntax/gitgraph.md'],
+  kanban: ['packages/mermaid/src/docs/syntax/kanban.md'],
   mindmap: ['packages/mermaid/src/docs/syntax/mindmap.md'],
+  packet: ['packages/mermaid/src/docs/syntax/packet.md'],
   pie: ['packages/mermaid/src/docs/syntax/pie.md'],
+  quadrantChart: ['packages/mermaid/src/docs/syntax/quadrantChart.md'],
+  radar: ['packages/mermaid/src/docs/syntax/radar.md'],
+  requirementDiagram: ['packages/mermaid/src/docs/syntax/requirementDiagram.md'],
+  sankey: ['packages/mermaid/src/docs/syntax/sankey.md'],
+  sequence: ['packages/mermaid/src/docs/syntax/sequenceDiagram.md'],
+  state: ['packages/mermaid/src/docs/syntax/stateDiagram.md'],
   timeline: ['packages/mermaid/src/docs/syntax/timeline.md'],
+  treemap: ['packages/mermaid/src/docs/syntax/treemap.md'],
   userJourney: ['packages/mermaid/src/docs/syntax/userJourney.md'],
+  xychart: ['packages/mermaid/src/docs/syntax/xyChart.md'],
+  zenuml: ['packages/mermaid/src/docs/syntax/zenuml.md'],
 };
 
-const fetchLocalDoc = async (path: string): Promise<{ path: string; text: string }> => {
+export type DocsEntry = { path: string; text: string };
+
+const fetchLocalDoc = async (path: string): Promise<DocsEntry> => {
   try {
     const res = await fetch(`${DOCS_BASE_URL}/${path}`);
     if (!res.ok) return { path, text: '' };
@@ -33,27 +46,38 @@ const fetchLocalDoc = async (path: string): Promise<{ path: string; text: string
   }
 };
 
-export const fetchDocsContext = async (diagramType: DiagramType): Promise<string> => {
-  let context = "Mermaid Documentation Snippets:\n\n";
-  
-  // 1. Common
-  const commonPromises = commonDocs.map(path => fetchLocalDoc(path));
-  const commonResults = await Promise.all(commonPromises);
-  commonResults.forEach(result => {
-    if (result.text) {
-      context += `--- ${result.path} ---\n${result.text.slice(0, 1000)}\n\n`;
-    }
-  });
+export const getDiagramSyntaxPath = (diagramType: DiagramType): string | null => {
+  const paths = diagramDocs[diagramType];
+  return paths?.[0] ?? null;
+};
 
-  // 2. Specific
+export const fetchDiagramSyntaxDoc = async (
+  diagramType: DiagramType,
+): Promise<{ text: string; path: string | null }> => {
+  const path = getDiagramSyntaxPath(diagramType);
+  if (!path) return { text: '', path: null };
+  const result = await fetchLocalDoc(path);
+  return { text: result.text, path: result.path };
+};
+
+export const fetchDocsEntries = async (diagramType: DiagramType): Promise<DocsEntry[]> => {
   const specific = diagramDocs[diagramType] || [];
-  const specificPromises = specific.map(path => fetchLocalDoc(path));
-  const specificResults = await Promise.all(specificPromises);
-  specificResults.forEach(result => {
+  const paths = [...specific, ...commonDocs];
+  const results = await Promise.all(paths.map(path => fetchLocalDoc(path)));
+  return results.filter(result => result.text);
+};
+
+export const formatDocsContext = (entries: DocsEntry[]): string => {
+  let context = "Mermaid Documentation Snippets:\n\n";
+  entries.forEach(result => {
     if (result.text) {
-      context += `--- ${result.path} ---\n${result.text.slice(0, 2000)}\n\n`;
+      context += `--- ${result.path} ---\n${result.text}\n\n`;
     }
   });
-
   return context;
+};
+
+export const fetchDocsContext = async (diagramType: DiagramType): Promise<string> => {
+  const entries = await fetchDocsEntries(diagramType);
+  return formatDocsContext(entries);
 };

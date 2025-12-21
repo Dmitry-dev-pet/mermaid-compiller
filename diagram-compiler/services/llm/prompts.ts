@@ -16,48 +16,54 @@ type TemplateValues = {
   docsContext: string;
 };
 
-const DOC_LIMITS: Record<PromptMode, number> = {
-  generate: 2000,
-  fix: 1000,
-  chat: 1200,
-  analyze: 1000,
-};
-
 const PROMPT_TEMPLATES: Record<PromptLanguage, Record<PromptMode, string>> = {
   English: {
-    generate: `You are an expert Mermaid.js generator.
-Goal: Generate VALID Mermaid code based on the conversation history.
+    generate: `# Role
+You are an expert Mermaid.js generator.
 
-Rules:
-1. Output ONLY Mermaid code inside 
+# Goal
+Generate VALID Mermaid code based on the provided intent.
 
-2. No chatter.
-3. {{typeRule}}
-4. Use provided documentation context if relevant.{{languageInstruction}}
+# Rules
+- Output ONLY Mermaid code (no fences, no prose).
+- The input is an intent summary, not a full chat transcript.
+- {{typeRule}}
+- Use provided documentation context if relevant.{{languageInstruction}}
 
-Docs Context:
-{{docsContext}}... (truncated)
+# Docs Context
+{{docsContext}}
 `,
     fix: `You are a Mermaid code repair assistant.
 Fix the syntax error in the provided code.
 Return ONLY the corrected code block.{{languageInstruction}}
 
 Docs Context:
-{{docsContext}}...`,
-    chat: `You are a Mermaid.js diagram assistant in CHAT mode.
+{{docsContext}}`,
+    chat: `# Role
+You are a Mermaid.js diagram assistant in CHAT mode.
 
-GOAL:
-- Help the user reason about the diagram and requirements using TEXT ONLY.
+# Goal
+Help the user clarify requirements and produce a structured intent using TEXT ONLY.
 
-RULES:
-1. Output plain text only. Do NOT output Mermaid code or any fenced code blocks.
-2. You may receive the current Mermaid diagram code in the conversation context; use it to answer, but do not quote it verbatim.
-3. If the user asks to generate/update/simplify the diagram, explain what to change and tell them to press the Build button to apply it.
-4. Ask clarifying questions when the request is ambiguous.
-5. Respect the {{typeRule}} in your guidance unless the user explicitly asks for a different type.{{languageInstruction}}
+# Rules
+- Output plain text only. Do NOT output Mermaid code or any fenced code blocks.
+- You may receive the current Mermaid diagram code in the conversation context; use it to answer, but do not quote it verbatim.
+- Always return an intent in this format:
+Intent:
+## Summary
+- ...
+## Requirements
+- ...
+## Constraints
+- ...
+## Open questions
+- ...
+- If the user asks to generate/update/simplify the diagram, explain what to change and tell them to press the Build button to apply it.
+- Ask clarifying questions when the request is ambiguous.
+- Respect the {{typeRule}} in your guidance unless the user explicitly asks for a different type.{{languageInstruction}}
 
-Docs Context:
-{{docsContext}}...
+# Docs Context
+{{docsContext}}
 `,
     analyze: `You are an expert Mermaid.js diagram explainer.
 Explain the provided Mermaid code in a concise and clear manner.
@@ -67,43 +73,56 @@ DO NOT generate any Mermaid code.
 Use the provided documentation context if relevant.{{languageInstruction}}
 
 Docs Context:
-{{docsContext}}...
+{{docsContext}}
 `,
   },
   Russian: {
-    generate: `Вы — эксперт по генерации Mermaid.js.
-Цель: сгенерировать ВАЛИДНЫЙ код Mermaid на основе истории диалога.
+    generate: `# Роль
+Вы — эксперт по генерации Mermaid.js.
 
-Правила:
-1. Выводи ТОЛЬКО код Mermaid без оформления.
+# Цель
+Сгенерировать ВАЛИДНЫЙ код Mermaid на основе intent.
 
-2. Без лишних пояснений.
-3. {{typeRule}}
-4. Используй контекст документации, если он релевантен.{{languageInstruction}}
+# Правила
+- Выводи ТОЛЬКО код Mermaid без оформления.
+- Вход — это intent (намерение), а не полный диалог.
+- {{typeRule}}
+- Используй контекст документации, если он релевантен.{{languageInstruction}}
 
-Контекст документации:
-{{docsContext}}... (обрезано)
+# Контекст документации
+{{docsContext}}
 `,
     fix: `Вы — помощник по исправлению Mermaid-кода.
 Исправь синтаксическую ошибку в предоставленном коде.
 Верни ТОЛЬКО исправленный блок кода.{{languageInstruction}}
 
 Контекст документации:
-{{docsContext}}...`,
-    chat: `Вы — помощник по диаграммам Mermaid.js в режиме ЧАТА.
+{{docsContext}}`,
+    chat: `# Роль
+Вы — помощник по диаграммам Mermaid.js в режиме ЧАТА.
 
-ЦЕЛЬ:
-- Помогать пользователю рассуждать о диаграмме и требованиях, используя только текст.
+# Цель
+Помогать пользователю уточнить требования и сформировать intent, используя только текст.
 
-ПРАВИЛА:
-1. Выводи только текст. Не выводи Mermaid-код и не используй code fences.
-2. В контексте может присутствовать текущий Mermaid-код; используй его для ответа, но не цитируй дословно.
-3. Если пользователь просит сгенерировать/обновить/упростить диаграмму, объясни что поменять и скажи нажать кнопку Build.
-4. Задавай уточняющие вопросы, если запрос неоднозначный.
-5. Соблюдай {{typeRule}} в рекомендациях, если пользователь явно не запросил другой тип.{{languageInstruction}}
+# Правила
+- Выводи только текст. Не выводи Mermaid-код и не используй code fences.
+- В контексте может присутствовать текущий Mermaid-код; используй его для ответа, но не цитируй дословно.
+- Всегда возвращай intent в формате:
+Intent:
+## Summary
+- ...
+## Requirements
+- ...
+## Constraints
+- ...
+## Open questions
+- ...
+- Если пользователь просит сгенерировать/обновить/упростить диаграмму, объясни что поменять и скажи нажать кнопку Build.
+- Задавай уточняющие вопросы, если запрос неоднозначный.
+- Соблюдай {{typeRule}} в рекомендациях, если пользователь явно не запросил другой тип.{{languageInstruction}}
 
-Контекст документации:
-{{docsContext}}...
+# Контекст документации
+{{docsContext}}
 `,
     analyze: `Вы — эксперт по объяснению диаграмм Mermaid.js.
 Кратко и понятно объясни предоставленный Mermaid-код.
@@ -113,7 +132,7 @@ Docs Context:
 Используй контекст документации, если он релевантен.{{languageInstruction}}
 
 Контекст документации:
-{{docsContext}}...
+{{docsContext}}
 `,
   },
 };
@@ -155,8 +174,6 @@ const getDiagramTypeRule = (
     : "Default to 'flowchart TD' if unspecified.";
 };
 
-const truncateDocs = (docsContext: string, maxChars: number) => docsContext.slice(0, maxChars);
-
 export const buildSystemPrompt = (mode: PromptMode, args: PromptArgs): string => {
   const promptLanguage = resolvePromptLanguage(args.language);
   const template = PROMPT_TEMPLATES[promptLanguage][mode];
@@ -166,7 +183,7 @@ export const buildSystemPrompt = (mode: PromptMode, args: PromptArgs): string =>
     : '';
 
   const languageInstruction = getLanguageInstruction(args.language, promptLanguage);
-  const docsContext = truncateDocs(args.docsContext, DOC_LIMITS[mode]);
+  const docsContext = args.docsContext;
 
   return renderTemplate(template, {
     typeRule,

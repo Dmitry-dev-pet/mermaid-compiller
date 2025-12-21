@@ -1,6 +1,7 @@
 import { AIConfig, Message, Model, DiagramType } from '../../types';
 import { LLMProviderStrategy } from './LLMProviderStrategy';
 import { buildSystemPrompt } from './prompts';
+import { deriveModelVendor } from './modelVendor';
 
 interface OpenRouterModel {
   id: string;
@@ -60,12 +61,27 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
 
       if (!response.ok) {
         const errText = await response.text();
-        let errorMessage = `API Error (${response.status})`;
+        const requestId =
+          response.headers.get('x-request-id') ||
+          response.headers.get('x-openrouter-request-id') ||
+          response.headers.get('cf-ray');
+        let errorMessage = `API Error (${response.status} ${response.statusText || 'Unknown'})`;
+        if (requestId) errorMessage += ` [request-id: ${requestId}]`;
         try {
           const errJson = JSON.parse(errText);
-          if (errJson.error?.message) errorMessage += `: ${errJson.error.message}`;
+          const parts: string[] = [];
+          if (errJson.error?.message) parts.push(errJson.error.message);
+          if (errJson.error?.code) parts.push(`code=${errJson.error.code}`);
+          if (errJson.error?.type) parts.push(`type=${errJson.error.type}`);
+          if (errJson.message) parts.push(errJson.message);
+          if (parts.length > 0) {
+            errorMessage += `: ${parts.join(' | ')}`;
+          }
+          errorMessage += `: ${JSON.stringify(errJson).slice(0, 2000)}`;
         } catch {
-          errorMessage += `: ${errText.slice(0, 100)}`;
+          if (errText.trim()) {
+            errorMessage += `: ${errText.slice(0, 2000)}`;
+          }
         }
         throw new Error(errorMessage);
       }
@@ -106,18 +122,12 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
       if (Array.isArray(data.data)) rawList = data.data as OpenRouterModel[];
       else if (Array.isArray(data)) rawList = data as OpenRouterModel[];
 
-      // Filter based on config.filters
-      const filteredModels = rawList.filter((m) => {
-        if (config.filters.freeOnly && !m.id.includes('free')) return false; // naive check for 'free' in id
-        // Add more filter logic here if OpenRouter API provides fields like context_length, etc.
-        return true;
-      });
-
-      return filteredModels.map((m) => ({
+      return rawList.map((m) => ({
         id: m.id,
         name: m.name || m.id,
         contextLength: m.context_length || 0,
-        isFree: m.id.includes('free') // naive check
+        isFree: m.id.includes('free'), // naive check
+        vendor: deriveModelVendor(m.id, m.name),
       }));
     } catch (error) {
       console.error("Error fetching OpenRouter models:", error);

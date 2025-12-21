@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { AIConfig, AppState, ConnectionState, MermaidState, Message } from '../../types';
+import type { AIConfig, AppState, ConnectionState, MermaidState, Message, DiagramIntent } from '../../types';
 import { validateMermaid } from '../../services/mermaidService';
 import { detectLanguage } from '../../utils';
 import type { StepMeta, TimeStepType } from '../../services/history/types';
@@ -9,11 +9,13 @@ export type StudioActionsDeps = {
   connectionState: ConnectionState;
   appState: AppState;
   mermaidState: MermaidState;
+  diagramIntent: DiagramIntent | null;
+  setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
   setMermaidState: Dispatch<SetStateAction<MermaidState>>;
   addMessage: (role: 'user' | 'assistant', content: string) => Message;
   getMessages: () => Message[];
-  setLanguage: (lang: string) => void;
   setIsProcessing: (value: boolean) => void;
+  getBuildDocsContext: () => Promise<string>;
   recordTimeStep: (args: {
     type: TimeStepType;
     messages: Message[];
@@ -25,24 +27,26 @@ export type StudioActionsDeps = {
 
 export type StudioContext = StudioActionsDeps & {
   getRelevantMessages: () => Message[];
-  getNonAutoLanguage: () => string;
   resolveLanguage: (text?: string) => string;
+  resolveAnalyzeLanguage: () => string;
   normalizeText: (text: string) => string;
   getDiagramContextMessage: () => Message | null;
+  getIntentMessage: (intentText: string) => Message;
+  getCurrentIntent: () => DiagramIntent | null;
+  setCurrentIntent: (intent: DiagramIntent | null) => void;
   buildLLMMessages: (relevantMessages: Message[]) => Message[];
   getLastUserText: (relevantMessages: Message[]) => string;
   applyCompiledResult: (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => void;
   applyValidationPreservingSource: (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => void;
+  getCurrentModelName: () => string;
+  getBuildDocsContext: () => Promise<string>;
 };
 
 export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {
   const normalizeText = (text: string) => text.replace(/\s+/g, ' ').trim();
   const getRelevantMessages = () => deps.getMessages().filter((m) => m.id !== 'init');
-  const getNonAutoLanguage = () => (deps.appState.language === 'auto' ? 'English' : deps.appState.language);
 
   const resolveLanguage = (text?: string): string => {
-    if (deps.appState.language !== 'auto') return deps.appState.language;
-
     const basis =
       text?.trim() ||
       deps
@@ -53,9 +57,13 @@ export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {
 
     if (!basis) return 'English';
 
-    const detected = detectLanguage(basis);
-    deps.setLanguage(detected);
-    return detected;
+    return detectLanguage(basis);
+  };
+
+  const resolveAnalyzeLanguage = (): string => {
+    const configured = deps.appState.analyzeLanguage;
+    if (configured && configured !== 'auto') return configured;
+    return resolveLanguage();
   };
 
   const getDiagramContextMessage = (): Message | null => {
@@ -71,6 +79,18 @@ ${code}
 \`\`\``,
       timestamp: Date.now(),
     };
+  };
+
+  const getIntentMessage = (intentText: string): Message => ({
+    id: 'diagram-intent',
+    role: 'user',
+    content: `Intent:\n${intentText.trim()}`,
+    timestamp: Date.now(),
+  });
+
+  const getCurrentIntent = () => deps.diagramIntent;
+  const setCurrentIntent = (intent: DiagramIntent | null) => {
+    deps.setDiagramIntent(intent);
   };
 
   const buildLLMMessages = (relevantMessages: Message[]) => {
@@ -109,16 +129,25 @@ ${code}
     }));
   };
 
+  const getCurrentModelName = () => {
+    const modelId = deps.aiConfig.selectedModelId;
+    return modelId ? `model=${modelId}` : 'model=unknown';
+  };
+
   return {
     ...deps,
     getRelevantMessages,
-    getNonAutoLanguage,
     resolveLanguage,
+    resolveAnalyzeLanguage,
     normalizeText,
     getDiagramContextMessage,
+    getIntentMessage,
+    getCurrentIntent,
+    setCurrentIntent,
     buildLLMMessages,
     getLastUserText,
     applyCompiledResult,
     applyValidationPreservingSource,
+    getCurrentModelName,
   };
 };

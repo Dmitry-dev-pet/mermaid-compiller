@@ -23,4 +23,3 @@ export const safeParse = <T>(key: string, fallback: T): T => {
     return fallback;
   }
 };
-

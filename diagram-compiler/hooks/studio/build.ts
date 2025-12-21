@@ -1,50 +1,30 @@
 import { validateMermaid, extractMermaidCode } from '../../services/mermaidService';
-import { generateDiagram, fixDiagram, chat, analyzeDiagram } from '../../services/llmService';
-import { fetchDocsContext } from '../../services/docsContextService';
+import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmService';
 import { stripMermaidCode } from '../../utils';
 import type { Message } from '../../types';
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
 
-const trySummarizeBuildBefore = async (ctx: StudioContext, args: {
-  llmMessages: Message[];
-  docs: string;
-  language: string;
+const buildIntent = (ctx: StudioContext, args: {
+  prompt: string;
   relevantMessages: Message[];
-  currentDiagramCode: string;
-  beforeSummarySource: string;
-}) => {
-  const { llmMessages, docs, language, relevantMessages, currentDiagramCode, beforeSummarySource } = args;
-
-  const userMsgCount = relevantMessages.filter((m) => m.role === 'user' && m.content.trim().length > 0).length;
-  const hasDiagram = currentDiagramCode.length > 0;
-  const shouldSummarize = hasDiagram || userMsgCount >= 2 || beforeSummarySource.length >= 40;
-  if (!shouldSummarize) return '';
-
-  try {
-    const summaryReq: Message = {
-      id: 'build-summary-req',
-      role: 'user',
-      content:
-        'Summarize what Mermaid diagram should be built next into 1-2 short sentences.\n' +
-        'Always make a best-effort guess based on the latest user request; do NOT say that context is missing.\n' +
-        'TEXT ONLY. No Mermaid. No code blocks. No numbered lists.',
-      timestamp: Date.now(),
-    };
-
-    const summaryText = await chat(
-      [...llmMessages, summaryReq],
-      ctx.aiConfig,
-      ctx.appState.diagramType,
-      docs,
-      language
-    );
-    const normalized = stripMermaidCode(summaryText).trim();
-    const looksLikeNoContext = /no context|not enough|невозможно|нет (?:контекст|данных)/i.test(normalized);
-    return looksLikeNoContext ? '' : normalized;
-  } catch {
-    return '';
+}): { content: string; source: 'chat' | 'build' | 'fallback' } | null => {
+  const { prompt, relevantMessages } = args;
+  if (prompt) {
+    return { content: prompt, source: 'build' };
   }
+
+  const existing = ctx.getCurrentIntent();
+  if (existing?.content.trim()) {
+    return { content: existing.content, source: existing.source };
+  }
+
+  const lastUserText = ctx.getLastUserText(relevantMessages).trim();
+  if (lastUserText) {
+    return { content: lastUserText, source: 'fallback' };
+  }
+
+  return null;
 };
 
 const autoFixMermaidIfNeeded = async (ctx: StudioContext, args: {
@@ -110,12 +90,12 @@ export const createBuildHandler = (ctx: StudioContext) => {
 
     ctx.setIsProcessing(true);
     try {
-      const docs = await fetchDocsContext(ctx.appState.diagramType);
+      const docs = await ctx.getBuildDocsContext();
       const relevantMessages = ctx.getRelevantMessages();
 
-      const hasUserContext = relevantMessages.some((m) => m.role === 'user' && m.content.trim().length > 0);
-      if (!hasUserContext) {
-        stepMessages.push(ctx.addMessage('assistant', 'Nothing to build yet. Send a message first.'));
+      const intent = buildIntent(ctx, { prompt, relevantMessages });
+      if (!intent) {
+        stepMessages.push(ctx.addMessage('assistant', 'Nothing to build yet. Use Chat to define intent.'));
         try {
           await ctx.recordTimeStep({ type: 'build', messages: stepMessages });
         } catch (e) {
@@ -124,26 +104,18 @@ export const createBuildHandler = (ctx: StudioContext) => {
         return;
       }
 
-      const currentDiagramCode = ctx.mermaidState.code.trim();
-      const llmMessages = ctx.buildLLMMessages(relevantMessages);
-      const lastUserText = ctx.getLastUserText(relevantMessages);
-      const beforeSummarySource = prompt || lastUserText;
+      const intentMessage = ctx.getIntentMessage(intent.content);
+      const diagramContext = ctx.getDiagramContextMessage();
+      const llmMessages = diagramContext ? [intentMessage, diagramContext] : [intentMessage];
 
-      const fullChatSummary = await trySummarizeBuildBefore(ctx, {
-        llmMessages,
-        docs,
-        language,
-        relevantMessages,
-        currentDiagramCode,
-        beforeSummarySource,
+      ctx.setCurrentIntent({
+        content: intent.content,
+        source: intent.source,
+        updatedAt: Date.now(),
       });
 
-      const fallbackLines = [
-        `Will ${currentDiagramCode ? 'update' : 'create'} a ${ctx.appState.diagramType} diagram using chat context${currentDiagramCode ? ' + current code' : ''}.`,
-        beforeSummarySource ? `Request: ${ctx.normalizeText(beforeSummarySource)}` : '',
-      ].filter(Boolean);
-
-      stepMessages.push(ctx.addMessage('assistant', `Build (before): ${fullChatSummary || fallbackLines.join(' ')}`));
+      const beforeSummary = `Build (before): Intent (${intent.source}). ${ctx.normalizeText(intent.content)}`;
+      stepMessages.push(ctx.addMessage('assistant', beforeSummary));
 
       const rawCode = await generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
       const cleanCode = extractMermaidCode(rawCode);
@@ -194,6 +166,8 @@ export const createBuildHandler = (ctx: StudioContext) => {
           meta: {
             diagramType: ctx.appState.diagramType,
             autoFixAttempts: autoFixAttempts,
+            intent: intent.content,
+            intentSource: intent.source,
           },
         });
       } catch (e) {
@@ -201,7 +175,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      stepMessages.push(ctx.addMessage('assistant', `Build failed: ${message}`));
+      stepMessages.push(ctx.addMessage('assistant', `Build failed (${ctx.getCurrentModelName()}): ${message}`));
       try {
         await ctx.recordTimeStep({ type: 'build', messages: stepMessages, meta: { error: message } });
       } catch (err) {

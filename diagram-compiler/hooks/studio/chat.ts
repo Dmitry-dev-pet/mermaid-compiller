@@ -22,20 +22,27 @@ export const createChatHandler = (ctx: StudioContext) => {
 
     ctx.setIsProcessing(true);
     try {
-      const docs = await fetchDocsContext(ctx.appState.diagramType);
       const relevantMessages = ctx.getRelevantMessages();
       const llmMessages = ctx.buildLLMMessages(relevantMessages);
 
-      const responseText = await chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
-      stepMessages.push(ctx.addMessage('assistant', stripMermaidCode(responseText)));
+      const responseText = await chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, '', language);
+      const intentText = stripMermaidCode(responseText).trim();
+      stepMessages.push(ctx.addMessage('assistant', intentText));
+      if (intentText) {
+        ctx.setCurrentIntent({
+          content: intentText,
+          source: 'chat',
+          updatedAt: Date.now(),
+        });
+      }
       try {
-        await ctx.recordTimeStep({ type: 'chat', messages: stepMessages });
+        await ctx.recordTimeStep({ type: 'chat', messages: stepMessages, meta: { intent: intentText || null } });
       } catch (e) {
         console.error('Failed to record history step', e);
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      stepMessages.push(ctx.addMessage('assistant', `Error: ${message}`));
+      stepMessages.push(ctx.addMessage('assistant', `Error (${ctx.getCurrentModelName()}): ${message}`));
       try {
         await ctx.recordTimeStep({ type: 'chat', messages: stepMessages, meta: { error: message } });
       } catch (err) {

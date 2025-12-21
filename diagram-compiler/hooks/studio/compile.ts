@@ -20,7 +20,7 @@ export const createRecompileHandler = (ctx: StudioContext) => {
     ctx.setIsProcessing(true);
     try {
       const docs = await fetchDocsContext(ctx.appState.diagramType);
-      const language = ctx.getNonAutoLanguage();
+      const language = ctx.resolveLanguage();
       const relevantMessages = ctx.getRelevantMessages();
 
       const rawCode = await generateDiagram(relevantMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
@@ -52,9 +52,9 @@ export const createRecompileHandler = (ctx: StudioContext) => {
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      alert(`Generation failed: ${message}`);
+      alert(`Generation failed (${ctx.getCurrentModelName()}): ${message}`);
       const stepMessages: Message[] = [];
-      stepMessages.push(ctx.addMessage('assistant', `Error generating diagram: ${message}`));
+      stepMessages.push(ctx.addMessage('assistant', `Error generating diagram (${ctx.getCurrentModelName()}): ${message}`));
       try {
         await ctx.recordTimeStep({ type: 'recompile', messages: stepMessages, meta: { error: message } });
       } catch (err) {
@@ -80,7 +80,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
     ctx.setIsProcessing(true);
     try {
       const docs = await fetchDocsContext(ctx.appState.diagramType);
-      const language = ctx.getNonAutoLanguage();
+      const language = ctx.resolveLanguage();
 
       const startCode = ctx.mermaidState.code;
       let currentCode = startCode;
@@ -134,7 +134,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      alert(`Fix failed: ${message}`);
+      alert(`Fix failed (${ctx.getCurrentModelName()}): ${message}`);
       try {
         await ctx.recordTimeStep({ type: 'fix', messages: [], meta: { error: message } });
       } catch (err) {
@@ -165,7 +165,7 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
     ctx.setIsProcessing(true);
     try {
       const docs = await fetchDocsContext(ctx.appState.diagramType);
-      const language = ctx.getNonAutoLanguage();
+      const language = ctx.resolveAnalyzeLanguage();
       const explanation = await analyzeDiagram(ctx.mermaidState.code, ctx.aiConfig, docs, language);
       const stepMessages: Message[] = [];
       stepMessages.push(ctx.addMessage('assistant', explanation));
@@ -176,9 +176,9 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      alert(`Analysis failed: ${message}`);
+      alert(`Analysis failed (${ctx.getCurrentModelName()}): ${message}`);
       const stepMessages: Message[] = [];
-      stepMessages.push(ctx.addMessage('assistant', `Error analyzing diagram: ${message}`));
+      stepMessages.push(ctx.addMessage('assistant', `Error analyzing diagram (${ctx.getCurrentModelName()}): ${message}`));
       try {
         await ctx.recordTimeStep({ type: 'analyze', messages: stepMessages, meta: { error: message } });
       } catch (err) {

@@ -4,6 +4,9 @@ import ChatColumn from './components/ChatColumn';
 import EditorColumn from './components/EditorColumn';
 import PreviewColumn from './components/PreviewColumn';
 import { useDiagramStudio } from './hooks/useDiagramStudio';
+import { MermaidThemeName, setInlineThemeCommand } from './utils/inlineThemeCommand';
+import { MermaidDirection, setInlineDirectionCommand } from './utils/inlineDirectionCommand';
+import { MermaidLook, setInlineLookCommand } from './utils/inlineLookCommand';
 
 function App() {
   const {
@@ -19,20 +22,33 @@ function App() {
     handleMermaidChange,
     handleChatMessage,
     handleBuildFromPrompt,
-    handleRecompile,
     handleFixSyntax,
     handleAnalyze,
     diagramMarkers,
     diagramStepAnchors,
     selectedStepId,
+    diagramIntent,
+    promptPreviewByMode,
+    promptPreviewView,
+    editorTab,
+    buildDocsEntries,
+    buildDocsSelection,
+    toggleBuildDocSelection,
+    buildDocsSelectionKey,
+    buildDocsActivePath,
+    setBuildDocsActivePath,
     goToDiagramStep,
     startResize,
     setDiagramType,
     clearMessages,
     startNewProject,
     toggleTheme,
-    setLanguage,
+    setAnalyzeLanguage,
     togglePreviewFullScreen,
+    buildPromptPreview,
+    setPromptPreview,
+    setPromptPreviewView,
+    setEditorTab,
   } = useDiagramStudio();
 
   // Resizing logic is now entirely within useDiagramStudio,
@@ -63,13 +79,17 @@ function App() {
                 onClear={clearMessages}
                 onNewProject={startNewProject}
                 isProcessing={isProcessing}
+                hasIntent={!!diagramIntent?.content.trim()}
+                onSetPromptPreview={setPromptPreview}
                 diagramType={appState.diagramType}
                 onDiagramTypeChange={setDiagramType}
                 mermaidStatus={mermaidState.status}
+                onPreviewPrompt={buildPromptPreview}
                 diagramMarkers={diagramMarkers}
                 diagramStepAnchors={diagramStepAnchors}
                 selectedStepId={selectedStepId}
                 onSelectDiagramStep={goToDiagramStep}
+                buildDocsSelectionKey={buildDocsSelectionKey}
               />
             </div>
 
@@ -86,11 +106,20 @@ function App() {
                 onChange={handleMermaidChange}
                 onAnalyze={handleAnalyze}
                 onFixSyntax={handleFixSyntax}
-                onRecompile={handleRecompile}
                 isAIReady={connectionState.status === 'connected' && !!aiConfig.selectedModelId}
                 isProcessing={isProcessing}
-                language={appState.language}
-                onLanguageChange={setLanguage}
+                analyzeLanguage={appState.analyzeLanguage}
+                onAnalyzeLanguageChange={setAnalyzeLanguage}
+                promptPreviewByMode={promptPreviewByMode}
+                promptPreviewView={promptPreviewView}
+                onPromptPreviewViewChange={setPromptPreviewView}
+                activeTab={editorTab}
+                buildDocsEntries={buildDocsEntries}
+                buildDocsSelection={buildDocsSelection}
+                onToggleBuildDoc={toggleBuildDocSelection}
+                buildDocsActivePath={buildDocsActivePath}
+                onBuildDocsActivePathChange={setBuildDocsActivePath}
+                onActiveTabChange={setEditorTab}
               />
             </div>
 
@@ -112,6 +141,20 @@ function App() {
             theme={appState.theme}
             isFullScreen={appState.isPreviewFullScreen}
             onToggleFullScreen={togglePreviewFullScreen}
+            onSetInlineTheme={(nextTheme: MermaidThemeName | null) => {
+              handleMermaidChange(setInlineThemeCommand(mermaidState.code, nextTheme));
+            }}
+            onSetInlineDirection={(nextDirection: MermaidDirection | null) => {
+              handleMermaidChange(setInlineDirectionCommand(mermaidState.code, nextDirection));
+            }}
+            onSetInlineLook={(nextLook: MermaidLook | null) => {
+              handleMermaidChange(setInlineLookCommand(mermaidState.code, nextLook));
+            }}
+            activeEditorTab={editorTab}
+            promptPreviewByMode={promptPreviewByMode}
+            promptPreviewView={promptPreviewView}
+            buildDocsEntries={buildDocsEntries}
+            buildDocsActivePath={buildDocsActivePath}
           />
         </div>
       </div>

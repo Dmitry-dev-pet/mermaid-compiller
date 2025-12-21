@@ -1,24 +1,54 @@
 export type Provider = 'openrouter' | 'cliproxy';
 
 export type DiagramType =
-  'sequence'
-  | 'flowchart'
-  | 'er'
+  'architecture'
+  | 'block'
   | 'c4'
   | 'class'
-  | 'state'
+  | 'er'
+  | 'flowchart'
   | 'gantt'
+  | 'gitGraph'
+  | 'kanban'
   | 'mindmap'
+  | 'packet'
   | 'pie'
+  | 'quadrantChart'
+  | 'radar'
+  | 'requirementDiagram'
+  | 'sequence'
+  | 'sankey'
+  | 'state'
   | 'timeline'
-  | 'userJourney';
+  | 'treemap'
+  | 'userJourney'
+  | 'xychart'
+  | 'zenuml';
 
 export interface Model {
   id: string;
   name: string;
   contextLength?: number;
   isFree?: boolean;
+  vendor?: string;
 }
+
+export interface OpenRouterFilters {
+  vendor: string;
+  freeOnly: boolean;
+  testedOnly: boolean;
+  experimental: boolean;
+  minContextWindow: number;
+}
+
+export interface CliproxyFilters {
+  vendor: string;
+}
+
+export type ProviderFilters = {
+  openrouter: OpenRouterFilters;
+  cliproxy: CliproxyFilters;
+};
 
 export interface AIConfig {
   provider: Provider;
@@ -27,12 +57,8 @@ export interface AIConfig {
   proxyKey: string;
   proxyEndpoint: string;
   selectedModelId: string;
-  filters: {
-    freeOnly: boolean;
-    context8k: boolean;
-    testedOnly: boolean;
-    experimental: boolean;
-  };
+  selectedModelIdByProvider: Record<Provider, string>;
+  filtersByProvider: ProviderFilters;
 }
 
 export interface ConnectionState {
@@ -46,6 +72,41 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+}
+
+export interface DiagramIntent {
+  content: string;
+  source: 'chat' | 'build' | 'fallback';
+  updatedAt: number;
+}
+
+export type PromptPreviewMode = 'chat' | 'build';
+export type EditorTab = 'code' | 'prompt_chat' | 'prompt_build' | 'build_docs';
+export type PromptPreviewView = 'redacted' | 'raw';
+
+export interface LLMRequestPreview {
+  mode: PromptPreviewMode;
+  diagramType: DiagramType;
+  language: string;
+  systemPrompt: string;
+  docsContext: string;
+  messages: Message[];
+  error?: string;
+}
+
+export interface PromptPreviewTab {
+  title: string;
+  content: string;
+  redactedContent?: string;
+  rawContent?: string;
+  updatedAt: number;
+  tokenCounts?: PromptTokenCounts;
+}
+
+export interface PromptTokenCounts {
+  system: number;
+  messages: number;
+  total: number;
 }
 
 export interface MermaidState {
@@ -65,4 +126,5 @@ export interface AppState {
   isPreviewFullScreen: boolean;
   theme: 'light' | 'dark';
   language: string;
+  analyzeLanguage: string;
 }

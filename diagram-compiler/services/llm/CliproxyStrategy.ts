@@ -1,6 +1,7 @@
 import { AIConfig, Message, Model, DiagramType } from '../../types';
 import { LLMProviderStrategy } from './LLMProviderStrategy';
 import { buildSystemPrompt } from './prompts';
+import { deriveModelVendor } from './modelVendor';
 
 interface CliproxyModel {
   id: string;
@@ -61,12 +62,27 @@ export class CliproxyStrategy implements LLMProviderStrategy {
 
       if (!response.ok) {
         const errText = await response.text();
-        let errorMessage = `API Error (${response.status})`;
+        const requestId =
+          response.headers.get('x-request-id') ||
+          response.headers.get('x-openrouter-request-id') ||
+          response.headers.get('cf-ray');
+        let errorMessage = `API Error (${response.status} ${response.statusText || 'Unknown'})`;
+        if (requestId) errorMessage += ` [request-id: ${requestId}]`;
         try {
           const errJson = JSON.parse(errText);
-          if (errJson.error?.message) errorMessage += `: ${errJson.error.message}`;
+          const parts: string[] = [];
+          if (errJson.error?.message) parts.push(errJson.error.message);
+          if (errJson.error?.code) parts.push(`code=${errJson.error.code}`);
+          if (errJson.error?.type) parts.push(`type=${errJson.error.type}`);
+          if (errJson.message) parts.push(errJson.message);
+          if (parts.length > 0) {
+            errorMessage += `: ${parts.join(' | ')}`;
+          }
+          errorMessage += `: ${JSON.stringify(errJson).slice(0, 2000)}`;
         } catch {
-          errorMessage += `: ${errText.slice(0, 100)}`;
+          if (errText.trim()) {
+            errorMessage += `: ${errText.slice(0, 2000)}`;
+          }
         }
         throw new Error(errorMessage);
       }
@@ -120,12 +136,18 @@ export class CliproxyStrategy implements LLMProviderStrategy {
 
     // Apply filtering if necessary, Cliproxy might return a pre-filtered list or not support it.
     // For now, assuming raw list directly maps.
-    return rawList.map((m) => ({
-      id: typeof m === 'string' ? m : m.id,
-      name: typeof m === 'string' ? m : (m.name || m.id),
-      contextLength: typeof m === 'string' ? 0 : (m.context_length || 0),
-      isFree: false, // Cliproxy typically proxies paid models or local ones
-    }));
+    return rawList.map((m) => {
+      const id = typeof m === 'string' ? m : m.id;
+      const name = typeof m === 'string' ? m : (m.name || m.id);
+
+      return {
+        id,
+        name,
+        contextLength: typeof m === 'string' ? 0 : (m.context_length || 0),
+        isFree: false, // Cliproxy typically proxies paid models or local ones
+        vendor: deriveModelVendor(id, name),
+      };
+    });
   }
 
   async generateDiagram(

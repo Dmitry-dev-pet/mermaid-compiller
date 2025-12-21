@@ -1,12 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Sun } from 'lucide-react';
-import { AIConfig, ConnectionState } from '../types';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Sun, Eye, EyeOff } from 'lucide-react';
+import { AIConfig, CliproxyFilters, ConnectionState, OpenRouterFilters } from '../types';
 import { MERMAID_VERSION } from '../constants';
 
 interface HeaderProps {
   aiConfig: AIConfig;
   connectionState: ConnectionState;
-  onConfigChange: (newConfig: AIConfig) => void;
+  onConfigChange: React.Dispatch<React.SetStateAction<AIConfig>>;
   onConnect: () => Promise<void>;
   onDisconnect: () => void;
   theme: 'light' | 'dark';
@@ -25,6 +25,8 @@ const Header: React.FC<HeaderProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
+  const [showProxyKey, setShowProxyKey] = useState(false);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -48,8 +50,9 @@ const Header: React.FC<HeaderProps> = ({
     // Find model name
     const model = connectionState.availableModels.find(m => m.id === aiConfig.selectedModelId);
     const modelName = model ? model.name : aiConfig.selectedModelId;
+    const contextLabel = model?.contextLength ? ` (${formatContextLength(model.contextLength)})` : '';
     const providerName = aiConfig.provider === 'openrouter' ? 'OpenRouter' : 'Proxy';
-    return `AI: ${providerName} · ${modelName}`;
+    return `AI: ${providerName} · ${modelName}${contextLabel}`;
   };
 
   const getStatusColor = () => {
@@ -58,21 +61,98 @@ const Header: React.FC<HeaderProps> = ({
     return 'text-slate-600 bg-slate-50 border-slate-200 hover:bg-slate-100 dark:text-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700';
   };
 
-  const updateConfig = (updates: Partial<AIConfig>) => {
-    onConfigChange({ ...aiConfig, ...updates });
+  const updateConfig = useCallback((updates: Partial<AIConfig>) => {
+    onConfigChange((prev) => ({ ...prev, ...updates }));
+  }, [onConfigChange]);
+
+  const updateSelectedModel = useCallback((modelId: string) => {
+    onConfigChange((prev) => ({
+      ...prev,
+      selectedModelId: modelId,
+      selectedModelIdByProvider: {
+        ...prev.selectedModelIdByProvider,
+        [prev.provider]: modelId,
+      },
+    }));
+  }, [onConfigChange]);
+
+  const formatContextLength = (value?: number) => {
+    if (!value || value <= 0) return '';
+    if (value >= 1_000_000) {
+      const rounded = Math.round(value / 1_000_000);
+      return `${rounded}m`;
+    }
+    const rounded = Math.round(value / 1000);
+    return `${rounded}k`;
+  };
+
+  const isOpenRouter = aiConfig.provider === 'openrouter';
+  const activeFilters = isOpenRouter
+    ? aiConfig.filtersByProvider.openrouter
+    : aiConfig.filtersByProvider.cliproxy;
+
+  const updateFilters = (updates: Partial<OpenRouterFilters & CliproxyFilters>) => {
+    onConfigChange((prev) => {
+      const provider = prev.provider;
+      return {
+        ...prev,
+        filtersByProvider: {
+          ...prev.filtersByProvider,
+          [provider]: {
+            ...prev.filtersByProvider[provider],
+            ...updates,
+          },
+        },
+      };
+    });
   };
 
   const switchProvider = (provider: AIConfig['provider']) => {
     if (aiConfig.provider === provider) return;
     onDisconnect();
-    updateConfig({ provider, selectedModelId: '' });
+    const storedModelId = aiConfig.selectedModelIdByProvider?.[provider] ?? '';
+    updateConfig({ provider, selectedModelId: storedModelId });
   };
 
-  const filteredModels = connectionState.availableModels.filter(m => {
-    if (aiConfig.filters.freeOnly && !m.isFree) return false;
-    if (aiConfig.filters.context8k && (m.contextLength || 0) < 8000) return false;
+  const baseFilteredModels = connectionState.availableModels.filter((m) => {
+    if (isOpenRouter) {
+      const openRouterFilters = aiConfig.filtersByProvider.openrouter;
+      if (openRouterFilters.freeOnly && !m.isFree) return false;
+      if (openRouterFilters.minContextWindow > 0 && (m.contextLength ?? 0) < openRouterFilters.minContextWindow) return false;
+    } else {
+      const cliproxyFilters = aiConfig.filtersByProvider.cliproxy;
+      if (cliproxyFilters.vendor && m.vendor !== cliproxyFilters.vendor) return false;
+    }
     return true;
   });
+
+  const vendorCounts = new Map<string, number>();
+  baseFilteredModels.forEach((model) => {
+    if (!model.vendor) return;
+    vendorCounts.set(model.vendor, (vendorCounts.get(model.vendor) ?? 0) + 1);
+  });
+
+  const vendorOptions = Array.from(vendorCounts.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([vendor, count]) => ({ vendor, count }));
+
+  if (activeFilters.vendor && !vendorCounts.has(activeFilters.vendor)) {
+    vendorOptions.unshift({ vendor: activeFilters.vendor, count: 0 });
+  }
+
+  const filteredModels = baseFilteredModels.filter((m) => {
+    if (activeFilters.vendor && m.vendor !== activeFilters.vendor) return false;
+    return true;
+  });
+
+  useEffect(() => {
+    if (connectionState.status !== 'connected') return;
+    if (filteredModels.length !== 1) return;
+    const onlyModelId = filteredModels[0]?.id;
+    if (!onlyModelId) return;
+    if (aiConfig.selectedModelId === onlyModelId) return;
+    updateSelectedModel(onlyModelId);
+  }, [aiConfig.selectedModelId, connectionState.status, filteredModels, updateSelectedModel]);
 
   return (
     <header className="flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm shrink-0 z-50 relative h-12 transition-colors">
@@ -86,7 +166,7 @@ const Header: React.FC<HeaderProps> = ({
             className={`flex items-center gap-2 px-3 py-1 rounded-md border text-sm font-medium transition-colors ${getStatusColor()} dark:bg-slate-900 dark:border-slate-700 dark:text-slate-300`}
           >
             {connectionState.status === 'connected' ? <Wifi size={14} /> : <WifiOff size={14} />}
-            <span className="truncate max-w-[200px]">{getStatusText()}</span>
+            <span className="truncate max-w-[320px]">{getStatusText()}</span>
             <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
           </button>
 
@@ -122,26 +202,47 @@ const Header: React.FC<HeaderProps> = ({
               </div>
 
               {/* Connection Settings */}
-              <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-md border border-slate-100 dark:border-slate-700">
+              <form
+                autoComplete="off"
+                onSubmit={(event) => event.preventDefault()}
+                className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-md border border-slate-100 dark:border-slate-700"
+              >
                 {aiConfig.provider === 'openrouter' ? (
                   <div className="space-y-3">
                     <div>
                       <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Key</label>
-                      <input 
-                        type="password" 
-                        value={aiConfig.openRouterKey}
-                        onChange={(e) => updateConfig({ openRouterKey: e.target.value })}
-                        placeholder="sk-or-..."
-                        className="w-full px-2 py-1.5 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                      />
+                      <div className="relative">
+                        <input 
+                          type="text"
+                          autoComplete="new-password"
+                          name="openrouter-secret"
+                          data-1p-ignore="true"
+                          data-lpignore="true"
+                          style={{ WebkitTextSecurity: showOpenRouterKey ? 'none' : 'disc' }}
+                          value={aiConfig.openRouterKey}
+                          onChange={(e) => updateConfig({ openRouterKey: e.target.value })}
+                          placeholder="sk-or-..."
+                          className="w-full px-2 py-1.5 pr-8 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowOpenRouterKey((prev) => !prev)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          aria-label={showOpenRouterKey ? 'Hide API key' : 'Show API key'}
+                        >
+                          {showOpenRouterKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-3">
                      <div>
-                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
+                     <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
                       <input 
                         type="text" 
+                        autoComplete="off"
+                        name="proxy-endpoint"
                         value={aiConfig.proxyEndpoint}
                         onChange={(e) => updateConfig({ proxyEndpoint: e.target.value })}
                         placeholder="http://localhost:8317"
@@ -150,13 +251,28 @@ const Header: React.FC<HeaderProps> = ({
                     </div>
                     <div>
                       <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Proxy Key</label>
-                      <input 
-                        type="password" 
-                        value={aiConfig.proxyKey || ''}
-                        onChange={(e) => updateConfig({ proxyKey: e.target.value })}
-                        placeholder="test"
-                        className="w-full px-2 py-1.5 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                      />
+                      <div className="relative">
+                        <input 
+                          type="text"
+                          autoComplete="new-password"
+                          name="proxy-secret"
+                          data-1p-ignore="true"
+                          data-lpignore="true"
+                          style={{ WebkitTextSecurity: showProxyKey ? 'none' : 'disc' }}
+                          value={aiConfig.proxyKey || ''}
+                          onChange={(e) => updateConfig({ proxyKey: e.target.value })}
+                          placeholder="test"
+                          className="w-full px-2 py-1.5 pr-8 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowProxyKey((prev) => !prev)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          aria-label={showProxyKey ? 'Hide proxy key' : 'Show proxy key'}
+                        >
+                          {showProxyKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -190,7 +306,7 @@ const Header: React.FC<HeaderProps> = ({
                     </button>
                   )}
                 </div>
-              </div>
+              </form>
 
               {/* Model Selection */}
               {connectionState.status === 'connected' && (
@@ -207,30 +323,72 @@ const Header: React.FC<HeaderProps> = ({
 
                   {showFilters && (
                     <div className="mb-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded text-xs grid grid-cols-2 gap-2 border border-slate-100 dark:border-slate-700 dark:text-slate-300">
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" checked={aiConfig.filters.freeOnly} onChange={e => updateConfig({ filters: {...aiConfig.filters, freeOnly: e.target.checked} })} />
-                        Free only
-                      </label>
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" checked={aiConfig.filters.context8k} onChange={e => updateConfig({ filters: {...aiConfig.filters, context8k: e.target.checked} })} />
-                        Context &ge; 8k
-                      </label>
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" checked={aiConfig.filters.testedOnly} onChange={e => updateConfig({ filters: {...aiConfig.filters, testedOnly: e.target.checked} })} />
-                        Tested only
-                      </label>
+                      <div className="col-span-2">
+                        <label className="block text-[10px] uppercase text-slate-400 mb-1">Vendor</label>
+                        <select
+                          value={activeFilters.vendor}
+                          onChange={(e) => updateFilters({ vendor: e.target.value })}
+                          className="w-full px-2 py-1 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        >
+                          <option value="">
+                            All vendors ({baseFilteredModels.length})
+                          </option>
+                          {vendorOptions.map(({ vendor, count }) => (
+                            <option key={vendor} value={vendor}>
+                              {vendor} ({count})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {isOpenRouter && (
+                        <div className="col-span-2">
+                          <label className="block text-[10px] uppercase text-slate-400 mb-1">Min Context Window</label>
+                          <select
+                            value={activeFilters.minContextWindow}
+                            onChange={(e) => updateFilters({ minContextWindow: Number(e.target.value) })}
+                            className="w-full px-2 py-1 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                          >
+                            <option value="0">Any size</option>
+                            <option value="32000">32k+</option>
+                            <option value="64000">64k+</option>
+                            <option value="128000">128k+</option>
+                            <option value="200000">200k+</option>
+                            <option value="1000000">1M+</option>
+                          </select>
+                        </div>
+                      )}
+                      {isOpenRouter && (
+                        <>
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={aiConfig.filtersByProvider.openrouter.freeOnly}
+                              onChange={(e) => updateFilters({ freeOnly: e.target.checked })}
+                            />
+                            Free only
+                          </label>
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={aiConfig.filtersByProvider.openrouter.testedOnly}
+                              onChange={(e) => updateFilters({ testedOnly: e.target.checked })}
+                            />
+                            Tested only
+                          </label>
+                        </>
+                      )}
                     </div>
                   )}
 
                   <select 
                     value={aiConfig.selectedModelId}
-                    onChange={(e) => updateConfig({ selectedModelId: e.target.value })}
+                    onChange={(e) => updateSelectedModel(e.target.value)}
                     className="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white dark:bg-slate-900 dark:text-slate-200"
                   >
                     <option value="" disabled>Select a model...</option>
                     {filteredModels.map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.name} {m.isFree ? '(Free)' : ''}
+                        {m.name} {m.contextLength ? `(${formatContextLength(m.contextLength)})` : ''} {m.isFree ? '(Free)' : ''}
                       </option>
                     ))}
                   </select>

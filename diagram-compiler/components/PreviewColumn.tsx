@@ -1,14 +1,28 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mermaid from 'mermaid';
-import { Maximize2, Minimize2, RotateCcw, Scan, ZoomIn, ZoomOut } from 'lucide-react';
+import { Download, Maximize2, Minimize2, Scan, ZoomIn, ZoomOut } from 'lucide-react';
 import svgPanZoom from 'svg-pan-zoom';
-import { MermaidState } from '../types';
+import MarkdownIt from 'markdown-it';
+import { EditorTab, MermaidState, PromptPreviewMode, PromptPreviewTab, PromptPreviewView } from '../types';
+import { useDiagramExport } from '../hooks/useDiagramExport';
+import { extractInlineThemeCommand, MermaidThemeName } from '../utils/inlineThemeCommand';
+import { applyInlineDirectionCommand, extractInlineDirectionCommand, MermaidDirection } from '../utils/inlineDirectionCommand';
+import { applyInlineThemeAndLookCommands, extractInlineLookCommand, MermaidLook } from '../utils/inlineLookCommand';
+import { isMarkdownLike } from '../services/mermaidService';
 
 interface PreviewColumnProps {
   mermaidState: MermaidState;
   theme: 'light' | 'dark';
   isFullScreen: boolean;
   onToggleFullScreen: () => void;
+  onSetInlineTheme: (theme: MermaidThemeName | null) => void;
+  onSetInlineDirection: (direction: MermaidDirection | null) => void;
+  onSetInlineLook: (look: MermaidLook | null) => void;
+  activeEditorTab: EditorTab;
+  promptPreviewByMode: Record<PromptPreviewMode, PromptPreviewTab | null>;
+  promptPreviewView: PromptPreviewView;
+  buildDocsEntries: Array<{ path: string; text: string }>;
+  buildDocsActivePath: string;
 }
 
 type ViewBox = { x: number; y: number; width: number; height: number };
@@ -28,31 +42,84 @@ const parseViewBoxAttr = (value: string | null): ViewBox | null => {
   return { x, y, width, height };
 };
 
-const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFullScreen, onToggleFullScreen }) => {
+const PreviewColumn: React.FC<PreviewColumnProps> = ({
+  mermaidState,
+  theme,
+  isFullScreen,
+  onToggleFullScreen,
+  onSetInlineTheme,
+  onSetInlineDirection,
+  onSetInlineLook,
+  activeEditorTab,
+  promptPreviewByMode,
+  promptPreviewView,
+  buildDocsEntries,
+  buildDocsActivePath,
+}) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const svgMountRef = useRef<HTMLDivElement>(null);
+  const markdownMountRef = useRef<HTMLDivElement>(null);
+  const docsMountRef = useRef<HTMLDivElement>(null);
+  const promptMountRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const bindFunctionsRef = useRef<((element: Element) => void) | null>(null);
   const panZoomRef = useRef<ReturnType<typeof svgPanZoom> | null>(null);
-  const baseZoomRef = useRef<number | null>(null);
-  const basePanRef = useRef<{ x: number; y: number } | null>(null);
 
   const [svgMarkup, setSvgMarkup] = useState<string>('');
   const [renderError, setRenderError] = useState<string | null>(null);
   const [zoomPercent, setZoomPercent] = useState<number>(100);
-  const [canReset, setCanReset] = useState(false);
+  const [markdownHtml, setMarkdownHtml] = useState<string>('');
+  const [isMarkdownMode, setIsMarkdownMode] = useState<boolean>(false);
+  const { exportError, exportPng, exportSvg, isExporting } = useDiagramExport({ svgRef, code: mermaidState.code, theme });
+  const markdownRenderer = useMemo(() => new MarkdownIt({ html: false, linkify: true, typographer: false }), []);
+  const isPromptMode = activeEditorTab === 'prompt_chat' || activeEditorTab === 'prompt_build';
+  const isBuildDocsMode = activeEditorTab === 'build_docs';
+  const activePromptPreview =
+    activeEditorTab === 'prompt_chat'
+      ? promptPreviewByMode.chat
+      : activeEditorTab === 'prompt_build'
+        ? promptPreviewByMode.build
+        : null;
+  const promptContent = useMemo(() => {
+    if (!isPromptMode) return '';
+    if (promptPreviewView === 'raw') return activePromptPreview?.rawContent ?? activePromptPreview?.content ?? '';
+    return activePromptPreview?.redactedContent ?? activePromptPreview?.content ?? '';
+  }, [activePromptPreview?.content, activePromptPreview?.rawContent, activePromptPreview?.redactedContent, isPromptMode, promptPreviewView]);
+
+  const promptHtml = useMemo(() => {
+    return promptContent.trim() ? markdownRenderer.render(promptContent) : '';
+  }, [markdownRenderer, promptContent]);
+
+  const activeBuildDoc = buildDocsEntries.find((entry) => entry.path === buildDocsActivePath) ?? buildDocsEntries[0];
+  const buildDocsHtml = useMemo(() => {
+    if (!isBuildDocsMode) return '';
+    const content = activeBuildDoc?.text ?? '';
+    return content.trim() ? markdownRenderer.render(content) : '';
+  }, [activeBuildDoc?.text, isBuildDocsMode, markdownRenderer]);
+
+
+  const selectedInlineTheme = useMemo(() => {
+    return extractInlineThemeCommand(mermaidState.code).theme ?? '';
+  }, [mermaidState.code]);
+
+  const selectedInlineDirection = useMemo(() => {
+    return extractInlineDirectionCommand(mermaidState.code).direction ?? '';
+  }, [mermaidState.code]);
+
+  const selectedInlineLook = useMemo(() => {
+    return extractInlineLookCommand(mermaidState.code).look ?? '';
+  }, [mermaidState.code]);
 
   const updateZoomPercent = useCallback((nextZoom?: number) => {
-    const base = baseZoomRef.current;
     const instance = panZoomRef.current;
     const zoom = typeof nextZoom === 'number' ? nextZoom : instance?.getZoom();
 
-    if (!base || !zoom) {
+    if (!zoom) {
       setZoomPercent(100);
       return;
     }
 
-    setZoomPercent(Math.max(1, Math.round((zoom / base) * 100)));
+    setZoomPercent(Math.max(1, Math.round(zoom * 100)));
   }, []);
 
   const computeFitViewBoxFromBBox = useCallback((): ViewBox | null => {
@@ -75,21 +142,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
     instance.resize();
     instance.fit();
     instance.center();
-    baseZoomRef.current = instance.getZoom();
-    basePanRef.current = instance.getPan();
-    setZoomPercent(100);
-    setCanReset(true);
-  }, []);
-
-  const resetView = useCallback(() => {
-    const instance = panZoomRef.current;
-    const baseZoom = baseZoomRef.current;
-    const basePan = basePanRef.current;
-    if (!instance || !baseZoom || !basePan) return;
-
-    instance.zoom(baseZoom);
-    instance.pan(basePan);
-    updateZoomPercent(baseZoom);
+    updateZoomPercent(instance.getZoom());
   }, [updateZoomPercent]);
 
   const zoomIn = useCallback(() => {
@@ -107,7 +160,30 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
   }, [updateZoomPercent]);
 
   useEffect(() => {
+    if (isPromptMode || isBuildDocsMode) return;
+    const isMarkdown = isMarkdownLike(mermaidState.code);
+    setIsMarkdownMode(isMarkdown);
+    if (!isMarkdown) {
+      setMarkdownHtml('');
+      return;
+    }
+
+    setRenderError(null);
+    setSvgMarkup('');
+    bindFunctionsRef.current = null;
+    svgRef.current = null;
+    panZoomRef.current?.destroy();
+    panZoomRef.current = null;
+    setZoomPercent(100);
+
+    const html = markdownRenderer.render(mermaidState.code);
+    setMarkdownHtml(html);
+  }, [isPromptMode, markdownRenderer, mermaidState.code]);
+
+  useEffect(() => {
+    if (isPromptMode || isBuildDocsMode) return;
     const renderDiagram = async () => {
+      if (isMarkdownMode) return;
       if (!mermaidState.isValid || !mermaidState.code.trim()) {
         if (!mermaidState.code.trim()) {
           setSvgMarkup('');
@@ -116,10 +192,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
           svgRef.current = null;
           panZoomRef.current?.destroy();
           panZoomRef.current = null;
-          baseZoomRef.current = null;
-          basePanRef.current = null;
           setZoomPercent(100);
-          setCanReset(false);
           if (svgMountRef.current) svgMountRef.current.replaceChildren();
         }
         return;
@@ -127,7 +200,9 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
       try {
         setRenderError(null);
         const id = `mermaid-${Date.now()}`;
-        const { svg, bindFunctions } = await mermaid.render(id, mermaidState.code);
+        const withDirection = applyInlineDirectionCommand(mermaidState.code).code;
+        const { code: codeForRender } = applyInlineThemeAndLookCommands(withDirection);
+        const { svg, bindFunctions } = await mermaid.render(id, codeForRender);
         bindFunctionsRef.current = bindFunctions ?? null;
 
         if (!svg || !svg.includes('<svg')) {
@@ -145,9 +220,149 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
 
     const timer = setTimeout(renderDiagram, 200);
     return () => clearTimeout(timer);
-  }, [mermaidState.code, mermaidState.isValid, theme]);
+  }, [isBuildDocsMode, isMarkdownMode, isPromptMode, mermaidState.code, mermaidState.isValid, theme]);
 
   useEffect(() => {
+    if (isPromptMode || isBuildDocsMode) return;
+    if (!isMarkdownMode) return;
+    const mount = markdownMountRef.current;
+    if (!mount) return;
+
+    mount.innerHTML = markdownHtml;
+
+    const mermaidBlocks = Array.from(
+      mount.querySelectorAll('pre > code.language-mermaid, pre > code.language-mermaid-example')
+    );
+    if (mermaidBlocks.length === 0) return;
+
+    let isCancelled = false;
+    const renderBlocks = async () => {
+      for (let i = 0; i < mermaidBlocks.length; i += 1) {
+        if (isCancelled) return;
+        const block = mermaidBlocks[i];
+        const code = block.textContent ?? '';
+        if (!code.trim()) continue;
+        const id = `md-mermaid-${Date.now()}-${i}`;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, code);
+          if (isCancelled || !svg) continue;
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = svg;
+          const pre = block.parentElement;
+          if (pre && pre.parentElement) {
+            pre.replaceWith(wrapper);
+            try {
+              bindFunctions?.(wrapper);
+            } catch (e) {
+              console.error('Failed to bind Mermaid interactions in markdown', e);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to render Mermaid block in markdown', e);
+        }
+      }
+    };
+
+    renderBlocks();
+    return () => {
+      isCancelled = true;
+    };
+  }, [isBuildDocsMode, isMarkdownMode, isPromptMode, markdownHtml, theme]);
+
+  useEffect(() => {
+    if (!isBuildDocsMode) return;
+    const mount = docsMountRef.current;
+    if (!mount) return;
+
+    mount.innerHTML = buildDocsHtml;
+
+    const mermaidBlocks = Array.from(
+      mount.querySelectorAll('pre > code.language-mermaid, pre > code.language-mermaid-example')
+    );
+    if (mermaidBlocks.length === 0) return;
+
+    let isCancelled = false;
+    const renderBlocks = async () => {
+      for (let i = 0; i < mermaidBlocks.length; i += 1) {
+        if (isCancelled) return;
+        const block = mermaidBlocks[i];
+        const code = block.textContent ?? '';
+        if (!code.trim()) continue;
+        const id = `build-docs-${Date.now()}-${i}`;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, code);
+          if (isCancelled || !svg) continue;
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = svg;
+          const pre = block.parentElement;
+          if (pre && pre.parentElement) {
+            pre.replaceWith(wrapper);
+            try {
+              bindFunctions?.(wrapper);
+            } catch (e) {
+              console.error('Failed to bind Mermaid interactions in build docs preview', e);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to render Mermaid block in build docs preview', e);
+        }
+      }
+    };
+
+    renderBlocks();
+    return () => {
+      isCancelled = true;
+    };
+  }, [buildDocsHtml, isBuildDocsMode, theme]);
+
+  useEffect(() => {
+    if (!isPromptMode) return;
+    const mount = promptMountRef.current;
+    if (!mount) return;
+
+    mount.innerHTML = promptHtml;
+
+    const mermaidBlocks = Array.from(
+      mount.querySelectorAll('pre > code.language-mermaid, pre > code.language-mermaid-example')
+    );
+    if (mermaidBlocks.length === 0) return;
+
+    let isCancelled = false;
+    const renderBlocks = async () => {
+      for (let i = 0; i < mermaidBlocks.length; i += 1) {
+        if (isCancelled) return;
+        const block = mermaidBlocks[i];
+        const code = block.textContent ?? '';
+        if (!code.trim()) continue;
+        const id = `prompt-mermaid-${Date.now()}-${i}`;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, code);
+          if (isCancelled || !svg) continue;
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = svg;
+          const pre = block.parentElement;
+          if (pre && pre.parentElement) {
+            pre.replaceWith(wrapper);
+            try {
+              bindFunctions?.(wrapper);
+            } catch (e) {
+              console.error('Failed to bind Mermaid interactions in prompt preview', e);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to render Mermaid block in prompt preview', e);
+        }
+      }
+    };
+
+    renderBlocks();
+    return () => {
+      isCancelled = true;
+    };
+  }, [isPromptMode, promptHtml, theme]);
+
+  useEffect(() => {
+    if (isPromptMode || isBuildDocsMode) return;
     if (!svgMarkup) return;
     const mount = svgMountRef.current;
     if (!mount) return;
@@ -159,10 +374,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
 
     panZoomRef.current?.destroy();
     panZoomRef.current = null;
-    baseZoomRef.current = null;
-    basePanRef.current = null;
     setZoomPercent(100);
-    setCanReset(false);
 
     svgEl.setAttribute('width', '100%');
     svgEl.setAttribute('height', '100%');
@@ -221,10 +433,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
           instance.resize();
           instance.fit();
           instance.center();
-          baseZoomRef.current = instance.getZoom();
-          basePanRef.current = instance.getPan();
-          setZoomPercent(100);
-          setCanReset(true);
+          updateZoomPercent(instance.getZoom());
         });
 
         return;
@@ -239,26 +448,73 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
       cancelAnimationFrame(rafId);
       panZoomRef.current?.destroy();
       panZoomRef.current = null;
-      baseZoomRef.current = null;
-      basePanRef.current = null;
     };
-  }, [computeFitViewBoxFromBBox, svgMarkup, updateZoomPercent]);
+  }, [computeFitViewBoxFromBBox, isBuildDocsMode, isPromptMode, svgMarkup, updateZoomPercent]);
 
   useEffect(() => {
+    if (isPromptMode || isBuildDocsMode) return;
     if (!svgMarkup) return;
     if (!panZoomRef.current) return;
     const rafId = requestAnimationFrame(() => {
       fitToViewport();
     });
     return () => cancelAnimationFrame(rafId);
-  }, [fitToViewport, isFullScreen, svgMarkup]);
+  }, [fitToViewport, isFullScreen, isBuildDocsMode, isPromptMode, svgMarkup]);
 
   return (
     <div className="h-full flex flex-col bg-slate-50/30 dark:bg-slate-900/30">
       <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center justify-between gap-3">
-        <div>Preview</div>
-        <div className="flex items-center gap-1.5 normal-case tracking-normal">
+        <div>{isPromptMode ? 'Prompt Preview' : isBuildDocsMode ? 'Build Docs' : 'Preview'}</div>
+        {!isPromptMode && !isBuildDocsMode && (
+          <div className="flex items-center gap-1.5 normal-case tracking-normal">
+          <select
+            className="h-6 px-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-medium"
+            value={selectedInlineTheme}
+            onChange={(e) => onSetInlineTheme((e.target.value || null) as MermaidThemeName | null)}
+            disabled={!mermaidState.code.trim() || isMarkdownMode}
+            title="Diagram theme (inline)"
+          >
+            <option value="">Theme: (none)</option>
+            <option value="default">Theme: default</option>
+            <option value="dark">Theme: dark</option>
+            <option value="forest">Theme: forest</option>
+            <option value="neutral">Theme: neutral</option>
+            <option value="base">Theme: base</option>
+          </select>
+
+          <select
+            className="h-6 px-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-medium"
+            value={selectedInlineDirection}
+            onChange={(e) => onSetInlineDirection((e.target.value || null) as MermaidDirection | null)}
+            disabled={!mermaidState.code.trim() || isMarkdownMode}
+            title="Diagram direction (inline)"
+          >
+            <option value="">Dir: (none)</option>
+            <option value="TB">Dir: TB</option>
+            <option value="TD">Dir: TD</option>
+            <option value="LR">Dir: LR</option>
+            <option value="RL">Dir: RL</option>
+            <option value="BT">Dir: BT</option>
+          </select>
+
+          <select
+            className="h-6 px-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-medium"
+            value={selectedInlineLook}
+            onChange={(e) => onSetInlineLook((e.target.value || null) as MermaidLook | null)}
+            disabled={!mermaidState.code.trim() || isMarkdownMode}
+            title="Diagram look (inline)"
+          >
+            <option value="">Look: (none)</option>
+            <option value="classic">Look: classic</option>
+            <option value="handDrawn">Look: handDrawn</option>
+          </select>
+
           <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono w-12 text-right">{zoomPercent}%</span>
+          {exportError && (
+            <span className="text-[10px] text-red-600 dark:text-red-400 max-w-56 truncate" title={exportError}>
+              {exportError}
+            </span>
+          )}
 
           <button
             type="button"
@@ -272,7 +528,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
           <button
             type="button"
             onClick={zoomOut}
-            disabled={!svgMarkup}
+            disabled={!svgMarkup || isMarkdownMode}
             className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
             title="Zoom out"
           >
@@ -282,7 +538,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
           <button
             type="button"
             onClick={zoomIn}
-            disabled={!svgMarkup}
+            disabled={!svgMarkup || isMarkdownMode}
             className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
             title="Zoom in"
           >
@@ -292,23 +548,38 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
           <button
             type="button"
             onClick={fitToViewport}
-            disabled={!svgMarkup}
+            disabled={!svgMarkup || isMarkdownMode}
             className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
             title="Fit (center & maximize)"
           >
             <Scan size={14} />
           </button>
 
+          <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1" />
+
           <button
             type="button"
-            onClick={resetView}
-            disabled={!svgMarkup || !canReset}
-            className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
-            title="Reset view"
+            onClick={exportSvg}
+            disabled={!svgMarkup || isExporting || isMarkdownMode}
+            className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-1 text-[10px] font-medium"
+            title="Export SVG"
           >
-            <RotateCcw size={14} />
+            <Download size={12} />
+            SVG
           </button>
-        </div>
+
+          <button
+            type="button"
+            onClick={exportPng}
+            disabled={!svgMarkup || isExporting || isMarkdownMode}
+            className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-1 text-[10px] font-medium"
+            title="Export PNG"
+          >
+            <Download size={12} />
+            PNG
+          </button>
+          </div>
+        )}
       </div>
 
       <div
@@ -316,7 +587,27 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
         className="flex-1 relative overflow-hidden flex items-center justify-center"
       >
 
-        {renderError && mermaidState.status !== 'invalid' && (
+        {isPromptMode && (
+          <div className="absolute inset-0 overflow-auto text-sm text-slate-700 dark:text-slate-200 leading-6 p-4">
+            {promptContent ? (
+              <div ref={promptMountRef} className="markdown-body" />
+            ) : (
+              <div className="text-slate-400 dark:text-slate-500 text-sm">No prompt preview available.</div>
+            )}
+          </div>
+        )}
+
+        {isBuildDocsMode && (
+          <div className="absolute inset-0 overflow-auto text-sm text-slate-700 dark:text-slate-200 leading-6 p-4">
+            {activeBuildDoc?.text ? (
+              <div ref={docsMountRef} className="markdown-body" />
+            ) : (
+              <div className="text-slate-400 dark:text-slate-500 text-sm">No documentation loaded.</div>
+            )}
+          </div>
+        )}
+
+        {!isPromptMode && !isBuildDocsMode && renderError && mermaidState.status !== 'invalid' && !isMarkdownMode && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
             <div className="text-center p-6 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-lg max-w-sm">
               <h3 className="text-red-700 dark:text-red-400 font-medium mb-1">Render failed</h3>
@@ -326,7 +617,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
             </div>
           </div>
         )}
-        {mermaidState.status === 'invalid' && (
+        {!isPromptMode && !isBuildDocsMode && mermaidState.status === 'invalid' && !isMarkdownMode && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
             <div className="text-center p-6 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-lg max-w-sm">
               <h3 className="text-red-700 dark:text-red-400 font-medium mb-1">Cannot render diagram</h3>
@@ -337,11 +628,17 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({ mermaidState, theme, isFu
           </div>
         )}
 
-        {!mermaidState.code.trim() && (
+        {!isPromptMode && !isBuildDocsMode && !mermaidState.code.trim() && !isMarkdownMode && (
           <div className="text-slate-400 dark:text-slate-500 text-sm">No valid diagram to display.</div>
         )}
 
-        {svgMarkup && <div ref={svgMountRef} className="absolute inset-0" />}
+        {!isPromptMode && !isBuildDocsMode && svgMarkup && !isMarkdownMode && <div ref={svgMountRef} className="absolute inset-0" />}
+        {!isPromptMode && !isBuildDocsMode && isMarkdownMode && (
+          <div
+            ref={markdownMountRef}
+            className="markdown-body absolute inset-0 overflow-auto p-4 text-sm text-slate-700 dark:text-slate-200 leading-6"
+          />
+        )}
       </div>
     </div>
   );
