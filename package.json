@@ -7,7 +7,7 @@
     "build": "npm --prefix diagram-compiler run build",
     "preview": "npm --prefix diagram-compiler run preview",
     "start": "node server.js",
-    "lint": "eslint public public-next --ext .js",
+    "lint": "npm --prefix diagram-compiler run lint",
     "test": "npm --prefix diagram-compiler test"
   },
   "keywords": [],

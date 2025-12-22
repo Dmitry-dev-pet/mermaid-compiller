@@ -33,16 +33,30 @@ const diagramDocs: Record<DiagramType, string[]> = {
   zenuml: ['packages/mermaid/src/docs/syntax/zenuml.md'],
 };
 
-export type DocsEntry = { path: string; text: string };
+export type DocsEntry = { path: string; text: string; isOptional?: boolean };
 
-const fetchLocalDoc = async (path: string): Promise<DocsEntry> => {
+export const getDocsPaths = (diagramType: DiagramType): Array<{ path: string; isOptional?: boolean }> => {
+  const specific = diagramDocs[diagramType] || [];
+  const optionalDocs = [
+    'packages/mermaid/src/docs/intro/getting-started.md',
+    'packages/mermaid/src/docs/config/directives.md',
+    'packages/mermaid/src/docs/config/theming.md',
+  ];
+  const requiredPaths = [...specific, ...commonDocs];
+  return [
+    ...requiredPaths.map((path) => ({ path })),
+    ...optionalDocs.map((path) => ({ path, isOptional: true })),
+  ];
+};
+
+const fetchLocalDoc = async (path: string, isOptional = false): Promise<DocsEntry> => {
   try {
     const res = await fetch(`${DOCS_BASE_URL}/${path}`);
-    if (!res.ok) return { path, text: '' };
+    if (!res.ok) return { path, text: '', isOptional };
     const text = await res.text();
-    return { path, text };
+    return { path, text, isOptional };
   } catch {
-    return { path, text: '' };
+    return { path, text: '', isOptional };
   }
 };
 
@@ -61,10 +75,11 @@ export const fetchDiagramSyntaxDoc = async (
 };
 
 export const fetchDocsEntries = async (diagramType: DiagramType): Promise<DocsEntry[]> => {
-  const specific = diagramDocs[diagramType] || [];
-  const paths = [...specific, ...commonDocs];
-  const results = await Promise.all(paths.map(path => fetchLocalDoc(path)));
-  return results.filter(result => result.text);
+  const paths = getDocsPaths(diagramType);
+  const results = await Promise.all(
+    paths.map(({ path, isOptional }) => fetchLocalDoc(path, !!isOptional))
+  );
+  return results;
 };
 
 export const formatDocsContext = (entries: DocsEntry[]): string => {

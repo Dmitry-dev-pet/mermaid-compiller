@@ -11,7 +11,7 @@
 1. **UI-компоненты** (`diagram-compiler/components`)
    - `Header` — управление провайдером LLM, подключением и темой.
    - `ChatColumn` — история сообщений, выбор типа диаграммы, Chat/Build.
-   - `EditorColumn` — редактор Mermaid-кода, Analyze/Fix/Snapshot, язык анализа, вкладки Prompt/Build Docs и вкладки Mermaid-блоков Markdown.
+   - `EditorColumn` — редактор Mermaid-кода, Analyze/Fix/Snapshot, язык анализа, вкладка Build Docs и вкладки Mermaid-блоков Markdown.
    - `PreviewColumn` — SVG-рендер, zoom/pan, fullscreen.
 
 2. **Хуки** (`diagram-compiler/hooks`)
@@ -36,7 +36,7 @@
 ### Chat
 
 1. Пользователь вводит текст и нажимает Chat.
-2. `createChatHandler` собирает сообщения и вызывает LLM (`chat`) без контекста документации.
+2. `createChatHandler` собирает сообщения и вызывает LLM (`chat`) с контекстом выбранных файлов для режима Chat.
 3. Ответ формирует структурированный intent и сохраняется в истории чата.
 4. Код Mermaid не меняется.
 

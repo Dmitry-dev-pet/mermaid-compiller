@@ -1,8 +1,13 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { AIConfig, AppState, ConnectionState, MermaidState, Message, DiagramIntent } from '../../types';
-import { validateMermaid } from '../../services/mermaidService';
+import type { AIConfig, AppState, ConnectionState, MermaidState, Message, DiagramIntent, DocsMode } from '../../types';
+import { MermaidMarkdownBlock, replaceMermaidBlockInMarkdown, validateMermaid } from '../../services/mermaidService';
 import { detectLanguage } from '../../utils';
+import { normalizeIntentText } from '../../utils/intent';
 import type { StepMeta, TimeStepType } from '../../services/history/types';
+
+export type MermaidUpdateTarget =
+  | { mode: 'markdown'; block: MermaidMarkdownBlock }
+  | { mode: 'code' };
 
 export type StudioActionsDeps = {
   aiConfig: AIConfig;
@@ -15,8 +20,9 @@ export type StudioActionsDeps = {
   addMessage: (role: 'user' | 'assistant', content: string) => Message;
   getMessages: () => Message[];
   getDiagramContextCode?: () => string;
+  resolveMermaidUpdateTarget?: () => MermaidUpdateTarget | null;
   setIsProcessing: (value: boolean) => void;
-  getBuildDocsContext: () => Promise<string>;
+  getDocsContext: (mode: DocsMode) => Promise<string>;
   recordTimeStep: (args: {
     type: TimeStepType;
     messages: Message[];
@@ -37,10 +43,11 @@ export type StudioContext = StudioActionsDeps & {
   setCurrentIntent: (intent: DiagramIntent | null) => void;
   buildLLMMessages: (relevantMessages: Message[]) => Message[];
   getLastUserText: (relevantMessages: Message[]) => string;
+  resolveMermaidUpdate: (code: string, validation: Awaited<ReturnType<typeof validateMermaid>>) => Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'>;
   applyCompiledResult: (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => void;
   applyValidationPreservingSource: (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => void;
   getCurrentModelName: () => string;
-  getBuildDocsContext: () => Promise<string>;
+  getDocsContext: (mode: DocsMode) => Promise<string>;
   safeRecordTimeStep: StudioActionsDeps['recordTimeStep'];
 };
 
@@ -49,6 +56,9 @@ export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {
   const getRelevantMessages = () => deps.getMessages().filter((m) => m.id !== 'init');
 
   const resolveLanguage = (text?: string): string => {
+    if (deps.appState.language && deps.appState.language !== 'auto') {
+      return deps.appState.language;
+    }
     const basis =
       text?.trim() ||
       deps
@@ -86,7 +96,7 @@ ${code}
   const getIntentMessage = (intentText: string): Message => ({
     id: 'diagram-intent',
     role: 'user',
-    content: `Intent:\n${intentText.trim()}`,
+    content: `Intent:\n${normalizeIntentText(intentText)}`,
     timestamp: Date.now(),
   });
 
@@ -106,7 +116,56 @@ ${code}
       .reverse()
       .find((m) => m.role === 'user' && m.content.trim().length > 0)?.content ?? '';
 
+  const resolveMermaidUpdateTarget = () => {
+    return deps.resolveMermaidUpdateTarget?.() ?? null;
+  };
+
+  const resolveMermaidCode = (code: string) => {
+    const target = resolveMermaidUpdateTarget();
+    if (target?.mode === 'markdown') {
+      return replaceMermaidBlockInMarkdown(deps.mermaidState.code, target.block, code);
+    }
+    return code;
+  };
+
+  const resolveMermaidUpdate = (
+    code: string,
+    validation: Awaited<ReturnType<typeof validateMermaid>>
+  ): Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'> => {
+    const target = resolveMermaidUpdateTarget();
+    if (target?.mode === 'markdown') {
+      return {
+        code: resolveMermaidCode(code),
+        isValid: true,
+        errorMessage: undefined,
+        errorLine: undefined,
+      };
+    }
+    return {
+      code,
+      isValid: !!validation.isValid,
+      errorMessage: validation.errorMessage,
+      errorLine: validation.errorLine,
+    };
+  };
+
   const applyCompiledResult = (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => {
+    const target = resolveMermaidUpdateTarget();
+    if (target?.mode === 'markdown') {
+      const nextCode = replaceMermaidBlockInMarkdown(deps.mermaidState.code, target.block, code);
+      deps.setMermaidState((prev) => ({
+        ...prev,
+        code: nextCode,
+        isValid: true,
+        lastValidCode: nextCode,
+        errorMessage: undefined,
+        errorLine: undefined,
+        status: nextCode.trim() ? 'valid' : 'empty',
+        source: 'compiled',
+      }));
+      return;
+    }
+
     deps.setMermaidState((prev) => ({
       ...prev,
       code,
@@ -156,6 +215,7 @@ ${code}
     setCurrentIntent,
     buildLLMMessages,
     getLastUserText,
+    resolveMermaidUpdate,
     applyCompiledResult,
     applyValidationPreservingSource,
     getCurrentModelName,

@@ -80,22 +80,20 @@ export interface DiagramIntent {
   updatedAt: number;
 }
 
+export type DocsMode = 'chat' | 'build' | 'analyze' | 'fix';
+
 export type PromptPreviewMode = 'chat' | 'build' | 'analyze' | 'fix';
 export type EditorTab =
   | 'code'
-  | 'prompt_chat'
-  | 'prompt_build'
-  | 'prompt_analyze'
-  | 'prompt_fix'
   | 'markdown_mermaid'
   | 'build_docs';
-export type PromptPreviewView = 'redacted' | 'raw';
 
 export interface LLMRequestPreview {
   mode: PromptPreviewMode;
   diagramType: DiagramType;
   language: string;
   systemPrompt: string;
+  systemPromptRedacted?: string;
   docsContext: string;
   messages: Message[];
   error?: string;
@@ -106,6 +104,9 @@ export interface PromptPreviewTab {
   content: string;
   redactedContent?: string;
   rawContent?: string;
+  systemPrompt?: string;
+  systemPromptRedacted?: string;
+  language?: string;
   updatedAt: number;
   tokenCounts?: PromptTokenCounts;
 }

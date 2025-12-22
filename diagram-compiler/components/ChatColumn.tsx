@@ -16,7 +16,10 @@ interface ChatColumnProps {
     title: string,
     redactedContent: string,
     rawContent: string,
-    tokenCounts?: PromptTokenCounts
+    tokenCounts?: PromptTokenCounts,
+    systemPrompt?: string,
+    systemPromptRedacted?: string,
+    language?: string
   ) => void;
   diagramType: DiagramType;
   onDiagramTypeChange: (type: DiagramType) => void;
@@ -147,7 +150,16 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       };
       const redacted = formatRequestPreview(preview, { redactDocs: true });
       const raw = formatRequestPreview(preview, { redactDocs: false });
-      onSetPromptPreview(mode, title, redacted, raw, tokenCounts);
+      onSetPromptPreview(
+        mode,
+        title,
+        redacted,
+        raw,
+        tokenCounts,
+        preview.systemPrompt,
+        preview.systemPromptRedacted,
+        preview.language
+      );
     } catch (error: unknown) {
       if (requestId !== previewRequestRef.current) return;
       const message = error instanceof Error ? error.message : String(error);

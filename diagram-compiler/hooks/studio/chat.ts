@@ -1,6 +1,7 @@
 import { fetchDocsContext } from '../../services/docsContextService';
 import { chat } from '../../services/llmService';
 import { stripMermaidCode } from '../../utils';
+import { normalizeIntentText } from '../../utils/intent';
 import type { Message } from '../../types';
 import type { StudioContext } from './actionsContext';
 
@@ -21,8 +22,9 @@ export const createChatHandler = (ctx: StudioContext) => {
       const relevantMessages = ctx.getRelevantMessages();
       const llmMessages = ctx.buildLLMMessages(relevantMessages);
 
-      const responseText = await chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, '', language);
-      const intentText = stripMermaidCode(responseText).trim();
+      const docs = await ctx.getDocsContext('chat');
+      const responseText = await chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
+      const intentText = normalizeIntentText(stripMermaidCode(responseText));
       stepMessages.push(ctx.addMessage('assistant', intentText));
       if (intentText) {
         ctx.setCurrentIntent({

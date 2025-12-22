@@ -31,7 +31,6 @@ function App() {
     selectedStepId,
     diagramIntent,
     promptPreviewByMode,
-    promptPreviewView,
     editorTab,
     buildDocsEntries,
     buildDocsSelection,
@@ -39,6 +38,12 @@ function App() {
     buildDocsSelectionKey,
     buildDocsActivePath,
     setBuildDocsActivePath,
+    docsMode,
+    setDocsMode,
+    systemPromptRawByMode,
+    setSystemPromptRaw,
+    buildDocsSelectionsByMode,
+    setBuildDocSelectionForMode,
     markdownMermaidBlocks,
     markdownMermaidDiagnostics,
     markdownMermaidActiveIndex,
@@ -54,10 +59,27 @@ function App() {
     togglePreviewFullScreen,
     buildPromptPreview,
     setPromptPreview,
-    setPromptPreviewView,
     setEditorTab,
   } = useDiagramStudio();
-  const promptPreviewKey = `${mermaidState.code}::${mermaidState.errorMessage ?? ''}::${appState.analyzeLanguage}::${markdownMermaidActiveIndex}`;
+  const buildDocsSystemPrompts = {
+    chat: {
+      raw: promptPreviewByMode.chat?.systemPrompt ?? '',
+      redacted: promptPreviewByMode.chat?.systemPromptRedacted ?? '',
+    },
+    build: {
+      raw: promptPreviewByMode.build?.systemPrompt ?? '',
+      redacted: promptPreviewByMode.build?.systemPromptRedacted ?? '',
+    },
+    analyze: {
+      raw: promptPreviewByMode.analyze?.systemPrompt ?? '',
+      redacted: promptPreviewByMode.analyze?.systemPromptRedacted ?? '',
+    },
+    fix: {
+      raw: promptPreviewByMode.fix?.systemPrompt ?? '',
+      redacted: promptPreviewByMode.fix?.systemPromptRedacted ?? '',
+    },
+  };
+  const promptPreviewKey = `${mermaidState.code}::${mermaidState.errorMessage ?? ''}::${appState.analyzeLanguage}::${appState.language}::${markdownMermaidActiveIndex}`;
   const applyInlineUpdate = (updateCode: (code: string) => string) => {
     if (editorTab === 'markdown_mermaid' && markdownMermaidBlocks.length) {
       const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex];
@@ -133,15 +155,20 @@ function App() {
                 isProcessing={isProcessing}
                 analyzeLanguage={appState.analyzeLanguage}
                 onAnalyzeLanguageChange={setAnalyzeLanguage}
+                appLanguage={appState.language}
                 promptPreviewByMode={promptPreviewByMode}
-                promptPreviewView={promptPreviewView}
-                onPromptPreviewViewChange={setPromptPreviewView}
                 activeTab={editorTab}
                 buildDocsEntries={buildDocsEntries}
                 buildDocsSelection={buildDocsSelection}
                 onToggleBuildDoc={toggleBuildDocSelection}
+                buildDocsSelectionsByMode={buildDocsSelectionsByMode}
+                onToggleBuildDocForMode={setBuildDocSelectionForMode}
                 buildDocsActivePath={buildDocsActivePath}
                 onBuildDocsActivePathChange={setBuildDocsActivePath}
+                docsMode={docsMode}
+                onDocsModeChange={setDocsMode}
+                systemPromptRawByMode={systemPromptRawByMode}
+                onSystemPromptRawChange={setSystemPromptRaw}
                 markdownMermaidBlocks={markdownMermaidBlocks}
                 markdownMermaidDiagnostics={markdownMermaidDiagnostics}
                 markdownMermaidActiveIndex={markdownMermaidActiveIndex}
@@ -178,8 +205,8 @@ function App() {
               applyInlineUpdate((code) => setInlineLookCommand(code, nextLook));
             }}
             activeEditorTab={editorTab}
-            promptPreviewByMode={promptPreviewByMode}
-            promptPreviewView={promptPreviewView}
+            buildDocsSystemPrompts={buildDocsSystemPrompts}
+            systemPromptRawByMode={systemPromptRawByMode}
             buildDocsEntries={buildDocsEntries}
             buildDocsActivePath={buildDocsActivePath}
             markdownMermaidBlocks={markdownMermaidBlocks}

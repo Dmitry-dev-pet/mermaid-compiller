@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Bookmark, Check, Copy, PenTool, RefreshCw } from 'lucide-react';
-import { DiagramType, EditorTab, MermaidState, PromptPreviewMode, PromptPreviewTab, PromptPreviewView } from '../types';
+import { DiagramType, DocsMode, EditorTab, MermaidState, PromptPreviewMode, PromptPreviewTab } from '../types';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../constants';
 import Editor from 'react-simple-code-editor';
 import { highlight, languages } from 'prismjs';
@@ -10,6 +10,8 @@ import 'prismjs/components/prism-markdown';
 import './syntax-dark.css';
 import { isMarkdownLike, MermaidMarkdownBlock, replaceMermaidBlockInMarkdown } from '../services/mermaidService';
 import type { DocsEntry } from '../services/docsContextService';
+
+const SYSTEM_PROMPT_DOC_PREFIX = 'system-prompts/';
 
 // Define minimal Mermaid grammar
 languages.mermaid = {
@@ -65,15 +67,20 @@ interface EditorColumnProps {
   isProcessing: boolean;
   analyzeLanguage: string;
   onAnalyzeLanguageChange: (lang: string) => void;
+  appLanguage: string;
   promptPreviewByMode: Record<PromptPreviewMode, PromptPreviewTab | null>;
-  promptPreviewView: PromptPreviewView;
-  onPromptPreviewViewChange: (view: PromptPreviewView) => void;
+  docsMode: DocsMode;
+  onDocsModeChange: (mode: DocsMode) => void;
   activeTab: EditorTab;
   buildDocsEntries: DocsEntry[];
   buildDocsSelection: Record<string, boolean>;
   onToggleBuildDoc: (path: string, isIncluded: boolean) => void;
+  buildDocsSelectionsByMode: Record<DocsMode, Record<string, boolean>>;
+  onToggleBuildDocForMode: (mode: DocsMode, path: string, isIncluded: boolean) => void;
   buildDocsActivePath: string;
   onBuildDocsActivePathChange: (path: string) => void;
+  systemPromptRawByMode: Record<DocsMode, boolean>;
+  onSystemPromptRawChange: (mode: DocsMode, isRaw: boolean) => void;
   markdownMermaidBlocks: MermaidMarkdownBlock[];
   markdownMermaidDiagnostics: Array<Pick<MermaidState, 'isValid' | 'errorMessage' | 'errorLine' | 'status'>>;
   markdownMermaidActiveIndex: number;
@@ -91,15 +98,20 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   isProcessing,
   analyzeLanguage,
   onAnalyzeLanguageChange,
+  appLanguage,
   promptPreviewByMode,
-  promptPreviewView,
-  onPromptPreviewViewChange,
+  docsMode,
+  onDocsModeChange,
   activeTab,
   buildDocsEntries,
   buildDocsSelection,
   onToggleBuildDoc,
+  buildDocsSelectionsByMode,
+  onToggleBuildDocForMode,
   buildDocsActivePath,
   onBuildDocsActivePathChange,
+  systemPromptRawByMode,
+  onSystemPromptRawChange,
   markdownMermaidBlocks,
   markdownMermaidDiagnostics,
   markdownMermaidActiveIndex,
@@ -109,57 +121,84 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = React.useState(false);
+  const [docsPanel, setDocsPanel] = React.useState<'mode' | 'all'>('mode');
+  const formatTokenCount = (value?: number) => {
+    if (!value || value <= 0) return '';
+    if (value >= 1000) {
+      return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+    }
+    return `${value}`;
+  };
   const promptChat = promptPreviewByMode.chat;
   const promptBuild = promptPreviewByMode.build;
   const promptAnalyze = promptPreviewByMode.analyze;
   const promptFix = promptPreviewByMode.fix;
-  const isPromptChatTab = activeTab === 'prompt_chat';
-  const isPromptBuildTab = activeTab === 'prompt_build';
-  const isPromptAnalyzeTab = activeTab === 'prompt_analyze';
-  const isPromptFixTab = activeTab === 'prompt_fix';
   const isBuildDocsTab = activeTab === 'build_docs';
   const isMarkdownMermaidTab = activeTab === 'markdown_mermaid';
-  const isPromptTab = isPromptChatTab || isPromptBuildTab || isPromptAnalyzeTab || isPromptFixTab;
-  const activePrompt = isPromptChatTab
+  const activePrompt = docsMode === 'chat'
     ? promptChat
-    : isPromptBuildTab
+    : docsMode === 'build'
       ? promptBuild
-      : isPromptAnalyzeTab
+      : docsMode === 'analyze'
         ? promptAnalyze
-        : isPromptFixTab
-          ? promptFix
-          : null;
-  const resolvePromptContent = (prompt: PromptPreviewTab | null) => {
-    if (!prompt) return '';
-    if (promptPreviewView === 'raw') return prompt.rawContent ?? prompt.content ?? '';
-    return prompt.redactedContent ?? prompt.content ?? '';
+        : promptFix;
+  const isSystemPromptRaw = systemPromptRawByMode[docsMode] ?? false;
+  const systemPromptContent = isSystemPromptRaw
+    ? activePrompt?.systemPrompt ?? ''
+    : activePrompt?.systemPromptRedacted ?? activePrompt?.systemPrompt ?? '';
+  const resolvePromptLang = (language?: string) => {
+    if (!language) return 'en';
+    if (language.toLowerCase().includes('ru') || language.toLowerCase().includes('рус')) return 'ru';
+    if (language.toLowerCase().includes('en') || language.toLowerCase().includes('анг')) return 'en';
+    return language.toLowerCase() === 'russian' ? 'ru' : 'en';
+  };
+  const resolveSelectedLanguage = () => {
+    if (analyzeLanguage && analyzeLanguage !== 'auto') {
+      return resolvePromptLang(analyzeLanguage);
+    }
+    if (appLanguage && appLanguage !== 'auto') {
+      return resolvePromptLang(appLanguage);
+    }
+    return resolvePromptLang(activePrompt?.language);
+  };
+  const systemPromptLang = resolveSelectedLanguage();
+  const systemPromptPath = `${SYSTEM_PROMPT_DOC_PREFIX}${systemPromptLang}/${docsMode}.md`;
+  const systemPromptEntry: DocsEntry = {
+    path: systemPromptPath,
+    text: systemPromptContent || 'No system prompt available.',
   };
   const activeBuildDoc = buildDocsEntries.find((entry) => entry.path === buildDocsActivePath) ?? buildDocsEntries[0];
-  const activeBuildDocName = activeBuildDoc?.path.split('/').pop() || activeBuildDoc?.path || 'Docs';
+  const isActiveSystemPrompt = buildDocsActivePath.startsWith(SYSTEM_PROMPT_DOC_PREFIX);
+  const activeDocEntry = isActiveSystemPrompt ? systemPromptEntry : activeBuildDoc;
+  const activeBuildDocName = activeDocEntry?.path.startsWith(SYSTEM_PROMPT_DOC_PREFIX)
+    ? systemPromptEntry.path.split('/').pop() || systemPromptEntry.path
+    : activeDocEntry?.path.split('/').pop() || activeDocEntry?.path || 'Docs';
   const activeMarkdownBlock = markdownMermaidBlocks[markdownMermaidActiveIndex];
   const activeMarkdownDiagnostics = markdownMermaidDiagnostics[markdownMermaidActiveIndex];
   const isMarkdownMermaidInvalid = isMarkdownMermaidTab && activeMarkdownDiagnostics?.isValid === false;
-  const activePromptContent = isPromptTab
-    ? resolvePromptContent(activePrompt)
-    : isMarkdownMermaidTab
-      ? activeMarkdownBlock?.code || ''
-      : isBuildDocsTab
-        ? activeBuildDoc?.text || ''
-        : '';
-  const chatTokens = promptChat?.tokenCounts?.total ?? 0;
-  const buildTokens = promptBuild?.tokenCounts?.total ?? 0;
-  const analyzeTokens = promptAnalyze?.tokenCounts?.total ?? 0;
-  const fixTokens = promptFix?.tokenCounts?.total ?? 0;
-  const formatTokens = (count: number) => (count > 0 ? `~${count} tok` : '0 tok');
+
+  useEffect(() => {
+    if (docsPanel !== 'all') return;
+    if (!buildDocsEntries.length) return;
+    if (buildDocsActivePath.startsWith(SYSTEM_PROMPT_DOC_PREFIX)) {
+      onBuildDocsActivePathChange(buildDocsEntries[0]?.path ?? '');
+    }
+  }, [buildDocsActivePath, buildDocsEntries, docsPanel, onBuildDocsActivePathChange]);
 
   useEffect(() => {
     if (!buildDocsEntries.length) {
-      onBuildDocsActivePathChange('');
+      onBuildDocsActivePathChange(systemPromptPath);
+      return;
+    }
+    if (buildDocsActivePath.startsWith(SYSTEM_PROMPT_DOC_PREFIX)) {
+      if (buildDocsActivePath !== systemPromptPath) {
+        onBuildDocsActivePathChange(systemPromptPath);
+      }
       return;
     }
     if (buildDocsActivePath && buildDocsEntries.some((entry) => entry.path === buildDocsActivePath)) return;
-    onBuildDocsActivePathChange(buildDocsEntries[0]?.path ?? '');
-  }, [buildDocsActivePath, buildDocsEntries, onBuildDocsActivePathChange]);
+    onBuildDocsActivePathChange(systemPromptPath);
+  }, [buildDocsActivePath, buildDocsEntries, onBuildDocsActivePathChange, systemPromptPath]);
 
   // Sync scrolling
   const handleScroll = () => {
@@ -172,10 +211,8 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     const textToCopy = isMarkdownMermaidTab
       ? activeMarkdownBlock?.code || ''
       : isBuildDocsTab
-      ? activeBuildDoc?.text || ''
-      : isPromptTab
-        ? activePromptContent
-        : mermaidState.code;
+      ? activeDocEntry?.text || ''
+      : mermaidState.code;
     if (!textToCopy.trim()) return;
     navigator.clipboard.writeText(textToCopy);
     setCopied(true);
@@ -221,6 +258,8 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     ? activeMarkdownDiagnostics?.isValid === false
     : !mermaidState.isValid;
   const canSnapshot = !!mermaidState.code.trim() && !isProcessing && !isSnapshotInvalid;
+
+  const showEditorTabs = isMarkdown && markdownMermaidBlocks.length > 0 && !isBuildDocsTab;
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-l border-r border-slate-200 dark:border-slate-800">
@@ -313,9 +352,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                     ? 'Copy mermaid block'
                     : isBuildDocsTab
                       ? 'Copy docs'
-                      : isPromptTab
-                        ? 'Copy prompt'
-                        : 'Copy code'
+                      : 'Copy code'
                 }
               >
                 {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
@@ -337,238 +374,122 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
             >
               Code
             </button>
-            <button
-              type="button"
-              onClick={() => onActiveTabChange('prompt_chat')}
-              className={`px-2 py-0.5 text-[10px] rounded border ${
-                activeTab === 'prompt_chat'
-                  ? 'bg-emerald-600 text-white border-emerald-600'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-              title={`Prompt preview (Chat) • ${formatTokens(chatTokens)}`}
-            >
-              Chat <span className="ml-1 text-[9px] opacity-80">{formatTokens(chatTokens)}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onActiveTabChange('prompt_build')}
-              className={`px-2 py-0.5 text-[10px] rounded border ${
-                activeTab === 'prompt_build'
-                  ? 'bg-emerald-600 text-white border-emerald-600'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-              title={`Prompt preview (Build) • ${formatTokens(buildTokens)}`}
-            >
-              Build <span className="ml-1 text-[9px] opacity-80">{formatTokens(buildTokens)}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onActiveTabChange('prompt_analyze')}
-              className={`px-2 py-0.5 text-[10px] rounded border ${
-                activeTab === 'prompt_analyze'
-                  ? 'bg-emerald-600 text-white border-emerald-600'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-              title={`Prompt preview (Analyze) • ${formatTokens(analyzeTokens)}`}
-            >
-              Analyze <span className="ml-1 text-[9px] opacity-80">{formatTokens(analyzeTokens)}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onActiveTabChange('prompt_fix')}
-              className={`px-2 py-0.5 text-[10px] rounded border ${
-                activeTab === 'prompt_fix'
-                  ? 'bg-emerald-600 text-white border-emerald-600'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-              title={`Prompt preview (Fix) • ${formatTokens(fixTokens)}`}
-            >
-              Fix <span className="ml-1 text-[9px] opacity-80">{formatTokens(fixTokens)}</span>
-            </button>
+            <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1"></div>
             <button
               type="button"
               onClick={() => onActiveTabChange('build_docs')}
               className={`px-2 py-0.5 text-[10px] rounded border ${
                 activeTab === 'build_docs'
-                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  ? 'bg-slate-700 text-white border-slate-700'
                   : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
               title="Build docs files"
             >
               Build Docs
             </button>
-            {isPromptTab && (
-              <div className="flex items-center gap-1 ml-2">
-                <span className="text-[10px] text-slate-400 dark:text-slate-500">Prompt:</span>
-                <button
-                  type="button"
-                  onClick={() => onPromptPreviewViewChange('redacted')}
-                  className={`px-2 py-0.5 text-[10px] rounded border ${
-                    promptPreviewView === 'redacted'
-                      ? 'bg-slate-700 text-white border-slate-700'
-                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Redacted
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onPromptPreviewViewChange('raw')}
-                  className={`px-2 py-0.5 text-[10px] rounded border ${
-                    promptPreviewView === 'raw'
-                      ? 'bg-slate-700 text-white border-slate-700'
-                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                  title="Raw prompt"
-                >
-                  Raw
-                </button>
-              </div>
-            )}
           </div>
-          {isMarkdown && markdownMermaidBlocks.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1 mt-1.5">
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 mr-1">Mermaid blocks:</span>
-              {markdownMermaidBlocks.map((block, index) => {
-                const isActive = isMarkdownMermaidTab && index === markdownMermaidActiveIndex;
-                const diagnostics = markdownMermaidDiagnostics[index];
-                const isInvalid = diagnostics?.isValid === false;
-                const diagramLabel = formatDiagramTypeLabel(block.diagramType);
-                const tabLabel = `${diagramLabel} ${index + 1}`;
-                return (
-                  <button
-                    key={`md-mermaid-${block.index}`}
-                    type="button"
-                    onClick={() => {
-                      onMarkdownMermaidActiveIndexChange(index);
-                      onActiveTabChange('markdown_mermaid');
-                    }}
-                    className={`px-2 py-0.5 text-[10px] rounded border ${
-                      isInvalid
-                        ? isActive
-                          ? 'bg-rose-600 text-white border-rose-600'
-                          : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-700'
-                        : isActive
-                          ? 'bg-teal-600 text-white border-teal-600'
-                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                    title={`${diagramLabel} block ${index + 1}${isInvalid ? ' (invalid)' : ''}`}
-                  >
-                    {tabLabel}
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
         
       </div>
 
       {/* Editor Area */}
-      <div className="flex-1 relative flex overflow-hidden group">
-        {isMarkdownMermaidTab ? (
-          <>
-            <div 
-              ref={lineNumbersRef}
-              className="w-10 bg-slate-50 dark:bg-[#21252b] border-r border-slate-200 dark:border-[#181a1f] text-right pr-2 pt-4 text-xs font-mono text-slate-400 dark:text-slate-500 select-none overflow-hidden"
-            >
-              {editorLineNumbers.map((n) => (
-                <div
-                  key={n}
-                  className={`h-5 leading-5 ${
-                    isMarkdownMermaidInvalid && n === activeMarkdownDiagnostics?.errorLine
-                      ? 'text-red-600 dark:text-red-400 font-bold bg-red-100 dark:bg-red-900/20'
-                      : ''
-                  }`}
-                >
-                  {n}
-                </div>
-              ))}
-            </div>
-
-            <div 
-              ref={scrollContainerRef}
-              onScroll={handleScroll}
-              className="flex-1 overflow-auto bg-slate-50 dark:bg-[#282c34]"
-            >
-              <Editor
-                value={editorValue}
-                onValueChange={(value) => {
-                  if (!activeMarkdownBlock) return;
-                  const nextMarkdown = replaceMermaidBlockInMarkdown(mermaidState.code, activeMarkdownBlock, value);
-                  onChange(nextMarkdown);
-                }}
-                highlight={(code) => highlight(code, languages.mermaid, 'mermaid')}
-                padding={16}
-                textareaClassName="focus:outline-none"
-                style={{
-                  fontFamily: '"Fira code", "Fira Mono", monospace',
-                  fontSize: 12,
-                  backgroundColor: 'transparent',
-                  minHeight: '100%',
-                  lineHeight: '20px', 
-                }}
-              />
-            </div>
-          </>
-        ) : isPromptChatTab || isPromptAnalyzeTab || isPromptFixTab ? (
-          <div className="flex-1 overflow-auto bg-slate-50 dark:bg-[#282c34]">
-            <div className="px-4 py-3">
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                {activePrompt?.title || 'Prompt preview'}
-              </div>
-              <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
-                {activePromptContent || 'No prompt preview available.'}
-              </pre>
-            </div>
-          </div>
-        ) : isPromptBuildTab ? (
-          <div className="flex-1 overflow-auto bg-slate-50 dark:bg-[#282c34]">
-            <div className="px-4 py-3">
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2 flex flex-wrap items-center gap-2">
-                <span>Docs files:</span>
-                {buildDocsEntries.length ? (
-                  buildDocsEntries.map((entry) => {
-                    const fileName = entry.path.split('/').pop() || entry.path;
-                    const isIncluded = buildDocsSelection[entry.path] !== false;
-                    return (
-                      <button
-                        key={entry.path}
-                        type="button"
-                        onClick={() => {
-                          onBuildDocsActivePathChange(entry.path);
-                          onActiveTabChange('build_docs');
-                        }}
-                        className={`text-[11px] underline ${
-                          isIncluded
-                            ? 'text-blue-600 dark:text-blue-400'
-                            : 'text-slate-400 dark:text-slate-500 line-through'
-                        }`}
-                        title={`Open ${entry.path} in Build Docs`}
-                      >
-                        {fileName}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <span className="text-slate-400 dark:text-slate-500">(none)</span>
-                )}
-              </div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                {activePrompt?.title || 'Prompt preview'}
-              </div>
-              <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
-                {activePromptContent || 'No prompt preview available.'}
-              </pre>
-            </div>
-          </div>
-        ) : isBuildDocsTab ? (
+      <div className="flex-1 relative flex flex-col overflow-hidden group">
+        {isBuildDocsTab ? (
           <div className="flex-1 flex flex-col bg-slate-50 dark:bg-[#282c34]">
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-2 py-2">
+              <div className="flex items-center gap-1">
+                {(['chat', 'build', 'analyze', 'fix'] as DocsMode[]).map((mode) => {
+                  const tokenCount = promptPreviewByMode[mode]?.tokenCounts?.total;
+                  const tokenLabel = formatTokenCount(tokenCount);
+                  return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => {
+                      setDocsPanel('mode');
+                      onDocsModeChange(mode);
+                    }}
+                    className={`px-2 py-0.5 text-[10px] rounded border capitalize ${
+                      docsPanel === 'mode' && docsMode === mode
+                        ? 'bg-slate-700 text-white border-slate-700'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                    title={`Docs selection for ${mode}`}
+                  >
+                    {mode}
+                    {tokenLabel ? ` · ${tokenLabel}` : ''}
+                  </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setDocsPanel('all')}
+                  className={`px-2 py-0.5 text-[10px] rounded border ${
+                    docsPanel === 'all'
+                      ? 'bg-slate-700 text-white border-slate-700'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                  title="Global docs selection"
+                >
+                  All docs
+                </button>
+              </div>
+            </div>
             <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800 px-2 py-1">
-              {buildDocsEntries.length ? (
-                buildDocsEntries.map((entry) => {
+              {docsPanel === 'all' ? (
+                <div className="w-full overflow-auto">
+                  <table className="min-w-full text-[10px] text-slate-600 dark:text-slate-300">
+                    <thead>
+                      <tr className="text-left text-slate-400 dark:text-slate-500">
+                        <th className="px-2 py-1 font-medium">File</th>
+                        {(['chat', 'build', 'analyze', 'fix'] as DocsMode[]).map((mode) => (
+                          <th key={mode} className="px-2 py-1 font-medium text-center uppercase tracking-wide">
+                            {mode}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {buildDocsEntries.map((entry) => {
+                        const fileName = entry.path.split('/').pop() || entry.path;
+                        const isActive = entry.path === buildDocsActivePath;
+                        return (
+                          <tr key={entry.path} className={isActive ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}>
+                            <td className="px-2 py-1">
+                              <button
+                                type="button"
+                                onClick={() => onBuildDocsActivePathChange(entry.path)}
+                                className="truncate max-w-[220px] text-left hover:underline"
+                                title={entry.path}
+                              >
+                                {fileName}
+                              </button>
+                            </td>
+                            {(['chat', 'build', 'analyze', 'fix'] as DocsMode[]).map((mode) => {
+                              const selection = buildDocsSelectionsByMode[mode] ?? {};
+                              const isChecked = selection[entry.path] !== false;
+                              return (
+                                <td key={`${entry.path}-${mode}`} className="px-2 py-1 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(event) => onToggleBuildDocForMode(mode, entry.path, event.target.checked)}
+                                    className="accent-indigo-600"
+                                  />
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                [systemPromptEntry, ...buildDocsEntries].map((entry) => {
+                  const isActive = entry.path === buildDocsActivePath;
+                  const isSystemPrompt = entry.path.startsWith(SYSTEM_PROMPT_DOC_PREFIX);
                   const fileName = entry.path.split('/').pop() || entry.path;
-                  const isActive = entry.path === activeBuildDoc?.path;
                   const isIncluded = buildDocsSelection[entry.path] !== false;
                   return (
                     <button
@@ -582,21 +503,31 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                       }`}
                       title={entry.path}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isIncluded}
-                        onChange={(event) => onToggleBuildDoc(entry.path, event.target.checked)}
-                        onClick={(event) => event.stopPropagation()}
-                        className="accent-indigo-600"
-                      />
+                      {!isSystemPrompt && (
+                        <input
+                          type="checkbox"
+                          checked={isIncluded}
+                          onChange={(event) => onToggleBuildDoc(entry.path, event.target.checked)}
+                          onClick={(event) => event.stopPropagation()}
+                          className="accent-indigo-600"
+                        />
+                      )}
                       <span className="truncate max-w-[140px]">{fileName}</span>
+                      {isSystemPrompt && (
+                        <>
+                          <span className="text-[9px] uppercase tracking-wide text-slate-400 dark:text-slate-300">Raw</span>
+                          <input
+                            type="checkbox"
+                            checked={isSystemPromptRaw}
+                            onChange={(event) => onSystemPromptRawChange(docsMode, event.target.checked)}
+                            onClick={(event) => event.stopPropagation()}
+                            className="accent-indigo-600"
+                          />
+                        </>
+                      )}
                     </button>
                   );
                 })
-              ) : (
-                <div className="text-[11px] text-slate-400 dark:text-slate-500 px-2 py-1">
-                  No docs loaded
-                </div>
               )}
             </div>
             <div className="flex-1 overflow-auto">
@@ -605,52 +536,147 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                   {activeBuildDocName}
                 </div>
                 <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
-                  {activeBuildDoc?.text || 'No documentation loaded for this type.'}
+                  {activeDocEntry?.text || 'No documentation loaded for this type.'}
                 </pre>
               </div>
             </div>
           </div>
         ) : (
           <>
-            {/* Line Numbers */}
-            <div 
-              ref={lineNumbersRef}
-              className="w-10 bg-slate-50 dark:bg-[#21252b] border-r border-slate-200 dark:border-[#181a1f] text-right pr-2 pt-4 text-xs font-mono text-slate-400 dark:text-slate-500 select-none overflow-hidden"
-            >
-              {editorLineNumbers.map((n) => (
-                <div
-                  key={n}
-                  className={`h-5 leading-5 ${
-                    !isMarkdownMermaidTab && n === mermaidState.errorLine
-                      ? 'text-red-500 dark:text-red-400 font-bold bg-red-100 dark:bg-red-900/20'
-                      : ''
+            {showEditorTabs && (
+              <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 px-2 py-1 bg-white dark:bg-slate-900">
+                <button
+                  type="button"
+                  onClick={() => onActiveTabChange('code')}
+                  className={`px-2 py-0.5 text-[10px] rounded border ${
+                    activeTab === 'code'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
-                  {n}
-                </div>
-              ))}
-            </div>
+                  Markdown
+                </button>
+                {markdownMermaidBlocks.map((block, index) => {
+                  const isActive = isMarkdownMermaidTab && index === markdownMermaidActiveIndex;
+                  const diagnostics = markdownMermaidDiagnostics[index];
+                  const isInvalid = diagnostics?.isValid === false;
+                  const diagramLabel = formatDiagramTypeLabel(block.diagramType);
+                  const tabLabel = `${diagramLabel} ${index + 1}`;
+                  return (
+                    <button
+                      key={`md-mermaid-tab-${block.index}`}
+                      type="button"
+                      onClick={() => {
+                        onMarkdownMermaidActiveIndexChange(index);
+                        onActiveTabChange('markdown_mermaid');
+                      }}
+                      className={`px-2 py-0.5 text-[10px] rounded border ${
+                        isInvalid
+                          ? isActive
+                            ? 'bg-rose-600 text-white border-rose-600'
+                            : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-700'
+                          : isActive
+                            ? 'bg-teal-600 text-white border-teal-600'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                      title={`${diagramLabel} block ${index + 1}${isInvalid ? ' (invalid)' : ''}`}
+                    >
+                      {tabLabel}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex-1 relative flex overflow-hidden">
+              {isMarkdownMermaidTab ? (
+                <>
+                  <div 
+                    ref={lineNumbersRef}
+                    className="w-10 bg-slate-50 dark:bg-[#21252b] border-r border-slate-200 dark:border-[#181a1f] text-right pr-2 pt-4 text-xs font-mono text-slate-400 dark:text-slate-500 select-none overflow-hidden"
+                  >
+                    {editorLineNumbers.map((n) => (
+                      <div
+                        key={n}
+                        className={`h-5 leading-5 ${
+                          isMarkdownMermaidInvalid && n === activeMarkdownDiagnostics?.errorLine
+                            ? 'text-red-600 dark:text-red-400 font-bold bg-red-100 dark:bg-red-900/20'
+                            : ''
+                        }`}
+                      >
+                        {n}
+                      </div>
+                    ))}
+                  </div>
 
-            {/* Text Area / Editor */}
-            <div 
-              ref={scrollContainerRef}
-              onScroll={handleScroll}
-              className="flex-1 overflow-auto bg-slate-50 dark:bg-[#282c34]"
-            >
-                <Editor
-                  value={editorValue}
-                  onValueChange={onChange}
-                  highlight={highlightEditorCode}
-                  padding={16}
-                  textareaClassName="focus:outline-none"
-                  style={{
-                    fontFamily: '"Fira code", "Fira Mono", monospace',
-                    fontSize: 12,
-                    backgroundColor: 'transparent',
-                    minHeight: '100%',
-                    lineHeight: '20px', 
-                  }}
-                />
+                  <div 
+                    ref={scrollContainerRef}
+                    onScroll={handleScroll}
+                    className="flex-1 overflow-auto bg-slate-50 dark:bg-[#282c34]"
+                  >
+                    <Editor
+                      value={editorValue}
+                      onValueChange={(value) => {
+                        if (!activeMarkdownBlock) return;
+                        const nextMarkdown = replaceMermaidBlockInMarkdown(mermaidState.code, activeMarkdownBlock, value);
+                        onChange(nextMarkdown);
+                      }}
+                      highlight={(code) => highlight(code, languages.mermaid, 'mermaid')}
+                      padding={16}
+                      textareaClassName="focus:outline-none"
+                      style={{
+                        fontFamily: '"Fira code", "Fira Mono", monospace',
+                        fontSize: 12,
+                        backgroundColor: 'transparent',
+                        minHeight: '100%',
+                        lineHeight: '20px', 
+                      }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Line Numbers */}
+                  <div 
+                    ref={lineNumbersRef}
+                    className="w-10 bg-slate-50 dark:bg-[#21252b] border-r border-slate-200 dark:border-[#181a1f] text-right pr-2 pt-4 text-xs font-mono text-slate-400 dark:text-slate-500 select-none overflow-hidden"
+                  >
+                    {editorLineNumbers.map((n) => (
+                      <div
+                        key={n}
+                        className={`h-5 leading-5 ${
+                          !isMarkdownMermaidTab && n === mermaidState.errorLine
+                            ? 'text-red-500 dark:text-red-400 font-bold bg-red-100 dark:bg-red-900/20'
+                            : ''
+                        }`}
+                      >
+                        {n}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Text Area / Editor */}
+                  <div 
+                    ref={scrollContainerRef}
+                    onScroll={handleScroll}
+                    className="flex-1 overflow-auto bg-slate-50 dark:bg-[#282c34]"
+                  >
+                      <Editor
+                        value={editorValue}
+                        onValueChange={onChange}
+                        highlight={highlightEditorCode}
+                        padding={16}
+                        textareaClassName="focus:outline-none"
+                        style={{
+                          fontFamily: '"Fira code", "Fira Mono", monospace',
+                          fontSize: 12,
+                          backgroundColor: 'transparent',
+                          minHeight: '100%',
+                          lineHeight: '20px', 
+                        }}
+                      />
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}

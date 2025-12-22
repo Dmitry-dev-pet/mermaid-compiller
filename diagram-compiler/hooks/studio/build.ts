@@ -1,9 +1,10 @@
 import { validateMermaid, extractMermaidCode } from '../../services/mermaidService';
 import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmService';
 import { stripMermaidCode } from '../../utils';
+import { normalizeIntentText } from '../../utils/intent';
 import type { Message } from '../../types';
 import type { StudioContext } from './actionsContext';
-import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
+import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS } from '../../constants';
 import { runAutoFixLoop } from './autoFix';
 
 const buildIntent = (ctx: StudioContext, args: {
@@ -53,7 +54,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
 
     ctx.setIsProcessing(true);
     try {
-      const docs = await ctx.getBuildDocsContext();
+      const docs = await ctx.getDocsContext('build');
       const relevantMessages = ctx.getRelevantMessages();
 
       const intent = buildIntent(ctx, { prompt, relevantMessages });
@@ -63,25 +64,57 @@ export const createBuildHandler = (ctx: StudioContext) => {
         return;
       }
 
-      const intentMessage = ctx.getIntentMessage(intent.content);
+      const normalizedIntent = normalizeIntentText(intent.content);
+      const intentMessage = ctx.getIntentMessage(normalizedIntent);
       const diagramContext = ctx.getDiagramContextMessage();
       const llmMessages = diagramContext ? [intentMessage, diagramContext] : [intentMessage];
 
       ctx.setCurrentIntent({
-        content: intent.content,
+        content: normalizedIntent,
         source: intent.source,
         updatedAt: Date.now(),
       });
 
-      const beforeSummary = `Build (before): Intent (${intent.source}). ${ctx.normalizeText(intent.content)}`;
+      const beforeSummary = `Build (before): Intent (${intent.source}). ${ctx.normalizeText(normalizedIntent)}`;
       stepMessages.push(ctx.addMessage('assistant', beforeSummary));
 
-      const rawCode = await generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
-      const cleanCode = extractMermaidCode(rawCode);
+      let cleanCode = '';
+      let lastError: string | null = null;
+      let emptyResponses = 0;
+      let attempts = 0;
+
+      while (attempts < BUILD_MAX_ATTEMPTS) {
+        attempts += 1;
+        stepMessages.push(ctx.addMessage('assistant', `Build attempt ${attempts}/${BUILD_MAX_ATTEMPTS}...`));
+        try {
+          const rawCode = await generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
+          cleanCode = extractMermaidCode(rawCode);
+          if (!cleanCode.trim()) {
+            emptyResponses += 1;
+            stepMessages.push(ctx.addMessage('assistant', `Attempt ${attempts}: no Mermaid code returned.`));
+            continue;
+          }
+          break;
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          lastError = message;
+          stepMessages.push(ctx.addMessage('assistant', `Attempt ${attempts} failed (${ctx.getCurrentModelName()}): ${message}`));
+        }
+      }
 
       if (!cleanCode.trim()) {
+        const reason = lastError ? 'build_attempts_failed' : 'no_mermaid_code';
         stepMessages.push(ctx.addMessage('assistant', 'Build failed: no Mermaid code returned.'));
-        await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages, meta: { reason: 'no_mermaid_code' } });
+        await ctx.safeRecordTimeStep({
+          type: 'build',
+          messages: stepMessages,
+          meta: {
+            reason,
+            attempts,
+            emptyResponses,
+            error: lastError ?? undefined,
+          },
+        });
         return;
       }
 
@@ -122,15 +155,12 @@ export const createBuildHandler = (ctx: StudioContext) => {
       await ctx.safeRecordTimeStep({
         type: 'build',
         messages: stepMessages,
-        nextMermaid: {
-          code: currentCode,
-          isValid: !!validation.isValid,
-          errorMessage: validation.errorMessage,
-          errorLine: validation.errorLine,
-        },
+        nextMermaid: ctx.resolveMermaidUpdate(currentCode, validation),
         meta: {
           diagramType: ctx.appState.diagramType,
           autoFixAttempts: autoFixAttempts,
+          buildAttempts: attempts,
+          emptyResponses,
           intent: intent.content,
           intentSource: intent.source,
         },

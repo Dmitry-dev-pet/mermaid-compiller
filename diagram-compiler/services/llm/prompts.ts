@@ -140,8 +140,12 @@ Intent:
 const renderTemplate = (template: string, values: TemplateValues) =>
   template.replace(/\{\{(\w+)\}\}/g, (_, key: keyof TemplateValues) => values[key] ?? '');
 
-const resolvePromptLanguage = (language: string): PromptLanguage =>
-  language === 'Russian' ? 'Russian' : 'English';
+const resolvePromptLanguage = (language: string): PromptLanguage => {
+  const normalized = language.trim().toLowerCase();
+  if (normalized.includes('ru') || normalized.includes('рус')) return 'Russian';
+  if (normalized.includes('en') || normalized.includes('анг')) return 'English';
+  return language === 'Russian' ? 'Russian' : 'English';
+};
 
 const shouldIncludeLanguageInstruction = (language: string) => language !== 'auto';
 

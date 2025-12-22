@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
-import type { DiagramIntent, DiagramType, LLMRequestPreview, Message, PromptPreviewMode, PromptPreviewTab, PromptPreviewView, PromptTokenCounts } from '../../types';
+import type { DiagramIntent, DiagramType, DocsMode, LLMRequestPreview, Message, PromptPreviewMode, PromptPreviewTab, PromptTokenCounts } from '../../types';
 import { buildSystemPrompt } from '../../services/llm/prompts';
-import { fetchDocsContext } from '../../services/docsContextService';
 import { detectLanguage } from '../../utils';
 import { validateMermaidDiagramCode } from '../../services/mermaidService';
+import { normalizeIntentText } from '../../utils/intent';
 
 type ResolveActiveMermaidContext = () => {
   code: string;
@@ -15,10 +15,11 @@ type ResolveActiveMermaidContext = () => {
 type UsePromptPreviewArgs = {
   diagramType: DiagramType;
   analyzeLanguage: string;
+  appLanguage: string;
   messages: Message[];
   diagramIntent: DiagramIntent | null;
   resolveActiveMermaidContext: ResolveActiveMermaidContext;
-  getBuildDocsContext: () => Promise<string>;
+  getDocsContext: (mode: DocsMode) => Promise<string>;
 };
 
 const DEFAULT_PREVIEW_BY_MODE: Record<PromptPreviewMode, PromptPreviewTab | null> = {
@@ -31,21 +32,27 @@ const DEFAULT_PREVIEW_BY_MODE: Record<PromptPreviewMode, PromptPreviewTab | null
 export const usePromptPreview = ({
   diagramType,
   analyzeLanguage,
+  appLanguage,
   messages,
   diagramIntent,
   resolveActiveMermaidContext,
-  getBuildDocsContext,
+  getDocsContext,
 }: UsePromptPreviewArgs) => {
   const [promptPreviewByMode, setPromptPreviewByMode] = useState<Record<PromptPreviewMode, PromptPreviewTab | null>>(
     DEFAULT_PREVIEW_BY_MODE
   );
-  const [promptPreviewView, setPromptPreviewView] = useState<PromptPreviewView>('redacted');
 
   const resetPromptPreview = useCallback(() => {
     setPromptPreviewByMode(DEFAULT_PREVIEW_BY_MODE);
   }, []);
 
   const resolvePreviewLanguage = useCallback((inputText: string, relevantMessages: Message[]) => {
+    if (analyzeLanguage && analyzeLanguage !== 'auto') {
+      return analyzeLanguage;
+    }
+    if (appLanguage && appLanguage !== 'auto') {
+      return appLanguage;
+    }
     const basis =
       inputText.trim() ||
       relevantMessages
@@ -54,14 +61,17 @@ export const usePromptPreview = ({
         .find((m) => m.role === 'user' && m.content.trim().length > 0)?.content ||
       '';
     return basis ? detectLanguage(basis) : 'English';
-  }, []);
+  }, [analyzeLanguage, appLanguage]);
 
   const resolvePreviewAnalyzeLanguage = useCallback((relevantMessages: Message[]) => {
     if (analyzeLanguage && analyzeLanguage !== 'auto') {
       return analyzeLanguage;
     }
+    if (appLanguage && appLanguage !== 'auto') {
+      return appLanguage;
+    }
     return resolvePreviewLanguage('', relevantMessages);
-  }, [analyzeLanguage, resolvePreviewLanguage]);
+  }, [analyzeLanguage, appLanguage, resolvePreviewLanguage]);
 
   const getDiagramContextMessage = useCallback((): Message | null => {
     const { code } = resolveActiveMermaidContext();
@@ -84,7 +94,7 @@ ${code}
 
     if (mode === 'analyze' || mode === 'fix') {
       const { code, errorMessage, diagramType: activeDiagramType, isValid } = resolveActiveMermaidContext();
-      const docsContext = await fetchDocsContext(activeDiagramType);
+      const docsContext = await getDocsContext(mode);
       const language =
         mode === 'analyze'
           ? resolvePreviewAnalyzeLanguage(relevantMessages)
@@ -94,6 +104,11 @@ ${code}
         docsContext,
         language,
       });
+      const systemPromptRedacted = buildSystemPrompt(mode, {
+        diagramType: activeDiagramType,
+        docsContext: 'Documentation context redacted.',
+        language,
+      });
 
       if (!code) {
         return {
@@ -101,6 +116,7 @@ ${code}
           diagramType: activeDiagramType,
           language,
           systemPrompt,
+          systemPromptRedacted,
           docsContext,
           messages: [],
           error: `No Mermaid diagram available for ${mode}.`,
@@ -125,6 +141,7 @@ ${code}
           diagramType: activeDiagramType,
           language,
           systemPrompt,
+          systemPromptRedacted,
           docsContext,
           messages: [analyzeMessage],
         };
@@ -144,6 +161,7 @@ ${code}
           diagramType: activeDiagramType,
           language,
           systemPrompt,
+          systemPromptRedacted,
           docsContext,
           messages: [],
           error: 'Diagram is valid. Nothing to fix.',
@@ -168,14 +186,15 @@ Fix it.`,
       return {
         mode,
         diagramType: activeDiagramType,
-        language,
-        systemPrompt,
-        docsContext,
-        messages: [fixMessage],
-      };
+          language,
+          systemPrompt,
+          systemPromptRedacted,
+          docsContext,
+          messages: [fixMessage],
+        };
     }
 
-    const docsContext = mode === 'chat' ? '' : await getBuildDocsContext();
+    const docsContext = await getDocsContext(mode);
     const language = resolvePreviewLanguage(trimmed, relevantMessages);
     const promptMode = mode === 'build' ? 'generate' : 'chat';
     const systemPrompt = buildSystemPrompt(promptMode, {
@@ -183,16 +202,22 @@ Fix it.`,
       docsContext,
       language,
     });
+    const systemPromptRedacted = buildSystemPrompt(promptMode, {
+      diagramType,
+      docsContext: 'Documentation context redacted.',
+      language,
+    });
 
     let previewMessages = [...relevantMessages];
     if (mode === 'build') {
-      const intentText = trimmed || diagramIntent?.content.trim() || '';
+      const intentText = normalizeIntentText(trimmed || diagramIntent?.content.trim() || '');
       if (!intentText) {
         return {
           mode,
           diagramType,
           language,
           systemPrompt,
+          systemPromptRedacted,
           docsContext,
           messages: [],
           error: 'No intent available. Use Chat first or provide a Build prompt.',
@@ -221,13 +246,14 @@ Fix it.`,
       diagramType,
       language,
       systemPrompt,
+      systemPromptRedacted,
       docsContext,
       messages: llmMessages,
     };
   }, [
     diagramIntent?.content,
     diagramType,
-    getBuildDocsContext,
+    getDocsContext,
     getDiagramContextMessage,
     messages,
     resolveActiveMermaidContext,
@@ -240,7 +266,10 @@ Fix it.`,
     title: string,
     redactedContent: string,
     rawContent: string,
-    tokenCounts?: PromptTokenCounts
+    tokenCounts?: PromptTokenCounts,
+    systemPrompt?: string,
+    systemPromptRedacted?: string,
+    language?: string
   ) => {
     setPromptPreviewByMode((prev) => ({
       ...prev,
@@ -249,6 +278,9 @@ Fix it.`,
         content: redactedContent,
         redactedContent,
         rawContent,
+        systemPrompt,
+        systemPromptRedacted,
+        language,
         updatedAt: Date.now(),
         tokenCounts,
       },
@@ -258,9 +290,7 @@ Fix it.`,
   return {
     buildPromptPreview,
     promptPreviewByMode,
-    promptPreviewView,
     resetPromptPreview,
     setPromptPreview,
-    setPromptPreviewView,
   };
 };

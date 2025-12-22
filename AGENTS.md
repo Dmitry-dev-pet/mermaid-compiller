@@ -1,4 +1,4 @@
-# AGENT GUIDELINES for mermaid-langgraph
+e# AGENT GUIDELINES for mermaid-langgraph
 
 ## Spec-first workflow
 

@@ -11,7 +11,6 @@ import { useManualEditRecorder } from './useManualEditRecorder';
 import { usePromptPreview } from './usePromptPreview';
 import type { DiagramMarker } from '../core/useHistory';
 import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE } from '../../constants';
-import { fetchDocsContext } from '../../services/docsContextService';
 import { detectLanguage } from '../../utils';
 import type { DiagramIntent, DiagramType, EditorTab } from '../../types';
 import { detectMermaidDiagramType, extractMermaidCode, isMarkdownLike, replaceMermaidBlockInMarkdown, validateMermaidDiagramCode } from '../../services/mermaidService';
@@ -48,9 +47,15 @@ export const useDiagramStudio = () => {
     buildDocsSelectionKey,
     buildDocsActivePath,
     setBuildDocsActivePath,
-    getBuildDocsContext,
+    getDocsContext,
     loadBuildDocsEntries,
     toggleBuildDocSelection,
+    docsMode,
+    setDocsMode,
+    systemPromptRawByMode,
+    setSystemPromptRaw,
+    buildDocsSelectionsByMode,
+    setBuildDocSelectionForMode,
   } = useBuildDocs(appState.diagramType);
 
   const {
@@ -134,17 +139,16 @@ export const useDiagramStudio = () => {
   const {
     buildPromptPreview,
     promptPreviewByMode,
-    promptPreviewView,
     resetPromptPreview,
     setPromptPreview,
-    setPromptPreviewView,
   } = usePromptPreview({
     diagramType: appState.diagramType,
     analyzeLanguage: appState.analyzeLanguage ?? 'auto',
+    appLanguage: appState.language ?? 'auto',
     messages,
     diagramIntent,
     resolveActiveMermaidContext,
-    getBuildDocsContext,
+    getDocsContext,
   });
 
   useEffect(() => {
@@ -182,6 +186,12 @@ export const useDiagramStudio = () => {
     isHydratingRef.current = false;
   }, [historyLoadResult, isHistoryReady]);
 
+  useEffect(() => {
+    if (editorTab !== 'build_docs') return;
+    if (buildDocsEntries.length > 0) return;
+    void loadBuildDocsEntries(appState.diagramType);
+  }, [appState.diagramType, buildDocsEntries.length, editorTab, loadBuildDocsEntries]);
+
   useManualEditRecorder({
     isHistoryReady,
     isHydratingRef,
@@ -192,6 +202,16 @@ export const useDiagramStudio = () => {
     appendTimeStep,
     updateCurrentRevision,
   });
+
+  const resolveMermaidUpdateTarget = useCallback(() => {
+    if (markdownMermaidBlocks.length > 0) {
+      const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex] ?? markdownMermaidBlocks[0];
+      if (activeBlock?.code.trim()) {
+        return { mode: 'markdown' as const, block: activeBlock };
+      }
+    }
+    return { mode: 'code' as const };
+  }, [markdownMermaidActiveIndex, markdownMermaidBlocks]);
 
   const { handleChatMessage, handleBuildFromPrompt, handleRecompile, handleFixSyntax: baseHandleFixSyntax, handleAnalyze } =
     createStudioActions({
@@ -205,7 +225,8 @@ export const useDiagramStudio = () => {
       addMessage,
       getMessages,
       getDiagramContextCode: () => resolveActiveMermaidContext().code,
-      getBuildDocsContext,
+      resolveMermaidUpdateTarget,
+      getDocsContext,
       setIsProcessing,
       recordTimeStep: appendTimeStep,
     });
@@ -241,7 +262,7 @@ export const useDiagramStudio = () => {
     setIsProcessing(true);
     try {
       const diagramType = activeBlock.diagramType ?? appState.diagramType;
-      const docs = await fetchDocsContext(diagramType);
+      const docs = await getDocsContext('fix');
       const language = resolveFixLanguage();
 
       const startCode = activeBlock.code;
@@ -415,7 +436,6 @@ export const useDiagramStudio = () => {
     selectedStepId,
     diagramIntent,
     promptPreviewByMode,
-    promptPreviewView,
     editorTab,
     buildDocsEntries,
     buildDocsSelection,
@@ -423,6 +443,12 @@ export const useDiagramStudio = () => {
     buildDocsSelectionKey,
     buildDocsActivePath,
     setBuildDocsActivePath,
+    docsMode,
+    setDocsMode,
+    systemPromptRawByMode,
+    setSystemPromptRaw,
+    buildDocsSelectionsByMode,
+    setBuildDocSelectionForMode,
     markdownMermaidBlocks,
     markdownMermaidDiagnostics,
     markdownMermaidActiveIndex,
@@ -438,7 +464,6 @@ export const useDiagramStudio = () => {
     togglePreviewFullScreen,
     buildPromptPreview,
     setPromptPreview,
-    setPromptPreviewView,
     setEditorTab,
   };
 };

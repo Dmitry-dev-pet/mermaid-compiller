@@ -1,6 +1,5 @@
 import { validateMermaid, extractMermaidCode } from '../../services/mermaidService';
 import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmService';
-import { fetchDocsContext } from '../../services/docsContextService';
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
 import { runAutoFixLoop } from './autoFix';
@@ -16,11 +15,12 @@ export const createRecompileHandler = (ctx: StudioContext) => {
 
     ctx.setIsProcessing(true);
     try {
-      const docs = await fetchDocsContext(ctx.appState.diagramType);
+      const docs = await ctx.getDocsContext('build');
       const language = ctx.resolveLanguage();
       const relevantMessages = ctx.getRelevantMessages();
+      const llmMessages = ctx.buildLLMMessages(relevantMessages);
 
-      const rawCode = await generateDiagram(relevantMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
+      const rawCode = await generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
       const cleanCode = extractMermaidCode(rawCode);
       const validation = await validateMermaid(cleanCode);
 
@@ -35,12 +35,7 @@ export const createRecompileHandler = (ctx: StudioContext) => {
       await ctx.safeRecordTimeStep({
         type: 'recompile',
         messages: stepMessages,
-        nextMermaid: {
-          code: cleanCode,
-          isValid: !!validation.isValid,
-          errorMessage: validation.errorMessage,
-          errorLine: validation.errorLine,
-        },
+        nextMermaid: ctx.resolveMermaidUpdate(cleanCode, validation),
         meta: { diagramType: ctx.appState.diagramType },
       });
     } catch (e: unknown) {
@@ -64,7 +59,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
 
     ctx.setIsProcessing(true);
     try {
-      const docs = await fetchDocsContext(ctx.appState.diagramType);
+      const docs = await ctx.getDocsContext('fix');
       const language = ctx.resolveLanguage();
 
       const startCode = ctx.mermaidState.code;
@@ -121,7 +116,8 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
 
 export const createAnalyzeHandler = (ctx: StudioContext) => {
   return async () => {
-    if (ctx.connectionState.status !== 'connected' || !ctx.mermaidState.code.trim()) {
+    const diagramCode = ctx.getDiagramContextCode ? ctx.getDiagramContextCode().trim() : ctx.mermaidState.code.trim();
+    if (ctx.connectionState.status !== 'connected' || !diagramCode) {
       alert('Connect AI and provide Mermaid code first!');
       await ctx.safeRecordTimeStep({
         type: 'analyze',
@@ -133,9 +129,9 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
 
     ctx.setIsProcessing(true);
     try {
-      const docs = await fetchDocsContext(ctx.appState.diagramType);
+      const docs = await ctx.getDocsContext('analyze');
       const language = ctx.resolveAnalyzeLanguage();
-      const explanation = await analyzeDiagram(ctx.mermaidState.code, ctx.aiConfig, docs, language);
+      const explanation = await analyzeDiagram(diagramCode, ctx.aiConfig, docs, language);
       const stepMessages: Message[] = [];
       stepMessages.push(ctx.addMessage('assistant', explanation));
       await ctx.safeRecordTimeStep({ type: 'analyze', messages: stepMessages, meta: { diagramType: ctx.appState.diagramType } });
