@@ -64,6 +64,12 @@ export const useDiagramStudio = () => {
     setEditorTab,
   });
 
+  const safeAppendTimeStep = useCallback((args: Parameters<typeof appendTimeStep>[0]) => {
+    return appendTimeStep(args).catch((e) => {
+      console.error('Failed to record history step', e);
+    });
+  }, [appendTimeStep]);
+
   const detectedDiagramType = useMemo(() => {
     if (markdownMermaidBlocks.length > 0) {
       const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex] ?? markdownMermaidBlocks[0];
@@ -224,15 +230,11 @@ export const useDiagramStudio = () => {
     }
 
     if (connectionState.status !== 'connected') {
-      try {
-        await appendTimeStep({
-          type: 'fix',
-          messages: [],
-          meta: { error: 'offline', diagramType: activeBlock.diagramType ?? appState.diagramType },
-        });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await safeAppendTimeStep({
+        type: 'fix',
+        messages: [],
+        meta: { error: 'offline', diagramType: activeBlock.diagramType ?? appState.diagramType },
+      });
       return;
     }
 
@@ -280,38 +282,29 @@ export const useDiagramStudio = () => {
           }
         : null;
 
-      try {
-        await appendTimeStep({
-          type: 'fix',
-          messages: [],
-          nextMermaid,
-          setCurrentRevisionId: cleared ? null : undefined,
-          meta: {
-            attempts,
-            changed,
-            isValid: !!validation.isValid,
-            cleared,
-            diagramType,
-          },
-        });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await safeAppendTimeStep({
+        type: 'fix',
+        messages: [],
+        nextMermaid,
+        setCurrentRevisionId: cleared ? null : undefined,
+        meta: {
+          attempts,
+          changed,
+          isValid: !!validation.isValid,
+          cleared,
+          diagramType,
+        },
+      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       alert(`Fix failed (${aiConfig.selectedModelId ? `model=${aiConfig.selectedModelId}` : 'model=unknown'}): ${message}`);
-      try {
-        await appendTimeStep({ type: 'fix', messages: [], meta: { error: message } });
-      } catch (err) {
-        console.error('Failed to record history step', err);
-      }
+      await safeAppendTimeStep({ type: 'fix', messages: [], meta: { error: message } });
     } finally {
       setIsProcessing(false);
     }
   }, [
     aiConfig,
     appState.diagramType,
-    appendTimeStep,
     baseHandleFixSyntax,
     connectionState.status,
     handleMermaidChange,
@@ -320,6 +313,7 @@ export const useDiagramStudio = () => {
     markdownMermaidDiagnostics,
     mermaidState.code,
     resolveFixLanguage,
+    safeAppendTimeStep,
   ]);
 
   const handleManualSnapshot = useCallback(async () => {
@@ -334,22 +328,17 @@ export const useDiagramStudio = () => {
     if (isSnapshotInvalid) return;
     lastManualRecordedCodeRef.current = code;
 
-    try {
-      await appendTimeStep({
-        type: 'manual_edit',
-        messages: [],
-        nextMermaid: {
-          code,
-          isValid: mermaidState.isValid,
-          errorMessage: mermaidState.errorMessage,
-          errorLine: mermaidState.errorLine,
-        },
-      });
-    } catch (e) {
-      console.error('Failed to record manual snapshot', e);
-    }
+    await safeAppendTimeStep({
+      type: 'manual_edit',
+      messages: [],
+      nextMermaid: {
+        code,
+        isValid: mermaidState.isValid,
+        errorMessage: mermaidState.errorMessage,
+        errorLine: mermaidState.errorLine,
+      },
+    });
   }, [
-    appendTimeStep,
     editorTab,
     isProcessing,
     mermaidState.code,
@@ -358,6 +347,7 @@ export const useDiagramStudio = () => {
     mermaidState.isValid,
     markdownMermaidActiveIndex,
     markdownMermaidDiagnostics,
+    safeAppendTimeStep,
   ]);
 
   const goToDiagramStep = async (marker: Pick<DiagramMarker, 'stepId'> | string) => {

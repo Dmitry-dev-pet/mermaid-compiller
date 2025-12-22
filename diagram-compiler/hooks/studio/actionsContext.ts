@@ -41,6 +41,7 @@ export type StudioContext = StudioActionsDeps & {
   applyValidationPreservingSource: (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => void;
   getCurrentModelName: () => string;
   getBuildDocsContext: () => Promise<string>;
+  safeRecordTimeStep: StudioActionsDeps['recordTimeStep'];
 };
 
 export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {
@@ -135,6 +136,14 @@ ${code}
     return modelId ? `model=${modelId}` : 'model=unknown';
   };
 
+  const safeRecordTimeStep: StudioActionsDeps['recordTimeStep'] = async (args) => {
+    try {
+      await deps.recordTimeStep(args);
+    } catch (e) {
+      console.error('Failed to record history step', e);
+    }
+  };
+
   return {
     ...deps,
     getRelevantMessages,
@@ -150,5 +159,6 @@ ${code}
     applyCompiledResult,
     applyValidationPreservingSource,
     getCurrentModelName,
+    safeRecordTimeStep,
   };
 };

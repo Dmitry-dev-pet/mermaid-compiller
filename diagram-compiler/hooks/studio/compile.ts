@@ -10,11 +10,7 @@ export const createRecompileHandler = (ctx: StudioContext) => {
   return async () => {
     if (ctx.connectionState.status !== 'connected') {
       alert('Connect AI first!');
-      try {
-        await ctx.recordTimeStep({ type: 'recompile', messages: [], meta: { error: 'offline' } });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await ctx.safeRecordTimeStep({ type: 'recompile', messages: [], meta: { error: 'offline' } });
       return;
     }
 
@@ -36,31 +32,23 @@ export const createRecompileHandler = (ctx: StudioContext) => {
           `Generated ${ctx.appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}`
         )
       );
-      try {
-        await ctx.recordTimeStep({
-          type: 'recompile',
-          messages: stepMessages,
-          nextMermaid: {
-            code: cleanCode,
-            isValid: !!validation.isValid,
-            errorMessage: validation.errorMessage,
-            errorLine: validation.errorLine,
-          },
-          meta: { diagramType: ctx.appState.diagramType },
-        });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await ctx.safeRecordTimeStep({
+        type: 'recompile',
+        messages: stepMessages,
+        nextMermaid: {
+          code: cleanCode,
+          isValid: !!validation.isValid,
+          errorMessage: validation.errorMessage,
+          errorLine: validation.errorLine,
+        },
+        meta: { diagramType: ctx.appState.diagramType },
+      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       alert(`Generation failed (${ctx.getCurrentModelName()}): ${message}`);
       const stepMessages: Message[] = [];
       stepMessages.push(ctx.addMessage('assistant', `Error generating diagram (${ctx.getCurrentModelName()}): ${message}`));
-      try {
-        await ctx.recordTimeStep({ type: 'recompile', messages: stepMessages, meta: { error: message } });
-      } catch (err) {
-        console.error('Failed to record history step', err);
-      }
+      await ctx.safeRecordTimeStep({ type: 'recompile', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);
     }
@@ -70,11 +58,7 @@ export const createRecompileHandler = (ctx: StudioContext) => {
 export const createFixSyntaxHandler = (ctx: StudioContext) => {
   return async () => {
     if (ctx.connectionState.status !== 'connected') {
-      try {
-        await ctx.recordTimeStep({ type: 'fix', messages: [], meta: { error: 'offline' } });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await ctx.safeRecordTimeStep({ type: 'fix', messages: [], meta: { error: 'offline' } });
       return;
     }
 
@@ -113,30 +97,22 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
             errorLine: validation.errorLine,
           }
         : null;
-      try {
-        await ctx.recordTimeStep({
-          type: 'fix',
-          messages: [],
-          nextMermaid,
-          setCurrentRevisionId: cleared ? null : undefined,
-          meta: {
-            attempts,
-            changed,
-            isValid: !!validation.isValid,
-            cleared,
-          },
-        });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await ctx.safeRecordTimeStep({
+        type: 'fix',
+        messages: [],
+        nextMermaid,
+        setCurrentRevisionId: cleared ? null : undefined,
+        meta: {
+          attempts,
+          changed,
+          isValid: !!validation.isValid,
+          cleared,
+        },
+      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       alert(`Fix failed (${ctx.getCurrentModelName()}): ${message}`);
-      try {
-        await ctx.recordTimeStep({ type: 'fix', messages: [], meta: { error: message } });
-      } catch (err) {
-        console.error('Failed to record history step', err);
-      }
+      await ctx.safeRecordTimeStep({ type: 'fix', messages: [], meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);
     }
@@ -147,15 +123,11 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
   return async () => {
     if (ctx.connectionState.status !== 'connected' || !ctx.mermaidState.code.trim()) {
       alert('Connect AI and provide Mermaid code first!');
-      try {
-        await ctx.recordTimeStep({
-          type: 'analyze',
-          messages: [],
-          meta: { error: ctx.connectionState.status !== 'connected' ? 'offline' : 'no_code' },
-        });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await ctx.safeRecordTimeStep({
+        type: 'analyze',
+        messages: [],
+        meta: { error: ctx.connectionState.status !== 'connected' ? 'offline' : 'no_code' },
+      });
       return;
     }
 
@@ -166,21 +138,13 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
       const explanation = await analyzeDiagram(ctx.mermaidState.code, ctx.aiConfig, docs, language);
       const stepMessages: Message[] = [];
       stepMessages.push(ctx.addMessage('assistant', explanation));
-      try {
-        await ctx.recordTimeStep({ type: 'analyze', messages: stepMessages, meta: { diagramType: ctx.appState.diagramType } });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await ctx.safeRecordTimeStep({ type: 'analyze', messages: stepMessages, meta: { diagramType: ctx.appState.diagramType } });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       alert(`Analysis failed (${ctx.getCurrentModelName()}): ${message}`);
       const stepMessages: Message[] = [];
       stepMessages.push(ctx.addMessage('assistant', `Error analyzing diagram (${ctx.getCurrentModelName()}): ${message}`));
-      try {
-        await ctx.recordTimeStep({ type: 'analyze', messages: stepMessages, meta: { error: message } });
-      } catch (err) {
-        console.error('Failed to record history step', err);
-      }
+      await ctx.safeRecordTimeStep({ type: 'analyze', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);
     }

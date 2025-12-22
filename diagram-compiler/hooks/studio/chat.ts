@@ -10,11 +10,7 @@ export const createChatHandler = (ctx: StudioContext) => {
     stepMessages.push(ctx.addMessage('user', text));
     if (ctx.connectionState.status !== 'connected') {
       stepMessages.push(ctx.addMessage('assistant', "I'm offline. Connect AI to generate diagrams."));
-      try {
-        await ctx.recordTimeStep({ type: 'chat', messages: stepMessages });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages });
       return;
     }
 
@@ -35,19 +31,11 @@ export const createChatHandler = (ctx: StudioContext) => {
           updatedAt: Date.now(),
         });
       }
-      try {
-        await ctx.recordTimeStep({ type: 'chat', messages: stepMessages, meta: { intent: intentText || null } });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages, meta: { intent: intentText || null } });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       stepMessages.push(ctx.addMessage('assistant', `Error (${ctx.getCurrentModelName()}): ${message}`));
-      try {
-        await ctx.recordTimeStep({ type: 'chat', messages: stepMessages, meta: { error: message } });
-      } catch (err) {
-        console.error('Failed to record history step', err);
-      }
+      await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);
     }

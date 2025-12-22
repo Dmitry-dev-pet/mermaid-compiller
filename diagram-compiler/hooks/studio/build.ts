@@ -45,11 +45,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
 
     if (ctx.connectionState.status !== 'connected') {
       stepMessages.push(ctx.addMessage('assistant', "I'm offline. Connect AI to generate diagrams."));
-      try {
-        await ctx.recordTimeStep({ type: 'build', messages: stepMessages });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages });
       return;
     }
 
@@ -63,11 +59,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
       const intent = buildIntent(ctx, { prompt, relevantMessages });
       if (!intent) {
         stepMessages.push(ctx.addMessage('assistant', 'Nothing to build yet. Use Chat to define intent.'));
-        try {
-          await ctx.recordTimeStep({ type: 'build', messages: stepMessages });
-        } catch (e) {
-          console.error('Failed to record history step', e);
-        }
+        await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages });
         return;
       }
 
@@ -89,11 +81,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
 
       if (!cleanCode.trim()) {
         stepMessages.push(ctx.addMessage('assistant', 'Build failed: no Mermaid code returned.'));
-        try {
-          await ctx.recordTimeStep({ type: 'build', messages: stepMessages, meta: { reason: 'no_mermaid_code' } });
-        } catch (e) {
-          console.error('Failed to record history step', e);
-        }
+        await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages, meta: { reason: 'no_mermaid_code' } });
         return;
       }
 
@@ -131,34 +119,26 @@ export const createBuildHandler = (ctx: StudioContext) => {
           `Build (after): Built ${ctx.appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}${autoFixNote}${afterSummary ? `\nSummary: ${afterSummary}` : ''}`
         )
       );
-      try {
-        await ctx.recordTimeStep({
-          type: 'build',
-          messages: stepMessages,
-          nextMermaid: {
-            code: currentCode,
-            isValid: !!validation.isValid,
-            errorMessage: validation.errorMessage,
-            errorLine: validation.errorLine,
-          },
-          meta: {
-            diagramType: ctx.appState.diagramType,
-            autoFixAttempts: autoFixAttempts,
-            intent: intent.content,
-            intentSource: intent.source,
-          },
-        });
-      } catch (e) {
-        console.error('Failed to record history step', e);
-      }
+      await ctx.safeRecordTimeStep({
+        type: 'build',
+        messages: stepMessages,
+        nextMermaid: {
+          code: currentCode,
+          isValid: !!validation.isValid,
+          errorMessage: validation.errorMessage,
+          errorLine: validation.errorLine,
+        },
+        meta: {
+          diagramType: ctx.appState.diagramType,
+          autoFixAttempts: autoFixAttempts,
+          intent: intent.content,
+          intentSource: intent.source,
+        },
+      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       stepMessages.push(ctx.addMessage('assistant', `Build failed (${ctx.getCurrentModelName()}): ${message}`));
-      try {
-        await ctx.recordTimeStep({ type: 'build', messages: stepMessages, meta: { error: message } });
-      } catch (err) {
-        console.error('Failed to record history step', err);
-      }
+      await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);
     }
