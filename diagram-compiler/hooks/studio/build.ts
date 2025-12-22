@@ -46,6 +46,11 @@ export const createBuildHandler = (ctx: StudioContext) => {
 
     if (ctx.connectionState.status !== 'connected') {
       stepMessages.push(ctx.addMessage('assistant', "I'm offline. Connect AI to generate diagrams."));
+      ctx.trackAnalyticsEvent('diagram_build_failed', {
+        ...(await ctx.getAnalyticsContext('build')),
+        mode: 'build',
+        error: 'offline',
+      });
       await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages });
       return;
     }
@@ -54,15 +59,29 @@ export const createBuildHandler = (ctx: StudioContext) => {
 
     ctx.setIsProcessing(true);
     try {
+      const analyticsContext = await ctx.getAnalyticsContext('build');
       const docs = await ctx.getDocsContext('build');
       const relevantMessages = ctx.getRelevantMessages();
 
       const intent = buildIntent(ctx, { prompt, relevantMessages });
       if (!intent) {
         stepMessages.push(ctx.addMessage('assistant', 'Nothing to build yet. Use Chat to define intent.'));
+        ctx.trackAnalyticsEvent('diagram_build_failed', {
+          ...analyticsContext,
+          mode: 'build',
+          error: 'no_intent',
+        });
         await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages });
         return;
       }
+
+      const startedAt = Date.now();
+      ctx.trackAnalyticsEvent('diagram_build_started', {
+        ...analyticsContext,
+        mode: 'build',
+        intentSource: intent.source,
+        hasPrompt: !!prompt,
+      });
 
       const normalizedIntent = normalizeIntentText(intent.content);
       const intentMessage = ctx.getIntentMessage(normalizedIntent);
@@ -105,6 +124,14 @@ export const createBuildHandler = (ctx: StudioContext) => {
       if (!cleanCode.trim()) {
         const reason = lastError ? 'build_attempts_failed' : 'no_mermaid_code';
         stepMessages.push(ctx.addMessage('assistant', 'Build failed: no Mermaid code returned.'));
+        ctx.trackAnalyticsEvent('diagram_build_failed', {
+          ...analyticsContext,
+          mode: 'build',
+          error: reason,
+          attempts,
+          emptyResponses,
+          durationMs: Date.now() - startedAt,
+        });
         await ctx.safeRecordTimeStep({
           type: 'build',
           messages: stepMessages,
@@ -152,6 +179,17 @@ export const createBuildHandler = (ctx: StudioContext) => {
           `Build (after): Built ${ctx.appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}${autoFixNote}${afterSummary ? `\nSummary: ${afterSummary}` : ''}`
         )
       );
+      ctx.trackAnalyticsEvent('diagram_build_success', {
+        ...analyticsContext,
+        mode: 'build',
+        isValid: !!validation.isValid,
+        errorLine: validation.errorLine,
+        buildAttempts: attempts,
+        autoFixAttempts,
+        emptyResponses,
+        durationMs: Date.now() - startedAt,
+        codeLength: currentCode.length,
+      });
       await ctx.safeRecordTimeStep({
         type: 'build',
         messages: stepMessages,
@@ -168,6 +206,11 @@ export const createBuildHandler = (ctx: StudioContext) => {
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       stepMessages.push(ctx.addMessage('assistant', `Build failed (${ctx.getCurrentModelName()}): ${message}`));
+      ctx.trackAnalyticsEvent('diagram_build_failed', {
+        ...(await ctx.getAnalyticsContext('build')),
+        mode: 'build',
+        error: 'exception',
+      });
       await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);

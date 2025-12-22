@@ -9,16 +9,28 @@ export const createRecompileHandler = (ctx: StudioContext) => {
   return async () => {
     if (ctx.connectionState.status !== 'connected') {
       alert('Connect AI first!');
+      ctx.trackAnalyticsEvent('diagram_recompile_failed', {
+        ...(await ctx.getAnalyticsContext('build')),
+        mode: 'recompile',
+        error: 'offline',
+      });
       await ctx.safeRecordTimeStep({ type: 'recompile', messages: [], meta: { error: 'offline' } });
       return;
     }
 
+    const startedAt = Date.now();
     ctx.setIsProcessing(true);
     try {
+      const analyticsContext = await ctx.getAnalyticsContext('build');
       const docs = await ctx.getDocsContext('build');
       const language = ctx.resolveLanguage();
       const relevantMessages = ctx.getRelevantMessages();
       const llmMessages = ctx.buildLLMMessages(relevantMessages);
+
+      ctx.trackAnalyticsEvent('diagram_recompile_started', {
+        ...analyticsContext,
+        mode: 'recompile',
+      });
 
       const rawCode = await generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
       const cleanCode = extractMermaidCode(rawCode);
@@ -38,11 +50,24 @@ export const createRecompileHandler = (ctx: StudioContext) => {
         nextMermaid: ctx.resolveMermaidUpdate(cleanCode, validation),
         meta: { diagramType: ctx.appState.diagramType },
       });
+      ctx.trackAnalyticsEvent('diagram_recompile_success', {
+        ...analyticsContext,
+        mode: 'recompile',
+        isValid: !!validation.isValid,
+        errorLine: validation.errorLine,
+        durationMs: Date.now() - startedAt,
+        codeLength: cleanCode.length,
+      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       alert(`Generation failed (${ctx.getCurrentModelName()}): ${message}`);
       const stepMessages: Message[] = [];
       stepMessages.push(ctx.addMessage('assistant', `Error generating diagram (${ctx.getCurrentModelName()}): ${message}`));
+      ctx.trackAnalyticsEvent('diagram_recompile_failed', {
+        ...(await ctx.getAnalyticsContext('build')),
+        mode: 'recompile',
+        error: 'exception',
+      });
       await ctx.safeRecordTimeStep({ type: 'recompile', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);
@@ -53,14 +78,26 @@ export const createRecompileHandler = (ctx: StudioContext) => {
 export const createFixSyntaxHandler = (ctx: StudioContext) => {
   return async () => {
     if (ctx.connectionState.status !== 'connected') {
+      ctx.trackAnalyticsEvent('diagram_fix_failed', {
+        ...(await ctx.getAnalyticsContext('fix')),
+        mode: 'fix',
+        error: 'offline',
+      });
       await ctx.safeRecordTimeStep({ type: 'fix', messages: [], meta: { error: 'offline' } });
       return;
     }
 
+    const startedAt = Date.now();
     ctx.setIsProcessing(true);
     try {
+      const analyticsContext = await ctx.getAnalyticsContext('fix');
       const docs = await ctx.getDocsContext('fix');
       const language = ctx.resolveLanguage();
+      ctx.trackAnalyticsEvent('diagram_fix_started', {
+        ...analyticsContext,
+        mode: 'fix',
+        codeLength: ctx.mermaidState.code.length,
+      });
 
       const startCode = ctx.mermaidState.code;
       const initialValidation = await validateMermaid(startCode);
@@ -104,9 +141,25 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
           cleared,
         },
       });
+      ctx.trackAnalyticsEvent('diagram_fix_success', {
+        ...analyticsContext,
+        mode: 'fix',
+        attempts,
+        changed,
+        cleared,
+        isValid: !!validation.isValid,
+        errorLine: validation.errorLine,
+        durationMs: Date.now() - startedAt,
+        codeLength: currentCode.length,
+      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       alert(`Fix failed (${ctx.getCurrentModelName()}): ${message}`);
+      ctx.trackAnalyticsEvent('diagram_fix_failed', {
+        ...(await ctx.getAnalyticsContext('fix')),
+        mode: 'fix',
+        error: 'exception',
+      });
       await ctx.safeRecordTimeStep({ type: 'fix', messages: [], meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);

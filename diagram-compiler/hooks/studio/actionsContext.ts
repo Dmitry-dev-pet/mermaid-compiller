@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { AIConfig, AppState, ConnectionState, MermaidState, Message, DiagramIntent, DocsMode } from '../../types';
 import { MermaidMarkdownBlock, replaceMermaidBlockInMarkdown, validateMermaid } from '../../services/mermaidService';
+import type { AnalyticsContext } from '../../services/analyticsService';
 import { detectLanguage } from '../../utils';
 import { normalizeIntentText } from '../../utils/intent';
 import type { StepMeta, TimeStepType } from '../../services/history/types';
@@ -20,6 +21,8 @@ export type StudioActionsDeps = {
   addMessage: (role: 'user' | 'assistant', content: string) => Message;
   getMessages: () => Message[];
   getDiagramContextCode?: () => string;
+  getAnalyticsContext?: (mode: DocsMode) => Promise<AnalyticsContext>;
+  trackAnalyticsEvent?: (event: string, payload?: Record<string, unknown>) => void;
   resolveMermaidUpdateTarget?: () => MermaidUpdateTarget | null;
   setIsProcessing: (value: boolean) => void;
   getDocsContext: (mode: DocsMode) => Promise<string>;
@@ -46,6 +49,8 @@ export type StudioContext = StudioActionsDeps & {
   resolveMermaidUpdate: (code: string, validation: Awaited<ReturnType<typeof validateMermaid>>) => Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'>;
   applyCompiledResult: (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => void;
   applyValidationPreservingSource: (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => void;
+  getAnalyticsContext: (mode: DocsMode) => Promise<AnalyticsContext>;
+  trackAnalyticsEvent: (event: string, payload?: Record<string, unknown>) => void;
   getCurrentModelName: () => string;
   getDocsContext: (mode: DocsMode) => Promise<string>;
   safeRecordTimeStep: StudioActionsDeps['recordTimeStep'];
@@ -178,6 +183,24 @@ ${code}
     }));
   };
 
+  const getAnalyticsContext = async (mode: DocsMode) => {
+    return deps.getAnalyticsContext
+      ? deps.getAnalyticsContext(mode)
+      : {
+          provider: deps.aiConfig.provider,
+          model: deps.aiConfig.selectedModelId || null,
+          modelParams: { temperature: 0.2 },
+          modelFilters: deps.aiConfig.filtersByProvider[deps.aiConfig.provider] ?? null,
+          diagramType: deps.appState.diagramType,
+          language: deps.appState.language ?? null,
+          analyzeLanguage: deps.appState.analyzeLanguage ?? null,
+        };
+  };
+
+  const trackAnalyticsEvent = (event: string, payload: Record<string, unknown> = {}) => {
+    deps.trackAnalyticsEvent?.(event, payload);
+  };
+
   const applyValidationPreservingSource = (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => {
     deps.setMermaidState((prev) => ({
       ...prev,
@@ -218,6 +241,8 @@ ${code}
     resolveMermaidUpdate,
     applyCompiledResult,
     applyValidationPreservingSource,
+    getAnalyticsContext,
+    trackAnalyticsEvent,
     getCurrentModelName,
     safeRecordTimeStep,
   };

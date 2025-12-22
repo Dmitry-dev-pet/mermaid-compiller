@@ -12,10 +12,11 @@ import { usePromptPreview } from './usePromptPreview';
 import type { DiagramMarker } from '../core/useHistory';
 import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE } from '../../constants';
 import { detectLanguage } from '../../utils';
-import type { DiagramIntent, DiagramType, EditorTab } from '../../types';
+import type { DiagramIntent, DiagramType, DocsMode, EditorTab } from '../../types';
 import { detectMermaidDiagramType, extractMermaidCode, isMarkdownLike, replaceMermaidBlockInMarkdown, validateMermaidDiagramCode } from '../../services/mermaidService';
 import { fixDiagram } from '../../services/llmService';
 import { runAutoFixLoop } from './autoFix';
+import { trackAnalyticsEvent } from '../../services/analyticsService';
 
 export const useDiagramStudio = () => {
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
@@ -48,6 +49,7 @@ export const useDiagramStudio = () => {
     buildDocsActivePath,
     setBuildDocsActivePath,
     getDocsContext,
+    getDocsSelectionSummary,
     loadBuildDocsEntries,
     toggleBuildDocSelection,
     docsMode,
@@ -213,6 +215,30 @@ export const useDiagramStudio = () => {
     return { mode: 'code' as const };
   }, [markdownMermaidActiveIndex, markdownMermaidBlocks]);
 
+  const getAnalyticsContext = useCallback(async (mode: DocsMode) => {
+    const docsUsage = await getDocsSelectionSummary(mode);
+    const activeContext = resolveActiveMermaidContext();
+    return {
+      provider: aiConfig.provider,
+      model: aiConfig.selectedModelId || null,
+      modelParams: { temperature: 0.2 },
+      modelFilters: aiConfig.filtersByProvider[aiConfig.provider] ?? null,
+      diagramType: activeContext.diagramType ?? appState.diagramType,
+      language: appState.language ?? null,
+      analyzeLanguage: appState.analyzeLanguage ?? null,
+      docsUsage,
+    };
+  }, [
+    aiConfig.filtersByProvider,
+    aiConfig.provider,
+    aiConfig.selectedModelId,
+    appState.analyzeLanguage,
+    appState.diagramType,
+    appState.language,
+    getDocsSelectionSummary,
+    resolveActiveMermaidContext,
+  ]);
+
   const { handleChatMessage, handleBuildFromPrompt, handleRecompile, handleFixSyntax: baseHandleFixSyntax, handleAnalyze } =
     createStudioActions({
       aiConfig,
@@ -226,6 +252,8 @@ export const useDiagramStudio = () => {
       getMessages,
       getDiagramContextCode: () => resolveActiveMermaidContext().code,
       resolveMermaidUpdateTarget,
+      getAnalyticsContext,
+      trackAnalyticsEvent,
       getDocsContext,
       setIsProcessing,
       recordTimeStep: appendTimeStep,
@@ -259,11 +287,19 @@ export const useDiagramStudio = () => {
       return;
     }
 
+    const startedAt = Date.now();
     setIsProcessing(true);
     try {
       const diagramType = activeBlock.diagramType ?? appState.diagramType;
       const docs = await getDocsContext('fix');
       const language = resolveFixLanguage();
+      const analyticsContext = await getAnalyticsContext('fix');
+      trackAnalyticsEvent('diagram_fix_started', {
+        ...analyticsContext,
+        diagramType,
+        mode: 'fix',
+        codeLength: activeBlock.code.length,
+      });
 
       const startCode = activeBlock.code;
       const initialValidation = await validateMermaidDiagramCode(startCode);
@@ -316,8 +352,28 @@ export const useDiagramStudio = () => {
           diagramType,
         },
       });
+
+      trackAnalyticsEvent('diagram_fix_success', {
+        ...analyticsContext,
+        diagramType,
+        mode: 'fix',
+        attempts,
+        changed,
+        cleared,
+        isValid: !!validation.isValid,
+        durationMs: Date.now() - startedAt,
+        codeLength: currentCode.length,
+        errorLine: validation.errorLine,
+      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
+      const analyticsContext = await getAnalyticsContext('fix');
+      trackAnalyticsEvent('diagram_fix_failed', {
+        ...analyticsContext,
+        mode: 'fix',
+        error: 'exception',
+        durationMs: Date.now() - startedAt,
+      });
       alert(`Fix failed (${aiConfig.selectedModelId ? `model=${aiConfig.selectedModelId}` : 'model=unknown'}): ${message}`);
       await safeAppendTimeStep({ type: 'fix', messages: [], meta: { error: message } });
     } finally {

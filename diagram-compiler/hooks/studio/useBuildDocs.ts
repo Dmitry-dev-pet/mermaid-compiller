@@ -109,6 +109,20 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     return formatDocsContext(selected);
   }, [ensureBuildDocsEntries]);
 
+  const getDocsSelectionSummary = useCallback(async (mode: DocsMode) => {
+    const { entries, selections } = await ensureBuildDocsEntries();
+    const selection = selections[mode] ?? {};
+    const included = entries.filter((entry) => selection[entry.path] !== false);
+    const excluded = entries.filter((entry) => selection[entry.path] === false);
+    return {
+      total: entries.length,
+      included: included.length,
+      excluded: excluded.length,
+      includedPaths: included.map((entry) => entry.path),
+      excludedPaths: excluded.map((entry) => entry.path),
+    };
+  }, [ensureBuildDocsEntries]);
+
   const toggleBuildDocSelection = useCallback((path: string, isIncluded: boolean) => {
     setDocsState((prev) => {
       const mode = prev.mode;
@@ -196,6 +210,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     setBuildDocSelectionForMode,
     ensureBuildDocsEntries,
     getDocsContext,
+    getDocsSelectionSummary,
     loadBuildDocsEntries,
     toggleBuildDocSelection,
   };
