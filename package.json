@@ -1,6 +1,6 @@
 {
   "name": "mermaid-langgraph",
-  "version": "1.0.0",
+  "version": "1.0.0-alpha",
   "description": "",
   "scripts": {
     "dev": "npm --prefix diagram-compiler run dev",
