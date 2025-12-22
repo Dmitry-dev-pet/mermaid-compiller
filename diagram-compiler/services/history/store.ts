@@ -130,6 +130,30 @@ export const recordStep = async (
   });
 };
 
+export const updateRevision = async (
+  revisionId: string,
+  nextMermaid: Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'>
+): Promise<DiagramRevision | null> => {
+  return withTx([STORE_REVISIONS], 'readwrite', async (tx) => {
+    const revisions = tx.objectStore(STORE_REVISIONS);
+    const existing = (await requestToPromise(revisions.get(revisionId))) as DiagramRevision | undefined;
+    if (!existing) return null;
+
+    const updated: DiagramRevision = {
+      ...existing,
+      mermaid: nextMermaid.code,
+      diagnostics: {
+        isValid: !!nextMermaid.isValid,
+        errorMessage: nextMermaid.errorMessage,
+        errorLine: nextMermaid.errorLine,
+      },
+    };
+
+    await requestToPromise(revisions.put(updated));
+    return updated;
+  });
+};
+
 export const listSteps = async (sessionId: string): Promise<TimeStep[]> => {
   return withTx([STORE_STEPS], 'readonly', async (tx) => {
     const index = tx.objectStore(STORE_STEPS).index('bySessionIndex');
@@ -162,4 +186,3 @@ export const loadActiveSessionState = async () => {
   const currentRevision = session.currentRevisionId ? await getRevision(session.currentRevisionId) : null;
   return { session, steps, currentRevision };
 };
-

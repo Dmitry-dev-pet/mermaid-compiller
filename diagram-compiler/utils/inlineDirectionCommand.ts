@@ -69,11 +69,25 @@ export const setInlineDirectionCommand = (code: string, direction: MermaidDirect
 
 const findDiagramHeaderIndex = (lines: string[]): number => {
   let index = 0;
+  let consumedFrontmatter = false;
 
   while (index < lines.length) {
     const trimmed = (lines[index]?.trim() ?? '');
     if (trimmed.length === 0) {
       index += 1;
+      continue;
+    }
+
+    if (!consumedFrontmatter && trimmed === '---') {
+      index += 1;
+      while (index < lines.length) {
+        if ((lines[index]?.trim() ?? '') === '---') {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      consumedFrontmatter = true;
       continue;
     }
 

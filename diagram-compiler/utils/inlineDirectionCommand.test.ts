@@ -40,4 +40,10 @@ describe('inlineDirectionCommand', () => {
     const applied = applyInlineDirectionCommand(code);
     expect(applied.code).toBe(`%%{theme: dark}%%\nflowchart RL\nA-->B`);
   });
+
+  it('applyInlineDirectionCommand skips YAML frontmatter', () => {
+    const code = `%%{direction: TB}%%\n---\ntitle: Node\n---\nflowchart LR\nA-->B`;
+    const applied = applyInlineDirectionCommand(code);
+    expect(applied.code).toBe(`---\ntitle: Node\n---\nflowchart TB\nA-->B`);
+  });
 });

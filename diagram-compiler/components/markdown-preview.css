@@ -1,0 +1,89 @@
+.markdown-body .markdown-callout {
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  border: 1px solid transparent;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.markdown-body .markdown-callout-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+  opacity: 0.85;
+}
+
+.markdown-body .markdown-callout-body {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.markdown-body .markdown-callout-warning {
+  border-color: #f59e0b;
+  background: #fff7ed;
+  color: #7c2d12;
+}
+
+.markdown-body .markdown-callout-note {
+  border-color: #38bdf8;
+  background: #f0f9ff;
+  color: #0c4a6e;
+}
+
+.markdown-body .markdown-callout-tip {
+  border-color: #34d399;
+  background: #ecfdf5;
+  color: #064e3b;
+}
+
+.markdown-body .markdown-callout-info {
+  border-color: #a78bfa;
+  background: #f5f3ff;
+  color: #4c1d95;
+}
+
+.markdown-body .markdown-callout-error {
+  border-color: #f43f5e;
+  background: #fff1f2;
+  color: #9f1239;
+}
+
+.dark .markdown-body .markdown-callout {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-color: #1e293b;
+}
+
+.dark .markdown-body .markdown-callout-warning {
+  border-color: #f59e0b;
+  background: rgba(180, 83, 9, 0.2);
+  color: #fef3c7;
+}
+
+.dark .markdown-body .markdown-callout-note {
+  border-color: #38bdf8;
+  background: rgba(14, 116, 144, 0.2);
+  color: #e0f2fe;
+}
+
+.dark .markdown-body .markdown-callout-tip {
+  border-color: #34d399;
+  background: rgba(5, 150, 105, 0.2);
+  color: #d1fae5;
+}
+
+.dark .markdown-body .markdown-callout-info {
+  border-color: #a78bfa;
+  background: rgba(91, 33, 182, 0.2);
+  color: #ede9fe;
+}
+
+.dark .markdown-body .markdown-callout-error {
+  border-color: #fb7185;
+  background: rgba(190, 18, 60, 0.2);
+  color: #ffe4e6;
+}

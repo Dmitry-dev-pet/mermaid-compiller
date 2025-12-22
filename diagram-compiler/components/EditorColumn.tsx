@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Check, Copy, PenTool, RefreshCw } from 'lucide-react';
-import { EditorTab, MermaidState, PromptPreviewMode, PromptPreviewTab, PromptPreviewView } from '../types';
+import { Bookmark, Check, Copy, PenTool, RefreshCw } from 'lucide-react';
+import { DiagramType, EditorTab, MermaidState, PromptPreviewMode, PromptPreviewTab, PromptPreviewView } from '../types';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../constants';
 import Editor from 'react-simple-code-editor';
 import { highlight, languages } from 'prismjs';
@@ -8,7 +8,7 @@ import 'prismjs/themes/prism.css';
 import 'prismjs/components/prism-markup';
 import 'prismjs/components/prism-markdown';
 import './syntax-dark.css';
-import { isMarkdownLike } from '../services/mermaidService';
+import { isMarkdownLike, MermaidMarkdownBlock, replaceMermaidBlockInMarkdown } from '../services/mermaidService';
 import type { DocsEntry } from '../services/docsContextService';
 
 // Define minimal Mermaid grammar
@@ -24,11 +24,43 @@ languages.mermaid = {
   'variable': /\b[A-Za-z_][A-Za-z0-9_]*\b/
 };
 
+const DIAGRAM_TYPE_LABELS: Record<DiagramType, string> = {
+  architecture: 'Architecture',
+  block: 'Block',
+  c4: 'C4',
+  class: 'Class Diagram',
+  er: 'Entity Relationship',
+  flowchart: 'Flowchart',
+  gantt: 'Gantt',
+  gitGraph: 'Git Graph',
+  kanban: 'Kanban',
+  mindmap: 'Mindmap',
+  packet: 'Packet',
+  pie: 'Pie',
+  quadrantChart: 'Quadrant Chart',
+  radar: 'Radar',
+  requirementDiagram: 'Requirement Diagram',
+  sequence: 'Sequence Diagram',
+  sankey: 'Sankey',
+  state: 'State Diagram',
+  timeline: 'Timeline',
+  treemap: 'Treemap',
+  userJourney: 'User Journey',
+  xychart: 'XY Chart',
+  zenuml: 'ZenUML',
+};
+
+const formatDiagramTypeLabel = (diagramType: DiagramType | null | undefined) => {
+  if (!diagramType) return 'Mermaid';
+  return DIAGRAM_TYPE_LABELS[diagramType] ?? 'Mermaid';
+};
+
 interface EditorColumnProps {
   mermaidState: MermaidState;
   onChange: (code: string) => void;
   onAnalyze: () => void;
   onFixSyntax: () => void;
+  onSnapshot: () => void;
   isAIReady: boolean;
   isProcessing: boolean;
   analyzeLanguage: string;
@@ -42,6 +74,10 @@ interface EditorColumnProps {
   onToggleBuildDoc: (path: string, isIncluded: boolean) => void;
   buildDocsActivePath: string;
   onBuildDocsActivePathChange: (path: string) => void;
+  markdownMermaidBlocks: MermaidMarkdownBlock[];
+  markdownMermaidDiagnostics: Array<Pick<MermaidState, 'isValid' | 'errorMessage' | 'errorLine' | 'status'>>;
+  markdownMermaidActiveIndex: number;
+  onMarkdownMermaidActiveIndexChange: (index: number) => void;
   onActiveTabChange: (tab: EditorTab) => void;
 }
 
@@ -50,6 +86,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   onChange,
   onAnalyze,
   onFixSyntax,
+  onSnapshot,
   isAIReady,
   isProcessing,
   analyzeLanguage,
@@ -63,6 +100,10 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   onToggleBuildDoc,
   buildDocsActivePath,
   onBuildDocsActivePathChange,
+  markdownMermaidBlocks,
+  markdownMermaidDiagnostics,
+  markdownMermaidActiveIndex,
+  onMarkdownMermaidActiveIndexChange,
   onActiveTabChange
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -70,11 +111,24 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   const [copied, setCopied] = React.useState(false);
   const promptChat = promptPreviewByMode.chat;
   const promptBuild = promptPreviewByMode.build;
+  const promptAnalyze = promptPreviewByMode.analyze;
+  const promptFix = promptPreviewByMode.fix;
   const isPromptChatTab = activeTab === 'prompt_chat';
   const isPromptBuildTab = activeTab === 'prompt_build';
+  const isPromptAnalyzeTab = activeTab === 'prompt_analyze';
+  const isPromptFixTab = activeTab === 'prompt_fix';
   const isBuildDocsTab = activeTab === 'build_docs';
-  const isPromptTab = isPromptChatTab || isPromptBuildTab;
-  const activePrompt = activeTab === 'prompt_chat' ? promptChat : activeTab === 'prompt_build' ? promptBuild : null;
+  const isMarkdownMermaidTab = activeTab === 'markdown_mermaid';
+  const isPromptTab = isPromptChatTab || isPromptBuildTab || isPromptAnalyzeTab || isPromptFixTab;
+  const activePrompt = isPromptChatTab
+    ? promptChat
+    : isPromptBuildTab
+      ? promptBuild
+      : isPromptAnalyzeTab
+        ? promptAnalyze
+        : isPromptFixTab
+          ? promptFix
+          : null;
   const resolvePromptContent = (prompt: PromptPreviewTab | null) => {
     if (!prompt) return '';
     if (promptPreviewView === 'raw') return prompt.rawContent ?? prompt.content ?? '';
@@ -82,15 +136,20 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   };
   const activeBuildDoc = buildDocsEntries.find((entry) => entry.path === buildDocsActivePath) ?? buildDocsEntries[0];
   const activeBuildDocName = activeBuildDoc?.path.split('/').pop() || activeBuildDoc?.path || 'Docs';
-  const activePromptContent = isPromptChatTab
+  const activeMarkdownBlock = markdownMermaidBlocks[markdownMermaidActiveIndex];
+  const activeMarkdownDiagnostics = markdownMermaidDiagnostics[markdownMermaidActiveIndex];
+  const isMarkdownMermaidInvalid = isMarkdownMermaidTab && activeMarkdownDiagnostics?.isValid === false;
+  const activePromptContent = isPromptTab
     ? resolvePromptContent(activePrompt)
-    : isPromptBuildTab
-      ? resolvePromptContent(activePrompt)
+    : isMarkdownMermaidTab
+      ? activeMarkdownBlock?.code || ''
       : isBuildDocsTab
         ? activeBuildDoc?.text || ''
         : '';
   const chatTokens = promptChat?.tokenCounts?.total ?? 0;
   const buildTokens = promptBuild?.tokenCounts?.total ?? 0;
+  const analyzeTokens = promptAnalyze?.tokenCounts?.total ?? 0;
+  const fixTokens = promptFix?.tokenCounts?.total ?? 0;
   const formatTokens = (count: number) => (count > 0 ? `~${count} tok` : '0 tok');
 
   useEffect(() => {
@@ -110,7 +169,9 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   };
 
   const handleCopy = () => {
-    const textToCopy = isBuildDocsTab
+    const textToCopy = isMarkdownMermaidTab
+      ? activeMarkdownBlock?.code || ''
+      : isBuildDocsTab
       ? activeBuildDoc?.text || ''
       : isPromptTab
         ? activePromptContent
@@ -121,25 +182,84 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const lineCount = mermaidState.code.split('\n').length;
-  const lineNumbers = Array.from({ length: Math.max(lineCount, 1) }, (_, i) => i + 1);
+  const editorValue = isMarkdownMermaidTab ? activeMarkdownBlock?.code ?? '' : mermaidState.code;
+  const editorLineCount = editorValue.split('\n').length;
+  const editorLineNumbers = Array.from({ length: Math.max(editorLineCount, 1) }, (_, i) => i + 1);
   const isMarkdown = isMarkdownLike(mermaidState.code);
+  const canFix = isMarkdownMermaidInvalid || (!isMarkdown && mermaidState.status === 'invalid');
+  const markdownValidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === true).length;
+  const markdownInvalidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === false).length;
+  const highlightMarkdownWithActiveBlock = (code: string) => {
+    if (!activeMarkdownBlock || !isMarkdown) {
+      return highlight(code, languages.markdown, 'markdown');
+    }
+    const start = activeMarkdownBlock.start;
+    const end = activeMarkdownBlock.end;
+    if (start < 0 || end <= start || start >= code.length) {
+      return highlight(code, languages.markdown, 'markdown');
+    }
+    const safeStart = Math.max(0, Math.min(start, code.length));
+    const safeEnd = Math.max(safeStart, Math.min(end, code.length));
+    if (safeEnd <= safeStart) {
+      return highlight(code, languages.markdown, 'markdown');
+    }
+    const before = code.slice(0, safeStart);
+    const focus = code.slice(safeStart, safeEnd);
+    const after = code.slice(safeEnd);
+    const beforeHtml = highlight(before, languages.markdown, 'markdown');
+    const focusHtml = highlight(focus, languages.markdown, 'markdown');
+    const afterHtml = highlight(after, languages.markdown, 'markdown');
+    return `${beforeHtml}<span class="markdown-active-block">${focusHtml}</span>${afterHtml}`;
+  };
+  const highlightEditorCode = (code: string) => {
+    if (isMarkdown) {
+      return highlightMarkdownWithActiveBlock(code);
+    }
+    return highlight(code, languages.mermaid, 'mermaid');
+  };
+  const isSnapshotInvalid = isMarkdownMermaidTab
+    ? activeMarkdownDiagnostics?.isValid === false
+    : !mermaidState.isValid;
+  const canSnapshot = !!mermaidState.code.trim() && !isProcessing && !isSnapshotInvalid;
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-l border-r border-slate-200 dark:border-slate-800">
       {/* Toolbar / Actions */}
       <div className="p-2 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-950">
         <div className="flex flex-col flex-1 min-w-0">
-          <div className="flex items-center gap-2 text-xs font-mono w-full">
-            <div className="flex items-center gap-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-xs font-mono w-full">
+            <div className="flex items-center gap-2 min-w-0">
               <span className="text-slate-500 dark:text-slate-400">Status:</span>
               {isMarkdown && <span className="text-blue-600 dark:text-blue-400 font-bold">📄 Markdown</span>}
-              {!isMarkdown && mermaidState.status === 'valid' && <span className="text-green-600 dark:text-green-400 font-bold">✅ Valid</span>}
-              {!isMarkdown && mermaidState.status === 'invalid' && <span className="text-red-600 dark:text-red-400 font-bold">❌ Invalid (Line {mermaidState.errorLine})</span>}
+              {isMarkdown && markdownMermaidBlocks.length > 0 && (
+                <span className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                  <span>Blocks:</span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-green-500 ring-1 ring-green-700" />
+                    <span>{markdownValidCount}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-1 ring-red-700" />
+                    <span>{markdownInvalidCount}</span>
+                  </span>
+                </span>
+              )}
+              {!isMarkdown && mermaidState.status === 'valid' && (
+                <span
+                  className="inline-flex h-3 w-3 rounded-full bg-green-500 ring-1 ring-green-700"
+                  title="Valid diagram"
+                />
+              )}
+              {!isMarkdown && mermaidState.status === 'invalid' && (
+                <span
+                  className="inline-flex h-3 w-3 rounded-full bg-red-500 ring-1 ring-red-700"
+                  title={`Invalid diagram${mermaidState.errorLine ? ` (Line ${mermaidState.errorLine})` : ''}`}
+                />
+              )}
               {mermaidState.status === 'empty' && <span className="text-slate-400">Empty</span>}
               {!isMarkdown && mermaidState.status === 'edited' && <span className="text-amber-600 dark:text-amber-400">⚠ Edited</span>}
             </div>
-            <div className="flex items-center gap-1.5 font-sans ml-auto">
+            <div className="flex items-center gap-1.5 font-sans justify-self-end">
               <button 
                 onClick={onAnalyze}
                 disabled={!isAIReady || !mermaidState.code.trim() || isProcessing}
@@ -163,11 +283,24 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
 
               <button 
                 onClick={onFixSyntax}
-                disabled={!isAIReady || mermaidState.isValid || isProcessing || isMarkdown}
-                className="px-2 py-1 text-[10px] font-medium text-white bg-amber-600 hover:bg-amber-700 rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                disabled={!isAIReady || isProcessing || !canFix}
+                className={`px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 ${
+                  canFix ? 'text-white bg-amber-600 hover:bg-amber-700' : 'text-slate-400 bg-slate-200 dark:bg-slate-700 dark:text-slate-500'
+                }`}
                 title={`Attempt to fix syntax errors (up to ${AUTO_FIX_MAX_ATTEMPTS} tries)`}
               >
                  <RefreshCw size={10} className={isProcessing ? "animate-spin" : ""} /> Fix ({AUTO_FIX_MAX_ATTEMPTS})
+              </button>
+
+              <button 
+                onClick={onSnapshot}
+                disabled={!canSnapshot}
+                className={`px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 ${
+                  canSnapshot ? 'text-white bg-slate-700 hover:bg-slate-800' : 'text-slate-400 bg-slate-200 dark:bg-slate-700 dark:text-slate-500'
+                }`}
+                title={isSnapshotInvalid ? 'Snapshot is disabled for invalid diagrams' : 'Save current diagram state to history'}
+              >
+                <Bookmark size={10} /> Snapshot
               </button>
 
               <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1"></div>
@@ -175,7 +308,15 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               <button 
                 onClick={handleCopy}
                 className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded text-slate-500 dark:text-slate-400 transition-colors" 
-                title={isBuildDocsTab ? 'Copy docs' : isPromptTab ? 'Copy prompt' : 'Copy code'}
+                title={
+                  isMarkdownMermaidTab
+                    ? 'Copy mermaid block'
+                    : isBuildDocsTab
+                      ? 'Copy docs'
+                      : isPromptTab
+                        ? 'Copy prompt'
+                        : 'Copy code'
+                }
               >
                 {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
               </button>
@@ -189,7 +330,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               type="button"
               onClick={() => onActiveTabChange('code')}
               className={`px-2 py-0.5 text-[10px] rounded border ${
-                activeTab === 'code'
+                activeTab === 'code' || activeTab === 'markdown_mermaid'
                   ? 'bg-blue-600 text-white border-blue-600'
                   : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
@@ -206,7 +347,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               }`}
               title={`Prompt preview (Chat) • ${formatTokens(chatTokens)}`}
             >
-              Prompt · Chat <span className="ml-1 text-[9px] opacity-80">{formatTokens(chatTokens)}</span>
+              Chat <span className="ml-1 text-[9px] opacity-80">{formatTokens(chatTokens)}</span>
             </button>
             <button
               type="button"
@@ -218,7 +359,31 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               }`}
               title={`Prompt preview (Build) • ${formatTokens(buildTokens)}`}
             >
-              Prompt · Build <span className="ml-1 text-[9px] opacity-80">{formatTokens(buildTokens)}</span>
+              Build <span className="ml-1 text-[9px] opacity-80">{formatTokens(buildTokens)}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onActiveTabChange('prompt_analyze')}
+              className={`px-2 py-0.5 text-[10px] rounded border ${
+                activeTab === 'prompt_analyze'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+              title={`Prompt preview (Analyze) • ${formatTokens(analyzeTokens)}`}
+            >
+              Analyze <span className="ml-1 text-[9px] opacity-80">{formatTokens(analyzeTokens)}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onActiveTabChange('prompt_fix')}
+              className={`px-2 py-0.5 text-[10px] rounded border ${
+                activeTab === 'prompt_fix'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+              title={`Prompt preview (Fix) • ${formatTokens(fixTokens)}`}
+            >
+              Fix <span className="ml-1 text-[9px] opacity-80">{formatTokens(fixTokens)}</span>
             </button>
             <button
               type="button"
@@ -261,20 +426,99 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               </div>
             )}
           </div>
+          {isMarkdown && markdownMermaidBlocks.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 mt-1.5">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 mr-1">Mermaid blocks:</span>
+              {markdownMermaidBlocks.map((block, index) => {
+                const isActive = isMarkdownMermaidTab && index === markdownMermaidActiveIndex;
+                const diagnostics = markdownMermaidDiagnostics[index];
+                const isInvalid = diagnostics?.isValid === false;
+                const diagramLabel = formatDiagramTypeLabel(block.diagramType);
+                const tabLabel = `${diagramLabel} ${index + 1}`;
+                return (
+                  <button
+                    key={`md-mermaid-${block.index}`}
+                    type="button"
+                    onClick={() => {
+                      onMarkdownMermaidActiveIndexChange(index);
+                      onActiveTabChange('markdown_mermaid');
+                    }}
+                    className={`px-2 py-0.5 text-[10px] rounded border ${
+                      isInvalid
+                        ? isActive
+                          ? 'bg-rose-600 text-white border-rose-600'
+                          : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-700'
+                        : isActive
+                          ? 'bg-teal-600 text-white border-teal-600'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                    title={`${diagramLabel} block ${index + 1}${isInvalid ? ' (invalid)' : ''}`}
+                  >
+                    {tabLabel}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         
       </div>
 
       {/* Editor Area */}
       <div className="flex-1 relative flex overflow-hidden group">
-        {isPromptChatTab ? (
+        {isMarkdownMermaidTab ? (
+          <>
+            <div 
+              ref={lineNumbersRef}
+              className="w-10 bg-slate-50 dark:bg-[#21252b] border-r border-slate-200 dark:border-[#181a1f] text-right pr-2 pt-4 text-xs font-mono text-slate-400 dark:text-slate-500 select-none overflow-hidden"
+            >
+              {editorLineNumbers.map((n) => (
+                <div
+                  key={n}
+                  className={`h-5 leading-5 ${
+                    isMarkdownMermaidInvalid && n === activeMarkdownDiagnostics?.errorLine
+                      ? 'text-red-600 dark:text-red-400 font-bold bg-red-100 dark:bg-red-900/20'
+                      : ''
+                  }`}
+                >
+                  {n}
+                </div>
+              ))}
+            </div>
+
+            <div 
+              ref={scrollContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-auto bg-slate-50 dark:bg-[#282c34]"
+            >
+              <Editor
+                value={editorValue}
+                onValueChange={(value) => {
+                  if (!activeMarkdownBlock) return;
+                  const nextMarkdown = replaceMermaidBlockInMarkdown(mermaidState.code, activeMarkdownBlock, value);
+                  onChange(nextMarkdown);
+                }}
+                highlight={(code) => highlight(code, languages.mermaid, 'mermaid')}
+                padding={16}
+                textareaClassName="focus:outline-none"
+                style={{
+                  fontFamily: '"Fira code", "Fira Mono", monospace',
+                  fontSize: 12,
+                  backgroundColor: 'transparent',
+                  minHeight: '100%',
+                  lineHeight: '20px', 
+                }}
+              />
+            </div>
+          </>
+        ) : isPromptChatTab || isPromptAnalyzeTab || isPromptFixTab ? (
           <div className="flex-1 overflow-auto bg-slate-50 dark:bg-[#282c34]">
             <div className="px-4 py-3">
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
                 {activePrompt?.title || 'Prompt preview'}
               </div>
               <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
-                {activePrompt?.content || 'No prompt preview available.'}
+                {activePromptContent || 'No prompt preview available.'}
               </pre>
             </div>
           </div>
@@ -314,7 +558,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                 {activePrompt?.title || 'Prompt preview'}
               </div>
               <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
-                {activePrompt?.content || 'No prompt preview available.'}
+                {activePromptContent || 'No prompt preview available.'}
               </pre>
             </div>
           </div>
@@ -373,8 +617,17 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               ref={lineNumbersRef}
               className="w-10 bg-slate-50 dark:bg-[#21252b] border-r border-slate-200 dark:border-[#181a1f] text-right pr-2 pt-4 text-xs font-mono text-slate-400 dark:text-slate-500 select-none overflow-hidden"
             >
-              {lineNumbers.map(n => (
-                <div key={n} className={`h-5 leading-5 ${n === mermaidState.errorLine ? 'text-red-500 dark:text-red-400 font-bold bg-red-100 dark:bg-red-900/20' : ''}`}>{n}</div>
+              {editorLineNumbers.map((n) => (
+                <div
+                  key={n}
+                  className={`h-5 leading-5 ${
+                    !isMarkdownMermaidTab && n === mermaidState.errorLine
+                      ? 'text-red-500 dark:text-red-400 font-bold bg-red-100 dark:bg-red-900/20'
+                      : ''
+                  }`}
+                >
+                  {n}
+                </div>
               ))}
             </div>
 
@@ -385,9 +638,9 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               className="flex-1 overflow-auto bg-slate-50 dark:bg-[#282c34]"
             >
                 <Editor
-                  value={mermaidState.code}
+                  value={editorValue}
                   onValueChange={onChange}
-                  highlight={(code) => highlight(code, isMarkdown ? languages.markdown : languages.mermaid, isMarkdown ? 'markdown' : 'mermaid')}
+                  highlight={highlightEditorCode}
                   padding={16}
                   textareaClassName="focus:outline-none"
                   style={{

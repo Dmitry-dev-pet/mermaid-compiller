@@ -19,5 +19,10 @@ describe('mermaidDirectives', () => {
     const output = insertDirectiveAfterLeadingDirectives(input, '%%{init: {"htmlLabels":false}}%%');
     expect(output).toBe(`%%{init: {\n  "theme":"dark"\n}}%%\n%%{init: {"htmlLabels":false}}%%\nsequenceDiagram\nA->>B: hi`);
   });
-});
 
+  it('inserts after YAML frontmatter', () => {
+    const input = `---\ntitle: Node\n---\nflowchart TD\nA-->B`;
+    const output = insertDirectiveAfterLeadingDirectives(input, '%%{init: {"theme":"forest"}}%%');
+    expect(output).toBe(`---\ntitle: Node\n---\n%%{init: {"theme":"forest"}}%%\nflowchart TD\nA-->B`);
+  });
+});

@@ -13,6 +13,8 @@
 `TimeStepType`:
 - `seed`, `manual_edit`, `chat`, `build`, `fix`, `analyze`, `recompile`, `system`.
 
+`manual_edit` используется только для **Snapshot** (ручной фиксации). Обычные ручные правки обновляют текущую ревизию без создания нового шага.
+
 ## Правило «одна диаграмма на шаг»
 
 - Каждый шаг содержит `currentRevisionId`.

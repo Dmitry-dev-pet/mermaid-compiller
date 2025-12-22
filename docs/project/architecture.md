@@ -11,7 +11,7 @@
 1. **UI-компоненты** (`diagram-compiler/components`)
    - `Header` — управление провайдером LLM, подключением и темой.
    - `ChatColumn` — история сообщений, выбор типа диаграммы, Chat/Build.
-   - `EditorColumn` — редактор Mermaid-кода, Analyze/Fix, язык анализа, вкладки Prompt/Build Docs.
+   - `EditorColumn` — редактор Mermaid-кода, Analyze/Fix/Snapshot, язык анализа, вкладки Prompt/Build Docs и вкладки Mermaid-блоков Markdown.
    - `PreviewColumn` — SVG-рендер, zoom/pan, fullscreen.
 
 2. **Хуки** (`diagram-compiler/hooks`)
@@ -55,6 +55,11 @@
 
 1. Отправляет текущий код в LLM.
 2. Добавляет объяснение в чат (код не меняется).
+
+### Snapshot (Manual edit)
+
+1. Пользователь фиксирует текущий код кнопкой Snapshot.
+2. Создается шаг `manual_edit` и новая ревизия.
 
 ## Источник правды состояния
 

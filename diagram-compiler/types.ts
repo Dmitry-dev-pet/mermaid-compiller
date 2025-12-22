@@ -80,8 +80,15 @@ export interface DiagramIntent {
   updatedAt: number;
 }
 
-export type PromptPreviewMode = 'chat' | 'build';
-export type EditorTab = 'code' | 'prompt_chat' | 'prompt_build' | 'build_docs';
+export type PromptPreviewMode = 'chat' | 'build' | 'analyze' | 'fix';
+export type EditorTab =
+  | 'code'
+  | 'prompt_chat'
+  | 'prompt_build'
+  | 'prompt_analyze'
+  | 'prompt_fix'
+  | 'markdown_mermaid'
+  | 'build_docs';
 export type PromptPreviewView = 'redacted' | 'raw';
 
 export interface LLMRequestPreview {

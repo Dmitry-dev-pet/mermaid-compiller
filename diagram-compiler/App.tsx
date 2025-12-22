@@ -7,6 +7,7 @@ import { useDiagramStudio } from './hooks/useDiagramStudio';
 import { MermaidThemeName, setInlineThemeCommand } from './utils/inlineThemeCommand';
 import { MermaidDirection, setInlineDirectionCommand } from './utils/inlineDirectionCommand';
 import { MermaidLook, setInlineLookCommand } from './utils/inlineLookCommand';
+import { replaceMermaidBlockInMarkdown } from './services/mermaidService';
 
 function App() {
   const {
@@ -24,6 +25,7 @@ function App() {
     handleBuildFromPrompt,
     handleFixSyntax,
     handleAnalyze,
+    handleManualSnapshot,
     diagramMarkers,
     diagramStepAnchors,
     selectedStepId,
@@ -37,6 +39,11 @@ function App() {
     buildDocsSelectionKey,
     buildDocsActivePath,
     setBuildDocsActivePath,
+    markdownMermaidBlocks,
+    markdownMermaidDiagnostics,
+    markdownMermaidActiveIndex,
+    setMarkdownMermaidActiveIndex,
+    detectedDiagramType,
     goToDiagramStep,
     startResize,
     setDiagramType,
@@ -50,6 +57,19 @@ function App() {
     setPromptPreviewView,
     setEditorTab,
   } = useDiagramStudio();
+  const promptPreviewKey = `${mermaidState.code}::${mermaidState.errorMessage ?? ''}::${appState.analyzeLanguage}::${markdownMermaidActiveIndex}`;
+  const applyInlineUpdate = (updateCode: (code: string) => string) => {
+    if (editorTab === 'markdown_mermaid' && markdownMermaidBlocks.length) {
+      const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex];
+      if (activeBlock) {
+        const nextBlockCode = updateCode(activeBlock.code);
+        const nextMarkdown = replaceMermaidBlockInMarkdown(mermaidState.code, activeBlock, nextBlockCode);
+        handleMermaidChange(nextMarkdown);
+        return;
+      }
+    }
+    handleMermaidChange(updateCode(mermaidState.code));
+  };
 
   // Resizing logic is now entirely within useDiagramStudio,
   // so onMouseMove and onMouseUp are not needed directly in App.tsx
@@ -90,6 +110,8 @@ function App() {
                 selectedStepId={selectedStepId}
                 onSelectDiagramStep={goToDiagramStep}
                 buildDocsSelectionKey={buildDocsSelectionKey}
+                promptPreviewKey={promptPreviewKey}
+                detectedDiagramType={detectedDiagramType}
               />
             </div>
 
@@ -106,6 +128,7 @@ function App() {
                 onChange={handleMermaidChange}
                 onAnalyze={handleAnalyze}
                 onFixSyntax={handleFixSyntax}
+                onSnapshot={handleManualSnapshot}
                 isAIReady={connectionState.status === 'connected' && !!aiConfig.selectedModelId}
                 isProcessing={isProcessing}
                 analyzeLanguage={appState.analyzeLanguage}
@@ -119,6 +142,10 @@ function App() {
                 onToggleBuildDoc={toggleBuildDocSelection}
                 buildDocsActivePath={buildDocsActivePath}
                 onBuildDocsActivePathChange={setBuildDocsActivePath}
+                markdownMermaidBlocks={markdownMermaidBlocks}
+                markdownMermaidDiagnostics={markdownMermaidDiagnostics}
+                markdownMermaidActiveIndex={markdownMermaidActiveIndex}
+                onMarkdownMermaidActiveIndexChange={setMarkdownMermaidActiveIndex}
                 onActiveTabChange={setEditorTab}
               />
             </div>
@@ -142,19 +169,22 @@ function App() {
             isFullScreen={appState.isPreviewFullScreen}
             onToggleFullScreen={togglePreviewFullScreen}
             onSetInlineTheme={(nextTheme: MermaidThemeName | null) => {
-              handleMermaidChange(setInlineThemeCommand(mermaidState.code, nextTheme));
+              applyInlineUpdate((code) => setInlineThemeCommand(code, nextTheme));
             }}
             onSetInlineDirection={(nextDirection: MermaidDirection | null) => {
-              handleMermaidChange(setInlineDirectionCommand(mermaidState.code, nextDirection));
+              applyInlineUpdate((code) => setInlineDirectionCommand(code, nextDirection));
             }}
             onSetInlineLook={(nextLook: MermaidLook | null) => {
-              handleMermaidChange(setInlineLookCommand(mermaidState.code, nextLook));
+              applyInlineUpdate((code) => setInlineLookCommand(code, nextLook));
             }}
             activeEditorTab={editorTab}
             promptPreviewByMode={promptPreviewByMode}
             promptPreviewView={promptPreviewView}
             buildDocsEntries={buildDocsEntries}
             buildDocsActivePath={buildDocsActivePath}
+            markdownMermaidBlocks={markdownMermaidBlocks}
+            markdownMermaidDiagnostics={markdownMermaidDiagnostics}
+            markdownMermaidActiveIndex={markdownMermaidActiveIndex}
           />
         </div>
       </div>

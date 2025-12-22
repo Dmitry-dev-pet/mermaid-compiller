@@ -20,9 +20,11 @@ interface ChatColumnProps {
   ) => void;
   diagramType: DiagramType;
   onDiagramTypeChange: (type: DiagramType) => void;
+  detectedDiagramType: DiagramType | null;
   mermaidStatus: 'empty' | 'valid' | 'invalid' | 'edited';
   onPreviewPrompt: (mode: PromptPreviewMode, input: string) => Promise<LLMRequestPreview>;
   buildDocsSelectionKey: string;
+  promptPreviewKey: string;
   diagramMarkers?: DiagramMarker[];
   diagramStepAnchors?: Record<string, string>;
   selectedStepId?: string | null;
@@ -40,12 +42,14 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onSetPromptPreview,
   diagramType,
   onDiagramTypeChange,
+  detectedDiagramType,
   mermaidStatus,
   onPreviewPrompt,
   diagramMarkers = [],
   diagramStepAnchors = {},
   selectedStepId = null,
   buildDocsSelectionKey,
+  promptPreviewKey,
   onSelectDiagramStep
 }) => {
   const [input, setInput] = useState('');
@@ -103,7 +107,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
             : m.type === 'recompile'
               ? 'Run'
               : m.type === 'manual_edit'
-                ? 'Edit'
+                ? 'Snapshot'
                 : m.type === 'seed'
                   ? 'Seed'
                   : m.type;
@@ -123,7 +127,14 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   };
 
   const updatePromptPreview = async (mode: PromptPreviewMode, promptInput: string, requestId: number) => {
-    const title = mode === 'chat' ? 'LLM request (Chat)' : 'LLM request (Build)';
+    const title =
+      mode === 'chat'
+        ? 'LLM request (Chat)'
+        : mode === 'build'
+          ? 'LLM request (Build)'
+          : mode === 'analyze'
+            ? 'LLM request (Analyze)'
+            : 'LLM request (Fix)';
     try {
       const preview = await onPreviewPrompt(mode, promptInput);
       if (requestId !== previewRequestRef.current) return;
@@ -153,6 +164,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     previewTimerRef.current = window.setTimeout(() => {
       void updatePromptPreview('chat', input, requestId);
       void updatePromptPreview('build', input, requestId);
+      void updatePromptPreview('analyze', input, requestId);
+      void updatePromptPreview('fix', input, requestId);
     }, 250);
 
     return () => {
@@ -160,7 +173,16 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         window.clearTimeout(previewTimerRef.current);
       }
     };
-  }, [diagramType, hasIntent, input, lastMessageTimestamp, messages.length, onPreviewPrompt, buildDocsSelectionKey]);
+  }, [
+    buildDocsSelectionKey,
+    diagramType,
+    hasIntent,
+    input,
+    lastMessageTimestamp,
+    messages.length,
+    onPreviewPrompt,
+    promptPreviewKey,
+  ]);
 
   const handleSubmit = (mode: 'chat' | 'build', e?: React.FormEvent) => {
     e?.preventDefault();
@@ -251,15 +273,16 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       options.redactDocs && preview.docsContext && docsSummaryBlock
         ? preview.systemPrompt.replace(preview.docsContext, docsSummaryBlock)
         : preview.systemPrompt;
+    const hasDocs = docsEntries.length > 0;
+    const metaLines =
+      preview.mode === 'build'
+        ? [`Mode: ${preview.mode}`, `Diagram type: ${preview.diagramType}`, `Language: ${preview.language}`]
+        : [];
     const lines = [
       preview.error ? `Error: ${preview.error}` : '',
-      docsEntries.length
-        ? `Docs files: ${docsEntries.map((entry) => `${entry.fileName} (~${entry.tokens} tok)`).join(', ')}`
-        : 'Docs files: (none)',
-      docsEntries.length ? `Docs tokens total: ~${docsTotalTokens} tok` : '',
-      `Mode: ${preview.mode}`,
-      `Diagram type: ${preview.diagramType}`,
-      `Language: ${preview.language}`,
+      hasDocs ? `Docs files: ${docsEntries.map((entry) => `${entry.fileName} (~${entry.tokens} tok)`).join(', ')}` : '',
+      hasDocs ? `Docs tokens total: ~${docsTotalTokens} tok` : '',
+      ...metaLines,
       '',
       '--- System Prompt ---',
       systemPromptValue.trim() || '(empty)',
@@ -269,6 +292,36 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     ].filter((line) => line !== '');
     return lines.join('\n');
   };
+
+  const diagramTypeLabels: Record<DiagramType, string> = {
+    architecture: 'Architecture',
+    block: 'Block',
+    c4: 'C4 (experimental)',
+    class: 'Class Diagram',
+    er: 'Entity Relationship',
+    sequence: 'Sequence Diagram',
+    flowchart: 'Flowchart',
+    gantt: 'Gantt',
+    gitGraph: 'Git Graph',
+    kanban: 'Kanban',
+    mindmap: 'Mindmap',
+    packet: 'Packet',
+    pie: 'Pie',
+    quadrantChart: 'Quadrant Chart',
+    radar: 'Radar',
+    requirementDiagram: 'Requirement Diagram',
+    sankey: 'Sankey',
+    state: 'State Diagram',
+    timeline: 'Timeline',
+    treemap: 'Treemap',
+    userJourney: 'User Journey',
+    xychart: 'XY Chart',
+    zenuml: 'ZenUML',
+  };
+
+  const detectedLabel = detectedDiagramType ? diagramTypeLabels[detectedDiagramType] ?? detectedDiagramType : null;
+  const selectedLabel = diagramTypeLabels[diagramType] ?? diagramType;
+  const isDetectedMatch = !!detectedDiagramType && detectedDiagramType === diagramType;
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50">
@@ -304,6 +357,16 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           <option value="xychart">XY Chart</option>
           <option value="zenuml">ZenUML</option>
         </select>
+        {detectedLabel && (
+          <div
+            className={`mt-1 text-[11px] ${
+              isDetectedMatch ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+            }`}
+          >
+            По коду: {detectedLabel}
+            {!isDetectedMatch ? ` (выбрано: ${selectedLabel})` : ''}
+          </div>
+        )}
       </div>
 
       {/* Messages */}

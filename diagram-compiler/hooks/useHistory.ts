@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, MermaidState } from '../types';
-import { createSession, ensureActiveSession, getRevision, loadActiveSessionState, recordStep } from '../services/history/store';
+import { createSession, ensureActiveSession, getRevision, loadActiveSessionState, recordStep, updateRevision } from '../services/history/store';
 import type { DiagramRevision, HistorySession, StepMeta, TimeStep, TimeStepType } from '../services/history/types';
 
 export type HistoryLoadResult = {
@@ -94,6 +94,15 @@ export const useHistory = () => {
     []
   );
 
+  const updateCurrentRevision = useCallback(
+    async (nextMermaid: Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'>) => {
+      const revisionId = historySession?.currentRevisionId;
+      if (!revisionId) return null;
+      return updateRevision(revisionId, nextMermaid);
+    },
+    [historySession?.currentRevisionId]
+  );
+
   const diagramMarkers = useMemo<DiagramMarker[]>(() => {
     const out: DiagramMarker[] = [];
     let prevRevisionId: string | null = null;
@@ -165,6 +174,7 @@ export const useHistory = () => {
     selectedStepId,
     loadHistory,
     appendTimeStep,
+    updateCurrentRevision,
     selectDiagramStep,
     startNewSession,
   };

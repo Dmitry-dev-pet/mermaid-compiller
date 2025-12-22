@@ -14,6 +14,7 @@ export type StudioActionsDeps = {
   setMermaidState: Dispatch<SetStateAction<MermaidState>>;
   addMessage: (role: 'user' | 'assistant', content: string) => Message;
   getMessages: () => Message[];
+  getDiagramContextCode?: () => string;
   setIsProcessing: (value: boolean) => void;
   getBuildDocsContext: () => Promise<string>;
   recordTimeStep: (args: {
@@ -67,7 +68,7 @@ export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {
   };
 
   const getDiagramContextMessage = (): Message | null => {
-    const code = deps.mermaidState.code.trim();
+    const code = deps.getDiagramContextCode ? deps.getDiagramContextCode().trim() : deps.mermaidState.code.trim();
     if (!code) return null;
 
     return {
