@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
-import { Message } from '../types';
-import { INITIAL_CHAT_MESSAGE } from '../constants';
-import { generateId } from '../utils';
+import { Message } from '../../types';
+import { INITIAL_CHAT_MESSAGE } from '../../constants';
+import { generateId } from '../../utils';
 
 const INITIAL_MESSAGES: Message[] = [
   { id: 'init', role: 'assistant', content: INITIAL_CHAT_MESSAGE, timestamp: 0 },

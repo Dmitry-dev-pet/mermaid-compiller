@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Message, MermaidState } from '../types';
-import { createSession, ensureActiveSession, getRevision, loadActiveSessionState, recordStep, updateRevision } from '../services/history/store';
-import type { DiagramRevision, HistorySession, StepMeta, TimeStep, TimeStepType } from '../services/history/types';
+import type { Message, MermaidState } from '../../types';
+import { createSession, ensureActiveSession, getRevision, loadActiveSessionState, recordStep, updateRevision } from '../../services/history/store';
+import type { DiagramRevision, HistorySession, StepMeta, TimeStep, TimeStepType } from '../../services/history/types';
 
 export type HistoryLoadResult = {
   session: HistorySession;

@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useLayoutEffect } from 'react';
-import { AppState, DiagramType } from '../types';
-import { DEFAULT_APP_STATE } from '../constants';
-import { initializeMermaid } from '../services/mermaidService';
-import { safeParse } from '../utils';
+import { AppState, DiagramType } from '../../types';
+import { DEFAULT_APP_STATE } from '../../constants';
+import { initializeMermaid } from '../../services/mermaidService';
+import { safeParse } from '../../utils';
 
 export const useLayout = () => {
   const [appState, setAppState] = useState<AppState>(() => safeParse('dc_app_state', DEFAULT_APP_STATE));

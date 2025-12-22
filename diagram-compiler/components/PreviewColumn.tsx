@@ -4,7 +4,7 @@ import { Download, Maximize2, Minimize2, Scan, ZoomIn, ZoomOut } from 'lucide-re
 import svgPanZoom from 'svg-pan-zoom';
 import MarkdownIt from 'markdown-it';
 import { EditorTab, MermaidState, PromptPreviewMode, PromptPreviewTab, PromptPreviewView } from '../types';
-import { useDiagramExport } from '../hooks/useDiagramExport';
+import { useDiagramExport } from '../hooks/studio/useDiagramExport';
 import { extractInlineThemeCommand, MermaidThemeName } from '../utils/inlineThemeCommand';
 import { applyInlineDirectionCommand, extractInlineDirectionCommand, MermaidDirection } from '../utils/inlineDirectionCommand';
 import { applyInlineThemeAndLookCommands, extractInlineLookCommand, MermaidLook } from '../utils/inlineLookCommand';

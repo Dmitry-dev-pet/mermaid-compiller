@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
 import { DiagramType, LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
-import type { DiagramMarker } from '../hooks/useHistory';
+import type { DiagramMarker } from '../hooks/core/useHistory';
 
 interface ChatColumnProps {
   messages: Message[];

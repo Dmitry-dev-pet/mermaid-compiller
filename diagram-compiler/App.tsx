@@ -3,7 +3,7 @@ import Header from './components/Header';
 import ChatColumn from './components/ChatColumn';
 import EditorColumn from './components/EditorColumn';
 import PreviewColumn from './components/PreviewColumn';
-import { useDiagramStudio } from './hooks/useDiagramStudio';
+import { useDiagramStudio } from './hooks/studio/useDiagramStudio';
 import { MermaidThemeName, setInlineThemeCommand } from './utils/inlineThemeCommand';
 import { MermaidDirection, setInlineDirectionCommand } from './utils/inlineDirectionCommand';
 import { MermaidLook, setInlineLookCommand } from './utils/inlineLookCommand';

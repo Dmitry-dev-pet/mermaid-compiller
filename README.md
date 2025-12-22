@@ -25,7 +25,7 @@
 *   **Styling:** Tailwind CSS (с поддержкой `darkMode`), Lucide Icons.
 *   **Editor:** `react-simple-code-editor` + `prismjs`.
 *   **Diagramming:** `mermaid` (npm package).
-*   **Architecture:** Feature-based structure, Custom Hooks (`useDiagramStudio`), Service Layer, Strategy Pattern для LLM.
+*   **Architecture:** Feature-based structure, Custom Hooks (`hooks/core`, `hooks/studio`), Service Layer, Strategy Pattern для LLM.
 
 ## 🚀 Установка и Запуск
 
@@ -57,7 +57,9 @@
 
 *   `diagram-compiler/src/`
     *   `components/`: UI компоненты (`Header`, `EditorColumn`, `ChatColumn`...).
-    *   `hooks/`: Кастомные хуки (`useDiagramStudio` — основная логика).
+    *   `hooks/`: Кастомные хуки.
+        *   `hooks/core/`: Базовые хуки состояния (`useAI`, `useMermaid`, `useLayout`, `useChat`, `useHistory`).
+        *   `hooks/studio/`: Оркестрация и studio-логика (`useDiagramStudio`, `useBuildDocs`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`).
     *   `services/`: Бизнес-логика.
         *   `llm/`: Стратегии подключения к LLM (`OpenRouterStrategy`, `CliproxyStrategy`).
         *   `mermaidService.ts`: Валидация и рендер.

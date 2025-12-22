@@ -1,11 +1,11 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import mermaid from 'mermaid';
-import { exportDiagramAsPng, exportDiagramAsSvg } from '../services/exportService';
-import { insertDirectiveAfterLeadingDirectives } from '../utils/mermaidDirectives';
-import { extractInlineThemeCommand } from '../utils/inlineThemeCommand';
-import { applyInlineDirectionCommand } from '../utils/inlineDirectionCommand';
-import { extractInlineLookCommand } from '../utils/inlineLookCommand';
+import { exportDiagramAsPng, exportDiagramAsSvg } from '../../services/exportService';
+import { insertDirectiveAfterLeadingDirectives } from '../../utils/mermaidDirectives';
+import { extractInlineThemeCommand } from '../../utils/inlineThemeCommand';
+import { applyInlineDirectionCommand } from '../../utils/inlineDirectionCommand';
+import { extractInlineLookCommand } from '../../utils/inlineLookCommand';
 
 const OFFSCREEN_EXPORT_ID = 'dc-export-svg-mount';
 

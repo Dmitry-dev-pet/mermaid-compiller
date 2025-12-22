@@ -1,8 +1,8 @@
-import type { StudioActionsDeps } from './studio/actionsContext';
-import { createStudioContext } from './studio/actionsContext';
-import { createBuildHandler } from './studio/build';
-import { createChatHandler } from './studio/chat';
-import { createAnalyzeHandler, createFixSyntaxHandler, createRecompileHandler } from './studio/compile';
+import type { StudioActionsDeps } from './actionsContext';
+import { createStudioContext } from './actionsContext';
+import { createBuildHandler } from './build';
+import { createChatHandler } from './chat';
+import { createAnalyzeHandler, createFixSyntaxHandler, createRecompileHandler } from './compile';
 
 export const createStudioActions = (deps: StudioActionsDeps) => {
   const ctx = createStudioContext(deps);
@@ -15,4 +15,3 @@ export const createStudioActions = (deps: StudioActionsDeps) => {
     handleAnalyze: createAnalyzeHandler(ctx),
   };
 };
-

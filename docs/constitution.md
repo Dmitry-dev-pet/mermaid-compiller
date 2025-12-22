@@ -16,7 +16,9 @@
 - **Стек:** React 19, TypeScript, Tailwind CSS.
 - **Структура (`diagram-compiler/`):**
     - `components/`: UI компоненты (презентационные).
-    - `hooks/`: Бизнес-логика и управление состоянием (`useDiagramStudio`).
+    - `hooks/`: Бизнес-логика и управление состоянием.
+      - `hooks/core/`: базовые хуки состояния (`useAI`, `useMermaid`, `useLayout`, `useChat`, `useHistory`).
+      - `hooks/studio/`: оркестрация и студийные хуки (`useDiagramStudio` и специализированные подхуки).
     - `services/`: Взаимодействие с API, валидация, работа с документацией.
 - **Документация:**
   - Загружается локально (параллельный фетчинг) из папки `public/mermaid-docs`.

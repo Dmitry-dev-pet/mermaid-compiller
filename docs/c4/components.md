@@ -9,10 +9,10 @@
 
 ## Основные хуки/слои
 
-- `useDiagramStudio` — «оркестратор» состояния приложения.
-- `useAI` — конфигурация провайдера, подключение, список моделей.
-- `useMermaid` — код, статус валидности, асинхронная валидация.
-- `useHistory` + `services/history/*` — IndexedDB: Session/TimeStep/DiagramRevision.
+- `hooks/studio/useDiagramStudio` — «оркестратор» состояния приложения.
+- `hooks/core/useAI` — конфигурация провайдера, подключение, список моделей.
+- `hooks/core/useMermaid` — код, статус валидности, асинхронная валидация.
+- `hooks/core/useHistory` + `services/history/*` — IndexedDB: Session/TimeStep/DiagramRevision.
 - `services/llm/*` — стратегии провайдеров (OpenRouter/Cliproxy).
 - `services/docsContextService.ts` — сбор сниппетов документации для промптов.
 
@@ -20,10 +20,10 @@
 
 ```mermaid
 flowchart TD
-  UI[UI Components\n(Header/Chat/Editor/Preview)] --> Studio[useDiagramStudio]
-  Studio --> AI[useAI]
-  Studio --> Mermaid[useMermaid]
-  Studio --> History[useHistory]
+  UI[UI Components\n(Header/Chat/Editor/Preview)] --> Studio[hooks/studio/useDiagramStudio]
+  Studio --> AI[hooks/core/useAI]
+  Studio --> Mermaid[hooks/core/useMermaid]
+  Studio --> History[hooks/core/useHistory]
   Studio --> Docs[docsContextService]
   Studio --> LLM[llmService]
 

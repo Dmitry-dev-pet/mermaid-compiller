@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
-import { MermaidState } from '../types';
-import { DEFAULT_MERMAID_STATE } from '../constants';
-import { validateMermaid } from '../services/mermaidService';
+import { MermaidState } from '../../types';
+import { DEFAULT_MERMAID_STATE } from '../../constants';
+import { validateMermaid } from '../../services/mermaidService';
 
 export const useMermaid = () => {
   const [mermaidState, setMermaidState] = useState<MermaidState>(DEFAULT_MERMAID_STATE);

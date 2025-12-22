@@ -15,12 +15,15 @@
    - `PreviewColumn` — SVG-рендер, zoom/pan, fullscreen.
 
 2. **Хуки** (`diagram-compiler/hooks`)
-   - `useDiagramStudio` — единая точка оркестрации состояния и действий.
-   - `useAI` — настройки LLM и подключение.
-   - `useMermaid` — состояние кода и асинхронная валидация.
-   - `useChat` — сообщения и генератор ID.
-   - `useHistory` — загрузка и запись истории.
-   - `useLayout` — размеры колонок, тема, язык, fullscreen.
+   - `hooks/core/*` — базовые хуки состояния и UI.
+     - `useAI` — настройки LLM и подключение.
+     - `useMermaid` — состояние кода и асинхронная валидация.
+     - `useChat` — сообщения и генератор ID.
+     - `useHistory` — загрузка и запись истории.
+     - `useLayout` — размеры колонок, тема, язык, fullscreen.
+   - `hooks/studio/*` — оркестрация и studio-логика.
+     - `useDiagramStudio` — единая точка оркестрации состояния и действий.
+     - `useBuildDocs`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`, `useDiagramExport`.
 
 3. **Сервисы** (`diagram-compiler/services`)
    - `llmService` — фасад над стратегиями (`OpenRouterStrategy`, `CliproxyStrategy`).
@@ -63,7 +66,7 @@
 
 ## Источник правды состояния
 
-- **Mermaid-код**: `useMermaid`.
-- **UI и layout**: `useLayout`.
-- **LLM и соединение**: `useAI`.
-- **История**: `useHistory`.
+- **Mermaid-код**: `hooks/core/useMermaid`.
+- **UI и layout**: `hooks/core/useLayout`.
+- **LLM и соединение**: `hooks/core/useAI`.
+- **История**: `hooks/core/useHistory`.

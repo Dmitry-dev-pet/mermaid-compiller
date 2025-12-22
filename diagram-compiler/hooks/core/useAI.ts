@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { AIConfig, ConnectionState, ProviderFilters } from '../types';
-import { DEFAULT_AI_CONFIG } from '../constants';
-import { fetchModels } from '../services/llmService';
-import { safeParse } from '../utils';
+import { AIConfig, ConnectionState, ProviderFilters } from '../../types';
+import { DEFAULT_AI_CONFIG } from '../../constants';
+import { fetchModels } from '../../services/llmService';
+import { safeParse } from '../../utils';
 
 type LegacyFilters = {
   freeOnly?: boolean;
