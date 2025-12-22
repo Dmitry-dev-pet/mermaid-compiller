@@ -4,6 +4,7 @@ import { stripMermaidCode } from '../../utils';
 import type { Message } from '../../types';
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
+import { runAutoFixLoop } from './autoFix';
 
 const buildIntent = (ctx: StudioContext, args: {
   prompt: string;
@@ -25,40 +26,6 @@ const buildIntent = (ctx: StudioContext, args: {
   }
 
   return null;
-};
-
-const autoFixMermaidIfNeeded = async (ctx: StudioContext, args: {
-  initialCode: string;
-  initialValidation: Awaited<ReturnType<typeof validateMermaid>>;
-  docs: string;
-  language: string;
-}) => {
-  let currentCode = args.initialCode;
-  let validation = args.initialValidation;
-  let attempts = 0;
-
-  ctx.applyCompiledResult(currentCode, validation);
-
-  while (!validation.isValid && attempts < AUTO_FIX_MAX_ATTEMPTS) {
-    attempts += 1;
-    const fixedRaw = await fixDiagram(
-      currentCode,
-      validation.errorMessage || 'Unknown error',
-      ctx.aiConfig,
-      args.docs,
-      args.language
-    );
-    const fixedCode = extractMermaidCode(fixedRaw);
-    if (!fixedCode.trim()) break;
-
-    currentCode = fixedCode;
-    validation = await validateMermaid(currentCode);
-    ctx.applyCompiledResult(currentCode, validation);
-
-    if (validation.isValid) break;
-  }
-
-  return { code: currentCode, validation, attempts };
 };
 
 const tryAnalyzeAfterBuild = async (ctx: StudioContext, args: { code: string; docs: string; language: string }) => {
@@ -131,11 +98,22 @@ export const createBuildHandler = (ctx: StudioContext) => {
       }
 
       const initialValidation = await validateMermaid(cleanCode);
-      const { code: currentCode, validation, attempts: autoFixAttempts } = await autoFixMermaidIfNeeded(ctx, {
+      const { code: currentCode, validation, attempts: autoFixAttempts } = await runAutoFixLoop({
         initialCode: cleanCode,
         initialValidation,
-        docs,
-        language,
+        maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
+        validate: validateMermaid,
+        fix: async (code, errorMessage) => {
+          const fixedRaw = await fixDiagram(
+            code,
+            errorMessage,
+            ctx.aiConfig,
+            docs,
+            language
+          );
+          return extractMermaidCode(fixedRaw);
+        },
+        onIteration: ctx.applyCompiledResult,
       });
 
       const autoFixNote =

@@ -3,6 +3,7 @@ import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmS
 import { fetchDocsContext } from '../../services/docsContextService';
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
+import { runAutoFixLoop } from './autoFix';
 import type { Message } from '../../types';
 
 export const createRecompileHandler = (ctx: StudioContext) => {
@@ -83,28 +84,24 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
       const language = ctx.resolveLanguage();
 
       const startCode = ctx.mermaidState.code;
-      let currentCode = startCode;
-      let validation = await validateMermaid(currentCode);
-      let attempts = 0;
-
-      while (!validation.isValid && attempts < AUTO_FIX_MAX_ATTEMPTS) {
-        attempts += 1;
-        const fixedRaw = await fixDiagram(
-          currentCode,
-          validation.errorMessage || ctx.mermaidState.errorMessage || 'Unknown error',
-          ctx.aiConfig,
-          docs,
-          language
-        );
-        const fixedCode = extractMermaidCode(fixedRaw);
-        if (!fixedCode.trim()) break;
-
-        currentCode = fixedCode;
-        validation = await validateMermaid(currentCode);
-        ctx.applyValidationPreservingSource(currentCode, validation);
-
-        if (validation.isValid) break;
-      }
+      const initialValidation = await validateMermaid(startCode);
+      const { code: currentCode, validation, attempts } = await runAutoFixLoop({
+        initialCode: startCode,
+        initialValidation,
+        maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
+        validate: validateMermaid,
+        fix: async (code, errorMessage) => {
+          const fixedRaw = await fixDiagram(
+            code,
+            errorMessage || ctx.mermaidState.errorMessage || 'Unknown error',
+            ctx.aiConfig,
+            docs,
+            language
+          );
+          return extractMermaidCode(fixedRaw);
+        },
+        onIteration: ctx.applyValidationPreservingSource,
+      });
 
       const changed = currentCode !== startCode;
       const cleared = !currentCode.trim();

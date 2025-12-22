@@ -16,6 +16,7 @@ import { detectLanguage } from '../../utils';
 import type { DiagramIntent, DiagramType, EditorTab } from '../../types';
 import { detectMermaidDiagramType, extractMermaidCode, isMarkdownLike, replaceMermaidBlockInMarkdown, validateMermaidDiagramCode } from '../../services/mermaidService';
 import { fixDiagram } from '../../services/llmService';
+import { runAutoFixLoop } from './autoFix';
 
 export const useDiagramStudio = () => {
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
@@ -242,26 +243,23 @@ export const useDiagramStudio = () => {
       const language = resolveFixLanguage();
 
       const startCode = activeBlock.code;
-      let currentCode = startCode;
-      let validation = await validateMermaidDiagramCode(currentCode);
-      let attempts = 0;
-
-      while (!validation.isValid && attempts < AUTO_FIX_MAX_ATTEMPTS) {
-        attempts += 1;
-        const fixedRaw = await fixDiagram(
-          currentCode,
-          validation.errorMessage || 'Unknown error',
-          aiConfig,
-          docs,
-          language
-        );
-        const fixedCode = extractMermaidCode(fixedRaw);
-        if (!fixedCode.trim()) break;
-
-        currentCode = fixedCode;
-        validation = await validateMermaidDiagramCode(currentCode);
-        if (validation.isValid) break;
-      }
+      const initialValidation = await validateMermaidDiagramCode(startCode);
+      const { code: currentCode, validation, attempts } = await runAutoFixLoop({
+        initialCode: startCode,
+        initialValidation,
+        maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
+        validate: validateMermaidDiagramCode,
+        fix: async (code, errorMessage) => {
+          const fixedRaw = await fixDiagram(
+            code,
+            errorMessage,
+            aiConfig,
+            docs,
+            language
+          );
+          return extractMermaidCode(fixedRaw);
+        },
+      });
 
       const changed = currentCode !== startCode;
       const cleared = !currentCode.trim();
