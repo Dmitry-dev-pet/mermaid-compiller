@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Bookmark, Check, Copy, PenTool, RefreshCw } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Bookmark, Check, Copy, PenTool, Plus, RefreshCw } from 'lucide-react';
 import { DiagramType, DocsMode, EditorTab, MermaidState, PromptPreviewMode, PromptPreviewTab } from '../types';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../constants';
 import Editor from 'react-simple-code-editor';
@@ -52,9 +53,40 @@ const DIAGRAM_TYPE_LABELS: Record<DiagramType, string> = {
   zenuml: 'ZenUML',
 };
 
+const DIAGRAM_TYPE_SHORT_LABELS: Record<DiagramType, string> = {
+  architecture: 'AR',
+  block: 'BL',
+  c4: 'C4',
+  class: 'CD',
+  er: 'ER',
+  flowchart: 'FC',
+  gantt: 'GN',
+  gitGraph: 'GG',
+  kanban: 'KB',
+  mindmap: 'MM',
+  packet: 'PK',
+  pie: 'PI',
+  quadrantChart: 'QC',
+  radar: 'RA',
+  requirementDiagram: 'RQ',
+  sequence: 'SD',
+  sankey: 'SK',
+  state: 'ST',
+  timeline: 'TL',
+  treemap: 'TM',
+  userJourney: 'UJ',
+  xychart: 'XY',
+  zenuml: 'ZU',
+};
+
 const formatDiagramTypeLabel = (diagramType: DiagramType | null | undefined) => {
   if (!diagramType) return 'Mermaid';
   return DIAGRAM_TYPE_LABELS[diagramType] ?? 'Mermaid';
+};
+
+const formatDiagramTypeShortLabel = (diagramType: DiagramType | null | undefined) => {
+  if (!diagramType) return 'MD';
+  return DIAGRAM_TYPE_SHORT_LABELS[diagramType] ?? 'MD';
 };
 
 interface EditorColumnProps {
@@ -86,6 +118,7 @@ interface EditorColumnProps {
   markdownMermaidActiveIndex: number;
   onMarkdownMermaidActiveIndexChange: (index: number) => void;
   onActiveTabChange: (tab: EditorTab) => void;
+  onAppendMarkdownMermaidBlock: () => void;
 }
 
 const EditorColumn: React.FC<EditorColumnProps> = ({
@@ -116,12 +149,64 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   markdownMermaidDiagnostics,
   markdownMermaidActiveIndex,
   onMarkdownMermaidActiveIndexChange,
-  onActiveTabChange
+  onActiveTabChange,
+  onAppendMarkdownMermaidBlock
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = React.useState(false);
   const [docsPanel, setDocsPanel] = React.useState<'mode' | 'all'>('mode');
+  const [tabTooltip, setTabTooltip] = React.useState<{
+    isVisible: boolean;
+    text: string;
+    left: number;
+    top: number;
+    placement: 'top' | 'bottom';
+  }>({ isVisible: false, text: '', left: 0, top: 0, placement: 'top' });
+
+  const showTabTooltip = (event: React.MouseEvent<HTMLElement>, text: string) => {
+    const x = event.clientX;
+    const y = event.clientY;
+    const placement: 'top' | 'bottom' = y < 48 ? 'bottom' : 'top';
+    setTabTooltip({
+      isVisible: true,
+      text,
+      left: x,
+      top: y,
+      placement,
+    });
+  };
+
+  const hideTabTooltip = () => {
+    setTabTooltip((prev) => (prev.isVisible ? { ...prev, isVisible: false } : prev));
+  };
+
+  const tooltipPortal =
+    tabTooltip.isVisible && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              left: tabTooltip.left,
+              top: tabTooltip.top,
+              transform: tabTooltip.placement === 'top' ? 'translate(-50%, -110%)' : 'translate(-50%, 10px)',
+              background: 'rgba(15, 23, 42, 0.95)',
+              color: 'white',
+              padding: '4px 8px',
+              borderRadius: 6,
+              fontSize: 11,
+              lineHeight: '14px',
+              whiteSpace: 'nowrap',
+              zIndex: 2147483647,
+              pointerEvents: 'none',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+            }}
+          >
+            {tabTooltip.text}
+          </div>,
+          document.body
+        )
+      : null;
   const formatTokenCount = (value?: number) => {
     if (!value || value <= 0) return '';
     if (value >= 1000) {
@@ -298,11 +383,11 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               {mermaidState.status === 'empty' && <span className="text-slate-400">Empty</span>}
               {!isMarkdown && mermaidState.status === 'edited' && <span className="text-amber-600 dark:text-amber-400">⚠ Edited</span>}
             </div>
-            <div className="flex items-center gap-1.5 font-sans justify-self-end">
+            <div className="flex flex-wrap items-center justify-end gap-1.5 font-sans justify-self-end">
               <button 
                 onClick={onAnalyze}
                 disabled={!isAIReady || !mermaidState.code.trim() || isProcessing}
-                className="px-2 py-1 text-[10px] font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                className="px-2 py-1 text-[10px] font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap"
                 title="Explain this diagram in chat"
               >
                 <PenTool size={10} /> Analyze
@@ -311,7 +396,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               <select
                 value={analyzeLanguage}
                 onChange={(e) => onAnalyzeLanguageChange(e.target.value)}
-                className="px-2 py-1 text-[10px] font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500/20 cursor-pointer"
+                className="px-2 py-1 text-[10px] font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500/20 cursor-pointer shrink-0"
                 title="Analyze language"
                 disabled={isProcessing}
               >
@@ -323,7 +408,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               <button 
                 onClick={onFixSyntax}
                 disabled={!isAIReady || isProcessing || !canFix}
-                className={`px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 ${
+                className={`px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap ${
                   canFix ? 'text-white bg-amber-600 hover:bg-amber-700' : 'text-slate-400 bg-slate-200 dark:bg-slate-700 dark:text-slate-500'
                 }`}
                 title={`Attempt to fix syntax errors (up to ${AUTO_FIX_MAX_ATTEMPTS} tries)`}
@@ -334,7 +419,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               <button 
                 onClick={onSnapshot}
                 disabled={!canSnapshot}
-                className={`px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 ${
+                className={`px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap ${
                   canSnapshot ? 'text-white bg-slate-700 hover:bg-slate-800' : 'text-slate-400 bg-slate-200 dark:bg-slate-700 dark:text-slate-500'
                 }`}
                 title={isSnapshotInvalid ? 'Snapshot is disabled for invalid diagrams' : 'Save current diagram state to history'}
@@ -395,7 +480,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
       {/* Editor Area */}
       <div className="flex-1 relative flex flex-col overflow-hidden group">
         {isBuildDocsTab ? (
-          <div className="flex-1 flex flex-col bg-slate-50 dark:bg-[#282c34]">
+          <div className="flex-1 min-h-0 flex flex-col bg-slate-50 dark:bg-[#282c34]">
             <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-2 py-2">
               <div className="flex items-center gap-1">
                 {(['chat', 'build', 'analyze', 'fix'] as DocsMode[]).map((mode) => {
@@ -530,7 +615,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                 })
               )}
             </div>
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-auto">
               <div className="px-4 py-3">
                 <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
                   {activeBuildDocName}
@@ -548,20 +633,26 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                 <button
                   type="button"
                   onClick={() => onActiveTabChange('code')}
+                  onMouseEnter={(e) => showTabTooltip(e, 'Markdown (notebook)')}
+                  onMouseMove={(e) => showTabTooltip(e, 'Markdown (notebook)')}
+                  onMouseLeave={hideTabTooltip}
                   className={`px-2 py-0.5 text-[10px] rounded border ${
                     activeTab === 'code'
                       ? 'bg-blue-600 text-white border-blue-600'
                       : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
+                  title="Markdown (notebook)"
                 >
-                  Markdown
+                  MD
                 </button>
                 {markdownMermaidBlocks.map((block, index) => {
                   const isActive = isMarkdownMermaidTab && index === markdownMermaidActiveIndex;
                   const diagnostics = markdownMermaidDiagnostics[index];
                   const isInvalid = diagnostics?.isValid === false;
                   const diagramLabel = formatDiagramTypeLabel(block.diagramType);
-                  const tabLabel = `${diagramLabel} ${index + 1}`;
+                  const diagramShortLabel = formatDiagramTypeShortLabel(block.diagramType);
+                  const tabLabel = diagramShortLabel;
+                  const tooltipText = `${diagramLabel} #${index + 1}${isInvalid ? ' (invalid)' : ''}`;
                   return (
                     <button
                       key={`md-mermaid-tab-${block.index}`}
@@ -570,6 +661,9 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                         onMarkdownMermaidActiveIndexChange(index);
                         onActiveTabChange('markdown_mermaid');
                       }}
+                      onMouseEnter={(e) => showTabTooltip(e, tooltipText)}
+                      onMouseMove={(e) => showTabTooltip(e, tooltipText)}
+                      onMouseLeave={hideTabTooltip}
                       className={`px-2 py-0.5 text-[10px] rounded border ${
                         isInvalid
                           ? isActive
@@ -579,14 +673,23 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                             ? 'bg-teal-600 text-white border-teal-600'
                             : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                       }`}
-                      title={`${diagramLabel} block ${index + 1}${isInvalid ? ' (invalid)' : ''}`}
+                      title={tooltipText}
                     >
                       {tabLabel}
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  onClick={onAppendMarkdownMermaidBlock}
+                  className="ml-auto px-2 py-0.5 text-[10px] rounded border bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 inline-flex items-center gap-1"
+                  title="Add empty mermaid block"
+                >
+                  <Plus size={12} /> Block
+                </button>
               </div>
             )}
+            {tooltipPortal}
             <div className="flex-1 relative flex overflow-hidden">
               {isMarkdownMermaidTab ? (
                 <>

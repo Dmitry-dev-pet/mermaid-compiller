@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
-import { MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
+import { FileText, MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
 import { DiagramType, LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
 import type { DiagramMarker } from '../hooks/core/useHistory';
 
@@ -9,6 +9,7 @@ interface ChatColumnProps {
   onBuild: (text?: string) => void;
   onClear: () => void;
   onNewProject: () => void;
+  onNewMarkdownNotebook: (args?: { blocks?: number }) => void;
   isProcessing: boolean;
   hasIntent: boolean;
   onSetPromptPreview: (
@@ -24,7 +25,6 @@ interface ChatColumnProps {
   diagramType: DiagramType;
   onDiagramTypeChange: (type: DiagramType) => void;
   detectedDiagramType: DiagramType | null;
-  mermaidStatus: 'empty' | 'valid' | 'invalid' | 'edited';
   onPreviewPrompt: (mode: PromptPreviewMode, input: string) => Promise<LLMRequestPreview>;
   buildDocsSelectionKey: string;
   promptPreviewKey: string;
@@ -40,13 +40,13 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onBuild,
   onClear,
   onNewProject,
+  onNewMarkdownNotebook,
   isProcessing,
   hasIntent,
   onSetPromptPreview,
   diagramType,
   onDiagramTypeChange,
   detectedDiagramType,
-  mermaidStatus,
   onPreviewPrompt,
   diagramMarkers = [],
   diagramStepAnchors = {},
@@ -464,67 +464,69 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       </div>
 
       {/* Composer */}
-	      <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
-	        <div className="relative">
-	          <textarea
+      <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
+        <div className="relative">
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type specification..."
             className="w-full resize-none rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 max-h-32 min-h-[80px]"
           />
-	        </div>
-	        <div className="flex justify-between items-center mt-2">
-	           <div className="flex items-center gap-3">
-	             <button
-	               onClick={onNewProject}
-	               className="text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 transition-colors"
-	               title="Новый проект (сброс чата, диаграммы и истории)"
-	               type="button"
-	             >
-	               <Plus size={12} /> Новый проект
-	             </button>
-	             <button
-	               onClick={onClear}
-	               className="text-xs text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors"
-	               title="Clear chat history"
-	               type="button"
-	             >
-	               <Trash2 size={12} /> Clear spec
-	             </button>
-	           </div>
-           <div className="flex items-center gap-2">
-	             <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline">
-	               Enter: Chat • Ctrl/Cmd+Enter: Build
-	             </span>
-             <button
-               onClick={() => handleSubmit('chat')}
-               disabled={!input.trim() || isProcessing}
-               className="px-2.5 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors inline-flex items-center gap-1.5"
-               title="Chat (text only)"
-             >
-               <MessageSquare size={14} /> Chat
-             </button>
-             <button
-               onClick={() => handleSubmit('build')}
-               disabled={(!input.trim() && !hasIntent) || isProcessing}
-               className="px-2.5 py-1.5 text-xs rounded-md bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5"
-               title={input.trim() ? 'Build diagram from this prompt' : 'Build diagram from intent'}
-             >
-               <Play size={14} /> Build
-             </button>
-           </div>
-          <div className="text-[10px] font-medium">
-            {mermaidStatus === 'edited' ? (
-               <span className="text-amber-600 dark:text-amber-500 flex items-center gap-1">
-                 ⚠ Diagram manually edited
-               </span>
-            ) : (
-               <span className="text-green-600 dark:text-green-500 flex items-center gap-1">
-                 ✓ Used for next build
-               </span>
-            )}
-           </div>
+        </div>
+
+        <div className="mt-2 flex flex-col gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={onNewProject}
+                className="text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 transition-colors"
+                title="Новый проект (сброс чата, диаграммы и истории)"
+                type="button"
+              >
+                <Plus size={12} /> Новый проект
+              </button>
+              <button
+                onClick={() => onNewMarkdownNotebook({ blocks: 3 })}
+                className="text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 transition-colors"
+                title="Открыть Markdown-ноутбук проекта с описаниями и множеством Mermaid-схем (смотри вкладку Markdown; блоки редактируются во вкладках Mermaid 1, Mermaid 2, ...)"
+                type="button"
+              >
+                <FileText size={12} /> MD notebook
+              </button>
+              <button
+                onClick={onClear}
+                className="text-xs text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors"
+                title="Clear chat history"
+                type="button"
+              >
+                <Trash2 size={12} /> Clear spec
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline whitespace-nowrap">
+                Enter: Chat • Ctrl/Cmd+Enter: Build
+              </span>
+              <button
+                onClick={() => handleSubmit('chat')}
+                disabled={!input.trim() || isProcessing}
+                className="px-2.5 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+                title="Chat (text only)"
+              >
+                <MessageSquare size={14} /> Chat
+              </button>
+              <button
+                onClick={() => handleSubmit('build')}
+                disabled={(!input.trim() && !hasIntent) || isProcessing}
+                className="px-2.5 py-1.5 text-xs rounded-md bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+                title={input.trim() ? 'Build diagram from this prompt' : 'Build diagram from intent'}
+              >
+                <Play size={14} /> Build
+              </button>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>

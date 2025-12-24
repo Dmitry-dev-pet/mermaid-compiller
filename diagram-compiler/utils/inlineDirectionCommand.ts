@@ -54,17 +54,53 @@ export const extractInlineDirectionCommand = (code: string): ExtractedDirectionC
     index += 1;
   }
 
-  return { codeWithoutCommand: [...kept, ...lines.slice(index)].join('\n'), direction: foundDirection };
+  const codeWithoutCommand = [...kept, ...lines.slice(index)].join('\n');
+  const detected = foundDirection ?? detectDirectionFromBody(codeWithoutCommand);
+  const normalized = normalizeDirectionForCode(codeWithoutCommand, detected);
+
+  return { codeWithoutCommand, direction: normalized };
 };
 
 export const setInlineDirectionCommand = (code: string, direction: MermaidDirection | null): string => {
   const extracted = extractInlineDirectionCommand(code);
-  if (!direction) return extracted.codeWithoutCommand;
-
   const lines = extracted.codeWithoutCommand.split(/\r?\n/);
-  let insertAt = 0;
-  while (insertAt < lines.length && (lines[insertAt]?.trim() ?? '') === '') insertAt += 1;
-  return [...lines.slice(0, insertAt), `%%{direction: ${direction}}%%`, ...lines.slice(insertAt)].join('\n');
+  const i = findDiagramHeaderIndex(lines);
+
+  if (i >= lines.length) return extracted.codeWithoutCommand;
+
+  const header = lines[i] ?? '';
+
+  if (isFlowchartHeader(header)) {
+    lines[i] = direction ? rewriteFlowchartHeaderDirection(header, direction) : stripFlowchartHeaderDirection(header);
+    return lines.join('\n');
+  }
+
+  if (!supportsDirectionStatement(header)) return extracted.codeWithoutCommand;
+
+  const normalizedDirection = direction ? normalizeDirectionForStatement(direction) : null;
+  const dirLine = normalizedDirection ? `  direction ${normalizedDirection}` : '';
+
+  let j = i + 1;
+  while (j < lines.length) {
+    const trimmed = (lines[j]?.trim() ?? '');
+    if (trimmed.length === 0 || trimmed.startsWith('%%')) {
+      j += 1;
+      continue;
+    }
+    break;
+  }
+
+  if (j < lines.length && (lines[j]?.trim() ?? '').toLowerCase().startsWith('direction ')) {
+    if (normalizedDirection) {
+      lines[j] = dirLine;
+    } else {
+      lines.splice(j, 1);
+    }
+  } else if (normalizedDirection) {
+    lines.splice(i + 1, 0, dirLine);
+  }
+
+  return lines.join('\n');
 };
 
 const findDiagramHeaderIndex = (lines: string[]): number => {
@@ -105,12 +141,35 @@ const findDiagramHeaderIndex = (lines: string[]): number => {
 
 const supportsDirectionStatement = (headerLine: string): boolean => {
   const head = headerLine.trim();
-  return head === 'classDiagram' || head === 'stateDiagram' || head === 'stateDiagram-v2';
+  return (
+    head === 'classDiagram' ||
+    head === 'stateDiagram' ||
+    head === 'stateDiagram-v2' ||
+    head === 'erDiagram' ||
+    head === 'requirementDiagram'
+  );
+};
+
+const normalizeDirectionForStatement = (direction: MermaidDirection): MermaidDirection => {
+  return direction === 'TD' ? 'TB' : direction;
 };
 
 const isFlowchartHeader = (headerLine: string): boolean => {
   const head = headerLine.trim();
   return head === 'flowchart' || head.startsWith('flowchart ') || head === 'graph' || head.startsWith('graph ');
+};
+
+const stripFlowchartHeaderDirection = (headerLine: string): string => {
+  const leadingWhitespace = headerLine.match(/^\s*/)?.[0] ?? '';
+  const tokens = headerLine.trim().split(/\s+/);
+  const keyword = tokens[0]?.toLowerCase();
+  if (keyword !== 'flowchart' && keyword !== 'graph') return headerLine;
+
+  const second = tokens[1]?.toUpperCase() ?? '';
+  const isOrientation = second === 'TB' || second === 'TD' || second === 'LR' || second === 'RL' || second === 'BT';
+  const next = isOrientation ? [tokens[0] ?? 'flowchart', ...tokens.slice(2)] : tokens;
+
+  return `${leadingWhitespace}${next.join(' ')}`.trimEnd();
 };
 
 const rewriteFlowchartHeaderDirection = (headerLine: string, direction: MermaidDirection): string => {
@@ -134,6 +193,50 @@ const rewriteFlowchartHeaderDirection = (headerLine: string, direction: MermaidD
   return `${leadingWhitespace}${next.join(' ')}`.trimEnd();
 };
 
+const detectDirectionFromBody = (code: string): MermaidDirection | null => {
+  const lines = code.split(/\r?\n/);
+  const i = findDiagramHeaderIndex(lines);
+  if (i >= lines.length) return null;
+
+  const header = lines[i] ?? '';
+  if (isFlowchartHeader(header)) {
+    const tokens = header.trim().split(/\s+/);
+    const token = tokens[1] ?? '';
+    return normalizeDirection(token) ?? null;
+  }
+
+  if (!supportsDirectionStatement(header)) return null;
+
+  let j = i + 1;
+  while (j < lines.length) {
+    const trimmed = (lines[j]?.trim() ?? '');
+    if (trimmed.length === 0 || trimmed.startsWith('%%')) {
+      j += 1;
+      continue;
+    }
+    if (trimmed.toLowerCase().startsWith('direction ')) {
+      const token = trimmed.split(/\s+/)[1] ?? '';
+      const normalized = normalizeDirection(token);
+      return normalized ? normalizeDirectionForStatement(normalized) : null;
+    }
+    break;
+  }
+
+  return null;
+};
+
+const normalizeDirectionForCode = (code: string, direction: MermaidDirection | null): MermaidDirection | null => {
+  if (!direction) return null;
+  const lines = code.split(/\r?\n/);
+  const i = findDiagramHeaderIndex(lines);
+  if (i >= lines.length) return direction;
+
+  const header = lines[i] ?? '';
+  if (isFlowchartHeader(header)) return direction;
+  if (supportsDirectionStatement(header)) return normalizeDirectionForStatement(direction);
+  return direction;
+};
+
 export const applyInlineDirectionCommand = (
   code: string,
 ): { code: string; direction: MermaidDirection | null } => {
@@ -153,7 +256,8 @@ export const applyInlineDirectionCommand = (
 
   if (!supportsDirectionStatement(header)) return { code: extracted.codeWithoutCommand, direction: extracted.direction };
 
-  const dirLine = `  direction ${extracted.direction}`;
+  const normalizedDirection = normalizeDirectionForStatement(extracted.direction);
+  const dirLine = `  direction ${normalizedDirection}`;
 
   // Find first non-empty line after header.
   let j = i + 1;
@@ -165,7 +269,7 @@ export const applyInlineDirectionCommand = (
     lines.splice(i + 1, 0, dirLine);
   }
 
-  return { code: lines.join('\n'), direction: extracted.direction };
+  return { code: lines.join('\n'), direction: normalizedDirection };
 };
 
 export type { MermaidDirection };

@@ -2,6 +2,8 @@ import mermaid from 'mermaid';
 import { DiagramType, MermaidState } from '../types';
 import { applyInlineDirectionCommand } from '../utils/inlineDirectionCommand';
 import { applyInlineThemeAndLookCommands } from '../utils/inlineLookCommand';
+import { MermaidThemeName, setInlineThemeCommand } from '../utils/inlineThemeCommand';
+import { MermaidLook, setInlineLookCommand } from '../utils/inlineLookCommand';
 
 export const isMarkdownLike = (code: string): boolean => {
   if (!code.trim()) return false;
@@ -75,7 +77,6 @@ export const extractMermaidBlocksFromMarkdown = (markdown: string): MermaidMarkd
   while ((match = MERMAID_BLOCK_PATTERN.exec(markdown)) !== null) {
     const raw = match[2] ?? '';
     const code = raw.trim();
-    if (!code) continue;
     const start = match.index ?? 0;
     const end = start + match[0].length;
     blocks.push({
@@ -85,7 +86,7 @@ export const extractMermaidBlocksFromMarkdown = (markdown: string): MermaidMarkd
       end,
       opening: match[1],
       closing: match[3],
-      diagramType: detectMermaidDiagramType(code),
+      diagramType: code ? detectMermaidDiagramType(code) : null,
     });
     index += 1;
   }
@@ -104,6 +105,60 @@ export const replaceMermaidBlockInMarkdown = (
   const body = normalized ? `${normalized}\n` : '';
   const nextBlock = `${block.opening}${body}${block.closing}`;
   return `${before}${nextBlock}${after}`;
+};
+
+export const setThemeForMarkdownMermaidBlocks = (
+  markdown: string,
+  theme: MermaidThemeName | null
+): string => {
+  if (!markdown.trim()) return markdown;
+  const blocks = extractMermaidBlocksFromMarkdown(markdown);
+  if (blocks.length === 0) return markdown;
+
+  let nextMarkdown = markdown;
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    const nextCode = setInlineThemeCommand(block.code, theme);
+    nextMarkdown = replaceMermaidBlockInMarkdown(nextMarkdown, block, nextCode);
+  }
+
+  return nextMarkdown;
+};
+
+export const setLookForMarkdownMermaidBlocks = (
+  markdown: string,
+  look: MermaidLook | null
+): string => {
+  if (!markdown.trim()) return markdown;
+  const blocks = extractMermaidBlocksFromMarkdown(markdown);
+  if (blocks.length === 0) return markdown;
+
+  let nextMarkdown = markdown;
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    const nextCode = setInlineLookCommand(block.code, look);
+    nextMarkdown = replaceMermaidBlockInMarkdown(nextMarkdown, block, nextCode);
+  }
+
+  return nextMarkdown;
+};
+
+export const createMermaidNotebookMarkdown = (args?: { blocks?: number; title?: string }): string => {
+  const blocks = Math.max(1, args?.blocks ?? 3);
+  const title = args?.title ?? 'Diagram notebook';
+  const sections: string[] = [];
+  for (let i = 0; i < blocks; i += 1) {
+    sections.push(`## Diagram ${i + 1}\n\n\`\`\`mermaid\n\`\`\``);
+  }
+  return `# ${title}\n\n${sections.join('\n\n')}\n`;
+};
+
+export const appendEmptyMermaidBlockToMarkdown = (markdown: string): string => {
+  const trimmedEnd = markdown.replace(/\s+$/, '');
+  const existingCount = extractMermaidBlocksFromMarkdown(markdown).length;
+  const nextIndex = existingCount + 1;
+  const prefix = trimmedEnd ? `${trimmedEnd}\n\n` : '';
+  return `${prefix}## Diagram ${nextIndex}\n\n\`\`\`mermaid\n\`\`\`\n`;
 };
 
 export const initializeMermaid = (theme: 'default' | 'dark' = 'default') => {

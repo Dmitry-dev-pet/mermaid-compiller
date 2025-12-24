@@ -136,3 +136,46 @@ export interface AppState {
   language: string;
   analyzeLanguage: string;
 }
+
+export type InteractionEventType =
+  | 'click'
+  | 'dblclick'
+  | 'pointerdown'
+  | 'pointerup'
+  | 'keydown'
+  | 'input'
+  | 'change';
+
+export type InteractionTarget = {
+  tag: string;
+  id?: string;
+  name?: string;
+  type?: string;
+  role?: string;
+  ariaLabel?: string;
+  text?: string;
+  value?: string;
+  checked?: boolean;
+  dataset?: Record<string, string>;
+  path?: string;
+};
+
+export type InteractionEvent = {
+  id: string;
+  ts: number;
+  type: InteractionEventType;
+  url: string;
+  target?: InteractionTarget;
+  data?: Record<string, unknown>;
+};
+
+export type InteractionRecorder = {
+  isRecording: boolean;
+  eventCount: number;
+  start: () => void;
+  stop: () => void;
+  toggle: () => void;
+  clear: () => void;
+  exportJson: (pretty?: boolean) => string;
+  copyJson: (pretty?: boolean) => Promise<void>;
+};

@@ -7,7 +7,12 @@ import { useDiagramStudio } from './hooks/studio/useDiagramStudio';
 import { MermaidThemeName, setInlineThemeCommand } from './utils/inlineThemeCommand';
 import { MermaidDirection, setInlineDirectionCommand } from './utils/inlineDirectionCommand';
 import { MermaidLook, setInlineLookCommand } from './utils/inlineLookCommand';
-import { replaceMermaidBlockInMarkdown } from './services/mermaidService';
+import {
+  isMarkdownLike,
+  replaceMermaidBlockInMarkdown,
+  setLookForMarkdownMermaidBlocks,
+  setThemeForMarkdownMermaidBlocks,
+} from './services/mermaidService';
 
 function App() {
   const {
@@ -60,6 +65,9 @@ function App() {
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
+    startMarkdownNotebook,
+    appendMarkdownMermaidBlock,
+    interactionRecorder,
   } = useDiagramStudio();
   const buildDocsSystemPrompts = {
     chat: {
@@ -107,6 +115,7 @@ function App() {
         onDisconnect={disconnectAI}
         theme={appState.theme}
         onToggleTheme={toggleTheme}
+        interactionRecorder={interactionRecorder}
       />
 
       <div className="flex flex-1 overflow-hidden relative">
@@ -120,12 +129,12 @@ function App() {
                 onBuild={handleBuildFromPrompt}
                 onClear={clearMessages}
                 onNewProject={startNewProject}
+                onNewMarkdownNotebook={startMarkdownNotebook}
                 isProcessing={isProcessing}
                 hasIntent={!!diagramIntent?.content.trim()}
                 onSetPromptPreview={setPromptPreview}
                 diagramType={appState.diagramType}
                 onDiagramTypeChange={setDiagramType}
-                mermaidStatus={mermaidState.status}
                 onPreviewPrompt={buildPromptPreview}
                 diagramMarkers={diagramMarkers}
                 diagramStepAnchors={diagramStepAnchors}
@@ -174,6 +183,7 @@ function App() {
                 markdownMermaidActiveIndex={markdownMermaidActiveIndex}
                 onMarkdownMermaidActiveIndexChange={setMarkdownMermaidActiveIndex}
                 onActiveTabChange={setEditorTab}
+                onAppendMarkdownMermaidBlock={appendMarkdownMermaidBlock}
               />
             </div>
 
@@ -196,12 +206,22 @@ function App() {
             isFullScreen={appState.isPreviewFullScreen}
             onToggleFullScreen={togglePreviewFullScreen}
             onSetInlineTheme={(nextTheme: MermaidThemeName | null) => {
+              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidState.code)) {
+                const nextMarkdown = setThemeForMarkdownMermaidBlocks(mermaidState.code, nextTheme);
+                handleMermaidChange(nextMarkdown);
+                return;
+              }
               applyInlineUpdate((code) => setInlineThemeCommand(code, nextTheme));
             }}
             onSetInlineDirection={(nextDirection: MermaidDirection | null) => {
               applyInlineUpdate((code) => setInlineDirectionCommand(code, nextDirection));
             }}
             onSetInlineLook={(nextLook: MermaidLook | null) => {
+              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidState.code)) {
+                const nextMarkdown = setLookForMarkdownMermaidBlocks(mermaidState.code, nextLook);
+                handleMermaidChange(nextMarkdown);
+                return;
+              }
               applyInlineUpdate((code) => setInlineLookCommand(code, nextLook));
             }}
             activeEditorTab={editorTab}
@@ -212,6 +232,8 @@ function App() {
             markdownMermaidBlocks={markdownMermaidBlocks}
             markdownMermaidDiagnostics={markdownMermaidDiagnostics}
             markdownMermaidActiveIndex={markdownMermaidActiveIndex}
+            onMarkdownMermaidActiveIndexChange={setMarkdownMermaidActiveIndex}
+            onActiveEditorTabChange={setEditorTab}
           />
         </div>
       </div>

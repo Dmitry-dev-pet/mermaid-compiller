@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Sun, Eye, EyeOff } from 'lucide-react';
-import { AIConfig, CliproxyFilters, ConnectionState, OpenRouterFilters } from '../types';
+import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Sun, Eye, EyeOff, Circle, Clipboard, Trash2, List } from 'lucide-react';
+import { AIConfig, CliproxyFilters, ConnectionState, InteractionRecorder, OpenRouterFilters } from '../types';
 import { MERMAID_VERSION } from '../constants';
 
 interface HeaderProps {
@@ -11,6 +11,7 @@ interface HeaderProps {
   onDisconnect: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
+  interactionRecorder: InteractionRecorder;
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -20,13 +21,19 @@ const Header: React.FC<HeaderProps> = ({
   onConnect, 
   onDisconnect,
   theme,
-  onToggleTheme
+  onToggleTheme,
+  interactionRecorder,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
   const [showProxyKey, setShowProxyKey] = useState(false);
+  const [isRecorderOpen, setIsRecorderOpen] = useState(false);
+  const recorderRef = useRef<HTMLDivElement>(null);
+  const [recorderPretty, setRecorderPretty] = useState(true);
+  const [recorderText, setRecorderText] = useState('');
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -38,6 +45,24 @@ const Header: React.FC<HeaderProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Close recorder panel on click outside / escape
+  useEffect(() => {
+    if (!isRecorderOpen) return;
+    const onDocDown = (event: MouseEvent) => {
+      if (recorderRef.current && recorderRef.current.contains(event.target as Node)) return;
+      setIsRecorderOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsRecorderOpen(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [isRecorderOpen]);
 
   // ... (getStatusText, getStatusColor, updateConfig, filteredModels logic remains same)
 
@@ -113,6 +138,32 @@ const Header: React.FC<HeaderProps> = ({
     const storedModelId = aiConfig.selectedModelIdByProvider?.[provider] ?? '';
     updateConfig({ provider, selectedModelId: storedModelId });
   };
+
+  const refreshRecorderText = useCallback(() => {
+    setRecorderText(interactionRecorder.exportJson(recorderPretty));
+  }, [interactionRecorder, recorderPretty]);
+
+  const toggleRecorderPanel = useCallback(() => {
+    setIsRecorderOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        setCopyState('idle');
+        setRecorderText(interactionRecorder.exportJson(recorderPretty));
+      }
+      return next;
+    });
+  }, [interactionRecorder, recorderPretty]);
+
+  const handleCopyRecorder = useCallback(async () => {
+    try {
+      await interactionRecorder.copyJson(recorderPretty);
+      setCopyState('copied');
+      window.setTimeout(() => setCopyState('idle'), 1200);
+    } catch {
+      setCopyState('failed');
+      window.setTimeout(() => setCopyState('idle'), 1500);
+    }
+  }, [interactionRecorder, recorderPretty]);
 
   const baseFilteredModels = connectionState.availableModels.filter((m) => {
     if (isOpenRouter) {
@@ -411,6 +462,100 @@ const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 font-medium">
+        <div className="relative" ref={recorderRef}>
+          <button
+            onClick={interactionRecorder.toggle}
+            className={`flex items-center gap-2 px-2 py-1 rounded-md border transition-colors ${
+              interactionRecorder.isRecording
+                ? 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800'
+            }`}
+            title={interactionRecorder.isRecording ? 'Stop recording interactions' : 'Start recording interactions'}
+            aria-label={interactionRecorder.isRecording ? 'Stop recording interactions' : 'Start recording interactions'}
+          >
+            <Circle size={12} fill={interactionRecorder.isRecording ? 'currentColor' : 'none'} />
+            <span className="text-[11px] font-semibold tracking-wide">REC</span>
+            <span className="text-[10px] tabular-nums opacity-80">{interactionRecorder.eventCount}</span>
+          </button>
+
+          <button
+            onClick={toggleRecorderPanel}
+            className="ml-2 p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors"
+            title="Open interaction log"
+            aria-label="Open interaction log"
+          >
+            <List size={16} />
+          </button>
+
+          {isRecorderOpen && (
+            <div className="absolute top-full right-0 mt-2 w-[520px] max-w-[90vw] bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-3 z-50">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Interaction log <span className="text-xs font-mono text-slate-400">({interactionRecorder.eventCount})</span>
+                </div>
+                <button
+                  onClick={() => setIsRecorderOpen(false)}
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                  aria-label="Close interaction log"
+                  title="Close"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 select-none">
+                  <input
+                    type="checkbox"
+                    checked={recorderPretty}
+                    onChange={(e) => {
+                      setRecorderPretty(e.target.checked);
+                      window.setTimeout(() => setRecorderText(interactionRecorder.exportJson(e.target.checked)), 0);
+                    }}
+                  />
+                  Pretty JSON
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={refreshRecorderText}
+                    className="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    Refresh
+                  </button>
+                  <button
+                    onClick={handleCopyRecorder}
+                    className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    title="Copy JSON to clipboard"
+                  >
+                    <Clipboard size={14} />
+                    {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      interactionRecorder.clear();
+                      setRecorderText('[]');
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    title="Clear session interaction log"
+                  >
+                    <Trash2 size={14} />
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <textarea
+                className="w-full h-64 p-2 text-[11px] font-mono border border-slate-200 dark:border-slate-700 rounded bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100"
+                readOnly
+                value={recorderText}
+              />
+              <div className="mt-2 text-[10px] text-slate-400">
+                Session-only. Includes clicks, keys, and input values.
+              </div>
+            </div>
+          )}
+        </div>
+
         <button 
           onClick={onToggleTheme}
           className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors"

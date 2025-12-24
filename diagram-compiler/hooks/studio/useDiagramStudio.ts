@@ -8,12 +8,21 @@ import { useHistory } from '../core/useHistory';
 import { useBuildDocs } from './useBuildDocs';
 import { useMarkdownMermaid } from './useMarkdownMermaid';
 import { useManualEditRecorder } from './useManualEditRecorder';
+import { useInteractionRecorder } from './useInteractionRecorder';
 import { usePromptPreview } from './usePromptPreview';
 import type { DiagramMarker } from '../core/useHistory';
 import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE } from '../../constants';
 import { detectLanguage } from '../../utils';
 import type { DiagramIntent, DiagramType, DocsMode, EditorTab } from '../../types';
-import { detectMermaidDiagramType, extractMermaidCode, isMarkdownLike, replaceMermaidBlockInMarkdown, validateMermaidDiagramCode } from '../../services/mermaidService';
+import {
+  appendEmptyMermaidBlockToMarkdown,
+  createMermaidNotebookMarkdown,
+  detectMermaidDiagramType,
+  extractMermaidCode,
+  isMarkdownLike,
+  replaceMermaidBlockInMarkdown,
+  validateMermaidDiagramCode,
+} from '../../services/mermaidService';
 import { fixDiagram } from '../../services/llmService';
 import { runAutoFixLoop } from './autoFix';
 import { trackAnalyticsEvent } from '../../services/analyticsService';
@@ -23,6 +32,7 @@ export const useDiagramStudio = () => {
   const { mermaidState, setMermaidState, handleMermaidChange } = useMermaid();
   const { appState, setAppState, startResize, setDiagramType, toggleTheme, setAnalyzeLanguage, togglePreviewFullScreen } = useLayout();
   const { messages, setMessages, addMessage, clearMessages, resetMessages, getMessages } = useChat();
+  const interactionRecorder = useInteractionRecorder();
   const {
     isHistoryReady,
     historySession,
@@ -104,7 +114,7 @@ export const useDiagramStudio = () => {
     if (markdownMermaidBlocks.length) {
       const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex];
       const diagnostics = markdownMermaidDiagnostics[markdownMermaidActiveIndex];
-      if (activeBlock?.code.trim()) {
+      if (activeBlock) {
         return {
           code: activeBlock.code.trim(),
           errorMessage: diagnostics?.errorMessage,
@@ -208,12 +218,49 @@ export const useDiagramStudio = () => {
   const resolveMermaidUpdateTarget = useCallback(() => {
     if (markdownMermaidBlocks.length > 0) {
       const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex] ?? markdownMermaidBlocks[0];
-      if (activeBlock?.code.trim()) {
-        return { mode: 'markdown' as const, block: activeBlock };
-      }
+      if (activeBlock) return { mode: 'markdown' as const, block: activeBlock };
     }
     return { mode: 'code' as const };
   }, [markdownMermaidActiveIndex, markdownMermaidBlocks]);
+
+  const startMarkdownNotebook = useCallback((args?: { blocks?: number }) => {
+    if (isProcessing) return;
+
+    const fallback = () => {
+      const nextMarkdown = createMermaidNotebookMarkdown({ blocks: args?.blocks ?? 3 });
+      handleMermaidChange(nextMarkdown);
+      setMarkdownMermaidActiveIndex(0);
+      setEditorTab('markdown_mermaid');
+    };
+
+    void (async () => {
+      try {
+        const res = await fetch('/diagram-notebook.md', { cache: 'no-cache' });
+        if (!res.ok) return fallback();
+        const template = await res.text();
+        if (!template.trim()) return fallback();
+        handleMermaidChange(template);
+        setMarkdownMermaidActiveIndex(0);
+        setEditorTab('markdown_mermaid');
+      } catch {
+        fallback();
+      }
+    })();
+  }, [handleMermaidChange, isProcessing, setMarkdownMermaidActiveIndex]);
+
+  const appendMarkdownMermaidBlock = useCallback(() => {
+    if (isProcessing) return;
+    const nextMarkdown = appendEmptyMermaidBlockToMarkdown(mermaidState.code);
+    handleMermaidChange(nextMarkdown);
+    setMarkdownMermaidActiveIndex(markdownMermaidBlocks.length);
+    setEditorTab('markdown_mermaid');
+  }, [
+    handleMermaidChange,
+    isProcessing,
+    markdownMermaidBlocks.length,
+    mermaidState.code,
+    setMarkdownMermaidActiveIndex,
+  ]);
 
   const getAnalyticsContext = useCallback(async (mode: DocsMode) => {
     const docsUsage = await getDocsSelectionSummary(mode);
@@ -521,5 +568,8 @@ export const useDiagramStudio = () => {
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
+    startMarkdownNotebook,
+    appendMarkdownMermaidBlock,
+    interactionRecorder,
   };
 };

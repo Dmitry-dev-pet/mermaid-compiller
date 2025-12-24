@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mermaid from 'mermaid';
-import { Download, Maximize2, Minimize2, Scan, ZoomIn, ZoomOut } from 'lucide-react';
 import svgPanZoom from 'svg-pan-zoom';
 import MarkdownIt from 'markdown-it';
 import { EditorTab, MermaidState } from '../types';
@@ -8,7 +7,9 @@ import { useDiagramExport } from '../hooks/studio/useDiagramExport';
 import { extractInlineThemeCommand, MermaidThemeName } from '../utils/inlineThemeCommand';
 import { applyInlineDirectionCommand, extractInlineDirectionCommand, MermaidDirection } from '../utils/inlineDirectionCommand';
 import { applyInlineThemeAndLookCommands, extractInlineLookCommand, MermaidLook } from '../utils/inlineLookCommand';
-import { isMarkdownLike, MermaidMarkdownBlock } from '../services/mermaidService';
+import { detectMermaidDiagramType, isMarkdownLike, MermaidMarkdownBlock } from '../services/mermaidService';
+import PreviewHeaderControls from './preview/PreviewHeaderControls';
+import PreviewBody from './preview/PreviewBody';
 import './markdown-preview.css';
 
 const SYSTEM_PROMPT_DOC_PREFIX = 'system-prompts/';
@@ -29,6 +30,8 @@ interface PreviewColumnProps {
   markdownMermaidBlocks: MermaidMarkdownBlock[];
   markdownMermaidDiagnostics: Array<Pick<MermaidState, 'isValid' | 'errorMessage' | 'errorLine' | 'status'>>;
   markdownMermaidActiveIndex: number;
+  onMarkdownMermaidActiveIndexChange: (index: number) => void;
+  onActiveEditorTabChange: (tab: EditorTab) => void;
 }
 
 type ViewBox = { x: number; y: number; width: number; height: number };
@@ -64,6 +67,8 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   markdownMermaidBlocks,
   markdownMermaidDiagnostics,
   markdownMermaidActiveIndex,
+  onMarkdownMermaidActiveIndexChange,
+  onActiveEditorTabChange,
 }) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const svgMountRef = useRef<HTMLDivElement>(null);
@@ -83,6 +88,39 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   const activeMarkdownDiagnostics = markdownMermaidDiagnostics[markdownMermaidActiveIndex];
   const isMarkdownMermaidInvalid = isMarkdownMermaidMode && activeMarkdownDiagnostics?.isValid === false;
   const codeForRender = isMarkdownMermaidMode ? activeMarkdownBlock?.code ?? '' : mermaidState.code;
+  const activeDiagramType = useMemo(() => {
+    if (isMarkdownMermaidMode) {
+      return activeMarkdownBlock?.diagramType ?? (codeForRender ? detectMermaidDiagramType(codeForRender) : null);
+    }
+    return codeForRender ? detectMermaidDiagramType(codeForRender) : null;
+  }, [activeMarkdownBlock?.diagramType, codeForRender, isMarkdownMermaidMode]);
+  const supportsInlineTheme = Boolean(activeDiagramType);
+  const supportsInlineDirection =
+    activeDiagramType === 'flowchart' ||
+    activeDiagramType === 'class' ||
+    activeDiagramType === 'state' ||
+    activeDiagramType === 'er' ||
+    activeDiagramType === 'requirementDiagram';
+  const supportsInlineLook = activeDiagramType === 'flowchart' || activeDiagramType === 'state';
+  const directionOptions = useMemo<MermaidDirection[]>(() => {
+    if (!supportsInlineDirection) return [];
+    if (activeDiagramType === 'flowchart') {
+      return ['TB', 'TD', 'LR', 'RL', 'BT'];
+    }
+    return ['TB', 'LR', 'RL', 'BT'];
+  }, [activeDiagramType, supportsInlineDirection]);
+  const markdownNavEnabled =
+    (isMarkdownMode || isMarkdownMermaidMode) && markdownMermaidBlocks.length > 1;
+  const markdownNavLabel = markdownNavEnabled
+    ? `${markdownMermaidActiveIndex + 1}/${markdownMermaidBlocks.length}`
+    : '';
+  const setMarkdownIndexFromPreview = useCallback(
+    (index: number) => {
+      onMarkdownMermaidActiveIndexChange(index);
+      onActiveEditorTabChange('markdown_mermaid');
+    },
+    [onActiveEditorTabChange, onMarkdownMermaidActiveIndexChange]
+  );
   const normalizeMermaidBlockCode = useCallback((raw: string) => {
     const withDirection = applyInlineDirectionCommand(raw).code;
     return applyInlineThemeAndLookCommands(withDirection).code;
@@ -159,16 +197,28 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
 
 
   const selectedInlineTheme = useMemo(() => {
-    return extractInlineThemeCommand(codeForRender).theme ?? '';
-  }, [codeForRender]);
+    if (!isMarkdownMode) {
+      return extractInlineThemeCommand(codeForRender).theme ?? '';
+    }
+    if (!markdownMermaidBlocks.length) return '';
+    const themes = markdownMermaidBlocks.map((block) => extractInlineThemeCommand(block.code).theme ?? '');
+    const first = themes[0] ?? '';
+    return themes.every((value) => value === first) ? first : '';
+  }, [codeForRender, isMarkdownMode, markdownMermaidBlocks]);
 
   const selectedInlineDirection = useMemo(() => {
     return extractInlineDirectionCommand(codeForRender).direction ?? '';
   }, [codeForRender]);
 
   const selectedInlineLook = useMemo(() => {
-    return extractInlineLookCommand(codeForRender).look ?? '';
-  }, [codeForRender]);
+    if (!isMarkdownMode) {
+      return extractInlineLookCommand(codeForRender).look ?? '';
+    }
+    if (!markdownMermaidBlocks.length) return '';
+    const looks = markdownMermaidBlocks.map((block) => extractInlineLookCommand(block.code).look ?? '');
+    const first = looks[0] ?? '';
+    return looks.every((value) => value === first) ? first : '';
+  }, [codeForRender, isMarkdownMode, markdownMermaidBlocks]);
 
   const updateZoomPercent = useCallback((nextZoom?: number) => {
     const instance = panZoomRef.current;
@@ -527,187 +577,60 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-slate-50/30 dark:bg-slate-900/30">
-      <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center justify-between gap-3">
-        <div>{isBuildDocsMode ? 'Build Docs' : 'Preview'}</div>
-        {!isBuildDocsMode && !isMarkdownMode && (
-          <div className="flex items-center gap-1.5 normal-case tracking-normal">
-          <select
-            className="h-6 px-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-medium"
-            value={selectedInlineTheme}
-            onChange={(e) => onSetInlineTheme((e.target.value || null) as MermaidThemeName | null)}
-            disabled={!codeForRender.trim() || isMarkdownMode}
-            title="Diagram theme (inline)"
-          >
-            <option value="">Theme: (none)</option>
-            <option value="default">Theme: default</option>
-            <option value="dark">Theme: dark</option>
-            <option value="forest">Theme: forest</option>
-            <option value="neutral">Theme: neutral</option>
-            <option value="base">Theme: base</option>
-          </select>
+      <PreviewHeaderControls
+        title={isBuildDocsMode ? 'Build Docs' : 'Preview'}
+        isBuildDocsMode={isBuildDocsMode}
+        isMarkdownMode={isMarkdownMode}
+        markdownNavEnabled={markdownNavEnabled}
+        markdownNavLabel={markdownNavLabel}
+        markdownPrevDisabled={markdownMermaidActiveIndex <= 0}
+        markdownNextDisabled={markdownMermaidActiveIndex >= markdownMermaidBlocks.length - 1}
+        onMarkdownPrev={() => setMarkdownIndexFromPreview(Math.max(0, markdownMermaidActiveIndex - 1))}
+        onMarkdownNext={() =>
+          setMarkdownIndexFromPreview(
+            Math.min(markdownMermaidBlocks.length - 1, markdownMermaidActiveIndex + 1)
+          )
+        }
+        showThemeControl={supportsInlineTheme || (isMarkdownMode && markdownMermaidBlocks.length > 0)}
+        showDirectionControl={!isMarkdownMode && supportsInlineDirection}
+        showLookControl={supportsInlineLook || (isMarkdownMode && markdownMermaidBlocks.length > 0)}
+        directionOptions={directionOptions}
+        selectedInlineTheme={selectedInlineTheme}
+        selectedInlineDirection={selectedInlineDirection}
+        selectedInlineLook={selectedInlineLook}
+        onSetInlineTheme={onSetInlineTheme}
+        onSetInlineDirection={onSetInlineDirection}
+        onSetInlineLook={onSetInlineLook}
+        codeForRender={codeForRender}
+        isFullScreen={isFullScreen}
+        onToggleFullScreen={onToggleFullScreen}
+        svgMarkup={svgMarkup}
+        isExporting={isExporting}
+        onExportSvg={exportSvg}
+        onExportPng={exportPng}
+      />
 
-          <select
-            className="h-6 px-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-medium"
-            value={selectedInlineDirection}
-            onChange={(e) => onSetInlineDirection((e.target.value || null) as MermaidDirection | null)}
-            disabled={!codeForRender.trim() || isMarkdownMode}
-            title="Diagram direction (inline)"
-          >
-            <option value="">Dir: (none)</option>
-            <option value="TB">Dir: TB</option>
-            <option value="TD">Dir: TD</option>
-            <option value="LR">Dir: LR</option>
-            <option value="RL">Dir: RL</option>
-            <option value="BT">Dir: BT</option>
-          </select>
-
-          <select
-            className="h-6 px-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-medium"
-            value={selectedInlineLook}
-            onChange={(e) => onSetInlineLook((e.target.value || null) as MermaidLook | null)}
-            disabled={!codeForRender.trim() || isMarkdownMode}
-            title="Diagram look (inline)"
-          >
-            <option value="">Look: (none)</option>
-            <option value="classic">Look: classic</option>
-            <option value="handDrawn">Look: handDrawn</option>
-          </select>
-
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono w-12 text-right">{zoomPercent}%</span>
-          {exportError && (
-            <span className="text-[10px] text-red-600 dark:text-red-400 max-w-56 truncate" title={exportError}>
-              {exportError}
-            </span>
-          )}
-
-          <button
-            type="button"
-            onClick={onToggleFullScreen}
-            className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-            title={isFullScreen ? 'Exit full screen' : 'Full screen'}
-          >
-            {isFullScreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </button>
-
-          <button
-            type="button"
-            onClick={zoomOut}
-            disabled={!svgMarkup || isMarkdownMode}
-            className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
-            title="Zoom out"
-          >
-            <ZoomOut size={14} />
-          </button>
-
-          <button
-            type="button"
-            onClick={zoomIn}
-            disabled={!svgMarkup || isMarkdownMode}
-            className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
-            title="Zoom in"
-          >
-            <ZoomIn size={14} />
-          </button>
-
-          <button
-            type="button"
-            onClick={fitToViewport}
-            disabled={!svgMarkup || isMarkdownMode}
-            className="p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
-            title="Fit (center & maximize)"
-          >
-            <Scan size={14} />
-          </button>
-
-          <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1" />
-
-          <button
-            type="button"
-            onClick={exportSvg}
-            disabled={!svgMarkup || isExporting || isMarkdownMode}
-            className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-1 text-[10px] font-medium"
-            title="Export SVG"
-          >
-            <Download size={12} />
-            SVG
-          </button>
-
-          <button
-            type="button"
-            onClick={exportPng}
-            disabled={!svgMarkup || isExporting || isMarkdownMode}
-            className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-1 text-[10px] font-medium"
-            title="Export PNG"
-          >
-            <Download size={12} />
-            PNG
-          </button>
-          </div>
-        )}
-      </div>
-
-      <div
-        ref={viewportRef}
-        className="flex-1 relative overflow-hidden flex items-center justify-center"
-      >
-
-        {isBuildDocsMode && (
-          <div className="absolute inset-0 overflow-auto text-sm text-slate-700 dark:text-slate-200 leading-6 p-4">
-            {activeBuildDoc?.text ? (
-              <div ref={docsMountRef} className="markdown-body" />
-            ) : (
-              <div className="text-slate-400 dark:text-slate-500 text-sm">No documentation loaded.</div>
-            )}
-          </div>
-        )}
-
-        {!isBuildDocsMode &&
-          renderError &&
-          mermaidState.status !== 'invalid' &&
-          !isMarkdownMode &&
-          !isMarkdownMermaidInvalid && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
-            <div className="text-center p-6 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-lg max-w-sm">
-              <h3 className="text-red-700 dark:text-red-400 font-medium mb-1">Render failed</h3>
-              <p className="text-xs text-red-600 dark:text-red-300 font-mono text-left bg-white dark:bg-slate-950 p-2 rounded border border-red-100 dark:border-red-900 overflow-auto max-h-32">
-                {renderError}
-              </p>
-            </div>
-          </div>
-        )}
-        {!isBuildDocsMode && isMarkdownMermaidInvalid && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
-            <div className="text-center p-6 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-lg max-w-sm">
-              <h3 className="text-red-700 dark:text-red-400 font-medium mb-1">Cannot render diagram</h3>
-              <p className="text-xs text-red-600 dark:text-red-300 font-mono text-left bg-white dark:bg-slate-950 p-2 rounded border border-red-100 dark:border-red-900 overflow-auto max-h-32">
-                {activeMarkdownDiagnostics?.errorMessage || 'Syntax Error'}
-              </p>
-            </div>
-          </div>
-        )}
-        {!isBuildDocsMode && mermaidState.status === 'invalid' && !isMarkdownMode && !isMarkdownMermaidMode && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
-            <div className="text-center p-6 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-lg max-w-sm">
-              <h3 className="text-red-700 dark:text-red-400 font-medium mb-1">Cannot render diagram</h3>
-              <p className="text-xs text-red-600 dark:text-red-300 font-mono text-left bg-white dark:bg-slate-950 p-2 rounded border border-red-100 dark:border-red-900 overflow-auto max-h-32">
-                {mermaidState.errorMessage || 'Syntax Error'}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {!isBuildDocsMode && !codeForRender.trim() && !isMarkdownMode && (
-          <div className="text-slate-400 dark:text-slate-500 text-sm">No valid diagram to display.</div>
-        )}
-
-        {!isBuildDocsMode && svgMarkup && !isMarkdownMode && <div ref={svgMountRef} className="absolute inset-0" />}
-      {!isBuildDocsMode && isMarkdownMode && (
-        <div
-          ref={markdownMountRef}
-          className="markdown-body absolute inset-0 overflow-auto p-4 text-sm text-slate-700 dark:text-slate-200 leading-6"
-        />
-      )}
-    </div>
+      <PreviewBody
+        viewportRef={viewportRef}
+        svgMountRef={svgMountRef}
+        markdownMountRef={markdownMountRef}
+        docsMountRef={docsMountRef}
+        isBuildDocsMode={isBuildDocsMode}
+        isMarkdownMode={isMarkdownMode}
+        isMarkdownMermaidMode={isMarkdownMermaidMode}
+        isMarkdownMermaidInvalid={isMarkdownMermaidInvalid}
+        renderError={renderError}
+        mermaidState={mermaidState}
+        activeMarkdownErrorMessage={activeMarkdownDiagnostics?.errorMessage ?? null}
+        codeForRender={codeForRender}
+        svgMarkup={svgMarkup}
+        exportError={exportError}
+        zoomPercent={zoomPercent}
+        onZoomOut={zoomOut}
+        onZoomIn={zoomIn}
+        onFitToViewport={fitToViewport}
+        hasBuildDocs={Boolean(activeBuildDoc?.text)}
+      />
     </div>
   );
 };
