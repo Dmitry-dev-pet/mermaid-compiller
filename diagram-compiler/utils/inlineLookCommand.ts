@@ -1,5 +1,5 @@
-import { insertDirectiveAfterLeadingDirectives } from './mermaidDirectives';
-import { extractInlineThemeCommand } from './inlineThemeCommand';
+import { extractInlineThemeCommand, setInlineThemeCommand } from './inlineThemeCommand';
+import { extractFrontmatterConfigValue, removeFrontmatterConfigKey, updateFrontmatterConfigKey } from './mermaidFrontmatter';
 
 export type MermaidLook = 'handDrawn' | 'classic';
 
@@ -17,12 +17,13 @@ const normalizeLookToken = (raw: string): MermaidLook | null => {
   return null;
 };
 
-export const extractInlineLookCommand = (code: string): ExtractedLookCommand => {
+const stripLookDirective = (code: string): ExtractedLookCommand => {
   const lines = code.split(/\r?\n/);
   const kept: string[] = [];
 
   let foundLook: MermaidLook | null = null;
   let index = 0;
+  let consumedFrontmatter = false;
 
   while (index < lines.length) {
     const line = lines[index] ?? '';
@@ -31,6 +32,21 @@ export const extractInlineLookCommand = (code: string): ExtractedLookCommand => 
     if (trimmed.length === 0) {
       kept.push(line);
       index += 1;
+      continue;
+    }
+
+    if (!consumedFrontmatter && trimmed === '---') {
+      kept.push(line);
+      index += 1;
+      while (index < lines.length) {
+        kept.push(lines[index] ?? '');
+        if ((lines[index]?.trim() ?? '') === '---') {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      consumedFrontmatter = true;
       continue;
     }
 
@@ -55,14 +71,22 @@ export const extractInlineLookCommand = (code: string): ExtractedLookCommand => 
   return { codeWithoutCommand: [...kept, ...lines.slice(index)].join('\n'), look: foundLook };
 };
 
+export const extractInlineLookCommand = (code: string): ExtractedLookCommand => {
+  const frontmatterLook = normalizeLookToken(extractFrontmatterConfigValue(code, 'look') ?? '');
+  const withoutFrontmatter = removeFrontmatterConfigKey(code, 'look');
+  const directiveExtracted = stripLookDirective(withoutFrontmatter.code);
+
+  return {
+    codeWithoutCommand: directiveExtracted.codeWithoutCommand,
+    look: frontmatterLook ?? directiveExtracted.look,
+  };
+};
+
 export const setInlineLookCommand = (code: string, look: MermaidLook | null): string => {
   const extracted = extractInlineLookCommand(code);
   if (!look) return extracted.codeWithoutCommand;
 
-  const lines = extracted.codeWithoutCommand.split(/\r?\n/);
-  let insertAt = 0;
-  while (insertAt < lines.length && (lines[insertAt]?.trim() ?? '') === '') insertAt += 1;
-  return [...lines.slice(0, insertAt), `%%{look: ${look}}%%`, ...lines.slice(insertAt)].join('\n');
+  return updateFrontmatterConfigKey(extracted.codeWithoutCommand, 'look', look).code;
 };
 
 export const applyInlineThemeAndLookCommands = (
@@ -76,15 +100,9 @@ export const applyInlineThemeAndLookCommands = (
 
   if (!theme && !look) return { code, theme: null, look: null };
 
-  const init: Record<string, unknown> = {};
-  if (theme) init.theme = theme;
-  if (look) init.look = look;
+  let nextCode = lookExtracted.codeWithoutCommand;
+  if (theme) nextCode = setInlineThemeCommand(nextCode, theme);
+  if (look) nextCode = setInlineLookCommand(nextCode, look);
 
-  const initDirective = `%%{init: ${JSON.stringify(init)}}%%`;
-  return {
-    code: insertDirectiveAfterLeadingDirectives(lookExtracted.codeWithoutCommand, initDirective),
-    theme,
-    look,
-  };
+  return { code: nextCode, theme, look };
 };
-

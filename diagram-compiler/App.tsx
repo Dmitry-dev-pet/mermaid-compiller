@@ -1,9 +1,10 @@
-import React from 'react'; // No need for useCallback anymore directly here
+import React, { useCallback, useRef, useState } from 'react'; // No need for useCallback anymore directly here
 import Header from './components/Header';
 import ChatColumn from './components/ChatColumn';
 import EditorColumn from './components/EditorColumn';
 import PreviewColumn from './components/PreviewColumn';
 import { useDiagramStudio } from './hooks/studio/useDiagramStudio';
+import { ScrollSyncMeasure, ScrollSyncPayload } from './hooks/studio/useScrollSync';
 import { MermaidThemeName, setInlineThemeCommand } from './utils/inlineThemeCommand';
 import { MermaidDirection, setInlineDirectionCommand } from './utils/inlineDirectionCommand';
 import { MermaidLook, setInlineLookCommand } from './utils/inlineLookCommand';
@@ -62,6 +63,7 @@ function App() {
     toggleTheme,
     setAnalyzeLanguage,
     togglePreviewFullScreen,
+    toggleScrollSync,
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
@@ -87,6 +89,9 @@ function App() {
       redacted: promptPreviewByMode.fix?.systemPromptRedacted ?? '',
     },
   };
+  const scrollSyncSourceRef = useRef<ScrollSyncPayload['source'] | null>(null);
+  const [scrollSyncPayload, setScrollSyncPayload] = useState<ScrollSyncPayload | null>(null);
+  const [hoveredMarkdownIndex, setHoveredMarkdownIndex] = useState<number | null>(null);
   const promptPreviewKey = `${mermaidState.code}::${mermaidState.errorMessage ?? ''}::${appState.analyzeLanguage}::${appState.language}::${markdownMermaidActiveIndex}`;
   const applyInlineUpdate = (updateCode: (code: string) => string) => {
     if (editorTab === 'markdown_mermaid' && markdownMermaidBlocks.length) {
@@ -100,6 +105,41 @@ function App() {
     }
     handleMermaidChange(updateCode(mermaidState.code));
   };
+
+  const computeScrollRatio = (scrollTop: number, scrollHeight: number, clientHeight: number) => {
+    const maxScroll = Math.max(1, scrollHeight - clientHeight);
+    return Math.max(0, Math.min(1, scrollTop / maxScroll));
+  };
+
+  const handleEditorScrollSync = useCallback((payload: ScrollSyncMeasure) => {
+    if (!appState.isScrollSyncEnabled) return;
+    if (scrollSyncSourceRef.current === 'preview') {
+      scrollSyncSourceRef.current = null;
+      return;
+    }
+    scrollSyncSourceRef.current = 'editor';
+    const ratio = computeScrollRatio(payload.scrollTop, payload.scrollHeight, payload.clientHeight);
+    if (typeof payload.blockIndex === 'number') {
+      setScrollSyncPayload({ source: 'editor', mode: 'block', blockIndex: payload.blockIndex, ratio, nonce: Date.now() });
+      return;
+    }
+    setScrollSyncPayload({ source: 'editor', mode: 'ratio', ratio, nonce: Date.now() });
+  }, [appState.isScrollSyncEnabled]);
+
+  const handlePreviewScrollSync = useCallback((payload: ScrollSyncMeasure) => {
+    if (!appState.isScrollSyncEnabled) return;
+    if (scrollSyncSourceRef.current === 'editor' && typeof payload.blockIndex !== 'number') {
+      scrollSyncSourceRef.current = null;
+      return;
+    }
+    scrollSyncSourceRef.current = 'preview';
+    const ratio = computeScrollRatio(payload.scrollTop, payload.scrollHeight, payload.clientHeight);
+    if (typeof payload.blockIndex === 'number') {
+      setScrollSyncPayload({ source: 'preview', mode: 'block', blockIndex: payload.blockIndex, ratio, nonce: Date.now() });
+      return;
+    }
+    setScrollSyncPayload({ source: 'preview', mode: 'ratio', ratio, nonce: Date.now() });
+  }, [appState.isScrollSyncEnabled]);
 
   // Resizing logic is now entirely within useDiagramStudio,
   // so onMouseMove and onMouseUp are not needed directly in App.tsx
@@ -184,6 +224,10 @@ function App() {
                 onMarkdownMermaidActiveIndexChange={setMarkdownMermaidActiveIndex}
                 onActiveTabChange={setEditorTab}
                 onAppendMarkdownMermaidBlock={appendMarkdownMermaidBlock}
+                isScrollSyncEnabled={appState.isScrollSyncEnabled}
+                scrollSyncPayload={scrollSyncPayload}
+                onScrollSync={handleEditorScrollSync}
+                hoveredMarkdownIndex={hoveredMarkdownIndex}
               />
             </div>
 
@@ -205,6 +249,10 @@ function App() {
             theme={appState.theme}
             isFullScreen={appState.isPreviewFullScreen}
             onToggleFullScreen={togglePreviewFullScreen}
+            isScrollSyncEnabled={appState.isScrollSyncEnabled}
+            onToggleScrollSync={toggleScrollSync}
+            scrollSyncPayload={scrollSyncPayload}
+            onScrollSync={handlePreviewScrollSync}
             onSetInlineTheme={(nextTheme: MermaidThemeName | null) => {
               if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidState.code)) {
                 const nextMarkdown = setThemeForMarkdownMermaidBlocks(mermaidState.code, nextTheme);
@@ -234,6 +282,8 @@ function App() {
             markdownMermaidActiveIndex={markdownMermaidActiveIndex}
             onMarkdownMermaidActiveIndexChange={setMarkdownMermaidActiveIndex}
             onActiveEditorTabChange={setEditorTab}
+            hoveredMarkdownIndex={hoveredMarkdownIndex}
+            onHoverMarkdownIndex={setHoveredMarkdownIndex}
           />
         </div>
       </div>

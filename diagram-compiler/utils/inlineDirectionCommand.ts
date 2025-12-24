@@ -23,6 +23,7 @@ export const extractInlineDirectionCommand = (code: string): ExtractedDirectionC
 
   let foundDirection: MermaidDirection | null = null;
   let index = 0;
+  let consumedFrontmatter = false;
 
   // Only scan leading directives region (same rule as other Mermaid directives).
   while (index < lines.length) {
@@ -32,6 +33,21 @@ export const extractInlineDirectionCommand = (code: string): ExtractedDirectionC
     if (trimmed.length === 0) {
       kept.push(line);
       index += 1;
+      continue;
+    }
+
+    if (!consumedFrontmatter && trimmed === '---') {
+      kept.push(line);
+      index += 1;
+      while (index < lines.length) {
+        kept.push(lines[index] ?? '');
+        if ((lines[index]?.trim() ?? '') === '---') {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      consumedFrontmatter = true;
       continue;
     }
 

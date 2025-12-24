@@ -36,3 +36,29 @@ e# AGENT GUIDELINES for mermaid-langgraph
 ## Documentation
 
 - Не создавать и не изменять дополнительную документацию (README, docs и т.п.), если пользователь явно не запросил этого.
+
+## Обновленные документы
+
+- docs/constitution.md
+- features/001-mermaid-core/spec.md
+- features/001-mermaid-core/plan.md
+- features/001-mermaid-core/tasks.md
+- docs/project/README.md
+- docs/project/overview.md
+- docs/project/architecture.md
+- docs/project/mermaid.md
+- docs/project/llm.md
+- docs/project/usage.md
+- docs/project/setup.md
+- docs/project/testing.md
+- docs/project/troubleshooting.md
+- docs/project/data-storage.md
+- docs/project/history.md
+- docs/project/docs-update.md
+- docs/c4/README.md
+- docs/c4/context.md
+- docs/c4/containers.md
+- docs/c4/components.md
+- docs/c4/data.md
+- README.md
+- diagram-compiler/README.md

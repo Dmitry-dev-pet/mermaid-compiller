@@ -35,6 +35,7 @@ export const DEFAULT_APP_STATE: AppState = {
   columnWidths: [25, 40, 35],
   isResizing: null,
   isPreviewFullScreen: false,
+  isScrollSyncEnabled: false,
   theme: 'light',
   language: 'auto',
   analyzeLanguage: 'auto',

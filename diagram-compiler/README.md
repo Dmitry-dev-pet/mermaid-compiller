@@ -21,3 +21,7 @@
 ## Документация
 
 - C4 / Memory Bank: `../docs/c4/README.md`
+
+---
+
+Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).

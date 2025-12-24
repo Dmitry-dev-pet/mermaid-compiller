@@ -83,14 +83,23 @@
 }
 
 .markdown-active-block {
-	background-color: rgba(14, 116, 144, 0.12);
-	border-radius: 4px;
-	box-decoration-break: clone;
-	-webkit-box-decoration-break: clone;
-	box-shadow: inset 0 0 0 1px rgba(14, 116, 144, 0.3);
+	position: relative;
+	display: block;
+	padding-left: 8px;
+	margin-left: -8px;
 }
 
-.dark .markdown-active-block {
-	background-color: rgba(20, 184, 166, 0.16);
-	box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.4);
+.markdown-active-block::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 3px;
+	border-radius: 2px;
+	background: rgba(14, 116, 144, 0.85);
+}
+
+.dark .markdown-active-block::before {
+	background: rgba(20, 184, 166, 0.9);
 }

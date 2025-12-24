@@ -132,6 +132,7 @@ export interface AppState {
   columnWidths: [number, number, number]; // percentages
   isResizing: number | null;
   isPreviewFullScreen: boolean;
+  isScrollSyncEnabled: boolean;
   theme: 'light' | 'dark';
   language: string;
   analyzeLanguage: string;

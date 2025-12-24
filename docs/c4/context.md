@@ -38,3 +38,7 @@ UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 Примечания:
 - В режиме **Chat** приложение просит LLM отвечать **только текстом**.
 - В режиме **Build** приложение просит LLM вернуть **только Mermaid-код** и валидирует его через `mermaid.parse()`.
+
+---
+
+Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).

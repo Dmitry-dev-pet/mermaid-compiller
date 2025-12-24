@@ -189,6 +189,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
 
   useEffect(() => {
     if (buildDocsType === diagramType) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadBuildDocsEntries(diagramType);
   }, [buildDocsType, diagramType, loadBuildDocsEntries]);
 

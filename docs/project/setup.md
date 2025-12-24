@@ -68,3 +68,7 @@ node server.js
 - `VITE_PROXY_ENDPOINT` — URL локального прокси (по умолчанию `http://localhost:8317`).
 
 Файлы окружения находятся в `diagram-compiler/.env.*`.
+
+---
+
+Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).

@@ -22,6 +22,7 @@ interface PreviewBodyProps {
   onZoomIn: () => void;
   onFitToViewport: () => void;
   hasBuildDocs: boolean;
+  onMarkdownScroll?: () => void;
 }
 
 const PreviewBody: React.FC<PreviewBodyProps> = ({
@@ -44,6 +45,7 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
   onZoomIn,
   onFitToViewport,
   hasBuildDocs,
+  onMarkdownScroll,
 }) => {
   return (
     <div
@@ -152,6 +154,7 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
       {!isBuildDocsMode && isMarkdownMode && (
         <div
           ref={markdownMountRef}
+          onScroll={onMarkdownScroll}
           className="markdown-body absolute inset-0 overflow-auto p-4 text-sm text-slate-700 dark:text-slate-200 leading-6"
         />
       )}

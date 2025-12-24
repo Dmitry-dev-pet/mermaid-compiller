@@ -20,11 +20,11 @@ export const useMarkdownMermaid = ({ code, editorTab, setEditorTab }: UseMarkdow
 
   useEffect(() => {
     let cancelled = false;
-    if (!markdownMermaidBlocks.length) {
-      setMarkdownMermaidDiagnostics([]);
-      return;
-    }
     const validateBlocks = async () => {
+      if (!markdownMermaidBlocks.length) {
+        if (!cancelled) setMarkdownMermaidDiagnostics([]);
+        return;
+      }
       const results = await Promise.all(
         markdownMermaidBlocks.map((block) => validateMermaidDiagramCode(block.code))
       );
@@ -40,15 +40,21 @@ export const useMarkdownMermaid = ({ code, editorTab, setEditorTab }: UseMarkdow
   useEffect(() => {
     if (!markdownMermaidBlocks.length) {
       if (markdownMermaidActiveIndex !== 0) {
-        setMarkdownMermaidActiveIndex(0);
+        queueMicrotask(() => {
+          setMarkdownMermaidActiveIndex(0);
+        });
       }
       if (editorTab === 'markdown_mermaid') {
-        setEditorTab('code');
+        queueMicrotask(() => {
+          setEditorTab('code');
+        });
       }
       return;
     }
     if (markdownMermaidActiveIndex >= markdownMermaidBlocks.length) {
-      setMarkdownMermaidActiveIndex(0);
+      queueMicrotask(() => {
+        setMarkdownMermaidActiveIndex(0);
+      });
     }
   }, [editorTab, markdownMermaidActiveIndex, markdownMermaidBlocks.length, setEditorTab]);
 

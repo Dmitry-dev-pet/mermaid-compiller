@@ -1,24 +1,40 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import svgPanZoom from 'svg-pan-zoom';
-import MarkdownIt from 'markdown-it';
 import { EditorTab, MermaidState } from '../types';
 import { useDiagramExport } from '../hooks/studio/useDiagramExport';
 import { extractInlineThemeCommand, MermaidThemeName } from '../utils/inlineThemeCommand';
-import { applyInlineDirectionCommand, extractInlineDirectionCommand, MermaidDirection } from '../utils/inlineDirectionCommand';
-import { applyInlineThemeAndLookCommands, extractInlineLookCommand, MermaidLook } from '../utils/inlineLookCommand';
-import { detectMermaidDiagramType, isMarkdownLike, MermaidMarkdownBlock } from '../services/mermaidService';
+import { extractInlineDirectionCommand, MermaidDirection } from '../utils/inlineDirectionCommand';
+import { extractInlineLookCommand, MermaidLook } from '../utils/inlineLookCommand';
+import {
+  applyInlineMermaidDirectives,
+  detectMermaidDiagramType,
+  isMarkdownLike,
+  MermaidMarkdownBlock,
+} from '../services/mermaidService';
+import { ScrollSyncMeasure, ScrollSyncPayload, useScrollSync } from '../hooks/studio/useScrollSync';
+import { useMarkdownMermaidBlockState } from '../hooks/markdown/useMarkdownMermaidBlockState';
+import { useMarkdownPreview } from '../hooks/preview/useMarkdownPreview';
+import { useMarkdownMermaidOffsets } from '../hooks/preview/useMarkdownMermaidOffsets';
+import {
+  DIAGRAM_TYPE_SUPPORTS_INLINE_DIRECTION,
+  DIAGRAM_TYPE_SUPPORTS_INLINE_LOOK,
+  getInlineDirectionOptions,
+} from '../utils/diagramTypeMeta';
+import { getSystemPromptModeFromPath, isSystemPromptPath } from '../utils/systemPrompts';
 import PreviewHeaderControls from './preview/PreviewHeaderControls';
 import PreviewBody from './preview/PreviewBody';
 import './markdown-preview.css';
-
-const SYSTEM_PROMPT_DOC_PREFIX = 'system-prompts/';
 
 interface PreviewColumnProps {
   mermaidState: MermaidState;
   theme: 'light' | 'dark';
   isFullScreen: boolean;
   onToggleFullScreen: () => void;
+  isScrollSyncEnabled: boolean;
+  onToggleScrollSync: () => void;
+  scrollSyncPayload: ScrollSyncPayload | null;
+  onScrollSync: (payload: ScrollSyncMeasure) => void;
   onSetInlineTheme: (theme: MermaidThemeName | null) => void;
   onSetInlineDirection: (direction: MermaidDirection | null) => void;
   onSetInlineLook: (look: MermaidLook | null) => void;
@@ -32,6 +48,8 @@ interface PreviewColumnProps {
   markdownMermaidActiveIndex: number;
   onMarkdownMermaidActiveIndexChange: (index: number) => void;
   onActiveEditorTabChange: (tab: EditorTab) => void;
+  hoveredMarkdownIndex: number | null;
+  onHoverMarkdownIndex: (index: number | null) => void;
 }
 
 type ViewBox = { x: number; y: number; width: number; height: number };
@@ -56,6 +74,10 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   theme,
   isFullScreen,
   onToggleFullScreen,
+  isScrollSyncEnabled,
+  onToggleScrollSync,
+  scrollSyncPayload,
+  onScrollSync,
   onSetInlineTheme,
   onSetInlineDirection,
   onSetInlineLook,
@@ -69,6 +91,8 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   markdownMermaidActiveIndex,
   onMarkdownMermaidActiveIndexChange,
   onActiveEditorTabChange,
+  hoveredMarkdownIndex,
+  onHoverMarkdownIndex,
 }) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const svgMountRef = useRef<HTMLDivElement>(null);
@@ -77,16 +101,24 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const bindFunctionsRef = useRef<((element: Element) => void) | null>(null);
   const panZoomRef = useRef<ReturnType<typeof svgPanZoom> | null>(null);
+  const { refreshOffsets, resolveBlockIndex, getOffset } = useMarkdownMermaidOffsets();
 
   const [svgMarkup, setSvgMarkup] = useState<string>('');
   const [renderError, setRenderError] = useState<string | null>(null);
   const [zoomPercent, setZoomPercent] = useState<number>(100);
-  const [markdownHtml, setMarkdownHtml] = useState<string>('');
   const [isMarkdownMode, setIsMarkdownMode] = useState<boolean>(false);
-  const isMarkdownMermaidMode = activeEditorTab === 'markdown_mermaid';
-  const activeMarkdownBlock = markdownMermaidBlocks[markdownMermaidActiveIndex];
-  const activeMarkdownDiagnostics = markdownMermaidDiagnostics[markdownMermaidActiveIndex];
-  const isMarkdownMermaidInvalid = isMarkdownMermaidMode && activeMarkdownDiagnostics?.isValid === false;
+  const isBuildDocsMode = activeEditorTab === 'build_docs';
+  const {
+    isMarkdownMermaidMode,
+    activeBlock: activeMarkdownBlock,
+    activeDiagnostics: activeMarkdownDiagnostics,
+    isMarkdownMermaidInvalid,
+  } = useMarkdownMermaidBlockState({
+    blocks: markdownMermaidBlocks,
+    diagnostics: markdownMermaidDiagnostics,
+    activeIndex: markdownMermaidActiveIndex,
+    activeTab: activeEditorTab,
+  });
   const codeForRender = isMarkdownMermaidMode ? activeMarkdownBlock?.code ?? '' : mermaidState.code;
   const activeDiagramType = useMemo(() => {
     if (isMarkdownMermaidMode) {
@@ -95,25 +127,31 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     return codeForRender ? detectMermaidDiagramType(codeForRender) : null;
   }, [activeMarkdownBlock?.diagramType, codeForRender, isMarkdownMermaidMode]);
   const supportsInlineTheme = Boolean(activeDiagramType);
-  const supportsInlineDirection =
-    activeDiagramType === 'flowchart' ||
-    activeDiagramType === 'class' ||
-    activeDiagramType === 'state' ||
-    activeDiagramType === 'er' ||
-    activeDiagramType === 'requirementDiagram';
-  const supportsInlineLook = activeDiagramType === 'flowchart' || activeDiagramType === 'state';
-  const directionOptions = useMemo<MermaidDirection[]>(() => {
-    if (!supportsInlineDirection) return [];
-    if (activeDiagramType === 'flowchart') {
-      return ['TB', 'TD', 'LR', 'RL', 'BT'];
-    }
-    return ['TB', 'LR', 'RL', 'BT'];
-  }, [activeDiagramType, supportsInlineDirection]);
+  const supportsInlineDirection = Boolean(
+    activeDiagramType && DIAGRAM_TYPE_SUPPORTS_INLINE_DIRECTION[activeDiagramType]
+  );
+  const supportsInlineLook = Boolean(activeDiagramType && DIAGRAM_TYPE_SUPPORTS_INLINE_LOOK[activeDiagramType]);
+  const directionOptions = useMemo<MermaidDirection[]>(
+    () => getInlineDirectionOptions(activeDiagramType),
+    [activeDiagramType]
+  );
   const markdownNavEnabled =
     (isMarkdownMode || isMarkdownMermaidMode) && markdownMermaidBlocks.length > 1;
   const markdownNavLabel = markdownNavEnabled
     ? `${markdownMermaidActiveIndex + 1}/${markdownMermaidBlocks.length}`
     : '';
+  const canSyncScroll = isScrollSyncEnabled && isMarkdownMode;
+  const handleHoverSync = useCallback((index: number) => {
+    if (!canSyncScroll) return;
+    const container = markdownMountRef.current;
+    if (!container) return;
+    onScrollSync({
+      scrollTop: container.scrollTop,
+      scrollHeight: container.scrollHeight,
+      clientHeight: container.clientHeight,
+      blockIndex: index,
+    });
+  }, [canSyncScroll, onScrollSync]);
   const setMarkdownIndexFromPreview = useCallback(
     (index: number) => {
       onMarkdownMermaidActiveIndexChange(index);
@@ -121,13 +159,27 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     },
     [onActiveEditorTabChange, onMarkdownMermaidActiveIndexChange]
   );
-  const normalizeMermaidBlockCode = useCallback((raw: string) => {
-    const withDirection = applyInlineDirectionCommand(raw).code;
-    return applyInlineThemeAndLookCommands(withDirection).code;
-  }, []);
-  const createMarkdownErrorBlock = useCallback((message: string) => {
+  const { handleScrollSync: handleMarkdownScroll } = useScrollSync({
+    enabled: canSyncScroll,
+    source: 'preview',
+    scrollRef: markdownMountRef,
+    scrollSyncPayload,
+    onScrollSync,
+    resolveBlockIndex,
+    getBlockOffset: (index) => getOffset(index),
+  });
+  const { markdownHtml, renderMarkdown, markdownRenderer } = useMarkdownPreview(
+    codeForRender,
+    isMarkdownMode,
+    isMarkdownMermaidMode,
+    isBuildDocsMode
+  );
+  const createMarkdownErrorBlock = useCallback((message: string, index?: number) => {
     const wrapper = document.createElement('div');
-    wrapper.className = 'markdown-callout markdown-callout-error';
+    wrapper.className = 'markdown-callout markdown-callout-error markdown-mermaid-preview markdown-mermaid-block';
+    if (typeof index === 'number') {
+      wrapper.dataset.mermaidIndex = String(index);
+    }
     const title = document.createElement('div');
     title.className = 'markdown-callout-title';
     title.textContent = 'Mermaid Error';
@@ -138,55 +190,22 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     wrapper.appendChild(body);
     return wrapper;
   }, []);
-  const applyMarkdownCallouts = useCallback((mount: HTMLElement) => {
-    const types: Array<{ key: string; title: string }> = [
-      { key: 'warning', title: 'Warning' },
-      { key: 'note', title: 'Note' },
-      { key: 'tip', title: 'Tip' },
-      { key: 'info', title: 'Info' },
-    ];
-
-    for (const type of types) {
-      const blocks = Array.from(
-        mount.querySelectorAll(`pre > code.language-${type.key}`)
-      );
-
-      for (const block of blocks) {
-        const text = (block.textContent ?? '').trim();
-        if (!text) continue;
-        const pre = block.parentElement;
-        if (!pre || !pre.parentElement) continue;
-        const wrapper = document.createElement('div');
-        wrapper.className = `markdown-callout markdown-callout-${type.key}`;
-        const title = document.createElement('div');
-        title.className = 'markdown-callout-title';
-        title.textContent = type.title;
-        const body = document.createElement('div');
-        body.className = 'markdown-callout-body';
-        body.textContent = text;
-        wrapper.appendChild(title);
-        wrapper.appendChild(body);
-        pre.replaceWith(wrapper);
-      }
-    }
-  }, []);
+  const refreshPreviewOffsets = useCallback(() => {
+    const container = markdownMountRef.current;
+    if (!container) return;
+    refreshOffsets(container);
+  }, [refreshOffsets]);
   const { exportError, exportPng, exportSvg, isExporting } = useDiagramExport({ svgRef, code: codeForRender, theme });
-  const markdownRenderer = useMemo(() => new MarkdownIt({ html: false, linkify: true, typographer: false }), []);
-  const isBuildDocsMode = activeEditorTab === 'build_docs';
 
   const resolveSystemPromptForPath = (path: string) => {
-    if (!path.startsWith(SYSTEM_PROMPT_DOC_PREFIX)) return '';
-    const fileName = path.replace(SYSTEM_PROMPT_DOC_PREFIX, '');
-    const mode = fileName.split('/').pop()?.replace(/\.md$/, '') ?? '';
-    if (mode === 'chat' || mode === 'build' || mode === 'analyze' || mode === 'fix') {
-      const useRaw = systemPromptRawByMode[mode] ?? false;
-      const prompt = useRaw ? buildDocsSystemPrompts[mode]?.raw : buildDocsSystemPrompts[mode]?.redacted;
-      return prompt || buildDocsSystemPrompts[mode]?.raw || 'No system prompt available.';
-    }
-    return 'No system prompt available.';
+    const mode = getSystemPromptModeFromPath(path);
+    if (!mode) return '';
+    const useRaw = systemPromptRawByMode[mode] ?? false;
+    const prompt = useRaw ? buildDocsSystemPrompts[mode]?.raw : buildDocsSystemPrompts[mode]?.redacted;
+    return prompt || buildDocsSystemPrompts[mode]?.raw || 'No system prompt available.';
   };
   const activeBuildDoc =
-    buildDocsActivePath.startsWith(SYSTEM_PROMPT_DOC_PREFIX)
+    isSystemPromptPath(buildDocsActivePath)
       ? { path: buildDocsActivePath, text: resolveSystemPromptForPath(buildDocsActivePath) }
       : buildDocsEntries.find((entry) => entry.path === buildDocsActivePath) ?? buildDocsEntries[0];
   const buildDocsHtml = useMemo(() => {
@@ -273,15 +292,11 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     if (isBuildDocsMode) return;
     if (isMarkdownMermaidMode) {
       if (isMarkdownMode) setIsMarkdownMode(false);
-      if (markdownHtml) setMarkdownHtml('');
       return;
     }
     const isMarkdown = isMarkdownLike(codeForRender);
     setIsMarkdownMode(isMarkdown);
-    if (!isMarkdown) {
-      setMarkdownHtml('');
-      return;
-    }
+    if (!isMarkdown) return;
 
     setRenderError(null);
     setSvgMarkup('');
@@ -290,17 +305,14 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     panZoomRef.current?.destroy();
     panZoomRef.current = null;
     setZoomPercent(100);
+  }, [codeForRender, isBuildDocsMode, isMarkdownMermaidMode, isMarkdownMode]);
 
-    const html = markdownRenderer.render(codeForRender);
-    setMarkdownHtml(html);
-  }, [
-    codeForRender,
-    isBuildDocsMode,
-    isMarkdownMermaidMode,
-    isMarkdownMode,
-    markdownHtml,
-    markdownRenderer,
-  ]);
+  useEffect(() => {
+    if (isMarkdownMode) return;
+    if (hoveredMarkdownIndex !== null) {
+      onHoverMarkdownIndex(null);
+    }
+  }, [hoveredMarkdownIndex, isMarkdownMode, onHoverMarkdownIndex]);
 
   useEffect(() => {
     if (isBuildDocsMode) return;
@@ -324,8 +336,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
       try {
         setRenderError(null);
         const id = `mermaid-${Date.now()}`;
-        const withDirection = applyInlineDirectionCommand(codeForRender).code;
-        const { code: inlineCode } = applyInlineThemeAndLookCommands(withDirection);
+        const inlineCode = applyInlineMermaidDirectives(codeForRender);
         const { svg, bindFunctions } = await mermaid.render(id, inlineCode);
         bindFunctionsRef.current = bindFunctions ?? null;
 
@@ -359,9 +370,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     if (!isMarkdownMode) return;
     const mount = markdownMountRef.current;
     if (!mount) return;
-
-    mount.innerHTML = markdownHtml;
-    applyMarkdownCallouts(mount);
+    renderMarkdown(mount);
 
     const mermaidBlocks = Array.from(
       mount.querySelectorAll('pre > code.language-mermaid, pre > code.language-mermaid-example')
@@ -377,23 +386,37 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         if (!code.trim()) continue;
         const id = `md-mermaid-${Date.now()}-${i}`;
         const diagnostics = markdownMermaidDiagnostics[i];
-        if (diagnostics?.isValid === false) {
-          const pre = block.parentElement;
-          if (pre && pre.parentElement) {
-            const errorBlock = createMarkdownErrorBlock(diagnostics.errorMessage || 'Syntax Error');
-            pre.replaceWith(errorBlock);
+          if (diagnostics?.isValid === false) {
+            const pre = block.parentElement;
+            if (pre && pre.parentElement) {
+              const errorBlock = createMarkdownErrorBlock(diagnostics.errorMessage || 'Syntax Error', i);
+              pre.replaceWith(errorBlock);
+            }
+            continue;
           }
-          continue;
-        }
         try {
-          const normalized = normalizeMermaidBlockCode(code);
+          const normalized = applyInlineMermaidDirectives(code);
           const { svg, bindFunctions } = await mermaid.render(id, normalized);
           if (isCancelled || !svg) continue;
           const wrapper = document.createElement('div');
+          wrapper.className = 'markdown-mermaid-preview markdown-mermaid-block';
+          wrapper.setAttribute('role', 'button');
+          wrapper.setAttribute('tabindex', '0');
+          wrapper.dataset.mermaidIndex = String(i);
           wrapper.innerHTML = svg;
           const pre = block.parentElement;
           if (pre && pre.parentElement) {
             pre.replaceWith(wrapper);
+            wrapper.addEventListener('click', () => {
+              setMarkdownIndexFromPreview(i);
+            });
+            wrapper.addEventListener('mouseenter', () => {
+              onHoverMarkdownIndex(i);
+              handleHoverSync(i);
+            });
+            wrapper.addEventListener('mouseleave', () => {
+              onHoverMarkdownIndex(null);
+            });
             try {
               bindFunctions?.(wrapper);
             } catch (e) {
@@ -404,11 +427,14 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
           const pre = block.parentElement;
           if (pre && pre.parentElement) {
             const message = e instanceof Error ? e.message : 'Syntax Error';
-            const errorBlock = createMarkdownErrorBlock(message);
+            const errorBlock = createMarkdownErrorBlock(message, i);
             pre.replaceWith(errorBlock);
           }
           console.error('Failed to render Mermaid block in markdown', e);
         }
+      }
+      if (!isCancelled) {
+        requestAnimationFrame(() => refreshPreviewOffsets());
       }
     };
 
@@ -417,13 +443,16 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
       isCancelled = true;
     };
   }, [
-    applyMarkdownCallouts,
     createMarkdownErrorBlock,
     isBuildDocsMode,
     isMarkdownMode,
     markdownHtml,
     markdownMermaidDiagnostics,
-    normalizeMermaidBlockCode,
+    handleHoverSync,
+    onHoverMarkdownIndex,
+    renderMarkdown,
+    setMarkdownIndexFromPreview,
+    refreshPreviewOffsets,
     theme,
   ]);
 
@@ -433,7 +462,6 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     if (!mount) return;
 
     mount.innerHTML = buildDocsHtml;
-    applyMarkdownCallouts(mount);
 
     const mermaidBlocks = Array.from(
       mount.querySelectorAll('pre > code.language-mermaid, pre > code.language-mermaid-example')
@@ -449,7 +477,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         if (!code.trim()) continue;
         const id = `build-docs-${Date.now()}-${i}`;
         try {
-          const normalized = normalizeMermaidBlockCode(code);
+          const normalized = applyInlineMermaidDirectives(code);
           const { svg, bindFunctions } = await mermaid.render(id, normalized);
           if (isCancelled || !svg) continue;
           const wrapper = document.createElement('div');
@@ -473,7 +501,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [applyMarkdownCallouts, buildDocsHtml, isBuildDocsMode, normalizeMermaidBlockCode, theme]);
+  }, [buildDocsHtml, isBuildDocsMode, theme]);
 
   useEffect(() => {
     if (isBuildDocsMode) return;
@@ -604,6 +632,9 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         codeForRender={codeForRender}
         isFullScreen={isFullScreen}
         onToggleFullScreen={onToggleFullScreen}
+        showScrollSyncToggle={isMarkdownMode}
+        isScrollSyncEnabled={isScrollSyncEnabled}
+        onToggleScrollSync={onToggleScrollSync}
         svgMarkup={svgMarkup}
         isExporting={isExporting}
         onExportSvg={exportSvg}
@@ -630,6 +661,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         onZoomIn={zoomIn}
         onFitToViewport={fitToViewport}
         hasBuildDocs={Boolean(activeBuildDoc?.text)}
+        onMarkdownScroll={handleMarkdownScroll}
       />
     </div>
   );

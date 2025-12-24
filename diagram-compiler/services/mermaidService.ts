@@ -68,6 +68,11 @@ export const detectMermaidDiagramType = (code: string): DiagramType | null => {
   return null;
 };
 
+export const applyInlineMermaidDirectives = (code: string): string => {
+  const withDirection = applyInlineDirectionCommand(code).code;
+  return applyInlineThemeAndLookCommands(withDirection).code;
+};
+
 export const extractMermaidBlocksFromMarkdown = (markdown: string): MermaidMarkdownBlock[] => {
   if (!markdown.trim()) return [];
   const blocks: MermaidMarkdownBlock[] = [];
@@ -191,8 +196,7 @@ export const validateMermaid = async (code: string): Promise<Partial<MermaidStat
 
   try {
     // parse throws an error if invalid
-    const withDirection = applyInlineDirectionCommand(code).code;
-    const withThemeAndLook = applyInlineThemeAndLookCommands(withDirection).code;
+    const withThemeAndLook = applyInlineMermaidDirectives(code);
     await mermaid.parse(withThemeAndLook);
     return {
       isValid: true,
@@ -235,8 +239,7 @@ export const validateMermaidDiagramCode = async (
   }
 
   try {
-    const withDirection = applyInlineDirectionCommand(code).code;
-    const withThemeAndLook = applyInlineThemeAndLookCommands(withDirection).code;
+    const withThemeAndLook = applyInlineMermaidDirectives(code);
     await mermaid.parse(withThemeAndLook);
     return {
       isValid: true,

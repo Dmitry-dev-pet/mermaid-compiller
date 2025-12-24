@@ -28,3 +28,7 @@ Mermaid Diagram Compiler — SPA для генерации и редактиро
 - Tailwind CSS, Lucide Icons.
 - Mermaid.js (рендеринг и валидация).
 - Vitest для тестов.
+
+---
+
+Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).

@@ -87,3 +87,18 @@
   background: rgba(190, 18, 60, 0.2);
   color: #ffe4e6;
 }
+
+.markdown-body .markdown-mermaid-preview {
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px;
+  transition: box-shadow 0.2s ease;
+}
+
+.markdown-body .markdown-mermaid-preview:hover {
+  box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.35);
+}
+
+.dark .markdown-body .markdown-mermaid-preview:hover {
+  box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.4);
+}

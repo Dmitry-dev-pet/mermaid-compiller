@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, Download, Maximize2, Minimize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Link2, Maximize2, Minimize2 } from 'lucide-react';
 import { MermaidThemeName } from '../../utils/inlineThemeCommand';
 import { MermaidDirection } from '../../utils/inlineDirectionCommand';
 import { MermaidLook } from '../../utils/inlineLookCommand';
@@ -27,6 +27,9 @@ interface PreviewHeaderControlsProps {
   codeForRender: string;
   isFullScreen: boolean;
   onToggleFullScreen: () => void;
+  showScrollSyncToggle: boolean;
+  isScrollSyncEnabled: boolean;
+  onToggleScrollSync: () => void;
   svgMarkup: string;
   isExporting: boolean;
   onExportSvg: () => void;
@@ -56,13 +59,16 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
   codeForRender,
   isFullScreen,
   onToggleFullScreen,
+  showScrollSyncToggle,
+  isScrollSyncEnabled,
+  onToggleScrollSync,
   svgMarkup,
   isExporting,
   onExportSvg,
   onExportPng,
 }) => {
   return (
-    <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-wrap md:flex-nowrap items-center gap-3">
+    <div className="h-24 px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-wrap md:flex-nowrap items-center gap-3">
       <div className="flex items-center gap-3 min-w-0">
         <div className="min-w-0 truncate">{title}</div>
         {!isBuildDocsMode && (showThemeControl || showDirectionControl || showLookControl) && (
@@ -172,6 +178,21 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
       )}
       {!isBuildDocsMode && (
         <div className="flex flex-wrap items-center justify-end gap-2 normal-case tracking-normal">
+          {showScrollSyncToggle && (
+            <button
+              type="button"
+              onClick={onToggleScrollSync}
+              className={`p-1.5 rounded border transition-colors shrink-0 ${
+                isScrollSyncEnabled
+                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
+                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700'
+              }`}
+              title={isScrollSyncEnabled ? 'Disable scroll sync' : 'Enable scroll sync'}
+              aria-label={isScrollSyncEnabled ? 'Disable scroll sync' : 'Enable scroll sync'}
+            >
+              <Link2 size={16} />
+            </button>
+          )}
           <button
             type="button"
             onClick={onToggleFullScreen}

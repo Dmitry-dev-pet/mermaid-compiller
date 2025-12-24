@@ -27,3 +27,7 @@
 ## Версии
 
 - Версия Mermaid, используемая в UI и валидации: см. `diagram-compiler/constants.ts` (`MERMAID_VERSION`).
+
+---
+
+Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).

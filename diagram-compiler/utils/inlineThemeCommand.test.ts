@@ -10,6 +10,14 @@ describe('inlineThemeCommand', () => {
     });
   });
 
+  it('extracts theme from frontmatter config', () => {
+    const code = `---\nconfig:\n  theme: forest\n---\nflowchart TD\nA-->B`;
+    expect(extractInlineThemeCommand(code)).toEqual({
+      codeWithoutCommand: `flowchart TD\nA-->B`,
+      theme: 'forest',
+    });
+  });
+
   it('keeps other directives and removes only theme command', () => {
     const code = `%%{init: {"theme":"default"}}%%\n%%{theme: dark}%%\nflowchart TD\nA-->B`;
     expect(extractInlineThemeCommand(code)).toEqual({
@@ -21,7 +29,7 @@ describe('inlineThemeCommand', () => {
   it('setInlineThemeCommand inserts after leading blank lines and replaces existing theme', () => {
     const code = `\n\n%%{theme: forest}%%\nflowchart TD\nA-->B`;
     const next = setInlineThemeCommand(code, 'neutral');
-    expect(next).toBe(`\n\n%%{theme: neutral}%%\nflowchart TD\nA-->B`);
+    expect(next).toBe(`---\nconfig:\n  theme: neutral\n---\n\n\nflowchart TD\nA-->B`);
   });
 
   it('setInlineThemeCommand removes theme when null', () => {
@@ -29,12 +37,11 @@ describe('inlineThemeCommand', () => {
     expect(setInlineThemeCommand(code, null)).toBe(`flowchart TD\nA-->B`);
   });
 
-  it('applyInlineThemeCommand injects init theme directive and strips theme command', () => {
+  it('applyInlineThemeCommand promotes theme to frontmatter and strips directives', () => {
     const code = `%%{theme: forest}%%\nflowchart TD\nA-->B`;
     const applied = applyInlineThemeCommand(code);
     expect(applied.theme).toBe('forest');
-    expect(applied.code).toContain(`%%{init: {"theme":"forest"}}%%`);
+    expect(applied.code).toContain(`---\nconfig:\n  theme: forest\n---`);
     expect(applied.code).not.toContain('%%{theme: forest}%%');
   });
 });
-

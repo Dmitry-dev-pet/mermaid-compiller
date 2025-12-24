@@ -1,7 +1,8 @@
-import React, { useMemo, useRef, useEffect, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { FileText, MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
 import { DiagramType, LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
 import type { DiagramMarker } from '../hooks/core/useHistory';
+import { DIAGRAM_TYPE_LABELS } from '../utils/diagramTypeMeta';
 
 interface ChatColumnProps {
   messages: Message[];
@@ -129,72 +130,81 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     }
   };
 
-  const updatePromptPreview = async (mode: PromptPreviewMode, promptInput: string, requestId: number) => {
-    const title =
-      mode === 'chat'
-        ? 'LLM request (Chat)'
-        : mode === 'build'
-          ? 'LLM request (Build)'
-          : mode === 'analyze'
-            ? 'LLM request (Analyze)'
-            : 'LLM request (Fix)';
-    try {
-      const preview = await onPreviewPrompt(mode, promptInput);
-      if (requestId !== previewRequestRef.current) return;
-      const systemTokens = estimateTokens(preview.systemPrompt);
-      const messagesTokens = preview.messages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
-      const tokenCounts: PromptTokenCounts = {
-        system: systemTokens,
-        messages: messagesTokens,
-        total: systemTokens + messagesTokens,
-      };
-      const redacted = formatRequestPreview(preview, { redactDocs: true });
-      const raw = formatRequestPreview(preview, { redactDocs: false });
-      onSetPromptPreview(
-        mode,
-        title,
-        redacted,
-        raw,
-        tokenCounts,
-        preview.systemPrompt,
-        preview.systemPromptRedacted,
-        preview.language
-      );
-    } catch (error: unknown) {
-      if (requestId !== previewRequestRef.current) return;
-      const message = error instanceof Error ? error.message : String(error);
-      const errorText = `Error: ${message}`;
-      onSetPromptPreview(mode, title, errorText, errorText);
-    }
-  };
+  const formatMessagesForPreview = useCallback((previewMessages: Message[]) => {
+    if (previewMessages.length === 0) return '(no messages)';
+    return previewMessages
+      .map((message) => {
+        const roleLabel = message.role.toUpperCase();
+        const content = message.content.trim() || '(empty)';
+        return `[${roleLabel}] ${content}`;
+      })
+      .join('\n\n');
+  }, []);
 
-  useEffect(() => {
-    const requestId = ++previewRequestRef.current;
-    if (previewTimerRef.current) {
-      window.clearTimeout(previewTimerRef.current);
-    }
-    previewTimerRef.current = window.setTimeout(() => {
-      void updatePromptPreview('chat', input, requestId);
-      void updatePromptPreview('build', input, requestId);
-      void updatePromptPreview('analyze', input, requestId);
-      void updatePromptPreview('fix', input, requestId);
-    }, 250);
-
-    return () => {
-      if (previewTimerRef.current) {
-        window.clearTimeout(previewTimerRef.current);
-      }
+  const parseDocsContext = useCallback((docsContext: string) => {
+    const lines = docsContext.split(/\r?\n/);
+    const entries: Array<{ fileName: string; tokens: number }> = [];
+    let currentPath = '';
+    let buffer: string[] = [];
+    const flush = () => {
+      if (!currentPath) return;
+      const content = buffer.join('\n');
+      const tokensMatch = currentPath.match(/\(~(\d+)\s+tok\)/);
+      const tokens = tokensMatch?.[1] ? Number(tokensMatch[1]) : estimateTokens(content);
+      const fileName = currentPath.replace(/\s+\(~\d+\s+tok\)\s*$/, '').trim();
+      entries.push({ fileName, tokens: Number.isFinite(tokens) ? tokens : 0 });
+      currentPath = '';
+      buffer = [];
     };
-  }, [
-    buildDocsSelectionKey,
-    diagramType,
-    hasIntent,
-    input,
-    lastMessageTimestamp,
-    messages.length,
-    onPreviewPrompt,
-    promptPreviewKey,
-  ]);
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const match = trimmed.match(/^--- (.+) ---$/);
+      if (match) {
+        flush();
+        currentPath = match[1];
+        buffer = [];
+        continue;
+      }
+      if (currentPath) buffer.push(line);
+    }
+    flush();
+
+    return entries;
+  }, []);
+
+  const formatRequestPreview = useCallback(
+    (preview: LLMRequestPreview, options: { redactDocs: boolean }) => {
+      const docsEntries = parseDocsContext(preview.docsContext);
+      const docsTotalTokens = docsEntries.reduce((sum, entry) => sum + entry.tokens, 0);
+      const docsSummaryBlock = docsEntries.length
+        ? docsEntries.map((entry) => `--- ${entry.fileName} --- (~${entry.tokens} tok)`).join('\n')
+        : '';
+      const systemPromptValue =
+        options.redactDocs && preview.docsContext && docsSummaryBlock
+          ? preview.systemPrompt.replace(preview.docsContext, docsSummaryBlock)
+          : preview.systemPrompt;
+      const hasDocs = docsEntries.length > 0;
+      const metaLines =
+        preview.mode === 'build'
+          ? [`Mode: ${preview.mode}`, `Diagram type: ${preview.diagramType}`, `Language: ${preview.language}`]
+          : [];
+      const lines = [
+        preview.error ? `Error: ${preview.error}` : '',
+        hasDocs ? `Docs files: ${docsEntries.map((entry) => `${entry.fileName} (~${entry.tokens} tok)`).join(', ')}` : '',
+        hasDocs ? `Docs tokens total: ~${docsTotalTokens} tok` : '',
+        ...metaLines,
+        '',
+        '--- System Prompt ---',
+        systemPromptValue.trim() || '(empty)',
+        '',
+        '--- Messages ---',
+        formatMessagesForPreview(preview.messages),
+      ].filter((line) => line !== '');
+      return lines.join('\n');
+    },
+    [formatMessagesForPreview, parseDocsContext]
+  );
 
   const handleSubmit = (mode: 'chat' | 'build', e?: React.FormEvent) => {
     e?.preventDefault();
@@ -232,113 +242,82 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     }
   };
 
-  const formatMessagesForPreview = (previewMessages: Message[]) => {
-    if (previewMessages.length === 0) return '(no messages)';
-    return previewMessages
-      .map((msg, index) => {
-        const header = `[${index + 1}] ${msg.role}`;
-        return `${header}\n${msg.content.trim()}`;
-      })
-      .join('\n\n');
-  };
-
-  const parseDocsContext = (docsContext: string) => {
-    const entries: Array<{ path: string; fileName: string; text: string; tokens: number }> = [];
-    const lines = docsContext.split('\n');
-    let currentPath: string | null = null;
-    let buffer: string[] = [];
-
-    const flush = () => {
-      if (!currentPath) return;
-      const text = buffer.join('\n').trim();
-      entries.push({
-        path: currentPath,
-        fileName: currentPath.split('/').pop() || currentPath,
-        text,
-        tokens: estimateTokens(text),
-      });
-    };
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      const match = trimmed.match(/^--- (.+) ---$/);
-      if (match) {
-        flush();
-        currentPath = match[1];
-        buffer = [];
-        continue;
-      }
-      if (currentPath) buffer.push(line);
+  const updatePromptPreview = useCallback(async (mode: PromptPreviewMode, promptInput: string, requestId: number) => {
+    const title =
+      mode === 'chat'
+        ? 'LLM request (Chat)'
+        : mode === 'build'
+          ? 'LLM request (Build)'
+          : mode === 'analyze'
+            ? 'LLM request (Analyze)'
+            : 'LLM request (Fix)';
+    try {
+      const preview = await onPreviewPrompt(mode, promptInput);
+      if (requestId !== previewRequestRef.current) return;
+      const systemTokens = estimateTokens(preview.systemPrompt);
+      const messagesTokens = preview.messages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
+      const tokenCounts: PromptTokenCounts = {
+        system: systemTokens,
+        messages: messagesTokens,
+        total: systemTokens + messagesTokens,
+      };
+      const redacted = formatRequestPreview(preview, { redactDocs: true });
+      const raw = formatRequestPreview(preview, { redactDocs: false });
+      onSetPromptPreview(
+        mode,
+        title,
+        redacted,
+        raw,
+        tokenCounts,
+        preview.systemPrompt,
+        preview.systemPromptRedacted,
+        preview.language
+      );
+    } catch (error: unknown) {
+      if (requestId !== previewRequestRef.current) return;
+      const message = error instanceof Error ? error.message : String(error);
+      const errorText = `Error: ${message}`;
+      onSetPromptPreview(mode, title, errorText, errorText);
     }
-    flush();
+  }, [formatRequestPreview, onPreviewPrompt, onSetPromptPreview]);
 
-    return entries;
-  };
+  useEffect(() => {
+    const requestId = ++previewRequestRef.current;
+    if (previewTimerRef.current) {
+      window.clearTimeout(previewTimerRef.current);
+    }
+    previewTimerRef.current = window.setTimeout(() => {
+      void updatePromptPreview('chat', input, requestId);
+      void updatePromptPreview('build', input, requestId);
+      void updatePromptPreview('analyze', input, requestId);
+      void updatePromptPreview('fix', input, requestId);
+    }, 250);
 
-  const formatRequestPreview = (preview: LLMRequestPreview, options: { redactDocs: boolean }) => {
-    const docsEntries = parseDocsContext(preview.docsContext);
-    const docsTotalTokens = docsEntries.reduce((sum, entry) => sum + entry.tokens, 0);
-    const docsSummaryBlock = docsEntries.length
-      ? docsEntries.map((entry) => `--- ${entry.fileName} --- (~${entry.tokens} tok)`).join('\n')
-      : '';
-    const systemPromptValue =
-      options.redactDocs && preview.docsContext && docsSummaryBlock
-        ? preview.systemPrompt.replace(preview.docsContext, docsSummaryBlock)
-        : preview.systemPrompt;
-    const hasDocs = docsEntries.length > 0;
-    const metaLines =
-      preview.mode === 'build'
-        ? [`Mode: ${preview.mode}`, `Diagram type: ${preview.diagramType}`, `Language: ${preview.language}`]
-        : [];
-    const lines = [
-      preview.error ? `Error: ${preview.error}` : '',
-      hasDocs ? `Docs files: ${docsEntries.map((entry) => `${entry.fileName} (~${entry.tokens} tok)`).join(', ')}` : '',
-      hasDocs ? `Docs tokens total: ~${docsTotalTokens} tok` : '',
-      ...metaLines,
-      '',
-      '--- System Prompt ---',
-      systemPromptValue.trim() || '(empty)',
-      '',
-      '--- Messages ---',
-      formatMessagesForPreview(preview.messages),
-    ].filter((line) => line !== '');
-    return lines.join('\n');
-  };
+    return () => {
+      if (previewTimerRef.current) {
+        window.clearTimeout(previewTimerRef.current);
+      }
+    };
+  }, [
+    buildDocsSelectionKey,
+    diagramType,
+    hasIntent,
+    input,
+    lastMessageTimestamp,
+    messages.length,
+    onPreviewPrompt,
+    promptPreviewKey,
+    updatePromptPreview,
+  ]);
 
-  const diagramTypeLabels: Record<DiagramType, string> = {
-    architecture: 'Architecture',
-    block: 'Block',
-    c4: 'C4 (experimental)',
-    class: 'Class Diagram',
-    er: 'Entity Relationship',
-    sequence: 'Sequence Diagram',
-    flowchart: 'Flowchart',
-    gantt: 'Gantt',
-    gitGraph: 'Git Graph',
-    kanban: 'Kanban',
-    mindmap: 'Mindmap',
-    packet: 'Packet',
-    pie: 'Pie',
-    quadrantChart: 'Quadrant Chart',
-    radar: 'Radar',
-    requirementDiagram: 'Requirement Diagram',
-    sankey: 'Sankey',
-    state: 'State Diagram',
-    timeline: 'Timeline',
-    treemap: 'Treemap',
-    userJourney: 'User Journey',
-    xychart: 'XY Chart',
-    zenuml: 'ZenUML',
-  };
-
-  const detectedLabel = detectedDiagramType ? diagramTypeLabels[detectedDiagramType] ?? detectedDiagramType : null;
-  const selectedLabel = diagramTypeLabels[diagramType] ?? diagramType;
+  const detectedLabel = detectedDiagramType ? DIAGRAM_TYPE_LABELS[detectedDiagramType] ?? detectedDiagramType : null;
+  const selectedLabel = DIAGRAM_TYPE_LABELS[diagramType] ?? diagramType;
   const isDetectedMatch = !!detectedDiagramType && detectedDiagramType === diagramType;
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50">
       {/* Type Selector */}
-      <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="h-24 p-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col justify-center">
         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Diagram type</label>
         <select 
           value={diagramType}

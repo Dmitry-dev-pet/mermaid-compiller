@@ -70,3 +70,7 @@
 - **UI и layout**: `hooks/core/useLayout`.
 - **LLM и соединение**: `hooks/core/useAI`.
 - **История**: `hooks/core/useHistory`.
+
+---
+
+Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).

@@ -18,3 +18,7 @@ npm --prefix diagram-compiler test
 
 - Для SPA: `npm --prefix diagram-compiler run lint`.
 - Для корня (legacy/статик): `npm run lint`.
+
+---
+
+Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).

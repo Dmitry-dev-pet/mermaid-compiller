@@ -1,4 +1,4 @@
-import { insertDirectiveAfterLeadingDirectives } from './mermaidDirectives';
+import { extractFrontmatterConfigValue, removeFrontmatterConfigKey, updateFrontmatterConfigKey } from './mermaidFrontmatter';
 
 export type MermaidThemeName = 'default' | 'dark' | 'forest' | 'neutral' | 'base';
 
@@ -19,14 +19,14 @@ const normalizeThemeToken = (raw: string): MermaidThemeName | null => {
   return null;
 };
 
-export const extractInlineThemeCommand = (code: string): ExtractedThemeCommand => {
+const stripThemeDirective = (code: string): ExtractedThemeCommand => {
   const lines = code.split(/\r?\n/);
   const kept: string[] = [];
 
   let foundTheme: MermaidThemeName | null = null;
   let index = 0;
+  let consumedFrontmatter = false;
 
-  // Mermaid directives must be at the top; we only scan the leading directive region.
   while (index < lines.length) {
     const line = lines[index] ?? '';
     const trimmed = line.trim();
@@ -34,6 +34,21 @@ export const extractInlineThemeCommand = (code: string): ExtractedThemeCommand =
     if (trimmed.length === 0) {
       kept.push(line);
       index += 1;
+      continue;
+    }
+
+    if (!consumedFrontmatter && trimmed === '---') {
+      kept.push(line);
+      index += 1;
+      while (index < lines.length) {
+        kept.push(lines[index] ?? '');
+        if ((lines[index]?.trim() ?? '') === '---') {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      consumedFrontmatter = true;
       continue;
     }
 
@@ -47,7 +62,6 @@ export const extractInlineThemeCommand = (code: string): ExtractedThemeCommand =
 
     if (!trimmed.startsWith('%%{')) break;
 
-    // Keep any other directive as-is (including multi-line init blocks).
     kept.push(line);
     while (index < lines.length && !(lines[index] ?? '').includes('}%%')) {
       index += 1;
@@ -59,14 +73,22 @@ export const extractInlineThemeCommand = (code: string): ExtractedThemeCommand =
   return { codeWithoutCommand: [...kept, ...lines.slice(index)].join('\n'), theme: foundTheme };
 };
 
+export const extractInlineThemeCommand = (code: string): ExtractedThemeCommand => {
+  const frontmatterTheme = normalizeThemeToken(extractFrontmatterConfigValue(code, 'theme') ?? '');
+  const withoutFrontmatter = removeFrontmatterConfigKey(code, 'theme');
+  const directiveExtracted = stripThemeDirective(withoutFrontmatter.code);
+
+  return {
+    codeWithoutCommand: directiveExtracted.codeWithoutCommand,
+    theme: frontmatterTheme ?? directiveExtracted.theme,
+  };
+};
+
 export const setInlineThemeCommand = (code: string, theme: MermaidThemeName | null): string => {
   const extracted = extractInlineThemeCommand(code);
   if (!theme) return extracted.codeWithoutCommand;
 
-  const lines = extracted.codeWithoutCommand.split(/\r?\n/);
-  let insertAt = 0;
-  while (insertAt < lines.length && (lines[insertAt]?.trim() ?? '') === '') insertAt += 1;
-  return [...lines.slice(0, insertAt), `%%{theme: ${theme}}%%`, ...lines.slice(insertAt)].join('\n');
+  return updateFrontmatterConfigKey(extracted.codeWithoutCommand, 'theme', theme).code;
 };
 
 export const applyInlineThemeCommand = (
@@ -75,9 +97,8 @@ export const applyInlineThemeCommand = (
   const extracted = extractInlineThemeCommand(code);
   if (!extracted.theme) return { code, theme: null };
 
-  const initDirective = `%%{init: {"theme":"${extracted.theme}"}}%%`;
   return {
-    code: insertDirectiveAfterLeadingDirectives(extracted.codeWithoutCommand, initDirective),
+    code: setInlineThemeCommand(extracted.codeWithoutCommand, extracted.theme),
     theme: extracted.theme,
   };
 };

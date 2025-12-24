@@ -66,10 +66,10 @@ describe('inlineDirectionCommand', () => {
     expect(applied.direction).toBe('LR');
   });
 
-  it('applyInlineDirectionCommand works when other inline commands exist (e.g. theme)', () => {
-    const code = `%%{theme: dark}%%\n%%{direction: RL}%%\nflowchart LR\nA-->B`;
+  it('applyInlineDirectionCommand works when frontmatter config exists', () => {
+    const code = `---\nconfig:\n  theme: dark\n---\n%%{direction: RL}%%\nflowchart LR\nA-->B`;
     const applied = applyInlineDirectionCommand(code);
-    expect(applied.code).toBe(`%%{theme: dark}%%\nflowchart RL\nA-->B`);
+    expect(applied.code).toBe(`---\nconfig:\n  theme: dark\n---\nflowchart RL\nA-->B`);
   });
 
   it('applyInlineDirectionCommand skips YAML frontmatter', () => {

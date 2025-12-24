@@ -87,6 +87,10 @@ export const useDiagramStudio = () => {
     });
   }, [appendTimeStep]);
 
+  const toggleScrollSync = useCallback(() => {
+    setAppState((prev) => ({ ...prev, isScrollSyncEnabled: !prev.isScrollSyncEnabled }));
+  }, [setAppState]);
+
   const detectedDiagramType = useMemo(() => {
     if (markdownMermaidBlocks.length > 0) {
       const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex] ?? markdownMermaidBlocks[0];
@@ -565,6 +569,7 @@ export const useDiagramStudio = () => {
     toggleTheme,
     setAnalyzeLanguage,
     togglePreviewFullScreen,
+    toggleScrollSync,
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,

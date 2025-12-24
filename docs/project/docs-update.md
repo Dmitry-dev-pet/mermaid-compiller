@@ -21,3 +21,7 @@
 
 - `commonDocs` — базовые главы (getting started, syntax reference, configuration).
 - `diagramDocs` — файл, специфичный для выбранного типа диаграммы.
+
+---
+
+Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).
