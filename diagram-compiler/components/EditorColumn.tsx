@@ -40,6 +40,7 @@ interface EditorColumnProps {
   onSnapshot: () => void;
   isAIReady: boolean;
   isProcessing: boolean;
+  isReadOnly: boolean;
   analyzeLanguage: string;
   onAnalyzeLanguageChange: (lang: string) => void;
   appLanguage: string;
@@ -76,6 +77,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   onSnapshot,
   isAIReady,
   isProcessing,
+  isReadOnly,
   analyzeLanguage,
   onAnalyzeLanguageChange,
   appLanguage,
@@ -172,9 +174,9 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   const markdownValidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === true).length;
   const markdownInvalidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === false).length;
   const isMarkdown = isMarkdownLike(mermaidState.code);
-  const canFix = isMarkdown
+  const canFix = !isReadOnly && (isMarkdown
     ? markdownInvalidCount > 0
-    : mermaidState.status === 'invalid';
+    : mermaidState.status === 'invalid');
   const highlightMarkdownWithMermaid = (code: string) => {
     return transformMarkdownMermaid(code, {
       markdown: (segment) => highlight(segment, languages.markdown, 'markdown'),
@@ -215,7 +217,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   const isSnapshotInvalid = isMarkdownMermaidMode
     ? activeMarkdownDiagnostics?.isValid === false
     : !mermaidState.isValid;
-  const canSnapshot = !!mermaidState.code.trim() && !isProcessing && !isSnapshotInvalid;
+  const canSnapshot = !isReadOnly && !!mermaidState.code.trim() && !isProcessing && !isSnapshotInvalid;
   const editorErrorLine = isMarkdownMermaidMode
     ? isMarkdownMermaidInvalid
       ? activeMarkdownDiagnostics?.errorLine ?? null
@@ -252,6 +254,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
         markdownInvalidCount={markdownInvalidCount}
         isProcessing={isProcessing}
         isAIReady={isAIReady}
+        isReadOnly={isReadOnly}
         analyzeLanguage={analyzeLanguage}
         onAnalyzeLanguageChange={onAnalyzeLanguageChange}
         onAnalyze={onAnalyze}
@@ -313,6 +316,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               onScroll={handleScroll}
               editorValue={editorValue}
               onValueChange={(value) => {
+                if (isReadOnly) return;
                 if (isMarkdownMermaidMode) {
                   if (!activeMarkdownBlock) return;
                   const nextMarkdown = replaceMermaidBlockInMarkdown(mermaidState.code, activeMarkdownBlock, value);
@@ -322,6 +326,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                 onChange(value);
               }}
               highlight={editorHighlight}
+              isReadOnly={isReadOnly}
             />
           </>
         )}

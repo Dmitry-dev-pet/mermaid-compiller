@@ -10,6 +10,7 @@ interface CodeEditorPanelProps {
   editorValue: string;
   onValueChange: (value: string) => void;
   highlight: (code: string) => string;
+  isReadOnly: boolean;
 }
 
 const CodeEditorPanel: React.FC<CodeEditorPanelProps> = ({
@@ -21,6 +22,7 @@ const CodeEditorPanel: React.FC<CodeEditorPanelProps> = ({
   editorValue,
   onValueChange,
   highlight,
+  isReadOnly,
 }) => {
   return (
     <div className="flex-1 relative flex overflow-hidden">
@@ -52,7 +54,8 @@ const CodeEditorPanel: React.FC<CodeEditorPanelProps> = ({
           onValueChange={onValueChange}
           highlight={highlight}
           padding={16}
-          textareaClassName="focus:outline-none"
+          textareaClassName={`focus:outline-none ${isReadOnly ? 'cursor-default' : ''}`}
+          readOnly={isReadOnly}
           style={{
             fontFamily: '"Fira code", "Fira Mono", monospace',
             fontSize: 12,

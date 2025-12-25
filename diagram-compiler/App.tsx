@@ -67,6 +67,9 @@ function App() {
     removeProject,
     undoRemoveProject,
     deleteUndoMs,
+    showProjectPreview,
+    clearProjectPreview,
+    previewMermaidState,
     toggleTheme,
     setAnalyzeLanguage,
     togglePreviewFullScreen,
@@ -99,8 +102,17 @@ function App() {
   const scrollSyncSourceRef = useRef<ScrollSyncPayload['source'] | null>(null);
   const [scrollSyncPayload, setScrollSyncPayload] = useState<ScrollSyncPayload | null>(null);
   const [hoveredMarkdownIndex, setHoveredMarkdownIndex] = useState<number | null>(null);
-  const promptPreviewKey = `${mermaidState.code}::${mermaidState.errorMessage ?? ''}::${appState.analyzeLanguage}::${appState.language}::${markdownMermaidActiveIndex}`;
+  const isProjectPreview = !!previewMermaidState;
+  const mermaidStateForView = previewMermaidState ?? mermaidState;
+  const editorTabForView = isProjectPreview ? 'code' : editorTab;
+  const markdownMermaidBlocksForView = isProjectPreview ? [] : markdownMermaidBlocks;
+  const markdownMermaidDiagnosticsForView = isProjectPreview ? [] : markdownMermaidDiagnostics;
+  const markdownMermaidActiveIndexForView = isProjectPreview ? 0 : markdownMermaidActiveIndex;
+  const hoveredMarkdownIndexForView = isProjectPreview ? null : hoveredMarkdownIndex;
+  const headerHeightVar = 'var(--app-header-height, 3rem)';
+  const promptPreviewKey = `${mermaidStateForView.code}::${mermaidStateForView.errorMessage ?? ''}::${appState.analyzeLanguage}::${appState.language}::${markdownMermaidActiveIndex}`;
   const applyInlineUpdate = (updateCode: (code: string) => string) => {
+    if (isProjectPreview) return;
     if (editorTab === 'markdown_mermaid' && markdownMermaidBlocks.length) {
       const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex];
       if (activeBlock) {
@@ -165,7 +177,10 @@ function App() {
         interactionRecorder={interactionRecorder}
       />
 
-      <div className="flex flex-1 overflow-hidden relative">
+      <div
+        className="flex overflow-hidden relative"
+        style={{ marginTop: headerHeightVar, height: `calc(100vh - ${headerHeightVar})` }}
+      >
         {!appState.isPreviewFullScreen && (
           <>
             {/* Col 1: Chat */}
@@ -182,6 +197,9 @@ function App() {
                 onSetPromptPreview={setPromptPreview}
                 diagramType={appState.diagramType}
                 onDiagramTypeChange={setDiagramType}
+                detectedDiagramType={detectedDiagramType}
+                isMarkdownNotebook={editorTab === 'code' && isMarkdownLike(mermaidState.code)}
+                isCodeEmpty={!mermaidState.code.trim()}
                 onPreviewPrompt={buildPromptPreview}
                 diagramMarkers={diagramMarkers}
                 diagramStepAnchors={diagramStepAnchors}
@@ -192,6 +210,8 @@ function App() {
                 onRenameProject={renameProject}
                 onDeleteProject={removeProject}
                 onUndoDeleteProject={undoRemoveProject}
+                onPreviewProjectSnapshot={showProjectPreview}
+                onClearProjectPreview={clearProjectPreview}
                 deleteUndoMs={deleteUndoMs}
                 onSelectDiagramStep={goToDiagramStep}
                 buildDocsSelectionKey={buildDocsSelectionKey}
@@ -209,18 +229,19 @@ function App() {
             {/* Col 2: Editor */}
             <div style={{ width: `${appState.columnWidths[1]}%` }} className="flex flex-col min-w-[300px]">
               <EditorColumn 
-                mermaidState={mermaidState}
-                onChange={handleMermaidChange}
-                onAnalyze={handleAnalyze}
-                onFixSyntax={handleFixSyntax}
-                onSnapshot={handleManualSnapshot}
-                isAIReady={connectionState.status === 'connected' && !!aiConfig.selectedModelId}
+                mermaidState={mermaidStateForView}
+                onChange={isProjectPreview ? () => {} : handleMermaidChange}
+                onAnalyze={isProjectPreview ? () => {} : handleAnalyze}
+                onFixSyntax={isProjectPreview ? () => {} : handleFixSyntax}
+                onSnapshot={isProjectPreview ? () => {} : handleManualSnapshot}
+                isAIReady={!isProjectPreview && connectionState.status === 'connected' && !!aiConfig.selectedModelId}
                 isProcessing={isProcessing}
+                isReadOnly={isProjectPreview}
                 analyzeLanguage={appState.analyzeLanguage}
                 onAnalyzeLanguageChange={setAnalyzeLanguage}
                 appLanguage={appState.language}
                 promptPreviewByMode={promptPreviewByMode}
-                activeTab={editorTab}
+                activeTab={editorTabForView}
                 buildDocsEntries={buildDocsEntries}
                 buildDocsSelection={buildDocsSelection}
                 onToggleBuildDoc={toggleBuildDocSelection}
@@ -232,16 +253,16 @@ function App() {
                 onDocsModeChange={setDocsMode}
                 systemPromptRawByMode={systemPromptRawByMode}
                 onSystemPromptRawChange={setSystemPromptRaw}
-                markdownMermaidBlocks={markdownMermaidBlocks}
-                markdownMermaidDiagnostics={markdownMermaidDiagnostics}
-                markdownMermaidActiveIndex={markdownMermaidActiveIndex}
-                onMarkdownMermaidActiveIndexChange={setMarkdownMermaidActiveIndex}
-                onActiveTabChange={setEditorTab}
-                onAppendMarkdownMermaidBlock={appendMarkdownMermaidBlock}
+                markdownMermaidBlocks={markdownMermaidBlocksForView}
+                markdownMermaidDiagnostics={markdownMermaidDiagnosticsForView}
+                markdownMermaidActiveIndex={markdownMermaidActiveIndexForView}
+                onMarkdownMermaidActiveIndexChange={isProjectPreview ? () => {} : setMarkdownMermaidActiveIndex}
+                onActiveTabChange={isProjectPreview ? () => {} : setEditorTab}
+                onAppendMarkdownMermaidBlock={isProjectPreview ? () => {} : appendMarkdownMermaidBlock}
                 isScrollSyncEnabled={appState.isScrollSyncEnabled}
                 scrollSyncPayload={scrollSyncPayload}
                 onScrollSync={handleEditorScrollSync}
-                hoveredMarkdownIndex={hoveredMarkdownIndex}
+                hoveredMarkdownIndex={hoveredMarkdownIndexForView}
               />
             </div>
 
@@ -259,7 +280,7 @@ function App() {
           className={`flex flex-col ${appState.isPreviewFullScreen ? 'flex-1 min-w-0' : 'min-w-[300px]'}`}
         >
           <PreviewColumn
-            mermaidState={mermaidState}
+            mermaidState={mermaidStateForView}
             theme={appState.theme}
             isFullScreen={appState.isPreviewFullScreen}
             onToggleFullScreen={togglePreviewFullScreen}
@@ -268,36 +289,39 @@ function App() {
             scrollSyncPayload={scrollSyncPayload}
             onScrollSync={handlePreviewScrollSync}
             onSetInlineTheme={(nextTheme: MermaidThemeName | null) => {
-              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidState.code)) {
-                const nextMarkdown = setThemeForMarkdownMermaidBlocks(mermaidState.code, nextTheme);
+              if (isProjectPreview) return;
+              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                const nextMarkdown = setThemeForMarkdownMermaidBlocks(mermaidStateForView.code, nextTheme);
                 handleMermaidChange(nextMarkdown);
                 return;
               }
               applyInlineUpdate((code) => setInlineThemeCommand(code, nextTheme));
             }}
             onSetInlineDirection={(nextDirection: MermaidDirection | null) => {
+              if (isProjectPreview) return;
               applyInlineUpdate((code) => setInlineDirectionCommand(code, nextDirection));
             }}
             onSetInlineLook={(nextLook: MermaidLook | null) => {
-              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidState.code)) {
-                const nextMarkdown = setLookForMarkdownMermaidBlocks(mermaidState.code, nextLook);
+              if (isProjectPreview) return;
+              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                const nextMarkdown = setLookForMarkdownMermaidBlocks(mermaidStateForView.code, nextLook);
                 handleMermaidChange(nextMarkdown);
                 return;
               }
               applyInlineUpdate((code) => setInlineLookCommand(code, nextLook));
             }}
-            activeEditorTab={editorTab}
+            activeEditorTab={editorTabForView}
             buildDocsSystemPrompts={buildDocsSystemPrompts}
             systemPromptRawByMode={systemPromptRawByMode}
             buildDocsEntries={buildDocsEntries}
             buildDocsActivePath={buildDocsActivePath}
-            markdownMermaidBlocks={markdownMermaidBlocks}
-            markdownMermaidDiagnostics={markdownMermaidDiagnostics}
-            markdownMermaidActiveIndex={markdownMermaidActiveIndex}
-            onMarkdownMermaidActiveIndexChange={setMarkdownMermaidActiveIndex}
-            onActiveEditorTabChange={setEditorTab}
-            hoveredMarkdownIndex={hoveredMarkdownIndex}
-            onHoverMarkdownIndex={setHoveredMarkdownIndex}
+            markdownMermaidBlocks={markdownMermaidBlocksForView}
+            markdownMermaidDiagnostics={markdownMermaidDiagnosticsForView}
+            markdownMermaidActiveIndex={markdownMermaidActiveIndexForView}
+            onMarkdownMermaidActiveIndexChange={isProjectPreview ? () => {} : setMarkdownMermaidActiveIndex}
+            onActiveEditorTabChange={isProjectPreview ? () => {} : setEditorTab}
+            hoveredMarkdownIndex={hoveredMarkdownIndexForView}
+            onHoverMarkdownIndex={isProjectPreview ? () => {} : setHoveredMarkdownIndex}
           />
         </div>
       </div>

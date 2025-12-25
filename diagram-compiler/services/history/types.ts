@@ -39,6 +39,20 @@ export interface TimeStep {
   meta?: StepMeta;
 }
 
+export interface SessionPreview {
+  sessionId: string;
+  stepCount: number;
+  lastStepType?: TimeStepType;
+  lastStepAt?: number;
+  lastMessage?: string;
+}
+
+export interface SessionSnapshot {
+  sessionId: string;
+  code: string;
+  diagnostics?: RevisionDiagnostics | null;
+}
+
 export interface RevisionDiagnostics {
   isValid: boolean;
   errorMessage?: string;

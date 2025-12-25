@@ -1,6 +1,6 @@
 import type { MermaidState, Message } from '../../types';
 import { requestToPromise, STORE_REVISIONS, STORE_SESSIONS, STORE_STEPS, withTx } from './db';
-import type { DiagramRevision, HistorySession, SessionSettings, StepMeta, TimeStep, TimeStepType } from './types';
+import type { DiagramRevision, HistorySession, SessionPreview, SessionSettings, SessionSnapshot, StepMeta, TimeStep, TimeStepType } from './types';
 
 export const ACTIVE_SESSION_KEY = 'dc_active_session_id';
 
@@ -249,6 +249,54 @@ export const listSteps = async (sessionId: string): Promise<TimeStep[]> => {
       };
     });
   });
+};
+
+export const getSessionPreview = async (sessionId: string): Promise<SessionPreview | null> => {
+  const session = await getSession(sessionId);
+  if (!session) return null;
+  let lastStep: TimeStep | null = null;
+  await withTx([STORE_STEPS], 'readonly', async (tx) => {
+    const index = tx.objectStore(STORE_STEPS).index('bySessionIndex');
+    const range = IDBKeyRange.bound([sessionId, 0], [sessionId, Number.MAX_SAFE_INTEGER]);
+    await new Promise<void>((resolve, reject) => {
+      const req = index.openCursor(range, 'prev');
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) return resolve();
+        lastStep = cursor.value as TimeStep;
+        resolve();
+      };
+    });
+  });
+
+  const lastMessage =
+    lastStep?.messages
+      ?.slice()
+      .reverse()
+      .find((msg) => msg.content.trim().length > 0)?.content ?? '';
+
+  return {
+    sessionId,
+    stepCount: session.nextStepIndex,
+    lastStepType: lastStep?.type,
+    lastStepAt: lastStep?.createdAt,
+    lastMessage: lastMessage || undefined,
+  };
+};
+
+export const getSessionSnapshot = async (sessionId: string): Promise<SessionSnapshot | null> => {
+  const session = await getSession(sessionId);
+  if (!session) return null;
+  if (!session.currentRevisionId) {
+    return { sessionId, code: '', diagnostics: null };
+  }
+  const revision = await getRevision(session.currentRevisionId);
+  return {
+    sessionId,
+    code: revision?.mermaid ?? '',
+    diagnostics: revision?.diagnostics ?? null,
+  };
 };
 
 export const getRevision = async (revisionId: string): Promise<DiagramRevision | null> => {

@@ -1,8 +1,7 @@
 import React, { useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { FileText, MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
-import { DiagramType, LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
+import { LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
 import type { DiagramMarker } from '../hooks/core/useHistory';
-import { DIAGRAM_TYPE_LABELS } from '../utils/diagramTypeMeta';
 import ChatProjects from './ChatProjects';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../utils/uiModes';
 
@@ -25,9 +24,11 @@ interface ChatColumnProps {
     systemPromptRedacted?: string,
     language?: string
   ) => void;
-  diagramType: DiagramType;
-  onDiagramTypeChange: (type: DiagramType) => void;
-  detectedDiagramType: DiagramType | null;
+  diagramType: import('../types').DiagramType;
+  onDiagramTypeChange: (type: import('../types').DiagramType) => void;
+  detectedDiagramType: import('../types').DiagramType | null;
+  isMarkdownNotebook: boolean;
+  isCodeEmpty: boolean;
   onPreviewPrompt: (mode: PromptPreviewMode, input: string) => Promise<LLMRequestPreview>;
   buildDocsSelectionKey: string;
   promptPreviewKey: string;
@@ -41,6 +42,8 @@ interface ChatColumnProps {
   onRenameProject: (sessionId: string, title: string) => void | Promise<void>;
   onDeleteProject: (sessionId: string) => void | Promise<void>;
   onUndoDeleteProject: (sessionId: string) => void;
+  onPreviewProjectSnapshot: (sessionId: string) => Promise<void>;
+  onClearProjectPreview: () => void;
   deleteUndoMs: number;
 }
 
@@ -55,8 +58,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   hasIntent,
   onSetPromptPreview,
   diagramType,
-  onDiagramTypeChange,
-  detectedDiagramType,
   onPreviewPrompt,
   diagramMarkers = [],
   diagramStepAnchors = {},
@@ -70,7 +71,13 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onRenameProject,
   onDeleteProject,
   onUndoDeleteProject,
-  deleteUndoMs
+  onPreviewProjectSnapshot,
+  onClearProjectPreview,
+  deleteUndoMs,
+  onDiagramTypeChange,
+  detectedDiagramType,
+  isMarkdownNotebook,
+  isCodeEmpty
 }) => {
   const [input, setInput] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -326,9 +333,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     updatePromptPreview,
   ]);
 
-  const detectedLabel = detectedDiagramType ? DIAGRAM_TYPE_LABELS[detectedDiagramType] ?? detectedDiagramType : null;
-  const selectedLabel = DIAGRAM_TYPE_LABELS[diagramType] ?? diagramType;
-  const isDetectedMatch = !!detectedDiagramType && detectedDiagramType === diagramType;
   const assistantModeStyles = {
     chat: MODE_UI.chat.bubble,
     build: MODE_UI.build.bubble,
@@ -339,50 +343,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50">
-      {/* Type Selector */}
-      <div className="h-24 p-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col justify-center">
-        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Diagram type</label>
-        <select 
-          value={diagramType}
-          onChange={(e) => onDiagramTypeChange(e.target.value as DiagramType)}
-          className="w-full text-sm p-1.5 border border-slate-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-        >
-          <option value="architecture">Architecture</option>
-          <option value="block">Block</option>
-          <option value="c4">C4 (experimental)</option>
-          <option value="class">Class Diagram</option>
-          <option value="er">Entity Relationship</option>
-          <option value="sequence">Sequence Diagram</option>
-          <option value="flowchart">Flowchart</option>
-          <option value="gantt">Gantt</option>
-          <option value="gitGraph">Git Graph</option>
-          <option value="kanban">Kanban</option>
-          <option value="mindmap">Mindmap</option>
-          <option value="packet">Packet</option>
-          <option value="pie">Pie</option>
-          <option value="quadrantChart">Quadrant Chart</option>
-          <option value="radar">Radar</option>
-          <option value="requirementDiagram">Requirement Diagram</option>
-          <option value="sankey">Sankey</option>
-          <option value="state">State Diagram</option>
-          <option value="timeline">Timeline</option>
-          <option value="treemap">Treemap</option>
-          <option value="userJourney">User Journey</option>
-          <option value="xychart">XY Chart</option>
-          <option value="zenuml">ZenUML</option>
-        </select>
-        {detectedLabel && (
-          <div
-            className={`mt-1 text-[11px] ${
-              isDetectedMatch ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
-            }`}
-          >
-            По коду: {detectedLabel}
-            {!isDetectedMatch ? ` (выбрано: ${selectedLabel})` : ''}
-          </div>
-        )}
-      </div>
-
       <ChatProjects
         projects={projects}
         activeProjectId={activeProjectId}
@@ -391,7 +351,14 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         onRenameProject={onRenameProject}
         onDeleteProject={onDeleteProject}
         onUndoDeleteProject={onUndoDeleteProject}
+        onPreviewProjectSnapshot={onPreviewProjectSnapshot}
+        onClearProjectPreview={onClearProjectPreview}
         deleteUndoMs={deleteUndoMs}
+        diagramType={diagramType}
+        onDiagramTypeChange={onDiagramTypeChange}
+        detectedDiagramType={detectedDiagramType}
+        isMarkdownNotebook={isMarkdownNotebook}
+        isCodeEmpty={isCodeEmpty}
       />
 
       {/* Messages */}

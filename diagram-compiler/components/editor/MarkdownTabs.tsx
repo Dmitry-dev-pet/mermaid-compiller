@@ -29,6 +29,9 @@ const MarkdownTabs: React.FC<MarkdownTabsProps> = ({
 }) => {
   const isMarkdownMermaidTab = activeTab === 'markdown_mermaid';
 
+  const validCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === true).length;
+  const invalidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === false).length;
+
   return (
     <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 px-2 py-1 bg-white dark:bg-slate-900">
       <button
@@ -46,6 +49,19 @@ const MarkdownTabs: React.FC<MarkdownTabsProps> = ({
       >
         MD
       </button>
+      {activeTab === 'code' && (validCount > 0 || invalidCount > 0) && (
+        <span className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-emerald-700" />
+            <span>{validCount}</span>
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-flex h-2 w-2 rounded-full bg-rose-500 ring-1 ring-rose-700" />
+            <span>{invalidCount}</span>
+          </span>
+        </span>
+      )}
+      <span className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1" />
       {markdownMermaidBlocks.map((block, index) => {
         const isActive = isMarkdownMermaidTab && index === markdownMermaidActiveIndex;
         const diagnostics = markdownMermaidDiagnostics[index];

@@ -11,6 +11,7 @@ interface EditorHeaderProps {
   markdownInvalidCount: number;
   isProcessing: boolean;
   isAIReady: boolean;
+  isReadOnly: boolean;
   analyzeLanguage: string;
   onAnalyzeLanguageChange: (lang: string) => void;
   onAnalyze: () => void;
@@ -33,6 +34,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
   markdownInvalidCount,
   isProcessing,
   isAIReady,
+  isReadOnly,
   analyzeLanguage,
   onAnalyzeLanguageChange,
   onAnalyze,
@@ -47,7 +49,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
   isMarkdownMermaidTab,
   isBuildDocsTab,
 }) => {
-  const canAnalyze = isAIReady && mermaidState.code.trim().length > 0 && !isProcessing;
+  const canAnalyze = isAIReady && mermaidState.code.trim().length > 0 && !isProcessing && !isReadOnly;
   const actionButtonBase =
     'px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap';
   return (
@@ -55,19 +57,12 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
       <div className="flex flex-col flex-1 min-w-0">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-xs font-mono w-full">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-slate-500 dark:text-slate-400">Status:</span>
             {isMarkdown && <span className="text-blue-600 dark:text-blue-400 font-bold">📄 Markdown</span>}
             {isMarkdown && markdownValidCount + markdownInvalidCount > 0 && (
               <span className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                <span>Blocks:</span>
-                <span className="inline-flex items-center gap-1">
-                  <span className="inline-flex h-2.5 w-2.5 rounded-full bg-green-500 ring-1 ring-green-700" />
-                  <span>{markdownValidCount}</span>
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <span className="inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-1 ring-red-700" />
-                  <span>{markdownInvalidCount}</span>
-                </span>
+                <span>{markdownValidCount}</span>
+                <span>·</span>
+                <span>{markdownInvalidCount}</span>
               </span>
             )}
             {!isMarkdown && mermaidState.status === 'valid' && (
@@ -102,7 +97,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
               onChange={(e) => onAnalyzeLanguageChange(e.target.value)}
               className="px-2 py-1 text-[10px] font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500/20 cursor-pointer shrink-0"
               title="Analyze language"
-              disabled={isProcessing}
+              disabled={isProcessing || isReadOnly}
             >
               <option value="auto">Auto</option>
               <option value="English">EN</option>

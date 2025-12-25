@@ -14,7 +14,7 @@ import { useProjects } from './useProjects';
 import type { DiagramMarker } from '../core/useHistory';
 import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE } from '../../constants';
 import { detectLanguage } from '../../utils';
-import type { DiagramIntent, DiagramType, DocsMode, EditorTab } from '../../types';
+import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState } from '../../types';
 import {
   appendEmptyMermaidBlockToMarkdown,
   createMermaidNotebookMarkdown,
@@ -53,11 +53,16 @@ export const useDiagramStudio = () => {
     scheduleDeleteSession,
     undoDeleteSession,
     deleteUndoMs: historyDeleteUndoMs,
+    loadSessionPreview,
+    loadSessionSnapshot,
   } = useHistory();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [diagramIntent, setDiagramIntent] = useState<DiagramIntent | null>(null);
   const [editorTab, setEditorTab] = useState<EditorTab>('code');
+  const [previewMermaidState, setPreviewMermaidState] = useState<MermaidState | null>(null);
+  const previewCacheRef = useRef<Record<string, MermaidState>>({});
+  const previewLoadingRef = useRef<Set<string>>(new Set());
 
   const isHydratingRef = useRef(true);
   const lastManualRecordedCodeRef = useRef<string>('');
@@ -101,24 +106,26 @@ export const useDiagramStudio = () => {
   }, [setAppState]);
 
   const detectedDiagramType = useMemo(() => {
-    if (markdownMermaidBlocks.length > 0) {
+    if (editorTab === 'markdown_mermaid') {
       const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex] ?? markdownMermaidBlocks[0];
       return activeBlock?.diagramType ?? detectMermaidDiagramType(activeBlock?.code ?? '');
     }
+    if (editorTab !== 'code') return null;
     if (isMarkdownLike(mermaidState.code)) return null;
     return detectMermaidDiagramType(mermaidState.code);
-  }, [markdownMermaidActiveIndex, markdownMermaidBlocks, mermaidState.code]);
+  }, [editorTab, markdownMermaidActiveIndex, markdownMermaidBlocks, mermaidState.code]);
 
   useEffect(() => {
-    if (mermaidState.source === 'compiled') return;
-
-    if (detectedDiagramType && detectedDiagramType !== appState.diagramType) {
+    if (!detectedDiagramType) return;
+    if (editorTab !== 'code' && editorTab !== 'markdown_mermaid') return;
+    if (editorTab === 'code' && mermaidState.source === 'compiled') return;
+    if (detectedDiagramType !== appState.diagramType) {
       setDiagramType(detectedDiagramType);
     }
   }, [
     appState.diagramType,
     detectedDiagramType,
-    mermaidState.code,
+    editorTab,
     mermaidState.source,
     setDiagramType,
   ]);
@@ -238,6 +245,8 @@ export const useDiagramStudio = () => {
     undoDeleteSession,
     deleteUndoMs: historyDeleteUndoMs,
     saveSessionSettings,
+    loadSessionPreview,
+    loadSessionSnapshot,
     resetMessages,
     resetPromptPreview,
     setDiagramIntent,
@@ -246,6 +255,41 @@ export const useDiagramStudio = () => {
     lastManualRecordedCodeRef,
     isHydratingRef,
   });
+
+  const buildPreviewState = useCallback((snapshot: { code: string; diagnostics?: { isValid?: boolean; errorMessage?: string; errorLine?: number } | null }) => {
+    const code = snapshot.code ?? '';
+    const isValid = snapshot.diagnostics?.isValid ?? true;
+    return {
+      code,
+      isValid,
+      lastValidCode: isValid ? code : '',
+      errorMessage: snapshot.diagnostics?.errorMessage,
+      errorLine: snapshot.diagnostics?.errorLine,
+      source: 'compiled',
+      status: code.trim()
+        ? (isValid ? 'valid' : 'invalid')
+        : 'empty',
+    } as MermaidState;
+  }, []);
+
+  const showProjectPreview = useCallback(async (sessionId: string) => {
+    if (previewCacheRef.current[sessionId]) {
+      setPreviewMermaidState(previewCacheRef.current[sessionId]);
+      return;
+    }
+    if (previewLoadingRef.current.has(sessionId)) return;
+    previewLoadingRef.current.add(sessionId);
+    const snapshot = await loadSessionSnapshot(sessionId);
+    previewLoadingRef.current.delete(sessionId);
+    if (!snapshot) return;
+    const nextState = buildPreviewState(snapshot);
+    previewCacheRef.current[sessionId] = nextState;
+    setPreviewMermaidState(nextState);
+  }, [buildPreviewState, loadSessionSnapshot]);
+
+  const clearProjectPreview = useCallback(() => {
+    setPreviewMermaidState(null);
+  }, []);
 
   useEffect(() => {
     if (editorTab !== 'build_docs') return;
@@ -938,6 +982,10 @@ export const useDiagramStudio = () => {
     removeProject,
     undoRemoveProject,
     deleteUndoMs: projectsUndoMs,
+    loadSessionPreview,
+    showProjectPreview,
+    clearProjectPreview,
+    previewMermaidState,
     toggleTheme,
     setAnalyzeLanguage,
     togglePreviewFullScreen,

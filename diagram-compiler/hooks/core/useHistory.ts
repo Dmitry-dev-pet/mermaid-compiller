@@ -4,6 +4,8 @@ import {
   createSession,
   ensureActiveSession,
   getRevision,
+  getSessionPreview,
+  getSessionSnapshot,
   listSessions,
   loadActiveSessionState,
   loadSessionState,
@@ -13,7 +15,7 @@ import {
   updateSessionSettings,
   deleteSession as removeSession,
 } from '../../services/history/store';
-import type { DiagramRevision, HistorySession, SessionSettings, StepMeta, TimeStep, TimeStepType } from '../../services/history/types';
+import type { DiagramRevision, HistorySession, SessionPreview, SessionSettings, SessionSnapshot, StepMeta, TimeStep, TimeStepType } from '../../services/history/types';
 
 export type HistoryLoadResult = {
   session: HistorySession;
@@ -289,6 +291,24 @@ export const useHistory = () => {
     setSessions((prev) => sortSessions([...prev, pending.session]));
   }, [sortSessions]);
 
+  const loadSessionPreview = useCallback(async (sessionId: string): Promise<SessionPreview | null> => {
+    try {
+      return await getSessionPreview(sessionId);
+    } catch (e) {
+      console.error('Failed to load session preview', e);
+      return null;
+    }
+  }, []);
+
+  const loadSessionSnapshot = useCallback(async (sessionId: string): Promise<SessionSnapshot | null> => {
+    try {
+      return await getSessionSnapshot(sessionId);
+    } catch (e) {
+      console.error('Failed to load session snapshot', e);
+      return null;
+    }
+  }, []);
+
   return {
     isHistoryReady,
     historySession,
@@ -309,5 +329,7 @@ export const useHistory = () => {
     scheduleDeleteSession,
     undoDeleteSession,
     deleteUndoMs: DELETE_UNDO_MS,
+    loadSessionPreview,
+    loadSessionSnapshot,
   };
 };

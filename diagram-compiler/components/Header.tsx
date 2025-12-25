@@ -25,6 +25,7 @@ const Header: React.FC<HeaderProps> = ({
   interactionRecorder,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
@@ -63,6 +64,23 @@ const Header: React.FC<HeaderProps> = ({
       window.removeEventListener('keydown', onKey);
     };
   }, [isRecorderOpen]);
+
+  useEffect(() => {
+    const headerEl = headerRef.current;
+    if (!headerEl) return;
+    const updateHeaderHeight = () => {
+      const height = Math.ceil(headerEl.getBoundingClientRect().height);
+      document.documentElement.style.setProperty('--app-header-height', `${height}px`);
+    };
+    updateHeaderHeight();
+    const observer = new ResizeObserver(updateHeaderHeight);
+    observer.observe(headerEl);
+    window.addEventListener('resize', updateHeaderHeight);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeaderHeight);
+    };
+  }, []);
 
   // ... (getStatusText, getStatusColor, updateConfig, filteredModels logic remains same)
 
@@ -206,7 +224,10 @@ const Header: React.FC<HeaderProps> = ({
   }, [aiConfig.selectedModelId, connectionState.status, filteredModels, updateSelectedModel]);
 
   return (
-    <header className="flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm shrink-0 z-50 relative h-12 transition-colors">
+    <header
+      ref={headerRef}
+      className="fixed top-0 left-0 right-0 flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm shrink-0 z-50 min-h-12 transition-colors"
+    >
       <div className="flex items-center gap-6">
         <h1 className="font-bold text-lg tracking-tight text-slate-800 dark:text-slate-100">Diagram Compiler</h1>
         

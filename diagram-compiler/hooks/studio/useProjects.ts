@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction, type MutableRefObject } from 'react';
 import type { AIConfig, AppState, DiagramIntent, EditorTab, MermaidState } from '../../types';
-import type { HistorySession, SessionSettings } from '../../services/history/types';
+import type { HistorySession, SessionPreview, SessionSettings, SessionSnapshot } from '../../services/history/types';
 import { DEFAULT_MERMAID_STATE } from '../../constants';
 import { applySessionSettings, buildSessionSettings } from '../../utils/sessionSettings';
 
@@ -19,6 +19,8 @@ type UseProjectsArgs = {
   undoDeleteSession: (sessionId: string) => void;
   deleteUndoMs: number;
   saveSessionSettings: (sessionId: string, settings: SessionSettings) => Promise<HistorySession | null>;
+  loadSessionPreview: (sessionId: string) => Promise<SessionPreview | null>;
+  loadSessionSnapshot: (sessionId: string) => Promise<SessionSnapshot | null>;
   resetMessages: () => void;
   resetPromptPreview: () => void;
   setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
@@ -43,6 +45,8 @@ export const useProjects = ({
   undoDeleteSession,
   deleteUndoMs,
   saveSessionSettings,
+  loadSessionPreview,
+  loadSessionSnapshot,
   resetMessages,
   resetPromptPreview,
   setDiagramIntent,
@@ -129,5 +133,7 @@ export const useProjects = ({
     removeProject,
     undoRemoveProject,
     deleteUndoMs,
+    loadSessionPreview,
+    loadSessionSnapshot,
   };
 };
