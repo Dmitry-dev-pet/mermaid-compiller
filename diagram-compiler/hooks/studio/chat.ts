@@ -8,9 +8,9 @@ import type { StudioContext } from './actionsContext';
 export const createChatHandler = (ctx: StudioContext) => {
   return async (text: string) => {
     const stepMessages: Message[] = [];
-    stepMessages.push(ctx.addMessage('user', text));
+    stepMessages.push(ctx.addMessage('user', text, 'chat'));
     if (ctx.connectionState.status !== 'connected') {
-      stepMessages.push(ctx.addMessage('assistant', "I'm offline. Connect AI to generate diagrams."));
+      stepMessages.push(ctx.addMessage('assistant', "I'm offline. Connect AI to generate diagrams.", 'chat'));
       await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages });
       return;
     }
@@ -25,7 +25,7 @@ export const createChatHandler = (ctx: StudioContext) => {
       const docs = await ctx.getDocsContext('chat');
       const responseText = await chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
       const intentText = normalizeIntentText(stripMermaidCode(responseText));
-      stepMessages.push(ctx.addMessage('assistant', intentText));
+      stepMessages.push(ctx.addMessage('assistant', intentText, 'chat'));
       if (intentText) {
         ctx.setCurrentIntent({
           content: intentText,
@@ -36,7 +36,7 @@ export const createChatHandler = (ctx: StudioContext) => {
       await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages, meta: { intent: intentText || null } });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      stepMessages.push(ctx.addMessage('assistant', `Error (${ctx.getCurrentModelName()}): ${message}`));
+      stepMessages.push(ctx.addMessage('assistant', `Error (${ctx.getCurrentModelName()}): ${message}`, 'chat'));
       await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);

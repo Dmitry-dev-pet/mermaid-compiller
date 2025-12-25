@@ -6,6 +6,7 @@ import type { Message } from '../../types';
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS } from '../../constants';
 import { runAutoFixLoop } from './autoFix';
+import { runAttemptLoop } from './retry';
 
 const buildIntent = (ctx: StudioContext, args: {
   prompt: string;
@@ -42,10 +43,10 @@ export const createBuildHandler = (ctx: StudioContext) => {
   return async (text?: string) => {
     const prompt = text?.trim() ?? '';
     const stepMessages: Message[] = [];
-    if (prompt) stepMessages.push(ctx.addMessage('user', prompt));
+    if (prompt) stepMessages.push(ctx.addMessage('user', prompt, 'build'));
 
     if (ctx.connectionState.status !== 'connected') {
-      stepMessages.push(ctx.addMessage('assistant', "I'm offline. Connect AI to generate diagrams."));
+      stepMessages.push(ctx.addMessage('assistant', "I'm offline. Connect AI to generate diagrams.", 'build'));
       ctx.trackAnalyticsEvent('diagram_build_failed', {
         ...(await ctx.getAnalyticsContext('build')),
         mode: 'build',
@@ -65,7 +66,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
 
       const intent = buildIntent(ctx, { prompt, relevantMessages });
       if (!intent) {
-        stepMessages.push(ctx.addMessage('assistant', 'Nothing to build yet. Use Chat to define intent.'));
+        stepMessages.push(ctx.addMessage('assistant', 'Nothing to build yet. Use Chat to define intent.', 'build'));
         ctx.trackAnalyticsEvent('diagram_build_failed', {
           ...analyticsContext,
           mode: 'build',
@@ -95,41 +96,40 @@ export const createBuildHandler = (ctx: StudioContext) => {
       });
 
       const beforeSummary = `Build (before): Intent (${intent.source}). ${ctx.normalizeText(normalizedIntent)}`;
-      stepMessages.push(ctx.addMessage('assistant', beforeSummary));
+      stepMessages.push(ctx.addMessage('assistant', beforeSummary, 'build'));
 
-      let cleanCode = '';
-      let lastError: string | null = null;
-      let emptyResponses = 0;
-      let attempts = 0;
-
-      while (attempts < BUILD_MAX_ATTEMPTS) {
-        attempts += 1;
-        stepMessages.push(ctx.addMessage('assistant', `Build attempt ${attempts}/${BUILD_MAX_ATTEMPTS}...`));
-        try {
+      const attemptResult = await runAttemptLoop({
+        maxAttempts: BUILD_MAX_ATTEMPTS,
+        onAttempt: (attempt) => {
+          stepMessages.push(
+            ctx.addMessage('assistant', `Build attempt ${attempt}/${BUILD_MAX_ATTEMPTS}...`, 'build')
+          );
+        },
+        onEmpty: (attempt) => {
+          stepMessages.push(ctx.addMessage('assistant', `Attempt ${attempt}: no Mermaid code returned.`, 'build'));
+        },
+        onError: (attempt, error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          stepMessages.push(
+            ctx.addMessage('assistant', `Attempt ${attempt} failed (${ctx.getCurrentModelName()}): ${message}`, 'build')
+          );
+        },
+        execute: async () => {
           const rawCode = await generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
-          cleanCode = extractMermaidCode(rawCode);
-          if (!cleanCode.trim()) {
-            emptyResponses += 1;
-            stepMessages.push(ctx.addMessage('assistant', `Attempt ${attempts}: no Mermaid code returned.`));
-            continue;
-          }
-          break;
-        } catch (e: unknown) {
-          const message = e instanceof Error ? e.message : String(e);
-          lastError = message;
-          stepMessages.push(ctx.addMessage('assistant', `Attempt ${attempts} failed (${ctx.getCurrentModelName()}): ${message}`));
-        }
-      }
+          const cleanCode = extractMermaidCode(rawCode);
+          return cleanCode.trim() ? cleanCode : null;
+        },
+      });
 
-      if (!cleanCode.trim()) {
-        const reason = lastError ? 'build_attempts_failed' : 'no_mermaid_code';
-        stepMessages.push(ctx.addMessage('assistant', 'Build failed: no Mermaid code returned.'));
+      if (!attemptResult.value?.trim()) {
+        const reason = attemptResult.lastError ? 'build_attempts_failed' : 'no_mermaid_code';
+        stepMessages.push(ctx.addMessage('assistant', 'Build failed: no Mermaid code returned.', 'build'));
         ctx.trackAnalyticsEvent('diagram_build_failed', {
           ...analyticsContext,
           mode: 'build',
           error: reason,
-          attempts,
-          emptyResponses,
+          attempts: attemptResult.attempts,
+          emptyResponses: attemptResult.emptyResponses,
           durationMs: Date.now() - startedAt,
         });
         await ctx.safeRecordTimeStep({
@@ -137,20 +137,21 @@ export const createBuildHandler = (ctx: StudioContext) => {
           messages: stepMessages,
           meta: {
             reason,
-            attempts,
-            emptyResponses,
-            error: lastError ?? undefined,
+            attempts: attemptResult.attempts,
+            emptyResponses: attemptResult.emptyResponses,
+            error: attemptResult.lastError ?? undefined,
           },
         });
         return;
       }
 
-      const initialValidation = await validateMermaid(cleanCode);
+      const cleanCode = attemptResult.value;
+      const initialValidation = await validateMermaid(cleanCode, { logError: false });
       const { code: currentCode, validation, attempts: autoFixAttempts } = await runAutoFixLoop({
         initialCode: cleanCode,
         initialValidation,
         maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
-        validate: validateMermaid,
+        validate: (code) => validateMermaid(code, { logError: false }),
         fix: async (code, errorMessage) => {
           const fixedRaw = await fixDiagram(
             code,
@@ -176,7 +177,8 @@ export const createBuildHandler = (ctx: StudioContext) => {
       stepMessages.push(
         ctx.addMessage(
           'assistant',
-          `Build (after): Built ${ctx.appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}${autoFixNote}${afterSummary ? `\nSummary: ${afterSummary}` : ''}`
+          `Build (after): Built ${ctx.appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}${autoFixNote}${afterSummary ? `\nSummary: ${afterSummary}` : ''}`,
+          'build'
         )
       );
       ctx.trackAnalyticsEvent('diagram_build_success', {
@@ -184,9 +186,9 @@ export const createBuildHandler = (ctx: StudioContext) => {
         mode: 'build',
         isValid: !!validation.isValid,
         errorLine: validation.errorLine,
-        buildAttempts: attempts,
+        buildAttempts: attemptResult.attempts,
         autoFixAttempts,
-        emptyResponses,
+        emptyResponses: attemptResult.emptyResponses,
         durationMs: Date.now() - startedAt,
         codeLength: currentCode.length,
       });
@@ -197,15 +199,15 @@ export const createBuildHandler = (ctx: StudioContext) => {
         meta: {
           diagramType: ctx.appState.diagramType,
           autoFixAttempts: autoFixAttempts,
-          buildAttempts: attempts,
-          emptyResponses,
+          buildAttempts: attemptResult.attempts,
+          emptyResponses: attemptResult.emptyResponses,
           intent: intent.content,
           intentSource: intent.source,
         },
       });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      stepMessages.push(ctx.addMessage('assistant', `Build failed (${ctx.getCurrentModelName()}): ${message}`));
+      stepMessages.push(ctx.addMessage('assistant', `Build failed (${ctx.getCurrentModelName()}): ${message}`, 'build'));
       ctx.trackAnalyticsEvent('diagram_build_failed', {
         ...(await ctx.getAnalyticsContext('build')),
         mode: 'build',

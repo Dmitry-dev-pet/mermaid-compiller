@@ -35,6 +35,8 @@ function App() {
     diagramMarkers,
     diagramStepAnchors,
     selectedStepId,
+    projects,
+    activeProjectId,
     diagramIntent,
     promptPreviewByMode,
     editorTab,
@@ -60,6 +62,11 @@ function App() {
     setDiagramType,
     clearMessages,
     startNewProject,
+    openProject,
+    renameProject,
+    removeProject,
+    undoRemoveProject,
+    deleteUndoMs,
     toggleTheme,
     setAnalyzeLanguage,
     togglePreviewFullScreen,
@@ -179,6 +186,13 @@ function App() {
                 diagramMarkers={diagramMarkers}
                 diagramStepAnchors={diagramStepAnchors}
                 selectedStepId={selectedStepId}
+                projects={projects}
+                activeProjectId={activeProjectId}
+                onOpenProject={openProject}
+                onRenameProject={renameProject}
+                onDeleteProject={removeProject}
+                onUndoDeleteProject={undoRemoveProject}
+                deleteUndoMs={deleteUndoMs}
                 onSelectDiagramStep={goToDiagramStep}
                 buildDocsSelectionKey={buildDocsSelectionKey}
                 promptPreviewKey={promptPreviewKey}

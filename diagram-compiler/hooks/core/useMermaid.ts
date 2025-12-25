@@ -15,7 +15,7 @@ export const useMermaid = () => {
     }));
 
     // 2. Validate asynchronously without awaiting in the main thread
-    validateMermaid(newCode).then(validation => {
+    validateMermaid(newCode, { logError: false }).then(validation => {
        setMermaidState(prev => {
            // Verify we are still validating the latest code to avoid race conditions
            if (prev.code !== newCode) return prev; 

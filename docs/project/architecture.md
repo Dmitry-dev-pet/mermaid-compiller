@@ -11,6 +11,7 @@
 1. **UI-компоненты** (`diagram-compiler/components`)
    - `Header` — управление провайдером LLM, подключением и темой.
    - `ChatColumn` — история сообщений, выбор типа диаграммы, Chat/Build.
+   - `ChatProjects` — список проектов (сессий), продолжение/переименование/удаление.
    - `EditorColumn` — редактор Mermaid-кода, Analyze/Fix/Snapshot, язык анализа, вкладка Build Docs и вкладки Mermaid-блоков Markdown.
    - `PreviewColumn` — SVG-рендер, zoom/pan, fullscreen.
 
@@ -23,6 +24,7 @@
      - `useLayout` — размеры колонок, тема, язык, fullscreen.
    - `hooks/studio/*` — оркестрация и studio-логика.
      - `useDiagramStudio` — единая точка оркестрации состояния и действий.
+     - `useProjects` — управление проектами (сессиями) и их настройками.
      - `useBuildDocs`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`, `useDiagramExport`.
 
 3. **Сервисы** (`diagram-compiler/services`)
@@ -70,7 +72,8 @@
 - **UI и layout**: `hooks/core/useLayout`.
 - **LLM и соединение**: `hooks/core/useAI`.
 - **История**: `hooks/core/useHistory`.
+- **Проекты (сессии)**: `hooks/studio/useProjects`.
 
 ---
 
-Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).
+Обновлено: 2025-12-25. Согласовано с текущей реализацией (projects manager, markdown-навигация, scroll sync, frontmatter config).

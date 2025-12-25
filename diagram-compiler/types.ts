@@ -72,6 +72,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  mode?: 'chat' | 'build' | 'fix' | 'analyze' | 'system';
 }
 
 export interface DiagramIntent {

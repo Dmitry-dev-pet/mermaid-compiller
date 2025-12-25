@@ -1,6 +1,6 @@
 import type { MermaidState, Message } from '../../types';
 import { requestToPromise, STORE_REVISIONS, STORE_SESSIONS, STORE_STEPS, withTx } from './db';
-import type { DiagramRevision, HistorySession, StepMeta, TimeStep, TimeStepType } from './types';
+import type { DiagramRevision, HistorySession, SessionSettings, StepMeta, TimeStep, TimeStepType } from './types';
 
 export const ACTIVE_SESSION_KEY = 'dc_active_session_id';
 
@@ -12,7 +12,7 @@ const newId = () => {
   return `id_${now()}_${Math.random().toString(36).slice(2)}`;
 };
 
-const getActiveSessionId = () => {
+export const getActiveSessionId = () => {
   try {
     return localStorage.getItem(ACTIVE_SESSION_KEY);
   } catch {
@@ -20,7 +20,7 @@ const getActiveSessionId = () => {
   }
 };
 
-const setActiveSessionId = (id: string) => {
+export const setActiveSessionId = (id: string) => {
   try {
     localStorage.setItem(ACTIVE_SESSION_KEY, id);
   } catch {
@@ -28,12 +28,40 @@ const setActiveSessionId = (id: string) => {
   }
 };
 
-export const createSession = async (): Promise<HistorySession> => {
+export const clearActiveSessionId = () => {
+  try {
+    localStorage.removeItem(ACTIVE_SESSION_KEY);
+  } catch {
+    // ignore
+  }
+};
+
+const formatSessionTitle = (createdAt: number) => {
+  const iso = new Date(createdAt).toISOString().slice(0, 19).replace('T', ' ');
+  return `Project ${iso}`;
+};
+
+const normalizeSession = (session: HistorySession): HistorySession => ({
+  ...session,
+  title: session.title ?? formatSessionTitle(session.createdAt),
+  updatedAt: session.updatedAt ?? session.createdAt,
+});
+
+export type CreateSessionArgs = {
+  title?: string;
+  settings?: SessionSettings;
+};
+
+export const createSession = async (args: CreateSessionArgs = {}): Promise<HistorySession> => {
+  const createdAt = now();
   const session: HistorySession = {
     id: newId(),
-    createdAt: now(),
+    createdAt,
+    updatedAt: createdAt,
+    title: args.title ?? formatSessionTitle(createdAt),
     nextStepIndex: 0,
     currentRevisionId: null,
+    settings: args.settings,
   };
 
   await withTx([STORE_SESSIONS], 'readwrite', async (tx) => {
@@ -41,13 +69,57 @@ export const createSession = async (): Promise<HistorySession> => {
   });
 
   setActiveSessionId(session.id);
-  return session;
+  return normalizeSession(session);
 };
 
 export const getSession = async (sessionId: string): Promise<HistorySession | null> => {
   return withTx([STORE_SESSIONS], 'readonly', async (tx) => {
     const res = await requestToPromise(tx.objectStore(STORE_SESSIONS).get(sessionId));
-    return (res as HistorySession | undefined) ?? null;
+    const session = (res as HistorySession | undefined) ?? null;
+    return session ? normalizeSession(session) : null;
+  });
+};
+
+export const listSessions = async (): Promise<HistorySession[]> => {
+  return withTx([STORE_SESSIONS], 'readonly', async (tx) => {
+    const store = tx.objectStore(STORE_SESSIONS);
+    const res = await requestToPromise(store.getAll());
+    const list = (res as HistorySession[]).map(normalizeSession);
+    list.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+    return list;
+  });
+};
+
+export const renameSession = async (sessionId: string, title: string): Promise<HistorySession | null> => {
+  return withTx([STORE_SESSIONS], 'readwrite', async (tx) => {
+    const store = tx.objectStore(STORE_SESSIONS);
+    const existing = (await requestToPromise(store.get(sessionId))) as HistorySession | undefined;
+    if (!existing) return null;
+    const updated: HistorySession = {
+      ...existing,
+      title: title.trim() || existing.title,
+      updatedAt: now(),
+    };
+    await requestToPromise(store.put(updated));
+    return normalizeSession(updated);
+  });
+};
+
+export const updateSessionSettings = async (
+  sessionId: string,
+  settings: SessionSettings
+): Promise<HistorySession | null> => {
+  return withTx([STORE_SESSIONS], 'readwrite', async (tx) => {
+    const store = tx.objectStore(STORE_SESSIONS);
+    const existing = (await requestToPromise(store.get(sessionId))) as HistorySession | undefined;
+    if (!existing) return null;
+    const updated: HistorySession = {
+      ...existing,
+      settings,
+      updatedAt: now(),
+    };
+    await requestToPromise(store.put(updated));
+    return normalizeSession(updated);
   });
 };
 
@@ -121,12 +193,13 @@ export const recordStep = async (
     }
 
     session.nextStepIndex += 1;
+    session.updatedAt = createdAt;
 
     await requestToPromise(steps.put(step));
     if (revision) await requestToPromise(revisions.put(revision));
     await requestToPromise(sessions.put(session));
 
-    return { step, revision, session };
+    return { step, revision, session: normalizeSession(session) };
   });
 };
 
@@ -134,8 +207,9 @@ export const updateRevision = async (
   revisionId: string,
   nextMermaid: Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'>
 ): Promise<DiagramRevision | null> => {
-  return withTx([STORE_REVISIONS], 'readwrite', async (tx) => {
+  return withTx([STORE_REVISIONS, STORE_SESSIONS], 'readwrite', async (tx) => {
     const revisions = tx.objectStore(STORE_REVISIONS);
+    const sessions = tx.objectStore(STORE_SESSIONS);
     const existing = (await requestToPromise(revisions.get(revisionId))) as DiagramRevision | undefined;
     if (!existing) return null;
 
@@ -150,6 +224,10 @@ export const updateRevision = async (
     };
 
     await requestToPromise(revisions.put(updated));
+    const session = (await requestToPromise(sessions.get(existing.sessionId))) as HistorySession | undefined;
+    if (session) {
+      await requestToPromise(sessions.put({ ...session, updatedAt: now() }));
+    }
     return updated;
   });
 };
@@ -185,4 +263,58 @@ export const loadActiveSessionState = async () => {
   const steps = await listSteps(session.id);
   const currentRevision = session.currentRevisionId ? await getRevision(session.currentRevisionId) : null;
   return { session, steps, currentRevision };
+};
+
+export const loadSessionState = async (sessionId: string) => {
+  const session = await getSession(sessionId);
+  if (!session) return null;
+  setActiveSessionId(session.id);
+  const steps = await listSteps(session.id);
+  const currentRevision = session.currentRevisionId ? await getRevision(session.currentRevisionId) : null;
+  return { session, steps, currentRevision };
+};
+
+export const deleteSession = async (sessionId: string): Promise<void> => {
+  await withTx([STORE_SESSIONS, STORE_STEPS, STORE_REVISIONS], 'readwrite', async (tx) => {
+    const sessions = tx.objectStore(STORE_SESSIONS);
+    const steps = tx.objectStore(STORE_STEPS);
+    const revisions = tx.objectStore(STORE_REVISIONS);
+
+    const stepsIndex = steps.index('bySessionId');
+    const revisionsIndex = revisions.index('bySessionId');
+
+    await new Promise<void>((resolve, reject) => {
+      const req = stepsIndex.openCursor(IDBKeyRange.only(sessionId));
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) return resolve();
+        cursor.delete();
+        cursor.continue();
+      };
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const req = revisionsIndex.openCursor(IDBKeyRange.only(sessionId));
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) return resolve();
+        cursor.delete();
+        cursor.continue();
+      };
+    });
+
+    await requestToPromise(sessions.delete(sessionId));
+  });
+  if (getActiveSessionId() === sessionId) {
+    clearActiveSessionId();
+  }
+
+  const remaining = await getSession(sessionId);
+  if (remaining) {
+    await withTx([STORE_SESSIONS], 'readwrite', async (tx) => {
+      await requestToPromise(tx.objectStore(STORE_SESSIONS).delete(sessionId));
+    });
+  }
 };

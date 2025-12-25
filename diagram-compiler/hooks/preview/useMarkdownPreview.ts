@@ -1,15 +1,9 @@
 import { useCallback, useMemo } from 'react';
 import MarkdownIt from 'markdown-it';
+import { MARKDOWN_CALLOUTS } from '../../utils/markdownCallouts';
 
 const applyMarkdownCallouts = (mount: HTMLElement) => {
-  const types: Array<{ key: string; title: string }> = [
-    { key: 'warning', title: 'Warning' },
-    { key: 'note', title: 'Note' },
-    { key: 'tip', title: 'Tip' },
-    { key: 'info', title: 'Info' },
-  ];
-
-  for (const type of types) {
+  for (const type of MARKDOWN_CALLOUTS) {
     const blocks = Array.from(mount.querySelectorAll(`pre > code.language-${type.key}`));
 
     for (const block of blocks) {

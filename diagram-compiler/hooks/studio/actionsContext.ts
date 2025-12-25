@@ -18,7 +18,7 @@ export type StudioActionsDeps = {
   diagramIntent: DiagramIntent | null;
   setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
   setMermaidState: Dispatch<SetStateAction<MermaidState>>;
-  addMessage: (role: 'user' | 'assistant', content: string) => Message;
+  addMessage: (role: 'user' | 'assistant', content: string, mode?: Message['mode']) => Message;
   getMessages: () => Message[];
   getDiagramContextCode?: () => string;
   getAnalyticsContext?: (mode: DocsMode) => Promise<AnalyticsContext>;

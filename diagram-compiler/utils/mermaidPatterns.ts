@@ -1,0 +1,27 @@
+import type { DiagramType } from '../types';
+
+export const DIAGRAM_TYPE_PATTERNS: Array<{ pattern: RegExp; type: DiagramType }> = [
+  { pattern: /^(flowchart|graph)\b/i, type: 'flowchart' },
+  { pattern: /^sequenceDiagram\b/i, type: 'sequence' },
+  { pattern: /^classDiagram\b/i, type: 'class' },
+  { pattern: /^stateDiagram(?:-v2)?\b/i, type: 'state' },
+  { pattern: /^erDiagram\b/i, type: 'er' },
+  { pattern: /^gantt\b/i, type: 'gantt' },
+  { pattern: /^pie\b/i, type: 'pie' },
+  { pattern: /^mindmap(?:-beta)?\b/i, type: 'mindmap' },
+  { pattern: /^journey\b/i, type: 'userJourney' },
+  { pattern: /^gitGraph\b/i, type: 'gitGraph' },
+  { pattern: /^quadrantChart\b/i, type: 'quadrantChart' },
+  { pattern: /^requirementDiagram\b/i, type: 'requirementDiagram' },
+  { pattern: /^C4(?:Context|Container|Component|Dynamic|Deployment)\b/i, type: 'c4' },
+  { pattern: /^timeline\b/i, type: 'timeline' },
+  { pattern: /^sankey(?:-beta)?\b/i, type: 'sankey' },
+  { pattern: /^xychart(?:-beta)?\b/i, type: 'xychart' },
+  { pattern: /^zenuml\b/i, type: 'zenuml' },
+  { pattern: /^block(?:-beta)?\b/i, type: 'block' },
+  { pattern: /^architecture(?:-beta)?\b/i, type: 'architecture' },
+  { pattern: /^packet\b/i, type: 'packet' },
+  { pattern: /^kanban\b/i, type: 'kanban' },
+  { pattern: /^radar\b/i, type: 'radar' },
+  { pattern: /^treemap\b/i, type: 'treemap' },
+];

@@ -4,6 +4,8 @@ import { applyInlineDirectionCommand } from '../utils/inlineDirectionCommand';
 import { applyInlineThemeAndLookCommands } from '../utils/inlineLookCommand';
 import { MermaidThemeName, setInlineThemeCommand } from '../utils/inlineThemeCommand';
 import { MermaidLook, setInlineLookCommand } from '../utils/inlineLookCommand';
+import { MERMAID_BLOCK_PATTERN } from '../utils/markdownMermaid';
+import { DIAGRAM_TYPE_PATTERNS } from '../utils/mermaidPatterns';
 
 export const isMarkdownLike = (code: string): boolean => {
   if (!code.trim()) return false;
@@ -24,33 +26,6 @@ export type MermaidMarkdownBlock = {
   diagramType?: DiagramType | null;
 };
 
-const MERMAID_BLOCK_PATTERN = /(```(?:mermaid|mermaid-example)[^\n]*\r?\n)([\s\S]*?)(```)/g;
-
-const DIAGRAM_TYPE_PATTERNS: Array<{ pattern: RegExp; type: DiagramType }> = [
-  { pattern: /^(flowchart|graph)\b/i, type: 'flowchart' },
-  { pattern: /^sequenceDiagram\b/i, type: 'sequence' },
-  { pattern: /^classDiagram\b/i, type: 'class' },
-  { pattern: /^stateDiagram(?:-v2)?\b/i, type: 'state' },
-  { pattern: /^erDiagram\b/i, type: 'er' },
-  { pattern: /^gantt\b/i, type: 'gantt' },
-  { pattern: /^pie\b/i, type: 'pie' },
-  { pattern: /^mindmap(?:-beta)?\b/i, type: 'mindmap' },
-  { pattern: /^journey\b/i, type: 'userJourney' },
-  { pattern: /^gitGraph\b/i, type: 'gitGraph' },
-  { pattern: /^quadrantChart\b/i, type: 'quadrantChart' },
-  { pattern: /^requirementDiagram\b/i, type: 'requirementDiagram' },
-  { pattern: /^C4(?:Context|Container|Component|Dynamic|Deployment)\b/i, type: 'c4' },
-  { pattern: /^timeline\b/i, type: 'timeline' },
-  { pattern: /^sankey(?:-beta)?\b/i, type: 'sankey' },
-  { pattern: /^xychart(?:-beta)?\b/i, type: 'xychart' },
-  { pattern: /^zenuml\b/i, type: 'zenuml' },
-  { pattern: /^block(?:-beta)?\b/i, type: 'block' },
-  { pattern: /^architecture(?:-beta)?\b/i, type: 'architecture' },
-  { pattern: /^packet\b/i, type: 'packet' },
-  { pattern: /^kanban\b/i, type: 'kanban' },
-  { pattern: /^radar\b/i, type: 'radar' },
-  { pattern: /^treemap\b/i, type: 'treemap' },
-];
 
 export const detectMermaidDiagramType = (code: string): DiagramType | null => {
   if (!code.trim()) return null;
@@ -174,7 +149,10 @@ export const initializeMermaid = (theme: 'default' | 'dark' = 'default') => {
   });
 };
 
-export const validateMermaid = async (code: string): Promise<Partial<MermaidState>> => {
+export const validateMermaid = async (
+  code: string,
+  options: { logError?: boolean } = {}
+): Promise<Partial<MermaidState>> => {
   if (!code.trim()) {
     return {
       isValid: true,
@@ -206,7 +184,9 @@ export const validateMermaid = async (code: string): Promise<Partial<MermaidStat
       lastValidCode: code,
     };
   } catch (error: unknown) {
-    console.error("Mermaid Validation Error:", error);
+    if (options.logError !== false) {
+      console.error('Mermaid Validation Error:', error);
+    }
     
     let line = 1;
     // Cast to any to access custom properties from Mermaid parser error if standard Error doesn't suffice
@@ -228,6 +208,7 @@ export const validateMermaid = async (code: string): Promise<Partial<MermaidStat
 
 export const validateMermaidDiagramCode = async (
   code: string,
+  options: { logError?: boolean } = {}
 ): Promise<Pick<MermaidState, 'isValid' | 'status' | 'errorLine' | 'errorMessage'>> => {
   if (!code.trim()) {
     return {
@@ -248,7 +229,9 @@ export const validateMermaidDiagramCode = async (
       errorMessage: undefined,
     };
   } catch (error: unknown) {
-    console.error('Mermaid Validation Error:', error);
+    if (options.logError !== false) {
+      console.error('Mermaid Validation Error:', error);
+    }
 
     let line = 1;
     const errAny = error as { message?: string; str?: string };

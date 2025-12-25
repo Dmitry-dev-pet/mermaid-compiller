@@ -34,14 +34,15 @@ export const createRecompileHandler = (ctx: StudioContext) => {
 
       const rawCode = await generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
       const cleanCode = extractMermaidCode(rawCode);
-      const validation = await validateMermaid(cleanCode);
+      const validation = await validateMermaid(cleanCode, { logError: false });
 
       ctx.applyCompiledResult(cleanCode, validation);
       const stepMessages: Message[] = [];
       stepMessages.push(
         ctx.addMessage(
           'assistant',
-          `Generated ${ctx.appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}`
+          `Generated ${ctx.appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}`,
+          'build'
         )
       );
       await ctx.safeRecordTimeStep({
@@ -62,7 +63,7 @@ export const createRecompileHandler = (ctx: StudioContext) => {
       const message = e instanceof Error ? e.message : String(e);
       alert(`Generation failed (${ctx.getCurrentModelName()}): ${message}`);
       const stepMessages: Message[] = [];
-      stepMessages.push(ctx.addMessage('assistant', `Error generating diagram (${ctx.getCurrentModelName()}): ${message}`));
+      stepMessages.push(ctx.addMessage('assistant', `Error generating diagram (${ctx.getCurrentModelName()}): ${message}`, 'build'));
       ctx.trackAnalyticsEvent('diagram_recompile_failed', {
         ...(await ctx.getAnalyticsContext('build')),
         mode: 'recompile',
@@ -100,12 +101,12 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
       });
 
       const startCode = ctx.mermaidState.code;
-      const initialValidation = await validateMermaid(startCode);
+      const initialValidation = await validateMermaid(startCode, { logError: false });
       const { code: currentCode, validation, attempts } = await runAutoFixLoop({
         initialCode: startCode,
         initialValidation,
         maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
-        validate: validateMermaid,
+        validate: (code) => validateMermaid(code, { logError: false }),
         fix: async (code, errorMessage) => {
           const fixedRaw = await fixDiagram(
             code,
@@ -186,13 +187,13 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
       const language = ctx.resolveAnalyzeLanguage();
       const explanation = await analyzeDiagram(diagramCode, ctx.aiConfig, docs, language);
       const stepMessages: Message[] = [];
-      stepMessages.push(ctx.addMessage('assistant', explanation));
+      stepMessages.push(ctx.addMessage('assistant', explanation, 'analyze'));
       await ctx.safeRecordTimeStep({ type: 'analyze', messages: stepMessages, meta: { diagramType: ctx.appState.diagramType } });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       alert(`Analysis failed (${ctx.getCurrentModelName()}): ${message}`);
       const stepMessages: Message[] = [];
-      stepMessages.push(ctx.addMessage('assistant', `Error analyzing diagram (${ctx.getCurrentModelName()}): ${message}`));
+      stepMessages.push(ctx.addMessage('assistant', `Error analyzing diagram (${ctx.getCurrentModelName()}): ${message}`, 'analyze'));
       await ctx.safeRecordTimeStep({ type: 'analyze', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);

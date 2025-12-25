@@ -1,5 +1,5 @@
 export const DB_NAME = 'dc_history';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export const STORE_SESSIONS = 'sessions';
 export const STORE_STEPS = 'steps';
@@ -21,19 +21,44 @@ export const openHistoryDb = () => {
 
     req.onupgradeneeded = () => {
       const db = req.result;
+      const tx = req.transaction;
+      if (!tx) return;
 
-      const sessions = db.createObjectStore(STORE_SESSIONS, { keyPath: 'id' });
-      sessions.createIndex('byCreatedAt', 'createdAt');
+      const sessions = db.objectStoreNames.contains(STORE_SESSIONS)
+        ? tx.objectStore(STORE_SESSIONS)
+        : db.createObjectStore(STORE_SESSIONS, { keyPath: 'id' });
+      if (!sessions.indexNames.contains('byCreatedAt')) {
+        sessions.createIndex('byCreatedAt', 'createdAt');
+      }
+      if (!sessions.indexNames.contains('byUpdatedAt')) {
+        sessions.createIndex('byUpdatedAt', 'updatedAt');
+      }
 
-      const steps = db.createObjectStore(STORE_STEPS, { keyPath: 'id' });
-      steps.createIndex('bySessionId', 'sessionId');
-      steps.createIndex('bySessionIndex', ['sessionId', 'index'], { unique: true });
-      steps.createIndex('bySessionCreatedAt', ['sessionId', 'createdAt']);
+      const steps = db.objectStoreNames.contains(STORE_STEPS)
+        ? tx.objectStore(STORE_STEPS)
+        : db.createObjectStore(STORE_STEPS, { keyPath: 'id' });
+      if (!steps.indexNames.contains('bySessionId')) {
+        steps.createIndex('bySessionId', 'sessionId');
+      }
+      if (!steps.indexNames.contains('bySessionIndex')) {
+        steps.createIndex('bySessionIndex', ['sessionId', 'index'], { unique: true });
+      }
+      if (!steps.indexNames.contains('bySessionCreatedAt')) {
+        steps.createIndex('bySessionCreatedAt', ['sessionId', 'createdAt']);
+      }
 
-      const revisions = db.createObjectStore(STORE_REVISIONS, { keyPath: 'id' });
-      revisions.createIndex('bySessionId', 'sessionId');
-      revisions.createIndex('byCreatedByStepId', 'createdByStepId', { unique: true });
-      revisions.createIndex('bySessionCreatedAt', ['sessionId', 'createdAt']);
+      const revisions = db.objectStoreNames.contains(STORE_REVISIONS)
+        ? tx.objectStore(STORE_REVISIONS)
+        : db.createObjectStore(STORE_REVISIONS, { keyPath: 'id' });
+      if (!revisions.indexNames.contains('bySessionId')) {
+        revisions.createIndex('bySessionId', 'sessionId');
+      }
+      if (!revisions.indexNames.contains('byCreatedByStepId')) {
+        revisions.createIndex('byCreatedByStepId', 'createdByStepId', { unique: true });
+      }
+      if (!revisions.indexNames.contains('bySessionCreatedAt')) {
+        revisions.createIndex('bySessionCreatedAt', ['sessionId', 'createdAt']);
+      }
     };
 
     req.onsuccess = () => resolve(req.result);
@@ -61,4 +86,3 @@ export const withTx = async <T>(
   await txDone(tx);
   return result;
 };
-

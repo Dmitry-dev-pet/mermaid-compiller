@@ -11,11 +11,13 @@ import {
   detectMermaidDiagramType,
   isMarkdownLike,
   MermaidMarkdownBlock,
+  validateMermaidDiagramCode,
 } from '../services/mermaidService';
 import { ScrollSyncMeasure, ScrollSyncPayload, useScrollSync } from '../hooks/studio/useScrollSync';
 import { useMarkdownMermaidBlockState } from '../hooks/markdown/useMarkdownMermaidBlockState';
 import { useMarkdownPreview } from '../hooks/preview/useMarkdownPreview';
 import { useMarkdownMermaidOffsets } from '../hooks/preview/useMarkdownMermaidOffsets';
+import { MERMAID_CODE_BLOCK_SELECTOR } from '../utils/markdownMermaid';
 import {
   DIAGRAM_TYPE_SUPPORTS_INLINE_DIRECTION,
   DIAGRAM_TYPE_SUPPORTS_INLINE_LOOK,
@@ -336,6 +338,12 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
       try {
         setRenderError(null);
         const id = `mermaid-${Date.now()}`;
+        const validation = await validateMermaidDiagramCode(codeForRender, { logError: false });
+        if (validation.isValid === false) {
+          setRenderError(validation.errorMessage ?? 'Syntax Error');
+          setSvgMarkup('');
+          return;
+        }
         const inlineCode = applyInlineMermaidDirectives(codeForRender);
         const { svg, bindFunctions } = await mermaid.render(id, inlineCode);
         bindFunctionsRef.current = bindFunctions ?? null;
@@ -372,73 +380,74 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     if (!mount) return;
     renderMarkdown(mount);
 
-    const mermaidBlocks = Array.from(
-      mount.querySelectorAll('pre > code.language-mermaid, pre > code.language-mermaid-example')
-    );
+    const mermaidBlocks = Array.from(mount.querySelectorAll(MERMAID_CODE_BLOCK_SELECTOR));
     if (mermaidBlocks.length === 0) return;
 
     let isCancelled = false;
     const renderBlocks = async () => {
-      for (let i = 0; i < mermaidBlocks.length; i += 1) {
-        if (isCancelled) return;
-        const block = mermaidBlocks[i];
-        const code = block.textContent ?? '';
-        if (!code.trim()) continue;
-        const id = `md-mermaid-${Date.now()}-${i}`;
-        const diagnostics = markdownMermaidDiagnostics[i];
-          if (diagnostics?.isValid === false) {
+      try {
+        for (let i = 0; i < mermaidBlocks.length; i += 1) {
+          if (isCancelled) return;
+          const block = mermaidBlocks[i];
+          const code = block.textContent ?? '';
+          if (!code.trim()) continue;
+          const id = `md-mermaid-${Date.now()}-${i}`;
+          const validation = await validateMermaidDiagramCode(code, { logError: false });
+          if (validation.isValid === false) {
             const pre = block.parentElement;
             if (pre && pre.parentElement) {
-              const errorBlock = createMarkdownErrorBlock(diagnostics.errorMessage || 'Syntax Error', i);
+              const errorBlock = createMarkdownErrorBlock(validation.errorMessage || 'Syntax Error', i);
               pre.replaceWith(errorBlock);
             }
             continue;
           }
-        try {
-          const normalized = applyInlineMermaidDirectives(code);
-          const { svg, bindFunctions } = await mermaid.render(id, normalized);
-          if (isCancelled || !svg) continue;
-          const wrapper = document.createElement('div');
-          wrapper.className = 'markdown-mermaid-preview markdown-mermaid-block';
-          wrapper.setAttribute('role', 'button');
-          wrapper.setAttribute('tabindex', '0');
-          wrapper.dataset.mermaidIndex = String(i);
-          wrapper.innerHTML = svg;
-          const pre = block.parentElement;
-          if (pre && pre.parentElement) {
-            pre.replaceWith(wrapper);
-            wrapper.addEventListener('click', () => {
-              setMarkdownIndexFromPreview(i);
-            });
-            wrapper.addEventListener('mouseenter', () => {
-              onHoverMarkdownIndex(i);
-              handleHoverSync(i);
-            });
-            wrapper.addEventListener('mouseleave', () => {
-              onHoverMarkdownIndex(null);
-            });
-            try {
-              bindFunctions?.(wrapper);
-            } catch (e) {
-              console.error('Failed to bind Mermaid interactions in markdown', e);
+          try {
+            const normalized = applyInlineMermaidDirectives(code);
+            const { svg, bindFunctions } = await mermaid.render(id, normalized);
+            if (isCancelled || !svg) continue;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'markdown-mermaid-preview markdown-mermaid-block';
+            wrapper.setAttribute('role', 'button');
+            wrapper.setAttribute('tabindex', '0');
+            wrapper.dataset.mermaidIndex = String(i);
+            wrapper.innerHTML = svg;
+            const pre = block.parentElement;
+            if (pre && pre.parentElement) {
+              pre.replaceWith(wrapper);
+              wrapper.addEventListener('click', () => {
+                setMarkdownIndexFromPreview(i);
+              });
+              wrapper.addEventListener('mouseenter', () => {
+                onHoverMarkdownIndex(i);
+                handleHoverSync(i);
+              });
+              wrapper.addEventListener('mouseleave', () => {
+                onHoverMarkdownIndex(null);
+              });
+              try {
+                bindFunctions?.(wrapper);
+              } catch (e) {
+                console.error('Failed to bind Mermaid interactions in markdown', e);
+              }
+            }
+          } catch (e) {
+            const pre = block.parentElement;
+            if (pre && pre.parentElement) {
+              const message = e instanceof Error ? e.message : 'Syntax Error';
+              const errorBlock = createMarkdownErrorBlock(message, i);
+              pre.replaceWith(errorBlock);
             }
           }
-        } catch (e) {
-          const pre = block.parentElement;
-          if (pre && pre.parentElement) {
-            const message = e instanceof Error ? e.message : 'Syntax Error';
-            const errorBlock = createMarkdownErrorBlock(message, i);
-            pre.replaceWith(errorBlock);
-          }
-          console.error('Failed to render Mermaid block in markdown', e);
         }
-      }
-      if (!isCancelled) {
-        requestAnimationFrame(() => refreshPreviewOffsets());
+        if (!isCancelled) {
+          requestAnimationFrame(() => refreshPreviewOffsets());
+        }
+      } catch {
+        // Swallow render errors to avoid crashing the app.
       }
     };
 
-    renderBlocks();
+    void renderBlocks();
     return () => {
       isCancelled = true;
     };
@@ -463,41 +472,47 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
 
     mount.innerHTML = buildDocsHtml;
 
-    const mermaidBlocks = Array.from(
-      mount.querySelectorAll('pre > code.language-mermaid, pre > code.language-mermaid-example')
-    );
+    const mermaidBlocks = Array.from(mount.querySelectorAll(MERMAID_CODE_BLOCK_SELECTOR));
     if (mermaidBlocks.length === 0) return;
 
     let isCancelled = false;
     const renderBlocks = async () => {
-      for (let i = 0; i < mermaidBlocks.length; i += 1) {
-        if (isCancelled) return;
-        const block = mermaidBlocks[i];
-        const code = block.textContent ?? '';
-        if (!code.trim()) continue;
-        const id = `build-docs-${Date.now()}-${i}`;
-        try {
-          const normalized = applyInlineMermaidDirectives(code);
-          const { svg, bindFunctions } = await mermaid.render(id, normalized);
-          if (isCancelled || !svg) continue;
-          const wrapper = document.createElement('div');
-          wrapper.innerHTML = svg;
-          const pre = block.parentElement;
-          if (pre && pre.parentElement) {
-            pre.replaceWith(wrapper);
-            try {
-              bindFunctions?.(wrapper);
-            } catch (e) {
-              console.error('Failed to bind Mermaid interactions in build docs preview', e);
-            }
+      try {
+        for (let i = 0; i < mermaidBlocks.length; i += 1) {
+          if (isCancelled) return;
+          const block = mermaidBlocks[i];
+          const code = block.textContent ?? '';
+          if (!code.trim()) continue;
+          const id = `build-docs-${Date.now()}-${i}`;
+          const validation = await validateMermaidDiagramCode(code, { logError: false });
+          if (validation.isValid === false) {
+            continue;
           }
-        } catch (e) {
-          console.error('Failed to render Mermaid block in build docs preview', e);
+          try {
+            const normalized = applyInlineMermaidDirectives(code);
+            const { svg, bindFunctions } = await mermaid.render(id, normalized);
+            if (isCancelled || !svg) continue;
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = svg;
+            const pre = block.parentElement;
+            if (pre && pre.parentElement) {
+              pre.replaceWith(wrapper);
+              try {
+                bindFunctions?.(wrapper);
+              } catch (e) {
+                console.error('Failed to bind Mermaid interactions in build docs preview', e);
+              }
+            }
+          } catch {
+            // Swallow render errors in build docs preview.
+          }
         }
+      } catch {
+        // Swallow render errors to avoid crashing the app.
       }
     };
 
-    renderBlocks();
+    void renderBlocks();
     return () => {
       isCancelled = true;
     };

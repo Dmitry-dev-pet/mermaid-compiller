@@ -13,6 +13,7 @@ import { EDITOR_LINE_HEIGHT, EDITOR_PADDING } from '../utils/uiTokens';
 import { useFloatingTooltip } from '../hooks/useFloatingTooltip';
 import { useBuildDocsState } from '../hooks/editor/useBuildDocsState';
 import { useMarkdownMermaidBlockState } from '../hooks/markdown/useMarkdownMermaidBlockState';
+import { transformMarkdownMermaid } from '../utils/markdownMermaid';
 import BuildDocsPanel from './editor/BuildDocsPanel';
 import CodeEditorPanel from './editor/CodeEditorPanel';
 import EditorHeader from './editor/EditorHeader';
@@ -168,30 +169,38 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   const editorValue = isMarkdownMermaidMode ? activeMarkdownBlock?.code ?? '' : mermaidState.code;
   const editorLineCount = editorValue.split('\n').length;
   const editorLineNumbers = Array.from({ length: Math.max(editorLineCount, 1) }, (_, i) => i + 1);
-  const isMarkdown = isMarkdownLike(mermaidState.code);
-  const canFix = isMarkdownMermaidInvalid || (!isMarkdown && mermaidState.status === 'invalid');
   const markdownValidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === true).length;
   const markdownInvalidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === false).length;
+  const isMarkdown = isMarkdownLike(mermaidState.code);
+  const canFix = isMarkdown
+    ? markdownInvalidCount > 0
+    : mermaidState.status === 'invalid';
+  const highlightMarkdownWithMermaid = (code: string) => {
+    return transformMarkdownMermaid(code, {
+      markdown: (segment) => highlight(segment, languages.markdown, 'markdown'),
+      mermaid: (segment) => highlight(segment, languages.mermaid, 'mermaid'),
+    });
+  };
   const highlightMarkdownWithActiveBlock = (code: string) => {
     if (!hoveredMarkdownBlock || !isMarkdown) {
-      return highlight(code, languages.markdown, 'markdown');
+      return highlightMarkdownWithMermaid(code);
     }
     const start = hoveredMarkdownBlock.start;
     const end = hoveredMarkdownBlock.end;
     if (start < 0 || end <= start || start >= code.length) {
-      return highlight(code, languages.markdown, 'markdown');
+      return highlightMarkdownWithMermaid(code);
     }
     const safeStart = Math.max(0, Math.min(start, code.length));
     const safeEnd = Math.max(safeStart, Math.min(end, code.length));
     if (safeEnd <= safeStart) {
-      return highlight(code, languages.markdown, 'markdown');
+      return highlightMarkdownWithMermaid(code);
     }
     const before = code.slice(0, safeStart);
     const focus = code.slice(safeStart, safeEnd);
     const after = code.slice(safeEnd);
-    const beforeHtml = highlight(before, languages.markdown, 'markdown');
-    const focusHtml = highlight(focus, languages.markdown, 'markdown');
-    const afterHtml = highlight(after, languages.markdown, 'markdown');
+    const beforeHtml = highlightMarkdownWithMermaid(before);
+    const focusHtml = highlightMarkdownWithMermaid(focus);
+    const afterHtml = highlightMarkdownWithMermaid(after);
     return `${beforeHtml}<span class="markdown-active-block">${focusHtml}</span>${afterHtml}`;
   };
   const highlightEditorCode = (code: string) => {

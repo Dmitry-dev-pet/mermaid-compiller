@@ -2,6 +2,7 @@ import React from 'react';
 import { Bookmark, Check, Copy, PenTool, RefreshCw } from 'lucide-react';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
 import { EditorTab, MermaidState } from '../../types';
+import { MODE_BUTTON_DISABLED, MODE_UI } from '../../utils/uiModes';
 
 interface EditorHeaderProps {
   mermaidState: MermaidState;
@@ -46,6 +47,9 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
   isMarkdownMermaidTab,
   isBuildDocsTab,
 }) => {
+  const canAnalyze = isAIReady && mermaidState.code.trim().length > 0 && !isProcessing;
+  const actionButtonBase =
+    'px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap';
   return (
     <div className="h-24 p-2 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-950">
       <div className="flex flex-col flex-1 min-w-0">
@@ -86,8 +90,8 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
           <div className="flex flex-wrap items-center justify-end gap-1.5 font-sans justify-self-end">
             <button
               onClick={onAnalyze}
-              disabled={!isAIReady || !mermaidState.code.trim() || isProcessing}
-              className="px-2 py-1 text-[10px] font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap"
+              disabled={!canAnalyze}
+              className={`${actionButtonBase} ${canAnalyze ? MODE_UI.analyze.button : MODE_BUTTON_DISABLED}`}
               title="Explain this diagram in chat"
             >
               <PenTool size={10} /> Analyze
@@ -108,11 +112,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
             <button
               onClick={onFixSyntax}
               disabled={!isAIReady || isProcessing || !canFix}
-              className={`px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap ${
-                canFix
-                  ? 'text-white bg-amber-600 hover:bg-amber-700'
-                  : 'text-slate-400 bg-slate-200 dark:bg-slate-700 dark:text-slate-500'
-              }`}
+              className={`${actionButtonBase} ${canFix ? MODE_UI.fix.button : MODE_BUTTON_DISABLED}`}
               title={`Attempt to fix syntax errors (up to ${AUTO_FIX_MAX_ATTEMPTS} tries)`}
             >
               <RefreshCw size={10} className={isProcessing ? 'animate-spin' : ''} /> Fix ({AUTO_FIX_MAX_ATTEMPTS})
@@ -121,7 +121,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
             <button
               onClick={onSnapshot}
               disabled={!canSnapshot}
-              className={`px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap ${
+              className={`${actionButtonBase} ${
                 canSnapshot
                   ? 'text-white bg-slate-700 hover:bg-slate-800'
                   : 'text-slate-400 bg-slate-200 dark:bg-slate-700 dark:text-slate-500'

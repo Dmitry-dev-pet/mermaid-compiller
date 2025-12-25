@@ -4,7 +4,7 @@ import { INITIAL_CHAT_MESSAGE } from '../../constants';
 import { generateId } from '../../utils';
 
 const INITIAL_MESSAGES: Message[] = [
-  { id: 'init', role: 'assistant', content: INITIAL_CHAT_MESSAGE, timestamp: 0 },
+  { id: 'init', role: 'assistant', content: INITIAL_CHAT_MESSAGE, timestamp: 0, mode: 'system' },
 ];
 
 export const useChat = () => {
@@ -33,12 +33,13 @@ export const useChat = () => {
     setMessages(INITIAL_MESSAGES);
   }, [setMessages]);
 
-  const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
+  const addMessage = useCallback((role: 'user' | 'assistant', content: string, mode?: Message['mode']) => {
     const nextMessage: Message = {
       id: generateId(),
       role,
       content,
       timestamp: Date.now(),
+      mode,
     };
 
     setMessages((prev) => [...prev, nextMessage]);

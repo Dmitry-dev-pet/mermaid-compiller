@@ -150,7 +150,7 @@ ${code}
       let resolvedError = errorMessage;
       let resolvedValid = isValid;
       if (mode === 'fix' && (!resolvedError || resolvedValid === undefined)) {
-        const validation = await validateMermaidDiagramCode(code);
+        const validation = await validateMermaidDiagramCode(code, { logError: false });
         resolvedError = validation.errorMessage;
         resolvedValid = validation.isValid;
       }

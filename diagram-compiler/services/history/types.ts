@@ -1,4 +1,4 @@
-import type { Message } from '../../types';
+import type { AIConfig, AppState, Message } from '../../types';
 
 export type TimeStepType =
   | 'seed'
@@ -15,8 +15,17 @@ export type StepMeta = Record<string, unknown>;
 export interface HistorySession {
   id: string;
   createdAt: number;
+  updatedAt?: number;
+  title?: string;
   nextStepIndex: number;
   currentRevisionId: string | null;
+  settings?: SessionSettings;
+}
+
+export interface SessionSettings {
+  appState: AppState;
+  aiConfig: AIConfig;
+  modelParams?: Record<string, number | string | boolean | null>;
 }
 
 export interface TimeStep {
@@ -45,4 +54,3 @@ export interface DiagramRevision {
   mermaid: string;
   diagnostics?: RevisionDiagnostics;
 }
-

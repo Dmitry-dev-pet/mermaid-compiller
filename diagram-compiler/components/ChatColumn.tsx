@@ -3,6 +3,8 @@ import { FileText, MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
 import { DiagramType, LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
 import type { DiagramMarker } from '../hooks/core/useHistory';
 import { DIAGRAM_TYPE_LABELS } from '../utils/diagramTypeMeta';
+import ChatProjects from './ChatProjects';
+import { MODE_BUTTON_DISABLED, MODE_UI } from '../utils/uiModes';
 
 interface ChatColumnProps {
   messages: Message[];
@@ -33,6 +35,13 @@ interface ChatColumnProps {
   diagramStepAnchors?: Record<string, string>;
   selectedStepId?: string | null;
   onSelectDiagramStep?: (stepId: string) => void | Promise<void>;
+  projects: React.ComponentProps<typeof ChatProjects>['projects'];
+  activeProjectId: React.ComponentProps<typeof ChatProjects>['activeProjectId'];
+  onOpenProject: (sessionId: string) => void | Promise<void>;
+  onRenameProject: (sessionId: string, title: string) => void | Promise<void>;
+  onDeleteProject: (sessionId: string) => void | Promise<void>;
+  onUndoDeleteProject: (sessionId: string) => void;
+  deleteUndoMs: number;
 }
 
 const ChatColumn: React.FC<ChatColumnProps> = ({
@@ -54,7 +63,14 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   selectedStepId = null,
   buildDocsSelectionKey,
   promptPreviewKey,
-  onSelectDiagramStep
+  onSelectDiagramStep,
+  projects,
+  activeProjectId,
+  onOpenProject,
+  onRenameProject,
+  onDeleteProject,
+  onUndoDeleteProject,
+  deleteUndoMs
 }) => {
   const [input, setInput] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -313,6 +329,13 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   const detectedLabel = detectedDiagramType ? DIAGRAM_TYPE_LABELS[detectedDiagramType] ?? detectedDiagramType : null;
   const selectedLabel = DIAGRAM_TYPE_LABELS[diagramType] ?? diagramType;
   const isDetectedMatch = !!detectedDiagramType && detectedDiagramType === diagramType;
+  const assistantModeStyles = {
+    chat: MODE_UI.chat.bubble,
+    build: MODE_UI.build.bubble,
+    fix: MODE_UI.fix.bubble,
+    analyze: MODE_UI.analyze.bubble,
+    system: MODE_UI.system.bubble,
+  };
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50">
@@ -360,6 +383,17 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         )}
       </div>
 
+      <ChatProjects
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onNewProject={onNewProject}
+        onOpenProject={onOpenProject}
+        onRenameProject={onRenameProject}
+        onDeleteProject={onDeleteProject}
+        onUndoDeleteProject={onUndoDeleteProject}
+        deleteUndoMs={deleteUndoMs}
+      />
+
       {/* Messages */}
       <div ref={messagesContainerRef} onScroll={onMessagesScroll} className="flex-1 overflow-y-auto p-4 space-y-4">
         {diagramMarkers.length > 0 && (
@@ -401,6 +435,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
               const isErrorMessage =
                 msg.role === 'assistant' &&
                 /^(Error|Build failed|Analysis failed|Fix failed|Generation failed|Error generating diagram|Error analyzing diagram)(?:\s*\(.*?\))?:/.test(msg.content);
+              const assistantStyle = assistantModeStyles[msg.mode ?? 'chat'] ?? MODE_UI.chat.bubble;
               return (
               <div 
                 key={msg.id} 
@@ -417,7 +452,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                       ? 'bg-blue-600 text-white rounded-br-none shadow-sm' 
                       : isErrorMessage
                         ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-200 rounded-bl-none shadow-sm font-mono text-[12px] leading-relaxed'
-                        : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none shadow-sm'
+                        : `${assistantStyle} rounded-bl-none shadow-sm`
                   }`}
                 >
                   {msg.content}
@@ -490,7 +525,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
               <button
                 onClick={() => handleSubmit('chat')}
                 disabled={!input.trim() || isProcessing}
-                className="px-2.5 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+                className={`px-2.5 py-1.5 text-xs rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
+                  !input.trim() || isProcessing
+                    ? MODE_BUTTON_DISABLED
+                    : MODE_UI.chat.button
+                }`}
                 title="Chat (text only)"
               >
                 <MessageSquare size={14} /> Chat
@@ -498,7 +537,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
               <button
                 onClick={() => handleSubmit('build')}
                 disabled={(!input.trim() && !hasIntent) || isProcessing}
-                className="px-2.5 py-1.5 text-xs rounded-md bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+                className={`px-2.5 py-1.5 text-xs rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
+                  (!input.trim() && !hasIntent) || isProcessing
+                    ? MODE_BUTTON_DISABLED
+                    : MODE_UI.build.button
+                }`}
                 title={input.trim() ? 'Build diagram from this prompt' : 'Build diagram from intent'}
               >
                 <Play size={14} /> Build

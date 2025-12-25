@@ -10,6 +10,7 @@ import { useMarkdownMermaid } from './useMarkdownMermaid';
 import { useManualEditRecorder } from './useManualEditRecorder';
 import { useInteractionRecorder } from './useInteractionRecorder';
 import { usePromptPreview } from './usePromptPreview';
+import { useProjects } from './useProjects';
 import type { DiagramMarker } from '../core/useHistory';
 import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE } from '../../constants';
 import { detectLanguage } from '../../utils';
@@ -18,6 +19,7 @@ import {
   appendEmptyMermaidBlockToMarkdown,
   createMermaidNotebookMarkdown,
   detectMermaidDiagramType,
+  extractMermaidBlocksFromMarkdown,
   extractMermaidCode,
   isMarkdownLike,
   replaceMermaidBlockInMarkdown,
@@ -44,6 +46,13 @@ export const useDiagramStudio = () => {
     selectedStepId,
     selectDiagramStep,
     startNewSession,
+    sessions,
+    loadSession,
+    renameHistorySession,
+    saveSessionSettings,
+    scheduleDeleteSession,
+    undoDeleteSession,
+    deleteUndoMs: historyDeleteUndoMs,
   } = useHistory();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -191,6 +200,9 @@ export const useDiagramStudio = () => {
         source: 'compiled',
         status: code.trim() ? ((diag?.isValid ?? true) ? 'valid' : 'invalid') : 'empty',
       }));
+    } else {
+      lastManualRecordedCodeRef.current = '';
+      setMermaidState(DEFAULT_MERMAID_STATE);
     }
 
     isHydratingRef.current = false;
@@ -202,11 +214,45 @@ export const useDiagramStudio = () => {
     isHydratingRef.current = false;
   }, [historyLoadResult, isHistoryReady]);
 
+  const {
+    projects,
+    activeProjectId,
+    startNewProject,
+    openProject,
+    renameProject,
+    removeProject,
+    undoRemoveProject,
+    deleteUndoMs: projectsUndoMs,
+  } = useProjects({
+    isProcessing,
+    appState,
+    setAppState,
+    aiConfig,
+    setAiConfig,
+    historySession,
+    sessions,
+    startNewSession,
+    loadSession,
+    renameHistorySession,
+    scheduleDeleteSession,
+    undoDeleteSession,
+    deleteUndoMs: historyDeleteUndoMs,
+    saveSessionSettings,
+    resetMessages,
+    resetPromptPreview,
+    setDiagramIntent,
+    setEditorTab,
+    setMermaidState,
+    lastManualRecordedCodeRef,
+    isHydratingRef,
+  });
+
   useEffect(() => {
     if (editorTab !== 'build_docs') return;
     if (buildDocsEntries.length > 0) return;
     void loadBuildDocsEntries(appState.diagramType);
   }, [appState.diagramType, buildDocsEntries.length, editorTab, loadBuildDocsEntries]);
+
 
   useManualEditRecorder({
     isHistoryReady,
@@ -319,21 +365,133 @@ export const useDiagramStudio = () => {
     return detectLanguage(basis);
   }, [messages]);
 
-  const handleFixSyntax = useCallback(async () => {
-    const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex];
-    const activeDiagnostics = markdownMermaidDiagnostics[markdownMermaidActiveIndex];
-    const shouldFixMarkdownBlock = !!activeBlock && activeDiagnostics?.isValid === false;
-
-    if (!shouldFixMarkdownBlock) {
-      await baseHandleFixSyntax();
-      return;
+  const summarizeFixOutcome = useCallback((args: {
+    indexLabel?: string;
+    attempts: number;
+    changed: boolean;
+    cleared: boolean;
+    wasValid: boolean;
+    errorMessage?: string;
+    finalErrorMessage?: string;
+    before?: string;
+    after?: string;
+  }) => {
+    const prefix = args.indexLabel ? `Fix: ${args.indexLabel}. ` : 'Fix: ';
+    const status = args.cleared
+      ? 'блок очищен'
+      : args.wasValid
+        ? 'валиден'
+        : 'все еще с ошибкой';
+    const changeNote = args.changed ? 'код изменен' : 'код без изменений';
+    const attemptsNote = `попыток: ${args.attempts}`;
+    const rawError = args.finalErrorMessage ?? args.errorMessage ?? '';
+    const errorLine = rawError.split(/\r?\n/)[0]?.slice(0, 160) ?? '';
+    const errorNote = !args.wasValid && errorLine
+      ? `ошибка: ${errorLine}`
+      : '';
+    let typeNote = '';
+    let diagnosisNote = '';
+    let diffNote = '';
+    if (args.changed && !args.cleared && args.before !== undefined && args.after !== undefined) {
+      const beforeLines = args.before.split(/\r?\n/);
+      const afterLines = args.after.split(/\r?\n/);
+      const beforeType = detectMermaidDiagramType(args.before);
+      const afterType = detectMermaidDiagramType(args.after);
+      if (beforeType || afterType) {
+        typeNote = `тип: ${beforeType ?? 'unknown'} → ${afterType ?? 'unknown'}`;
+      }
+      const beforeHead = beforeLines.find((line) => line.trim().length > 0) ?? '';
+      const afterHead = afterLines.find((line) => line.trim().length > 0) ?? '';
+      if (beforeHead && afterHead && beforeHead.trim() !== afterHead.trim()) {
+        const hasNonAscii = Array.from(beforeHead).some((char) => char.charCodeAt(0) > 127);
+        if ((args.errorMessage ?? '').includes('No diagram type detected')) {
+          diagnosisNote = `исправлен заголовок диаграммы: "${beforeHead.trim()}" → "${afterHead.trim()}"`;
+        }
+        if (!diagnosisNote && hasNonAscii) {
+          diagnosisNote = `исправлены некорректные символы в заголовке: "${beforeHead.trim()}" → "${afterHead.trim()}"`;
+        }
+      }
+      const maxLines = Math.max(beforeLines.length, afterLines.length);
+      let changedLines = 0;
+      let firstDiffLine = -1;
+      for (let i = 0; i < maxLines; i += 1) {
+        const beforeLine = beforeLines[i] ?? '';
+        const afterLine = afterLines[i] ?? '';
+        if (beforeLine !== afterLine) {
+          changedLines += 1;
+          if (firstDiffLine === -1) {
+            firstDiffLine = i;
+          }
+        }
+      }
+      if (changedLines > 0 && firstDiffLine >= 0) {
+        const beforeSample = (beforeLines[firstDiffLine] ?? '').slice(0, 80);
+        const afterSample = (afterLines[firstDiffLine] ?? '').slice(0, 80);
+        diffNote = `изменено строк: ~${changedLines}; пример L${firstDiffLine + 1}: "${beforeSample}" -> "${afterSample}"`;
+      }
     }
+    const combinedDiagnosis = [typeNote, diagnosisNote].filter(Boolean).join('; ');
+    return [
+      `Статус: ${prefix}${status} (${changeNote}, ${attemptsNote})`,
+      diffNote ? `Изменения: ${diffNote}` : '',
+      combinedDiagnosis ? `Диагноз: ${combinedDiagnosis}` : '',
+      errorNote ? `Ошибка: ${errorNote.replace(/^ошибка:\s*/i, '')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }, []);
 
+  const runMarkdownFix = useCallback(async (args: {
+    block: { code: string };
+    markdown: string;
+    docs: string;
+    language: string;
+    initialValidation: Awaited<ReturnType<typeof validateMermaidDiagramCode>>;
+  }) => {
+    const { block, markdown, docs, language, initialValidation } = args;
+    const { code: currentCode, validation, attempts } = await runAutoFixLoop({
+      initialCode: block.code,
+      initialValidation,
+      maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
+      validate: (code) => validateMermaidDiagramCode(code, { logError: false }),
+      fix: async (code, errorMessage) => {
+        const fixedRaw = await fixDiagram(code, errorMessage, aiConfig, docs, language);
+        return extractMermaidCode(fixedRaw);
+      },
+    });
+
+    const changed = currentCode !== block.code;
+    const cleared = !currentCode.trim();
+    const nextMarkdown = changed || cleared
+      ? replaceMermaidBlockInMarkdown(markdown, block, currentCode)
+      : markdown;
+
+    const nextMermaid = changed || cleared
+      ? {
+          code: nextMarkdown,
+          isValid: true,
+          errorMessage: undefined,
+          errorLine: undefined,
+        }
+      : null;
+
+    return {
+      currentCode,
+      validation,
+      attempts,
+      changed,
+      cleared,
+      nextMarkdown,
+      nextMermaid,
+    };
+  }, [aiConfig]);
+
+  const handleFixAllMarkdownBlocks = useCallback(async () => {
     if (connectionState.status !== 'connected') {
       await safeAppendTimeStep({
         type: 'fix',
         messages: [],
-        meta: { error: 'offline', diagramType: activeBlock.diagramType ?? appState.diagramType },
+        meta: { error: 'offline', mode: 'markdown_all' },
       });
       return;
     }
@@ -341,7 +499,221 @@ export const useDiagramStudio = () => {
     const startedAt = Date.now();
     setIsProcessing(true);
     try {
-      const diagramType = activeBlock.diagramType ?? appState.diagramType;
+      const docs = await getDocsContext('fix');
+      const language = resolveFixLanguage();
+      const analyticsContext = await getAnalyticsContext('fix');
+
+      let markdown = mermaidState.code;
+      let blocks = extractMermaidBlocksFromMarkdown(markdown);
+
+      for (let i = 0; i < blocks.length; i += 1) {
+        const block = blocks[i];
+        const initialValidation = await validateMermaidDiagramCode(block.code, { logError: false });
+        if (initialValidation.isValid !== false) continue;
+
+        setMarkdownMermaidActiveIndex(i);
+
+        const diagramType = block.diagramType ?? appState.diagramType;
+        const startMessage = addMessage(
+          'assistant',
+          `Fix: блок ${i + 1} из ${blocks.length} (${diagramType ?? 'unknown'})`,
+          'fix'
+        );
+        trackAnalyticsEvent('diagram_fix_started', {
+          ...analyticsContext,
+          diagramType,
+          mode: 'fix',
+          codeLength: block.code.length,
+        });
+
+        const {
+          currentCode,
+          validation,
+          attempts,
+          changed,
+          cleared,
+          nextMarkdown,
+          nextMermaid,
+        } = await runMarkdownFix({
+          block,
+          markdown,
+          docs,
+          language,
+          initialValidation,
+        });
+
+        if (changed || cleared) {
+          handleMermaidChange(nextMarkdown);
+          markdown = nextMarkdown;
+          blocks = extractMermaidBlocksFromMarkdown(markdown);
+        }
+
+        if (validation.isValid === false) {
+          const resultMessage = addMessage(
+            'assistant',
+            summarizeFixOutcome({
+              indexLabel: `блок ${i + 1} из ${blocks.length}`,
+              attempts,
+              changed,
+              cleared,
+              wasValid: false,
+              errorMessage: initialValidation.errorMessage,
+              finalErrorMessage: validation.errorMessage,
+              before: block.code,
+              after: currentCode,
+            }),
+            'fix'
+          );
+          const stopMessage = addMessage(
+            'assistant',
+            `Fix остановлен после блока ${i + 1}: исправление не удалось.`,
+            'fix'
+          );
+          await safeAppendTimeStep({
+            type: 'fix',
+            messages: [startMessage, resultMessage, stopMessage],
+            nextMermaid,
+            setCurrentRevisionId: cleared ? null : undefined,
+            meta: {
+              attempts,
+              changed,
+              isValid: !!validation.isValid,
+              cleared,
+              diagramType,
+              mode: 'markdown_all',
+              blockIndex: i,
+              stopped: true,
+            },
+          });
+          return;
+        }
+
+        const resultMessage = addMessage(
+          'assistant',
+          summarizeFixOutcome({
+            indexLabel: `блок ${i + 1} из ${blocks.length}`,
+            attempts,
+            changed,
+            cleared,
+            wasValid: !!validation.isValid,
+            errorMessage: initialValidation.errorMessage,
+            finalErrorMessage: validation.errorMessage,
+            before: block.code,
+            after: currentCode,
+          }),
+          'fix'
+        );
+        await safeAppendTimeStep({
+          type: 'fix',
+          messages: [startMessage, resultMessage],
+          nextMermaid,
+          setCurrentRevisionId: cleared ? null : undefined,
+          meta: {
+            attempts,
+            changed,
+            isValid: !!validation.isValid,
+            cleared,
+            diagramType,
+            mode: 'markdown_all',
+            blockIndex: i,
+          },
+        });
+
+        trackAnalyticsEvent('diagram_fix_success', {
+          ...analyticsContext,
+          diagramType,
+          mode: 'fix',
+          attempts,
+          changed,
+          cleared,
+          isValid: !!validation.isValid,
+          durationMs: Date.now() - startedAt,
+          codeLength: currentCode.length,
+          errorLine: validation.errorLine,
+        });
+
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      const analyticsContext = await getAnalyticsContext('fix');
+      trackAnalyticsEvent('diagram_fix_failed', {
+        ...analyticsContext,
+        mode: 'fix',
+        error: 'exception',
+        durationMs: Date.now() - startedAt,
+      });
+      alert(`Fix failed (${aiConfig.selectedModelId ? `model=${aiConfig.selectedModelId}` : 'model=unknown'}): ${message}`);
+      await safeAppendTimeStep({
+        type: 'fix',
+        messages: [],
+        meta: { error: message, mode: 'markdown_all' }
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [
+    addMessage,
+    aiConfig,
+    appState.diagramType,
+    connectionState.status,
+    getAnalyticsContext,
+    getDocsContext,
+    handleMermaidChange,
+    mermaidState.code,
+    resolveFixLanguage,
+    runMarkdownFix,
+    summarizeFixOutcome,
+    safeAppendTimeStep,
+    setMarkdownMermaidActiveIndex,
+  ]);
+
+  const handleFixSyntax = useCallback(async () => {
+    const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex];
+    const activeDiagnostics = markdownMermaidDiagnostics[markdownMermaidActiveIndex];
+    const shouldFixMarkdownBlock = !!activeBlock && activeDiagnostics?.isValid === false;
+    const firstInvalidIndex = markdownMermaidDiagnostics.findIndex((diag) => diag?.isValid === false);
+    const invalidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === false).length;
+    const fallbackInvalidBlock =
+      firstInvalidIndex >= 0 ? markdownMermaidBlocks[firstInvalidIndex] : undefined;
+    const fallbackInvalidDiagnostics =
+      firstInvalidIndex >= 0 ? markdownMermaidDiagnostics[firstInvalidIndex] : undefined;
+
+    if (invalidCount > 1 && markdownMermaidBlocks.length > 0) {
+      await handleFixAllMarkdownBlocks();
+      return;
+    }
+
+    const targetBlock = shouldFixMarkdownBlock ? activeBlock : fallbackInvalidBlock;
+    const targetDiagnostics = shouldFixMarkdownBlock ? activeDiagnostics : fallbackInvalidDiagnostics;
+    const targetIndex = shouldFixMarkdownBlock ? markdownMermaidActiveIndex : firstInvalidIndex;
+
+    if (!targetBlock || targetDiagnostics?.isValid !== false) {
+      await baseHandleFixSyntax();
+      return;
+    }
+
+    if (!shouldFixMarkdownBlock && firstInvalidIndex >= 0 && firstInvalidIndex !== markdownMermaidActiveIndex) {
+      setMarkdownMermaidActiveIndex(firstInvalidIndex);
+    }
+
+    if (connectionState.status !== 'connected') {
+      await safeAppendTimeStep({
+        type: 'fix',
+        messages: [],
+        meta: { error: 'offline', diagramType: targetBlock.diagramType ?? appState.diagramType },
+      });
+      return;
+    }
+
+    const startedAt = Date.now();
+    setIsProcessing(true);
+    try {
+      const diagramType = targetBlock.diagramType ?? appState.diagramType;
+      const startMessage = addMessage(
+        'assistant',
+        `Fix: блок ${targetIndex + 1} (${diagramType ?? 'unknown'})`,
+        'fix'
+      );
       const docs = await getDocsContext('fix');
       const language = resolveFixLanguage();
       const analyticsContext = await getAnalyticsContext('fix');
@@ -349,50 +721,49 @@ export const useDiagramStudio = () => {
         ...analyticsContext,
         diagramType,
         mode: 'fix',
-        codeLength: activeBlock.code.length,
+        codeLength: targetBlock.code.length,
       });
 
-      const startCode = activeBlock.code;
-      const initialValidation = await validateMermaidDiagramCode(startCode);
-      const { code: currentCode, validation, attempts } = await runAutoFixLoop({
-        initialCode: startCode,
+      const startCode = targetBlock.code;
+      const initialValidation = await validateMermaidDiagramCode(startCode, { logError: false });
+      const {
+        currentCode,
+        validation,
+        attempts,
+        changed,
+        cleared,
+        nextMarkdown,
+        nextMermaid,
+      } = await runMarkdownFix({
+        block: targetBlock,
+        markdown: mermaidState.code,
+        docs,
+        language,
         initialValidation,
-        maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
-        validate: validateMermaidDiagramCode,
-        fix: async (code, errorMessage) => {
-          const fixedRaw = await fixDiagram(
-            code,
-            errorMessage,
-            aiConfig,
-            docs,
-            language
-          );
-          return extractMermaidCode(fixedRaw);
-        },
       });
-
-      const changed = currentCode !== startCode;
-      const cleared = !currentCode.trim();
-      const nextMarkdown = changed || cleared
-        ? replaceMermaidBlockInMarkdown(mermaidState.code, activeBlock, currentCode)
-        : mermaidState.code;
 
       if (changed || cleared) {
         handleMermaidChange(nextMarkdown);
       }
 
-      const nextMermaid = changed || cleared
-        ? {
-            code: nextMarkdown,
-            isValid: true,
-            errorMessage: undefined,
-            errorLine: undefined,
-          }
-        : null;
-
+      const resultMessage = addMessage(
+        'assistant',
+        summarizeFixOutcome({
+          indexLabel: `блок ${targetIndex + 1}`,
+          attempts,
+          changed,
+          cleared,
+          wasValid: !!validation.isValid,
+          errorMessage: initialValidation.errorMessage,
+          finalErrorMessage: validation.errorMessage,
+          before: startCode,
+          after: currentCode,
+        }),
+        'fix'
+      );
       await safeAppendTimeStep({
         type: 'fix',
-        messages: [],
+        messages: [startMessage, resultMessage],
         nextMermaid,
         setCurrentRevisionId: cleared ? null : undefined,
         meta: {
@@ -431,16 +802,20 @@ export const useDiagramStudio = () => {
       setIsProcessing(false);
     }
   }, [
+    addMessage,
     aiConfig,
     appState.diagramType,
     baseHandleFixSyntax,
     connectionState.status,
+    handleFixAllMarkdownBlocks,
     handleMermaidChange,
     markdownMermaidActiveIndex,
     markdownMermaidBlocks,
     markdownMermaidDiagnostics,
     mermaidState.code,
     resolveFixLanguage,
+    runMarkdownFix,
+    summarizeFixOutcome,
     safeAppendTimeStep,
   ]);
 
@@ -500,16 +875,6 @@ export const useDiagramStudio = () => {
     }));
   };
 
-  const startNewProject = async () => {
-    if (isProcessing) return;
-    await startNewSession();
-    resetMessages();
-    lastManualRecordedCodeRef.current = '';
-    setDiagramIntent(null);
-    resetPromptPreview();
-    setEditorTab('code');
-    setMermaidState(DEFAULT_MERMAID_STATE);
-  };
 
   const handleDiagramTypeChange = async (type: DiagramType) => {
     setDiagramType(type);
@@ -541,6 +906,8 @@ export const useDiagramStudio = () => {
     diagramMarkers,
     diagramStepAnchors,
     selectedStepId,
+    projects,
+    activeProjectId,
     diagramIntent,
     promptPreviewByMode,
     editorTab,
@@ -566,6 +933,11 @@ export const useDiagramStudio = () => {
     setDiagramType: handleDiagramTypeChange,
     clearMessages,
     startNewProject,
+    openProject,
+    renameProject,
+    removeProject,
+    undoRemoveProject,
+    deleteUndoMs: projectsUndoMs,
     toggleTheme,
     setAnalyzeLanguage,
     togglePreviewFullScreen,

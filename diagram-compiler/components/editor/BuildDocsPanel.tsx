@@ -1,6 +1,7 @@
 import React from 'react';
 import type { DocsEntry } from '../../services/docsContextService';
 import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
+import { MODE_UI } from '../../utils/uiModes';
 import { isSystemPromptPath } from '../../utils/systemPrompts';
 
 interface BuildDocsPanelProps {
@@ -50,6 +51,24 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
   activeBuildDocName,
   activeDocEntry,
 }) => {
+  const modeButtonStyles: Record<DocsMode, { active: string; inactive: string }> = {
+    chat: {
+      active: MODE_UI.chat.button ?? '',
+      inactive: MODE_UI.chat.buttonInactive ?? '',
+    },
+    build: {
+      active: MODE_UI.build.button ?? '',
+      inactive: MODE_UI.build.buttonInactive ?? '',
+    },
+    analyze: {
+      active: MODE_UI.analyze.button ?? '',
+      inactive: MODE_UI.analyze.buttonInactive ?? '',
+    },
+    fix: {
+      active: MODE_UI.fix.button ?? '',
+      inactive: MODE_UI.fix.buttonInactive ?? '',
+    },
+  };
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-slate-50 dark:bg-[#282c34]">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-2 py-2">
@@ -57,6 +76,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
           {(['chat', 'build', 'analyze', 'fix'] as DocsMode[]).map((mode) => {
             const tokenCount = promptPreviewByMode[mode]?.tokenCounts?.total;
             const tokenLabel = formatTokenCount(tokenCount);
+            const styles = modeButtonStyles[mode];
             return (
               <button
                 key={mode}
@@ -66,9 +86,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                   onDocsModeChange(mode);
                 }}
                 className={`px-2 py-0.5 text-[10px] rounded border capitalize ${
-                  docsPanel === 'mode' && docsMode === mode
-                    ? 'bg-slate-700 text-white border-slate-700'
-                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  docsPanel === 'mode' && docsMode === mode ? styles.active : styles.inactive
                 }`}
                 title={`Docs selection for ${mode}`}
               >

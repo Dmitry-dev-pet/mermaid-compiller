@@ -26,7 +26,7 @@ export const useMarkdownMermaid = ({ code, editorTab, setEditorTab }: UseMarkdow
         return;
       }
       const results = await Promise.all(
-        markdownMermaidBlocks.map((block) => validateMermaidDiagramCode(block.code))
+        markdownMermaidBlocks.map((block) => validateMermaidDiagramCode(block.code, { logError: false }))
       );
       if (cancelled) return;
       setMarkdownMermaidDiagnostics(results);
