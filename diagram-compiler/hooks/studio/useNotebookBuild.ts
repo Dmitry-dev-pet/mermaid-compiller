@@ -43,18 +43,44 @@ const formatNotebookRawIntent = (args: {
   language: string;
 }): string => {
   const { diagram, plan, language } = args;
-  const constraints = language === 'Russian' ? NOTEBOOK_STYLE_CONSTRAINT_RU : NOTEBOOK_STYLE_CONSTRAINT_EN;
-  const payload = {
-    title: diagram.title,
-    diagramType: diagram.diagramType,
-    goal: diagram.goal,
-    buildPrompt: diagram.buildPrompt,
-    acceptance: diagram.acceptance ?? [],
-    glossary: plan.glossary ?? [],
-    constraints: [constraints],
+  const label = 'raw-intent.md';
+  const lines: string[] = [label, ''];
+  const pushSection = (title: string, value?: string) => {
+    if (!value?.trim()) return;
+    lines.push(`## ${title}`, value.trim(), '');
   };
-  const label = language === 'Russian' ? 'raw-intent.md' : 'raw-intent.md';
-  return `${label}\n\n${JSON.stringify(payload, null, 2)}`;
+  const pushList = (title: string, items: string[]) => {
+    if (!items.length) return;
+    lines.push(`## ${title}`, ...items.map((item) => `- ${item}`), '');
+  };
+
+  pushSection(language === 'Russian' ? 'Название' : 'Title', diagram.title);
+  pushSection(language === 'Russian' ? 'Тип' : 'Diagram Type', diagram.diagramType);
+  pushSection(language === 'Russian' ? 'Цель' : 'Goal', diagram.goal);
+  pushSection(language === 'Russian' ? 'Build Prompt' : 'Build Prompt', diagram.buildPrompt);
+
+  if (diagram.acceptance?.length) {
+    pushList(language === 'Russian' ? 'Критерии' : 'Acceptance', diagram.acceptance);
+  }
+
+  if (plan.glossary?.length) {
+    const glossaryLines = plan.glossary
+      .map((item) => {
+        const term = item.term?.trim() || '';
+        if (!term) return '';
+        const meaning = item.meaning?.trim();
+        const aliases = item.aliases?.filter(Boolean);
+        const aliasText = aliases?.length ? ` (${aliases.join(', ')})` : '';
+        return `${term}${meaning ? `: ${meaning}` : ''}${aliasText}`;
+      })
+      .filter(Boolean);
+    pushList(language === 'Russian' ? 'Глоссарий' : 'Glossary', glossaryLines);
+  }
+
+  const constraint = language === 'Russian' ? NOTEBOOK_STYLE_CONSTRAINT_RU : NOTEBOOK_STYLE_CONSTRAINT_EN;
+  pushList(language === 'Russian' ? 'Ограничения' : 'Constraints', [constraint]);
+
+  return lines.join('\n').trim();
 };
 
 const resolveNotebookPrompt = (messages: Message[], diagramIntent: DiagramIntent | null, prompt?: string) => {
