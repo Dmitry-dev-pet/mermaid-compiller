@@ -172,26 +172,6 @@ export const useDiagramStudio = () => {
     return map;
   }, []);
 
-  const buildNotebookChatMessages = useCallback((info: { messages: Message[]; rawIntent?: Message } | null, includeRaw: boolean) => {
-    const init = buildInitMessage();
-    const base = info ? stripNotebookSyntheticMessages(info.messages) : [];
-    const systemPrompt = promptPreviewByMode.chat?.systemPromptRedacted
-      || promptPreviewByMode.chat?.systemPrompt
-      || 'No system prompt available.';
-    const systemPromptMessage: Message = {
-      id: 'notebook-chat-md',
-      role: 'assistant',
-      content: `chat.md\n\n${systemPrompt}`,
-      timestamp: 0,
-      mode: 'system',
-    };
-    const raw = includeRaw && info?.rawIntent
-      ? [{ ...info.rawIntent, id: 'notebook-raw-intent' }]
-      : [];
-    const promptMessages = includeRaw ? raw : [systemPromptMessage];
-    return [init, ...promptMessages, ...base];
-  }, [buildInitMessage, promptPreviewByMode.chat?.systemPrompt, promptPreviewByMode.chat?.systemPromptRedacted, stripNotebookSyntheticMessages]);
-
   const toggleScrollSync = useCallback(() => {
     setAppState((prev) => ({ ...prev, isScrollSyncEnabled: !prev.isScrollSyncEnabled }));
   }, [setAppState]);
@@ -290,6 +270,26 @@ export const useDiagramStudio = () => {
     resolveActiveMermaidContext,
     getDocsContext,
   });
+
+  const buildNotebookChatMessages = useCallback((info: { messages: Message[]; rawIntent?: Message } | null, includeRaw: boolean) => {
+    const init = buildInitMessage();
+    const base = info ? stripNotebookSyntheticMessages(info.messages) : [];
+    const systemPrompt = promptPreviewByMode.chat?.systemPromptRedacted
+      || promptPreviewByMode.chat?.systemPrompt
+      || 'No system prompt available.';
+    const systemPromptMessage: Message = {
+      id: 'notebook-chat-md',
+      role: 'assistant',
+      content: `chat.md\n\n${systemPrompt}`,
+      timestamp: 0,
+      mode: 'system',
+    };
+    const raw = includeRaw && info?.rawIntent
+      ? [{ ...info.rawIntent, id: 'notebook-raw-intent' }]
+      : [];
+    const promptMessages = includeRaw ? raw : [systemPromptMessage];
+    return [init, ...promptMessages, ...base];
+  }, [buildInitMessage, promptPreviewByMode.chat?.systemPrompt, promptPreviewByMode.chat?.systemPromptRedacted, stripNotebookSyntheticMessages]);
 
   useEffect(() => {
     if (!historyLoadResult) return;
