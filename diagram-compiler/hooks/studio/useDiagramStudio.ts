@@ -74,6 +74,7 @@ export const useDiagramStudio = () => {
   const notebookChatRef = useRef<Record<number, { messages: Message[]; rawIntent?: Message }>>({});
   const notebookChatIndexRef = useRef<number | null>(null);
   const mainChatRef = useRef<Message[] | null>(null);
+  const notebookChatModeRef = useRef(false);
   const {
     buildDocsEntries,
     buildDocsSelection,
@@ -305,6 +306,9 @@ export const useDiagramStudio = () => {
     setMessages((prev) => {
       const init = prev.find((m) => m.id === 'init');
       const loaded = historyLoadResult.messages.filter((m) => m.id !== 'init');
+      if (!isNotebookChatMode) {
+        mainChatRef.current = init ? [init, ...loaded] : loaded;
+      }
       return init ? [init, ...loaded] : loaded;
     });
 
@@ -329,7 +333,7 @@ export const useDiagramStudio = () => {
     }
 
     isHydratingRef.current = false;
-  }, [historyLoadResult, setMermaidState, setMessages]);
+  }, [historyLoadResult, isNotebookChatMode, setMermaidState, setMessages]);
 
   useEffect(() => {
     if (!isHistoryReady) return;
@@ -341,6 +345,7 @@ export const useDiagramStudio = () => {
     if (!isNotebookChatMode) {
       notebookChatRef.current = {};
       notebookChatIndexRef.current = null;
+      notebookChatModeRef.current = false;
       return;
     }
     notebookChatRef.current = buildNotebookChatMap(historySteps);
@@ -350,6 +355,10 @@ export const useDiagramStudio = () => {
     if (!isNotebookChatMode) return;
     const index = getNotebookChatIndex();
     if (index === null) return;
+    if (!notebookChatModeRef.current) {
+      mainChatRef.current = messages;
+      notebookChatModeRef.current = true;
+    }
     notebookChatIndexRef.current = index;
     const info = notebookChatRef.current[index] ?? { messages: [] };
     const nextMessages = buildNotebookChatMessages(info, systemPromptRawByMode.chat);
@@ -359,6 +368,7 @@ export const useDiagramStudio = () => {
     getNotebookChatIndex,
     historySteps,
     isNotebookChatMode,
+    messages,
     setMessages,
     systemPromptRawByMode.chat,
   ]);
@@ -378,6 +388,7 @@ export const useDiagramStudio = () => {
         setMessages(mainChatRef.current);
       }
       notebookChatIndexRef.current = null;
+      notebookChatModeRef.current = false;
       return;
     }
     mainChatRef.current = messages;
