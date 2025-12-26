@@ -16,7 +16,7 @@ type UsePromptPreviewArgs = {
   diagramType: DiagramType;
   analyzeLanguage: string;
   appLanguage: string;
-  isNotebookBuildEnabled: boolean;
+  isNotebookChatEnabled: boolean;
   messages: Message[];
   diagramIntent: DiagramIntent | null;
   resolveActiveMermaidContext: ResolveActiveMermaidContext;
@@ -34,7 +34,7 @@ export const usePromptPreview = ({
   diagramType,
   analyzeLanguage,
   appLanguage,
-  isNotebookBuildEnabled,
+  isNotebookChatEnabled,
   messages,
   diagramIntent,
   resolveActiveMermaidContext,
@@ -200,7 +200,7 @@ Fix it.`,
     const language = resolvePreviewLanguage(trimmed, relevantMessages);
     const promptMode = mode === 'build'
       ? 'generate'
-      : (isNotebookBuildEnabled ? 'chat_notebook' : 'chat');
+      : (isNotebookChatEnabled ? 'chat_notebook' : 'chat');
     const systemPrompt = buildSystemPrompt(promptMode, {
       diagramType,
       docsContext,
@@ -259,7 +259,7 @@ Fix it.`,
     diagramType,
     getDocsContext,
     getDiagramContextMessage,
-    isNotebookBuildEnabled,
+    isNotebookChatEnabled,
     messages,
     resolveActiveMermaidContext,
     resolvePreviewAnalyzeLanguage,

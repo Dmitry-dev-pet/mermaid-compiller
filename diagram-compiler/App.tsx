@@ -76,6 +76,7 @@ function App() {
     toggleScrollSync,
     setNotebookBuildEnabled,
     setNotebookBuildCount,
+    isNotebookDiagramChat,
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
@@ -220,6 +221,7 @@ function App() {
                 notebookBuildCount={appState.notebookBuildCount}
                 onNotebookBuildEnabledChange={setNotebookBuildEnabled}
                 onNotebookBuildCountChange={setNotebookBuildCount}
+                isNotebookDiagramChat={isNotebookDiagramChat}
               />
             </div>
 

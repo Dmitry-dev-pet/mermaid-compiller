@@ -255,6 +255,14 @@ export const useDiagramStudio = () => {
     mermaidState.isValid,
   ]);
 
+  const isNotebookDiagramChat =
+    appState.isNotebookBuildEnabled &&
+    editorTab === 'markdown_mermaid' &&
+    markdownMermaidBlocks.length > 0;
+  const isNotebookChatEnabled =
+    appState.isNotebookBuildEnabled &&
+    editorTab !== 'markdown_mermaid';
+
   const {
     buildPromptPreview,
     promptPreviewByMode,
@@ -264,7 +272,7 @@ export const useDiagramStudio = () => {
     diagramType: appState.diagramType,
     analyzeLanguage: appState.analyzeLanguage ?? 'auto',
     appLanguage: appState.language ?? 'auto',
-    isNotebookBuildEnabled: appState.isNotebookBuildEnabled,
+    isNotebookChatEnabled,
     messages,
     diagramIntent,
     resolveActiveMermaidContext,
@@ -564,6 +572,7 @@ export const useDiagramStudio = () => {
       aiConfig,
       connectionState,
       appState,
+      isNotebookChatEnabled,
       mermaidState,
       diagramIntent,
       setDiagramIntent,
@@ -895,12 +904,12 @@ export const useDiagramStudio = () => {
   ]);
 
   const handleBuildFromPrompt = useCallback(async (text?: string) => {
-    if (appState.isNotebookBuildEnabled) {
+    if (appState.isNotebookBuildEnabled && editorTab !== 'markdown_mermaid') {
       await handleNotebookBuild(text);
       return;
     }
     await baseHandleBuildFromPrompt(text);
-  }, [appState.isNotebookBuildEnabled, baseHandleBuildFromPrompt, handleNotebookBuild]);
+  }, [appState.isNotebookBuildEnabled, baseHandleBuildFromPrompt, editorTab, handleNotebookBuild]);
 
   const handleFixSyntax = useCallback(async () => {
     const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex];
@@ -1183,6 +1192,7 @@ export const useDiagramStudio = () => {
     toggleScrollSync,
     setNotebookBuildEnabled,
     setNotebookBuildCount,
+    isNotebookDiagramChat,
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,

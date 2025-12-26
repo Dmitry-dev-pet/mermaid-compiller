@@ -48,6 +48,7 @@ interface ChatColumnProps {
   notebookBuildCount: number | null;
   onNotebookBuildEnabledChange: (enabled: boolean) => void;
   onNotebookBuildCountChange: (count: number | null) => void;
+  isNotebookDiagramChat: boolean;
 }
 
 const ChatColumn: React.FC<ChatColumnProps> = ({
@@ -80,6 +81,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   notebookBuildCount,
   onNotebookBuildEnabledChange,
   onNotebookBuildCountChange,
+  isNotebookDiagramChat,
   onDiagramTypeChange,
   detectedDiagramType,
   isMarkdownNotebook,
@@ -542,7 +544,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                     : MODE_UI.build.button
                 }`}
                 title={
-                  isNotebookBuildEnabled
+                  (isNotebookBuildEnabled && !isNotebookDiagramChat)
                     ? (input.trim() ? 'Build notebook from this prompt' : 'Build notebook from intent')
                     : (input.trim() ? 'Build diagram from this prompt' : 'Build diagram from intent')
                 }

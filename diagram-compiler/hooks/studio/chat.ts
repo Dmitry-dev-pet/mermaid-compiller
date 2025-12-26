@@ -29,7 +29,7 @@ export const createChatHandler = (ctx: StudioContext) => {
       const responseText = await runLLMRequest({
         task: 'chat',
         run: () => (
-          ctx.appState.isNotebookBuildEnabled
+          ctx.isNotebookChatEnabled
             ? chatNotebook(llmMessages, ctx.aiConfig, docs, language)
             : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language)
         ),

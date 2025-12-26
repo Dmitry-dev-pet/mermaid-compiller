@@ -14,6 +14,7 @@ export type StudioActionsDeps = {
   aiConfig: AIConfig;
   connectionState: ConnectionState;
   appState: AppState;
+  isNotebookChatEnabled?: boolean;
   mermaidState: MermaidState;
   diagramIntent: DiagramIntent | null;
   setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
@@ -37,6 +38,7 @@ export type StudioActionsDeps = {
 
 export type StudioContext = StudioActionsDeps & {
   getRelevantMessages: () => Message[];
+  isNotebookChatEnabled: boolean;
   resolveLanguage: (text?: string) => string;
   resolveAnalyzeLanguage: () => string;
   normalizeText: (text: string) => string;
@@ -59,6 +61,7 @@ export type StudioContext = StudioActionsDeps & {
 export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {
   const normalizeText = (text: string) => text.replace(/\s+/g, ' ').trim();
   const getRelevantMessages = () => deps.getMessages().filter((m) => m.id !== 'init');
+  const isNotebookChatEnabled = deps.isNotebookChatEnabled ?? deps.appState.isNotebookBuildEnabled;
 
   const resolveLanguage = (text?: string): string => {
     if (deps.appState.language && deps.appState.language !== 'auto') {
@@ -229,6 +232,7 @@ ${code}
   return {
     ...deps,
     getRelevantMessages,
+    isNotebookChatEnabled,
     resolveLanguage,
     resolveAnalyzeLanguage,
     normalizeText,
