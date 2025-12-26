@@ -10,11 +10,14 @@
 ## Основные хуки/слои
 
 - `hooks/studio/useDiagramStudio` — «оркестратор» состояния приложения.
+- `hooks/studio/useNotebookBuild` — сборка Markdown notebook (planner + последовательные build).
 - `hooks/core/useAI` — конфигурация провайдера, подключение, список моделей.
 - `hooks/core/useMermaid` — код, статус валидности, асинхронная валидация.
 - `hooks/core/useHistory` + `services/history/*` — IndexedDB: Session/TimeStep/DiagramRevision.
 - `services/llm/*` — стратегии провайдеров (OpenRouter/Cliproxy).
 - `services/docsContextService.ts` — сбор сниппетов документации для промптов.
+- `services/llmRequestRunner.ts` — таймауты/повторы запросов LLM.
+- `services/notebookPlanService.ts` + `services/notebookPlanSchema.ts` — парсинг и валидация `NotebookPlan`.
 
 ## Схема взаимодействий
 
@@ -26,6 +29,8 @@ flowchart TD
   Studio --> History[hooks/core/useHistory]
   Studio --> Docs[docsContextService]
   Studio --> LLM[llmService]
+  Studio --> NB[useNotebookBuild]
+  Studio --> Runner[llmRequestRunner]
 
   LLM --> OR[OpenRouterStrategy]
   LLM --> CP[CliproxyStrategy]
@@ -35,4 +40,4 @@ flowchart TD
 
 ---
 
-Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).
+Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts, refactors).

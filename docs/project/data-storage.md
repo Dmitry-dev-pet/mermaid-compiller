@@ -5,7 +5,7 @@
 Используются ключи:
 
 - `dc_ai_config` — настройки LLM (провайдер, ключи, endpoint, модель, фильтры).
-- `dc_app_state` — состояние UI (тип диаграммы, ширины колонок, тема, язык, fullscreen).
+- `dc_app_state` — состояние UI (тип диаграммы, ширины колонок, тема, язык, fullscreen, notebook-режим).
 - `dc_active_session_id` — активная сессия истории.
 
 ## IndexedDB
@@ -16,6 +16,7 @@
 - название проекта;
 - `updatedAt` для сортировки списка;
 - настройки сессии (UI + LLM, опциональные параметры модели).
+  - `appState` включает флаги notebook-режима (`isNotebookBuildEnabled`, `notebookBuildCount`).
 
 ## Что НЕ хранится
 
@@ -24,4 +25,4 @@
 
 ---
 
-Обновлено: 2025-12-25. Согласовано с текущей реализацией (projects manager, markdown-навигация, scroll sync, frontmatter config).
+Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build settings).

@@ -7,10 +7,12 @@
 
 ### 🤖 ИИ и Автоматизация
 *   **Chat / Build:** Чат отвечает только текстом (вопросы, уточнения, рекомендации). Диаграмма строится отдельным действием Build.
+*   **MD Notebook Build:** Build может создавать Markdown-файл с несколькими Mermaid-блоками по planner-плану.
 *   **Авто-подключение:** Приложение запоминает настройки и автоматически подключается к провайдеру при запуске.
 *   **Контекст документации:** При генерации используется актуальная документация Mermaid (загружается локально/параллельно).
 *   **Build из контекста:** Build можно запускать без нового промпта — используется история чата + текущий код из редактора.
 *   **Валидация и Авто-исправление:** Встроенная проверка синтаксиса и автофикс после Build (до 5 попыток), а также ручной Fix (Fix (5)).
+*   **Таймауты LLM:** Каждый LLM-запрос ограничен таймаутом; повторы выполняются для текущего шага.
 
 ### 🎨 Интерфейс и UX
 *   **Dark Mode:** Полная поддержка темной темы (цвета One Dark для редактора, адаптированный UI).
@@ -59,7 +61,7 @@
     *   `components/`: UI компоненты (`Header`, `EditorColumn`, `ChatColumn`...).
     *   `hooks/`: Кастомные хуки.
         *   `hooks/core/`: Базовые хуки состояния (`useAI`, `useMermaid`, `useLayout`, `useChat`, `useHistory`).
-        *   `hooks/studio/`: Оркестрация и studio-логика (`useDiagramStudio`, `useBuildDocs`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`).
+*   `hooks/studio/`: Оркестрация и studio-логика (`useDiagramStudio`, `useNotebookBuild`, `useBuildDocs`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`).
     *   `services/`: Бизнес-логика.
         *   `llm/`: Стратегии подключения к LLM (`OpenRouterStrategy`, `CliproxyStrategy`).
         *   `mermaidService.ts`: Валидация и рендер.
@@ -86,4 +88,4 @@
 
 ---
 
-Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).
+Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts, refactors).

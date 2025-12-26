@@ -18,6 +18,7 @@
 Каждый `TimeStep` содержит `currentRevisionId`:
 - если шаг меняет диаграмму — указывает на новую ревизию,
 - если шаг не меняет диаграмму (например, `chat`) — копирует `currentRevisionId` предыдущего шага,
+- в режиме notebook шаги `build` содержат метаданные блока (`blockIndex`, `diagramType`, `success`).
 - если диаграмма очищена — `currentRevisionId = null`.
 
 ## Схема (упрощённо)
@@ -56,4 +57,4 @@ erDiagram
 
 ---
 
-Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).
+Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build meta).

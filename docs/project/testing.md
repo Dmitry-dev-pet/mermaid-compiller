@@ -13,6 +13,7 @@ npm --prefix diagram-compiler test
 ```
 
 Фреймворк: Vitest (`diagram-compiler/package.json`).
+Добавлены тесты для парсинга/валидации `NotebookPlan`.
 
 ## Линт
 
@@ -21,4 +22,4 @@ npm --prefix diagram-compiler test
 
 ---
 
-Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).
+Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook plan tests, LLM timeouts).

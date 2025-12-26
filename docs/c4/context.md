@@ -38,7 +38,8 @@ UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 Примечания:
 - В режиме **Chat** приложение просит LLM отвечать **только текстом**.
 - В режиме **Build** приложение просит LLM вернуть **только Mermaid-код** и валидирует его через `mermaid.parse()`.
+- В режиме **MD notebook** Build создает Markdown с несколькими Mermaid-блоками и строит их последовательно по planner-плану.
 
 ---
 
-Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).
+Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts).

@@ -27,13 +27,14 @@
 
 ## Системные промпты и контекст
 
-Промпты собираются в `services/llm/prompts.ts`:
+Промпты собираются в `services/llm/prompts.ts`, сами шаблоны разнесены по файлам в `services/llm/prompts/`:
 
-- Режимы: `generate`, `fix`, `chat`, `analyze`.
+- Режимы: `generate`, `fix`, `chat`, `chat_notebook`, `analyze`, `plan_notebook`.
 - Язык: RU/EN (Auto → определяется по последнему пользовательскому вводу/intent). Ручной выбор языка применяется только для Analyze.
 - Контекст Mermaid-документации добавляется по выбранным файлам для каждого режима.
 - Выбор файлов контекста управляется чекбоксами в Build Docs (отдельно для Chat/Build/Analyze/Fix).
 - Chat возвращает структурированный intent (Summary/Requirements/Constraints/Open questions).
+- Chat в notebook-режиме возвращает intent для planner (Summary/Diagrams/Glossary/Constraints/Open questions).
 - Build принимает intent (явный промпт или сохраненный после Chat); текущий код диаграммы добавляется отдельным сообщением.
 
 ## Контекст текущей диаграммы и intent
@@ -48,6 +49,12 @@
 - **Build** — генерация Mermaid, обязательная валидация + авто-фикс; в логах/ошибках указывается используемая модель.
 - **Fix** — исправление Mermaid-синтаксиса по сообщению ошибки (до `AUTO_FIX_MAX_ATTEMPTS`).
 - **Analyze** — объяснение диаграммы без генерации кода.
+- **Planner (notebook)** — строит JSON-план (список диаграмм + glossary) для Markdown notebook.
+
+## Таймауты и повторы
+
+- Все LLM-запросы завернуты в таймаут (по умолчанию 40s).
+- Повторы выполняются на уровне шага (`services/llmRequestRunner.ts`) и отображаются в сообщениях о прогрессе.
 
 ## Превью промптов
 
@@ -56,4 +63,4 @@
 
 ---
 
-Обновлено: 2025-12-24. Согласовано с текущей реализацией (markdown-навигация, scroll sync, frontmatter config).
+Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook planner, новые промпты, LLM timeouts).

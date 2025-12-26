@@ -24,11 +24,15 @@
      - `useLayout` — размеры колонок, тема, язык, fullscreen.
    - `hooks/studio/*` — оркестрация и studio-логика.
      - `useDiagramStudio` — единая точка оркестрации состояния и действий.
+     - `useNotebookBuild` — сборка Markdown notebook (planner → build блоков).
      - `useProjects` — управление проектами (сессиями) и их настройками.
      - `useBuildDocs`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`, `useDiagramExport`.
 
 3. **Сервисы** (`diagram-compiler/services`)
    - `llmService` — фасад над стратегиями (`OpenRouterStrategy`, `CliproxyStrategy`).
+   - `llmRequestRunner` — таймауты/повторы LLM-запросов на уровне шага.
+   - `notebookPlanService` + `notebookPlanSchema` — парсинг/валидация `NotebookPlan`.
+   - `stepMessageUtils` — единые шаблоны сообщений о таймаутах.
    - `mermaidService` — инициализация Mermaid и валидация.
    - `docsContextService` — загрузка локальных доков Mermaid.
    - `services/history/*` — IndexedDB-хранилище сессий/шагов/ревизий.
@@ -49,6 +53,13 @@
 3. Выполняется `generateDiagram`, затем код очищается и валидируется (`mermaid.parse`).
 4. Если код невалиден — запускается авто-фикс (до `AUTO_FIX_MAX_ATTEMPTS`).
 5. Записывается шаг истории и ревизия диаграммы (если код изменился).
+
+### Build (Markdown notebook)
+
+1. Planner формирует JSON `NotebookPlan` (типы, промпты, glossary).
+2. Создается Markdown-скелет с `N` Mermaid-блоками.
+3. Для каждого блока выполняется build + validation + auto-fix (последовательно).
+4. Для каждого блока временно переключается `diagramType`, чтобы получить релевантный контекст документации.
 
 ### Fix
 
@@ -76,4 +87,4 @@
 
 ---
 
-Обновлено: 2025-12-25. Согласовано с текущей реализацией (projects manager, markdown-навигация, scroll sync, frontmatter config).
+Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts, refactor hooks/services).
