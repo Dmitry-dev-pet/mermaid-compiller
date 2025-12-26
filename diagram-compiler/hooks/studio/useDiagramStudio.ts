@@ -26,6 +26,7 @@ import {
   validateMermaidDiagramCode,
 } from '../../services/mermaidService';
 import { fixDiagram } from '../../services/llmService';
+import { runLLMRequest } from '../../services/llmRequestRunner';
 import { runAutoFixLoop } from './autoFix';
 import { trackAnalyticsEvent } from '../../services/analyticsService';
 import { useNotebookBuild } from './useNotebookBuild';
