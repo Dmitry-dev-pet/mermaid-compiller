@@ -216,7 +216,6 @@ function App() {
                 onSelectDiagramStep={goToDiagramStep}
                 buildDocsSelectionKey={buildDocsSelectionKey}
                 promptPreviewKey={promptPreviewKey}
-                detectedDiagramType={detectedDiagramType}
               />
             </div>
 
