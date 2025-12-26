@@ -19,6 +19,21 @@ describe('notebookPlanService', () => {
     expect(plan.diagrams[0].diagramType).toBe('flowchart');
   });
 
+  it('parses notebook plan JSON with trailing commas', () => {
+    const raw = `{
+      "schemaVersion": "${NOTEBOOK_PLAN_SCHEMA_VERSION}",
+      "resolvedN": 1,
+      "diagrams": [
+        { "title": "Diagram A", "diagramType": "flowchart", "buildPrompt": "build A", },
+      ],
+      "notes": ["ok",],
+    }`;
+
+    const plan = parseNotebookPlan(raw);
+    expect(plan.resolvedN).toBe(1);
+    expect(plan.diagrams).toHaveLength(1);
+  });
+
   it('rejects invalid notebook plan JSON', () => {
     const raw = JSON.stringify({
       resolvedN: 1,

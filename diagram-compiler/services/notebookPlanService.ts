@@ -54,6 +54,19 @@ const extractJsonObject = (raw: string): string | null => {
   return trimmed.slice(start, end + 1);
 };
 
+const stripJsonComments = (raw: string): string => {
+  const withoutBlock = raw.replace(/\/\*[\s\S]*?\*\//g, '');
+  return withoutBlock.replace(/^\s*\/\/.*$/gm, '');
+};
+
+const removeTrailingCommas = (raw: string): string => {
+  return raw.replace(/,\s*([}\]])/g, '$1');
+};
+
+const sanitizeNotebookJson = (raw: string): string => {
+  return removeTrailingCommas(stripJsonComments(raw));
+};
+
 const normalizeDiagram = (diagram: NotebookPlanDiagram, index: number): NotebookPlanDiagram => {
   const diagramType = coerceDiagramType(diagram.diagramType as string);
   return {
@@ -72,7 +85,7 @@ export const parseNotebookPlan = (raw: string): NotebookPlan => {
   if (!jsonText) {
     throw new Error('Planner returned empty or non-JSON response.');
   }
-  const parsed = JSON.parse(jsonText) as NotebookPlan;
+  const parsed = JSON.parse(sanitizeNotebookJson(jsonText)) as NotebookPlan;
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('Planner JSON is not an object.');
   }
