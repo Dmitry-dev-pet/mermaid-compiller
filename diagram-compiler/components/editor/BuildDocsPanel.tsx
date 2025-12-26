@@ -72,6 +72,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
       inactive: MODE_UI.fix.buttonInactive ?? '',
     },
   };
+  const intentPreview = promptPreviewByMode[docsMode]?.intentText || intentText || '';
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-slate-50 dark:bg-[#282c34]">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-2 py-2">
@@ -213,16 +214,16 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
           <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
             {activeDocEntry?.text || 'No documentation loaded for this type.'}
           </pre>
-          {docsMode === 'build' && (promptPreviewByMode.build?.intentText || intentText) && (
+          {intentPreview && (
             <div className="mt-4">
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                Intent{isSystemPromptRaw ? ' (Raw)' : ''}
+                Intent ({docsMode}){isSystemPromptRaw ? ' · Raw' : ''}
               </div>
               <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
                 <code
                   className="language-markdown"
                   dangerouslySetInnerHTML={{
-                    __html: highlight(promptPreviewByMode.build?.intentText || intentText || '', languages.markdown, 'markdown'),
+                    __html: highlight(intentPreview, languages.markdown, 'markdown'),
                   }}
                 />
               </pre>
