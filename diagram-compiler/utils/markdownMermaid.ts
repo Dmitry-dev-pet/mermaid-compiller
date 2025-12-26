@@ -1,5 +1,5 @@
 export const MERMAID_FENCE_REGEX = /```mermaid(?:-exa.mple)?[^\n]*\n[\s\S]*?\n```/gi;
-export const MERMAID_BLOCK_PATTERN = /(```(?:mermaid|mermaid-exa.mple)[^\n]*\r?\n)([\s\S]*?)(```)/g;
+export const MERMAID_BLOCK_PATTERN = /(```(?:mermaid|mermaid-exa.mple)[^\n]*\r?\n)([\s\S]*?)(```)/gi;
 export const MERMAID_CODE_BLOCK_SELECTOR =
   'pre > code.language-mermaid, pre > code.language-mermaid-example, pre > code[class^="language-mermaid-exa"]';
 
