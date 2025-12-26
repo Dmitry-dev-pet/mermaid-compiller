@@ -19,6 +19,7 @@
 15. [x] Record progress + history meta per block.
 16. [x] Ensure notebook plan fixes the constraint: no styling directives/colors in blocks.
 17. [x] Add per-block notebook chat (chat.md from Build Docs; raw shows plan intent) and persist per diagram.
+18. [x] Split Build Docs panel into two panes (docs + intent) with resizer and placeholders.
 
 ---
 

@@ -18,6 +18,7 @@
 - [x] Record progress messages and history meta per block (notebook mode, block index, diagram type).
 - [x] Зафиксировать в плане/интенте ограничение: без theme/look директив и разноцветных оформлений.
 - [x] Добавить per-block чат для notebook: `chat.md` из Build Docs и raw intent из плана; сохранять и восстанавливать из IndexedDB; retries как отдельные сообщения.
+- [x] Разделить Build Docs на две панели (docs + intent) с ресайзером и плейсхолдером.
 
 ---
 

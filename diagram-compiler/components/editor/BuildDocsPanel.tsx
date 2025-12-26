@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { highlight, languages } from 'prismjs';
 import type { DocsEntry } from '../../services/docsContextService';
 import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
@@ -73,6 +73,34 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
     },
   };
   const intentPreview = promptPreviewByMode[docsMode]?.intentText || intentText || '';
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  const dragRef = useRef<{ startY: number; startRatio: number } | null>(null);
+
+  useEffect(() => {
+    const handleMove = (event: MouseEvent) => {
+      if (!dragRef.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const delta = event.clientY - dragRef.current.startY;
+      const next = (dragRef.current.startRatio * rect.height + delta) / rect.height;
+      const clamped = Math.min(0.8, Math.max(0.2, next));
+      setSplitRatio(clamped);
+    };
+    const handleUp = () => {
+      dragRef.current = null;
+    };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, []);
+
+  const handleDragStart = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    dragRef.current = { startY: event.clientY, startRatio: splitRatio };
+  };
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-slate-50 dark:bg-[#282c34]">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-2 py-2">
@@ -208,17 +236,26 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
           })
         )}
       </div>
-      <div className="flex-1 min-h-0 overflow-auto">
-        <div className="px-4 py-3">
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">{activeBuildDocName}</div>
-          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
-            {activeDocEntry?.text || 'No documentation loaded for this type.'}
-          </pre>
-          {intentPreview && (
-            <div className="mt-4">
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                Intent ({docsMode}){isSystemPromptRaw ? ' · Raw' : ''}
-              </div>
+      <div ref={containerRef} className="flex-1 min-h-0 flex flex-col">
+        <div style={{ flexBasis: `${splitRatio * 100}%` }} className="min-h-0 overflow-auto">
+          <div className="px-4 py-3">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">{activeBuildDocName}</div>
+            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
+              {activeDocEntry?.text || 'No documentation loaded for this type.'}
+            </pre>
+          </div>
+        </div>
+        <div
+          className="h-2 cursor-row-resize bg-slate-200 dark:bg-slate-700 hover:bg-blue-400 transition-colors"
+          onMouseDown={handleDragStart}
+          title="Resize panels"
+        />
+        <div style={{ flexBasis: `${(1 - splitRatio) * 100}%` }} className="min-h-0 overflow-auto">
+          <div className="px-4 py-3">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+              Intent ({docsMode}){isSystemPromptRaw ? ' · Raw' : ''}
+            </div>
+            {intentPreview ? (
               <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
                 <code
                   className="language-markdown"
@@ -227,8 +264,12 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                   }}
                 />
               </pre>
-            </div>
-          )}
+            ) : (
+              <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                Intent is not available yet. Use Chat to define it.
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
