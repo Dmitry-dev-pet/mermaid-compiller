@@ -222,6 +222,7 @@ function App() {
                 onNotebookBuildEnabledChange={setNotebookBuildEnabled}
                 onNotebookBuildCountChange={setNotebookBuildCount}
                 isNotebookDiagramChat={isNotebookDiagramChat}
+                intentText={diagramIntent?.content ?? ''}
               />
             </div>
 

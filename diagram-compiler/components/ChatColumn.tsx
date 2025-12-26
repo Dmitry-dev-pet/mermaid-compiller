@@ -24,6 +24,7 @@ interface ChatColumnProps {
     language?: string,
     intentText?: string
   ) => void;
+  intentText?: string;
   diagramType: import('../types').DiagramType;
   onDiagramTypeChange: (type: import('../types').DiagramType) => void;
   detectedDiagramType: import('../types').DiagramType | null;
@@ -83,6 +84,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onNotebookBuildEnabledChange,
   onNotebookBuildCountChange,
   isNotebookDiagramChat,
+  intentText,
   onDiagramTypeChange,
   detectedDiagramType,
   isMarkdownNotebook,
@@ -296,9 +298,9 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       const redacted = formatRequestPreview(preview, { redactDocs: true });
       const raw = formatRequestPreview(preview, { redactDocs: false });
       const intentMessage = preview.messages.find((message) => /^Intent:\s*/i.test(message.content.trim()));
-      const intentText = intentMessage
+      const resolvedIntent = intentMessage
         ? intentMessage.content.replace(/^Intent:\s*/i, '').trim()
-        : undefined;
+        : intentText?.trim();
       onSetPromptPreview(
         mode,
         title,
@@ -308,7 +310,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         preview.systemPrompt,
         preview.systemPromptRedacted,
         preview.language,
-        intentText
+        resolvedIntent
       );
     } catch (error: unknown) {
       if (requestId !== previewRequestRef.current) return;
@@ -316,7 +318,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       const errorText = `Error: ${message}`;
       onSetPromptPreview(mode, title, errorText, errorText);
     }
-  }, [formatRequestPreview, onPreviewPrompt, onSetPromptPreview]);
+  }, [formatRequestPreview, intentText, onPreviewPrompt, onSetPromptPreview]);
 
   useEffect(() => {
     const requestId = ++previewRequestRef.current;
