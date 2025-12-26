@@ -7,7 +7,8 @@ import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { runAutoFixLoop } from './autoFix';
 import { runAttemptLoop } from './retry';
-import { retryOnTimeout } from '../../services/llmTimeout';
+import { runLLMRequest } from '../../services/llmRequestRunner';
+import { formatTimeoutRetryMessage } from './stepMessageUtils';
 
 const buildIntent = (ctx: StudioContext, args: {
   prompt: string;
@@ -33,7 +34,11 @@ const buildIntent = (ctx: StudioContext, args: {
 
 const tryAnalyzeAfterBuild = async (ctx: StudioContext, args: { code: string; docs: string; language: string }) => {
   try {
-    const explanation = await analyzeDiagram(args.code, ctx.aiConfig, args.docs, args.language);
+    const explanation = await runLLMRequest({
+      task: 'analyze-summary',
+      run: () => analyzeDiagram(args.code, ctx.aiConfig, args.docs, args.language),
+      retries: 1,
+    });
     return stripMermaidCode(explanation).trim();
   } catch {
     return '';
@@ -116,7 +121,11 @@ export const createBuildHandler = (ctx: StudioContext) => {
           );
         },
         execute: async () => {
-          const rawCode = await generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
+          const rawCode = await runLLMRequest({
+            task: 'build',
+            run: () => generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language),
+            retries: 1,
+          });
           const cleanCode = extractMermaidCode(rawCode);
           return cleanCode.trim() ? cleanCode : null;
         },
@@ -154,24 +163,26 @@ export const createBuildHandler = (ctx: StudioContext) => {
         maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
         validate: (code) => validateMermaid(code, { logError: false }),
               fix: async (code, errorMessage) => {
-                const fixedRaw = await retryOnTimeout(
-                  () => fixDiagram(
+                const fixedRaw = await runLLMRequest({
+                  task: 'auto-fix',
+                  run: () => fixDiagram(
                     code,
                     errorMessage,
                     ctx.aiConfig,
                     docs,
                     language
                   ),
-                  {
-                    attempts: LLM_TIMEOUT_RETRIES,
-                    onTimeout: (attempt) => {
-                      if (attempt >= LLM_TIMEOUT_RETRIES) return;
-                      stepMessages.push(
-                        ctx.addMessage('assistant', `Auto-fix timeout. Retrying (${attempt + 1}/${LLM_TIMEOUT_RETRIES})...`, 'build')
-                      );
-                    },
-                  }
-                );
+                  retries: LLM_TIMEOUT_RETRIES,
+                  onTimeout: (notice) => {
+                    stepMessages.push(
+                      ctx.addMessage(
+                        'assistant',
+                        formatTimeoutRetryMessage('Auto-fix', notice.attempt, notice.maxAttempts),
+                        'build'
+                      )
+                    );
+                  },
+                });
                 return extractMermaidCode(fixedRaw);
               },
         onIteration: ctx.applyCompiledResult,
@@ -184,7 +195,11 @@ export const createBuildHandler = (ctx: StudioContext) => {
             ? ` Auto-fixed (${autoFixAttempts}).`
             : ` Auto-fix attempted (${autoFixAttempts}), still invalid.`;
 
-      const afterSummary = await tryAnalyzeAfterBuild(ctx, { code: currentCode, docs, language });
+      const afterSummary = await tryAnalyzeAfterBuild(ctx, {
+        code: currentCode,
+        docs,
+        language,
+      });
 
       stepMessages.push(
         ctx.addMessage(

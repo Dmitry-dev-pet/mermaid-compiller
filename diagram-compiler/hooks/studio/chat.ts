@@ -1,7 +1,8 @@
-import { fetchDocsContext } from '../../services/docsContextService';
 import { chat, chatNotebook } from '../../services/llmService';
 import { LLM_TIMEOUT_RETRIES } from '../../constants';
-import { retryOnTimeout, TimeoutError } from '../../services/llmTimeout';
+import { TimeoutError } from '../../services/llmTimeout';
+import { runLLMRequest } from '../../services/llmRequestRunner';
+import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMessageUtils';
 import { stripMermaidCode } from '../../utils';
 import { normalizeIntentText } from '../../utils/intent';
 import type { Message } from '../../types';
@@ -25,16 +26,21 @@ export const createChatHandler = (ctx: StudioContext) => {
       const llmMessages = ctx.buildLLMMessages(relevantMessages);
 
       const docs = await ctx.getDocsContext('chat');
-      const responseText = await retryOnTimeout(() => (
-        ctx.appState.isNotebookBuildEnabled
-          ? chatNotebook(llmMessages, ctx.aiConfig, docs, language)
-          : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language)
-      ), {
-        attempts: LLM_TIMEOUT_RETRIES,
-        onTimeout: (attempt) => {
-          if (attempt >= LLM_TIMEOUT_RETRIES) return;
+      const responseText = await runLLMRequest({
+        task: 'chat',
+        run: () => (
+          ctx.appState.isNotebookBuildEnabled
+            ? chatNotebook(llmMessages, ctx.aiConfig, docs, language)
+            : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language)
+        ),
+        retries: LLM_TIMEOUT_RETRIES,
+        onTimeout: (notice) => {
           stepMessages.push(
-            ctx.addMessage('assistant', `Chat timeout. Retrying (${attempt + 1}/${LLM_TIMEOUT_RETRIES})...`, 'chat')
+            ctx.addMessage(
+              'assistant',
+              formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts),
+              'chat'
+            )
           );
         },
       });
@@ -51,7 +57,9 @@ export const createChatHandler = (ctx: StudioContext) => {
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof TimeoutError) {
-        stepMessages.push(ctx.addMessage('assistant', `Chat timed out after ${LLM_TIMEOUT_RETRIES} attempts.`, 'chat'));
+        stepMessages.push(
+          ctx.addMessage('assistant', formatTimeoutFinalMessage('Chat', LLM_TIMEOUT_RETRIES), 'chat')
+        );
       }
       stepMessages.push(ctx.addMessage('assistant', `Error (${ctx.getCurrentModelName()}): ${message}`, 'chat'));
       await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages, meta: { error: message } });

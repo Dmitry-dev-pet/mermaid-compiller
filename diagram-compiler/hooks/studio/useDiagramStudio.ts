@@ -12,7 +12,7 @@ import { useInteractionRecorder } from './useInteractionRecorder';
 import { usePromptPreview } from './usePromptPreview';
 import { useProjects } from './useProjects';
 import type { DiagramMarker } from '../core/useHistory';
-import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE, NOTEBOOK_DIAGRAM_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
+import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { detectLanguage } from '../../utils';
 import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState } from '../../types';
 import {
@@ -24,15 +24,11 @@ import {
   isMarkdownLike,
   replaceMermaidBlockInMarkdown,
   validateMermaidDiagramCode,
-  validateMermaid,
 } from '../../services/mermaidService';
-import { fixDiagram, generateDiagram, planNotebook } from '../../services/llmService';
-import { retryOnTimeout, TimeoutError } from '../../services/llmTimeout';
+import { fixDiagram } from '../../services/llmService';
 import { runAutoFixLoop } from './autoFix';
 import { trackAnalyticsEvent } from '../../services/analyticsService';
-import { normalizeIntentText } from '../../utils/intent';
-import type { NotebookPlan } from '../../types';
-import { normalizeNotebookPlan, parseNotebookPlan } from '../../services/notebookPlanService';
+import { useNotebookBuild } from './useNotebookBuild';
 
 export const useDiagramStudio = () => {
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
@@ -387,307 +383,22 @@ export const useDiagramStudio = () => {
     });
   }, [appState.diagramType, setDiagramType]);
 
-  const resolveNotebookPrompt = useCallback((prompt?: string) => {
-    const trimmed = prompt?.trim() ?? '';
-    if (trimmed) return { content: trimmed, source: 'build' as const };
-    if (diagramIntent?.content.trim()) {
-      return { content: diagramIntent.content, source: diagramIntent.source };
-    }
-    const fallback = messages
-      .slice()
-      .reverse()
-      .find((m) => m.id !== 'init' && m.role === 'user' && m.content.trim().length > 0)?.content;
-    if (fallback) return { content: fallback, source: 'fallback' as const };
-    return null;
-  }, [diagramIntent?.content, diagramIntent?.source, messages]);
-
-  const buildNotebookMarkdown = useCallback((plan: NotebookPlan) => {
-    const title = plan.title?.trim() || 'Diagram notebook';
-    const sections = plan.diagrams.map((diagram, index) => {
-      const heading = diagram.title?.trim() || `Diagram ${index + 1}`;
-      return `## ${heading}\n\n\`\`\`mermaid\n\`\`\``;
-    });
-    return `# ${title}\n\n${sections.join('\n\n')}\n`;
-  }, []);
-
-  const applyNotebookMarkdown = useCallback((nextMarkdown: string) => {
-    setMermaidState((prev) => ({
-      ...prev,
-      code: nextMarkdown,
-      isValid: true,
-      lastValidCode: nextMarkdown,
-      errorMessage: undefined,
-      errorLine: undefined,
-      status: nextMarkdown.trim() ? 'valid' : 'empty',
-      source: 'compiled',
-    }));
-  }, [setMermaidState]);
-
-  const replaceNotebookBlock = useCallback((markdown: string, index: number, code: string) => {
-    const blocks = extractMermaidBlocksFromMarkdown(markdown);
-    const block = blocks[index];
-    if (!block) return markdown;
-    return replaceMermaidBlockInMarkdown(markdown, block, code);
-  }, []);
-
-  const requestNotebookPlan = useCallback(async (args: {
-    prompt: string;
-    requestedN: number | null;
-    docs: string;
-    language: string;
-  }): Promise<NotebookPlan> => {
-    const plannerMessage: Message = {
-      id: `notebook-plan-${Date.now()}`,
-      role: 'user',
-      content: `userRequest: """${args.prompt}"""\nrequestedN: ${args.requestedN ?? 'null'}`,
-      timestamp: Date.now(),
-    };
-    const rawPlan = await retryOnTimeout(
-      () => planNotebook([plannerMessage], aiConfig, args.docs, args.language),
-      {
-        attempts: LLM_TIMEOUT_RETRIES,
-        onTimeout: (attempt) => {
-          if (attempt >= LLM_TIMEOUT_RETRIES) return;
-          addMessage('assistant', `Planner timeout. Retrying (${attempt + 1}/${LLM_TIMEOUT_RETRIES})...`, 'build');
-        },
-      }
-    );
-    const parsedPlan = parseNotebookPlan(rawPlan);
-    const normalized = normalizeNotebookPlan(parsedPlan, args.requestedN);
-    if (args.requestedN && normalized.diagrams.length !== args.requestedN) {
-      throw new Error(`Planner returned ${normalized.diagrams.length} diagrams; expected ${args.requestedN}.`);
-    }
-    return normalized;
-  }, [aiConfig]);
-
-  const handleNotebookBuild = useCallback(async (text?: string) => {
-    if (isProcessing) return;
-    const prompt = resolveNotebookPrompt(text);
-    const stepMessages: Message[] = [];
-
-    if (!prompt) {
-      stepMessages.push(addMessage('assistant', 'Nothing to build yet. Use Chat to define intent.', 'build'));
-      await safeAppendTimeStep({
-        type: 'build',
-        messages: stepMessages,
-        meta: { mode: 'notebook', error: 'no_intent' },
-      });
-      return;
-    }
-
-    if (connectionState.status !== 'connected') {
-      stepMessages.push(addMessage('assistant', "I'm offline. Connect AI to generate diagrams.", 'build'));
-      await safeAppendTimeStep({
-        type: 'build',
-        messages: stepMessages,
-        meta: { mode: 'notebook', error: 'offline' },
-      });
-      return;
-    }
-
-
-    const originalDiagramType = appState.diagramType;
-    const requestedN = appState.notebookBuildCount ?? null;
-    const language = appState.language !== 'auto' ? appState.language : detectLanguage(prompt.content);
-
-    setIsProcessing(true);
-    try {
-      const docs = await getDocsContext('build');
-      const plan = await requestNotebookPlan({
-        prompt: prompt.content,
-        requestedN,
-        docs,
-        language,
-      });
-
-      stepMessages.push(
-        addMessage('assistant', `Notebook plan: ${plan.diagrams.length} diagrams.`, 'build')
-      );
-
-      let currentMarkdown = buildNotebookMarkdown(plan);
-      applyNotebookMarkdown(currentMarkdown);
-      setMarkdownMermaidActiveIndex(0);
-      setEditorTab('markdown_mermaid');
-
-      for (let i = 0; i < plan.diagrams.length; i += 1) {
-        const diagram = plan.diagrams[i];
-        const blockMessages: Message[] = [];
-        const targetDiagramType = diagram.diagramType === 'other' ? originalDiagramType : diagram.diagramType;
-
-        setMarkdownMermaidActiveIndex(i);
-        await setDiagramTypeAndWait(targetDiagramType);
-        await loadBuildDocsEntries(targetDiagramType);
-        const blockDocs = await getDocsContext('build');
-
-        blockMessages.push(
-          addMessage(
-            'assistant',
-            `Notebook build: блок ${i + 1} из ${plan.diagrams.length} (${targetDiagramType}).`,
-            'build'
-          )
-        );
-
-        let success = false;
-        let attempts = 0;
-        let lastError = '';
-        while (attempts < NOTEBOOK_DIAGRAM_MAX_ATTEMPTS && !success) {
-          attempts += 1;
-          blockMessages.push(
-            addMessage(
-              'assistant',
-              `Notebook build: блок ${i + 1}, попытка ${attempts}/${NOTEBOOK_DIAGRAM_MAX_ATTEMPTS}...`,
-              'build'
-            )
-          );
-
-          const intentText = normalizeIntentText(diagram.buildPrompt || '');
-          if (!intentText) {
-            lastError = 'empty_build_prompt';
-            blockMessages.push(
-              addMessage('assistant', `Attempt ${attempts}: empty build prompt.`, 'build')
-            );
-            continue;
-          }
-
-          try {
-            const intentMessage: Message = {
-              id: `notebook-intent-${i + 1}-${attempts}`,
-              role: 'user',
-              content: `Intent:\n${intentText}`,
-              timestamp: Date.now(),
-            };
-            const rawCode = await generateDiagram(
-              [intentMessage],
-              aiConfig,
-              targetDiagramType,
-              blockDocs,
-              language
-            );
-            const cleanCode = extractMermaidCode(rawCode).trim();
-            if (!cleanCode) {
-              lastError = 'no_mermaid_code';
-              blockMessages.push(
-                addMessage('assistant', `Attempt ${attempts}: no Mermaid code returned.`, 'build')
-              );
-              continue;
-            }
-
-            const initialValidation = await validateMermaid(cleanCode, { logError: false });
-            const { code: currentCode, validation, attempts: autoFixAttempts } = await runAutoFixLoop({
-              initialCode: cleanCode,
-              initialValidation,
-              maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
-              validate: (code) => validateMermaid(code, { logError: false }),
-              fix: async (code, errorMessage) => {
-                const fixedRaw = await fixDiagram(code, errorMessage, aiConfig, blockDocs, language);
-                return extractMermaidCode(fixedRaw);
-              },
-              onIteration: (code) => {
-                currentMarkdown = replaceNotebookBlock(currentMarkdown, i, code);
-                applyNotebookMarkdown(currentMarkdown);
-              },
-            });
-
-            currentMarkdown = replaceNotebookBlock(currentMarkdown, i, currentCode);
-            applyNotebookMarkdown(currentMarkdown);
-
-            if (validation.isValid) {
-              success = true;
-              blockMessages.push(
-                addMessage(
-                  'assistant',
-                  `Notebook build: блок ${i + 1} готов.${autoFixAttempts ? ` Auto-fix ${autoFixAttempts}.` : ''}`,
-                  'build'
-                )
-              );
-            } else {
-              lastError = validation.errorMessage || 'invalid_mermaid';
-              blockMessages.push(
-                addMessage(
-                  'assistant',
-                  `Attempt ${attempts}: Mermaid still invalid.${autoFixAttempts ? ` Auto-fix ${autoFixAttempts}.` : ''}`,
-                  'build'
-                )
-              );
-            }
-          } catch (e: unknown) {
-            lastError = e instanceof Error ? e.message : String(e);
-            if (e instanceof TimeoutError && attempts < NOTEBOOK_DIAGRAM_MAX_ATTEMPTS) {
-              blockMessages.push(
-                addMessage('assistant', `Timeout. Retrying (${attempts + 1}/${NOTEBOOK_DIAGRAM_MAX_ATTEMPTS})...`, 'build')
-              );
-            }
-            blockMessages.push(
-              addMessage(
-                'assistant',
-                `Attempt ${attempts} failed (${aiConfig.selectedModelId ? `model=${aiConfig.selectedModelId}` : 'model=unknown'}): ${lastError}`,
-                'build'
-              )
-            );
-          }
-        }
-
-        if (!success) {
-          blockMessages.push(
-            addMessage(
-              'assistant',
-              `Notebook build: блок ${i + 1} невалиден после ${NOTEBOOK_DIAGRAM_MAX_ATTEMPTS} попыток.`,
-              'build'
-            )
-          );
-        }
-
-        await safeAppendTimeStep({
-          type: 'build',
-          messages: blockMessages,
-          nextMermaid: {
-            code: currentMarkdown,
-            isValid: true,
-            errorMessage: undefined,
-            errorLine: undefined,
-          },
-          meta: {
-            mode: 'notebook',
-            blockIndex: i,
-            diagramType: targetDiagramType,
-            attempts,
-            success,
-            error: success ? undefined : lastError,
-          },
-        });
-      }
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      stepMessages.push(addMessage('assistant', `Notebook build failed: ${message}`, 'build'));
-      await safeAppendTimeStep({
-        type: 'build',
-        messages: stepMessages,
-        meta: { mode: 'notebook', error: message },
-      });
-    } finally {
-      await setDiagramTypeAndWait(originalDiagramType);
-      setIsProcessing(false);
-    }
-  }, [
-    addMessage,
+  const { handleNotebookBuild } = useNotebookBuild({
     aiConfig,
-    appState.diagramType,
-    appState.language,
-    appState.notebookBuildCount,
-    applyNotebookMarkdown,
-    buildNotebookMarkdown,
-    connectionState.status,
-    getDocsContext,
-    isProcessing,
-    loadBuildDocsEntries,
-    replaceNotebookBlock,
-    requestNotebookPlan,
-    resolveNotebookPrompt,
+    appState,
+    connectionState,
+    messages,
+    diagramIntent,
+    addMessage,
     safeAppendTimeStep,
-    setDiagramTypeAndWait,
-    setEditorTab,
+    setIsProcessing,
     setMarkdownMermaidActiveIndex,
-  ]);
+    setEditorTab,
+    setDiagramTypeAndWait,
+    setMermaidState,
+    getDocsContext,
+    loadBuildDocsEntries,
+  });
 
   const getAnalyticsContext = useCallback(async (mode: DocsMode) => {
     const docsUsage = await getDocsSelectionSummary(mode);
@@ -832,7 +543,11 @@ export const useDiagramStudio = () => {
       maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
       validate: (code) => validateMermaidDiagramCode(code, { logError: false }),
       fix: async (code, errorMessage) => {
-        const fixedRaw = await fixDiagram(code, errorMessage, aiConfig, docs, language);
+        const fixedRaw = await runLLMRequest({
+          task: 'markdown-fix',
+          run: () => fixDiagram(code, errorMessage, aiConfig, docs, language),
+          retries: LLM_TIMEOUT_RETRIES,
+        });
         return extractMermaidCode(fixedRaw);
       },
     });

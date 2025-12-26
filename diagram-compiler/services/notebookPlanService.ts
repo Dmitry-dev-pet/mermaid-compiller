@@ -1,4 +1,5 @@
 import type { DiagramType, NotebookPlan, NotebookPlanDiagram } from '../types';
+import { coerceNotebookPlan, validateNotebookPlan } from './notebookPlanSchema';
 
 const DIAGRAM_TYPE_ALIASES: Record<string, DiagramType> = {
   flowchart: 'flowchart',
@@ -75,16 +76,14 @@ export const parseNotebookPlan = (raw: string): NotebookPlan => {
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('Planner JSON is not an object.');
   }
-  if (!Array.isArray(parsed.diagrams) || parsed.diagrams.length === 0) {
-    throw new Error('Planner JSON missing diagrams.');
+  const validation = validateNotebookPlan(parsed);
+  if (!validation.ok) {
+    throw new Error(`Planner JSON invalid: ${validation.errors.join('; ')}`);
   }
-  const diagrams = parsed.diagrams.map(normalizeDiagram);
-  const resolvedN = Number(parsed.resolvedN ?? diagrams.length);
-  return {
-    ...parsed,
-    resolvedN,
-    diagrams,
-  };
+  const normalized = coerceNotebookPlan(parsed);
+  const diagrams = normalized.diagrams.map(normalizeDiagram);
+  const resolvedN = Number(normalized.resolvedN ?? diagrams.length);
+  return { ...normalized, resolvedN, diagrams };
 };
 
 export const normalizeNotebookPlan = (plan: NotebookPlan, requestedN: number | null) => {
