@@ -77,6 +77,7 @@ function App() {
     setNotebookBuildEnabled,
     setNotebookBuildCount,
     isNotebookDiagramChat,
+    buildDocsIntentText,
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
@@ -222,7 +223,7 @@ function App() {
                 onNotebookBuildEnabledChange={setNotebookBuildEnabled}
                 onNotebookBuildCountChange={setNotebookBuildCount}
                 isNotebookDiagramChat={isNotebookDiagramChat}
-                intentText={diagramIntent?.content ?? ''}
+                intentText={buildDocsIntentText}
               />
             </div>
 
@@ -247,7 +248,7 @@ function App() {
                 onAnalyzeLanguageChange={setAnalyzeLanguage}
                 appLanguage={appState.language}
                 promptPreviewByMode={promptPreviewByMode}
-                intentText={diagramIntent?.content ?? ''}
+                intentText={buildDocsIntentText}
                 activeTab={editorTabForView}
                 buildDocsEntries={buildDocsEntries}
                 buildDocsSelection={buildDocsSelection}

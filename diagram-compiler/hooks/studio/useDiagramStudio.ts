@@ -111,8 +111,11 @@ export const useDiagramStudio = () => {
   }, [appendTimeStep]);
 
   const isNotebookChatMode = useMemo(() => {
-    return editorTab === 'markdown_mermaid' && isMarkdownLike(mermaidState.code) && markdownMermaidBlocks.length > 0;
-  }, [editorTab, markdownMermaidBlocks.length, mermaidState.code]);
+    return appState.isNotebookBuildEnabled
+      && editorTab === 'markdown_mermaid'
+      && isMarkdownLike(mermaidState.code)
+      && markdownMermaidBlocks.length > 0;
+  }, [appState.isNotebookBuildEnabled, editorTab, markdownMermaidBlocks.length, mermaidState.code]);
 
   const getNotebookChatIndex = useCallback(() => {
     if (!isNotebookChatMode) return null;
@@ -260,6 +263,9 @@ export const useDiagramStudio = () => {
     appState.isNotebookBuildEnabled &&
     editorTab === 'markdown_mermaid' &&
     markdownMermaidBlocks.length > 0;
+  const isNotebookDataEnabled =
+    appState.isNotebookBuildEnabled &&
+    markdownMermaidBlocks.length > 0;
   const isNotebookChatEnabled =
     appState.isNotebookBuildEnabled &&
     editorTab !== 'markdown_mermaid';
@@ -287,6 +293,17 @@ export const useDiagramStudio = () => {
     resolveActiveMermaidContext,
     getDocsContext,
   });
+
+  const buildDocsIntentText = useMemo(() => {
+    if (diagramIntent?.content?.trim()) {
+      return diagramIntent.content.trim();
+    }
+    if (!markdownMermaidBlocks.length) return '';
+    const index = Math.max(0, Math.min(markdownMermaidActiveIndex, markdownMermaidBlocks.length - 1));
+    const rawIntent = notebookChatRef.current[index]?.rawIntent?.content;
+    if (rawIntent?.trim()) return rawIntent.trim();
+    return '';
+  }, [diagramIntent?.content, historySteps, markdownMermaidActiveIndex, markdownMermaidBlocks.length]);
 
   const buildNotebookChatMessages = useCallback((info: { messages: Message[]; rawIntent?: Message } | null, includeRaw: boolean) => {
     const init = buildInitMessage();
@@ -368,14 +385,12 @@ export const useDiagramStudio = () => {
   }, [historyLoadResult, isHistoryReady]);
 
   useEffect(() => {
-    if (!isNotebookChatMode) {
+    if (!isNotebookDataEnabled) {
       notebookChatRef.current = {};
-      notebookChatIndexRef.current = null;
-      notebookChatModeRef.current = false;
       return;
     }
     notebookChatRef.current = buildNotebookChatMap(historySteps);
-  }, [buildNotebookChatMap, historySteps, isNotebookChatMode]);
+  }, [buildNotebookChatMap, historySteps, isNotebookDataEnabled]);
 
   useEffect(() => {
     if (!isNotebookChatMode) return;
@@ -1233,6 +1248,7 @@ export const useDiagramStudio = () => {
     setNotebookBuildEnabled,
     setNotebookBuildCount,
     isNotebookDiagramChat,
+    buildDocsIntentText,
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
