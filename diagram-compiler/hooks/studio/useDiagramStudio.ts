@@ -264,6 +264,14 @@ export const useDiagramStudio = () => {
     appState.isNotebookBuildEnabled &&
     editorTab !== 'markdown_mermaid';
 
+  const chatMessagesForView = useMemo(() => {
+    if (isNotebookChatMode) return messages;
+    if (notebookChatModeRef.current && mainChatRef.current) {
+      return mainChatRef.current;
+    }
+    return messages;
+  }, [isNotebookChatMode, messages]);
+
   const {
     buildPromptPreview,
     promptPreviewByMode,
@@ -274,7 +282,7 @@ export const useDiagramStudio = () => {
     analyzeLanguage: appState.analyzeLanguage ?? 'auto',
     appLanguage: appState.language ?? 'auto',
     isNotebookChatEnabled,
-    messages,
+    messages: chatMessagesForView,
     diagramIntent,
     resolveActiveMermaidContext,
     getDocsContext,
@@ -1165,7 +1173,7 @@ export const useDiagramStudio = () => {
     setAiConfig,
     connectionState,
     mermaidState,
-    messages,
+    messages: chatMessagesForView,
     setMessages, // Kept for compatibility if needed, though addMessage/clearMessages is preferred
     appState,
     setAppState,
