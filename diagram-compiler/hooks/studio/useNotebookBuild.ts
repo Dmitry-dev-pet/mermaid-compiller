@@ -37,49 +37,6 @@ type NotebookBuildDeps = {
   loadBuildDocsEntries: (type: DiagramType) => Promise<unknown>;
 };
 
-const formatNotebookGlossary = (plan: NotebookPlan, language: string): string => {
-  if (!plan.glossary?.length) return '';
-  const lines = plan.glossary.map((item) => {
-    const term = item.term?.trim() || '';
-    if (!term) return '';
-    const meaning = item.meaning?.trim();
-    const aliases = item.aliases?.filter(Boolean);
-    const aliasText = aliases?.length ? ` (${aliases.join(', ')})` : '';
-    return `- ${term}${meaning ? `: ${meaning}` : ''}${aliasText}`;
-  }).filter(Boolean);
-  if (!lines.length) return '';
-  const title = language === 'Russian' ? 'Глоссарий' : 'Glossary';
-  return `${title}:\n${lines.join('\n')}`;
-};
-
-const formatNotebookConstraints = (language: string): string => {
-  const title = language === 'Russian' ? 'Ограничения' : 'Constraints';
-  const constraint = language === 'Russian' ? NOTEBOOK_STYLE_CONSTRAINT_RU : NOTEBOOK_STYLE_CONSTRAINT_EN;
-  return `${title}:\n- ${constraint}`;
-};
-
-const formatNotebookChatPrompt = (args: {
-  diagram: NotebookPlan['diagrams'][number];
-  plan: NotebookPlan;
-  language: string;
-}): string => {
-  const { diagram, plan, language } = args;
-  const title = language === 'Russian' ? 'chat.md' : 'chat.md';
-  const buildTitle = language === 'Russian' ? 'Входной промпт' : 'Input prompt';
-  const glossary = formatNotebookGlossary(plan, language);
-  const constraints = formatNotebookConstraints(language);
-  return [
-    title,
-    '',
-    `${buildTitle}:`,
-    diagram.buildPrompt.trim(),
-    '',
-    glossary,
-    '',
-    constraints,
-  ].filter((line) => line.trim().length > 0).join('\n');
-};
-
 const formatNotebookRawIntent = (args: {
   diagram: NotebookPlan['diagrams'][number];
   plan: NotebookPlan;
@@ -225,7 +182,6 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         const diagram = plan.diagrams[i];
         const blockMessages: Message[] = [];
         const targetDiagramType = diagram.diagramType === 'other' ? originalDiagramType : diagram.diagramType;
-        const chatPrompt = formatNotebookChatPrompt({ diagram, plan, language });
         const rawIntent = formatNotebookRawIntent({ diagram, plan, language });
 
         deps.setMarkdownMermaidActiveIndex(i);
@@ -233,9 +189,6 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         await deps.loadBuildDocsEntries(targetDiagramType);
         const blockDocs = await deps.getDocsContext('build');
 
-        blockMessages.push(
-          deps.addMessage('user', chatPrompt, 'system')
-        );
         blockMessages.push(
           deps.addMessage(
             'assistant',

@@ -17,7 +17,7 @@
 - [x] Restore original `diagramType` after notebook pipeline completes.
 - [x] Record progress messages and history meta per block (notebook mode, block index, diagram type).
 - [x] Зафиксировать в плане/интенте ограничение: без theme/look директив и разноцветных оформлений.
-- [x] Добавить per-block чат для notebook: `chat.md` с входным промптом и raw intent; сохранять и восстанавливать из IndexedDB; retries как отдельные сообщения.
+- [x] Добавить per-block чат для notebook: `chat.md` из Build Docs и raw intent из плана; сохранять и восстанавливать из IndexedDB; retries как отдельные сообщения.
 
 ---
 

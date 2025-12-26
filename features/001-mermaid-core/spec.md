@@ -72,8 +72,9 @@
 - После завершения notebook pipeline возвращается исходный `appState.diagramType` (тот, что был до Build).
 - Для каждого блока в notebook создается отдельный чат:
   - При переключении активного блока в markdown-представлении чат переключается на чат этого блока.
-  - В `chat.md` отображается входной промпт (компоновка: buildPrompt + glossary + constraints).
-  - В raw-режиме отображается intent из плана для этого блока (title/diagramType/goal/buildPrompt/acceptance + glossary + constraints).
+  - Основной чат относится к общей markdown-вкладке (MD), а не к отдельным блокам.
+  - В `chat.md` отображается system prompt из Build Docs (чат-режим) для этой диаграммы.
+  - В raw-режиме вместо `chat.md` отображается intent из плана для этого блока (title/diagramType/goal/buildPrompt/acceptance + glossary + constraints).
   - Попытки (retries) отображаются как отдельные сообщения в чате блока.
   - Чаты блоков сохраняются в истории/сессии (IndexedDB) и восстанавливаются.
 - Все LLM-запросы защищены таймаутом; при таймауте выполняются повторы только для текущего шага (по умолчанию 3 попытки).

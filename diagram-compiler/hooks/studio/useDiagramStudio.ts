@@ -73,7 +73,7 @@ export const useDiagramStudio = () => {
   const diagramTypeWaitRef = useRef<{ target: DiagramType; resolve: () => void } | null>(null);
   const notebookChatRef = useRef<Record<number, { messages: Message[]; rawIntent?: Message }>>({});
   const notebookChatIndexRef = useRef<number | null>(null);
-  const allMessagesRef = useRef<Message[] | null>(null);
+  const mainChatRef = useRef<Message[] | null>(null);
   const {
     buildDocsEntries,
     buildDocsSelection,
@@ -110,8 +110,8 @@ export const useDiagramStudio = () => {
   }, [appendTimeStep]);
 
   const isNotebookChatMode = useMemo(() => {
-    return isMarkdownLike(mermaidState.code) && markdownMermaidBlocks.length > 0;
-  }, [markdownMermaidBlocks.length, mermaidState.code]);
+    return editorTab === 'markdown_mermaid' && isMarkdownLike(mermaidState.code) && markdownMermaidBlocks.length > 0;
+  }, [editorTab, markdownMermaidBlocks.length, mermaidState.code]);
 
   const getNotebookChatIndex = useCallback(() => {
     if (!isNotebookChatMode) return null;
@@ -136,8 +136,8 @@ export const useDiagramStudio = () => {
     return safeAppendTimeStep(args);
   }, [getNotebookChatIndex, isNotebookChatMode, safeAppendTimeStep]);
 
-  const stripInitMessage = useCallback((list: Message[]) => {
-    return list.filter((m) => m.id !== 'init');
+  const stripNotebookSyntheticMessages = useCallback((list: Message[]) => {
+    return list.filter((m) => m.id !== 'init' && m.id !== 'notebook-chat-md' && m.id !== 'notebook-raw-intent');
   }, []);
 
   const buildInitMessage = useCallback((): Message => ({
@@ -174,10 +174,23 @@ export const useDiagramStudio = () => {
 
   const buildNotebookChatMessages = useCallback((info: { messages: Message[]; rawIntent?: Message } | null, includeRaw: boolean) => {
     const init = buildInitMessage();
-    const base = info ? stripInitMessage(info.messages) : [];
-    const raw = includeRaw && info?.rawIntent ? [info.rawIntent] : [];
-    return [init, ...raw, ...base];
-  }, [buildInitMessage, stripInitMessage]);
+    const base = info ? stripNotebookSyntheticMessages(info.messages) : [];
+    const systemPrompt = promptPreviewByMode.chat?.systemPromptRedacted
+      || promptPreviewByMode.chat?.systemPrompt
+      || 'No system prompt available.';
+    const systemPromptMessage: Message = {
+      id: 'notebook-chat-md',
+      role: 'assistant',
+      content: `chat.md\n\n${systemPrompt}`,
+      timestamp: 0,
+      mode: 'system',
+    };
+    const raw = includeRaw && info?.rawIntent
+      ? [{ ...info.rawIntent, id: 'notebook-raw-intent' }]
+      : [];
+    const promptMessages = includeRaw ? raw : [systemPromptMessage];
+    return [init, ...promptMessages, ...base];
+  }, [buildInitMessage, promptPreviewByMode.chat?.systemPrompt, promptPreviewByMode.chat?.systemPromptRedacted, stripNotebookSyntheticMessages]);
 
   const toggleScrollSync = useCallback(() => {
     setAppState((prev) => ({ ...prev, isScrollSyncEnabled: !prev.isScrollSyncEnabled }));
@@ -343,22 +356,24 @@ export const useDiagramStudio = () => {
   ]);
 
   useEffect(() => {
-    if (!isNotebookChatMode) {
-      allMessagesRef.current = messages;
+    if (isNotebookChatMode) {
+      const index = getNotebookChatIndex();
+      if (index === null) return;
+      const info = notebookChatRef.current[index] ?? { messages: [] };
+      info.messages = stripNotebookSyntheticMessages(messages);
+      notebookChatRef.current[index] = info;
       return;
     }
-    const index = getNotebookChatIndex();
-    if (index === null) return;
-    const info = notebookChatRef.current[index] ?? { messages: [] };
-    info.messages = stripInitMessage(messages);
-    notebookChatRef.current[index] = info;
-  }, [getNotebookChatIndex, isNotebookChatMode, messages, stripInitMessage]);
 
-  useEffect(() => {
-    if (isNotebookChatMode) return;
-    if (!allMessagesRef.current) return;
-    setMessages(allMessagesRef.current);
-  }, [isNotebookChatMode, setMessages]);
+    if (notebookChatIndexRef.current !== null) {
+      if (mainChatRef.current) {
+        setMessages(mainChatRef.current);
+      }
+      notebookChatIndexRef.current = null;
+      return;
+    }
+    mainChatRef.current = messages;
+  }, [getNotebookChatIndex, isNotebookChatMode, messages, setMessages, stripNotebookSyntheticMessages]);
 
   const {
     projects,
