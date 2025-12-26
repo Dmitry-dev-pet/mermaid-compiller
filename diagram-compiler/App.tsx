@@ -247,6 +247,7 @@ function App() {
                 onAnalyzeLanguageChange={setAnalyzeLanguage}
                 appLanguage={appState.language}
                 promptPreviewByMode={promptPreviewByMode}
+                intentText={diagramIntent?.content ?? ''}
                 activeTab={editorTabForView}
                 buildDocsEntries={buildDocsEntries}
                 buildDocsSelection={buildDocsSelection}

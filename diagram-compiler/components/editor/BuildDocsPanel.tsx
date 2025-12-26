@@ -11,6 +11,7 @@ interface BuildDocsPanelProps {
   docsMode: DocsMode;
   onDocsModeChange: (mode: DocsMode) => void;
   promptPreviewByMode: Record<PromptPreviewMode, PromptPreviewTab | null>;
+  intentText?: string;
   buildDocsEntries: DocsEntry[];
   buildDocsActivePath: string;
   onBuildDocsActivePathChange: (path: string) => void;
@@ -39,6 +40,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
   docsMode,
   onDocsModeChange,
   promptPreviewByMode,
+  intentText,
   buildDocsEntries,
   buildDocsActivePath,
   onBuildDocsActivePathChange,
@@ -211,7 +213,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
           <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
             {activeDocEntry?.text || 'No documentation loaded for this type.'}
           </pre>
-          {docsMode === 'build' && promptPreviewByMode.build?.intentText && (
+          {docsMode === 'build' && (promptPreviewByMode.build?.intentText || intentText) && (
             <div className="mt-4">
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
                 Intent{isSystemPromptRaw ? ' (Raw)' : ''}
@@ -220,7 +222,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                 <code
                   className="language-markdown"
                   dangerouslySetInnerHTML={{
-                    __html: highlight(promptPreviewByMode.build.intentText, languages.markdown, 'markdown'),
+                    __html: highlight(promptPreviewByMode.build?.intentText || intentText || '', languages.markdown, 'markdown'),
                   }}
                 />
               </pre>

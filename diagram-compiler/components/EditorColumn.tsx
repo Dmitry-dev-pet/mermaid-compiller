@@ -45,6 +45,7 @@ interface EditorColumnProps {
   onAnalyzeLanguageChange: (lang: string) => void;
   appLanguage: string;
   promptPreviewByMode: Record<PromptPreviewMode, PromptPreviewTab | null>;
+  intentText?: string;
   docsMode: DocsMode;
   onDocsModeChange: (mode: DocsMode) => void;
   activeTab: EditorTab;
@@ -82,6 +83,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   onAnalyzeLanguageChange,
   appLanguage,
   promptPreviewByMode,
+  intentText,
   docsMode,
   onDocsModeChange,
   activeTab,
@@ -279,6 +281,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
             docsMode={docsMode}
             onDocsModeChange={onDocsModeChange}
             promptPreviewByMode={promptPreviewByMode}
+            intentText={intentText}
             buildDocsEntries={buildDocsEntries}
             buildDocsActivePath={buildDocsActivePath}
             onBuildDocsActivePathChange={onBuildDocsActivePathChange}
