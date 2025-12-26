@@ -300,6 +300,24 @@ export const useDiagramStudio = () => {
     return [init, ...promptMessages, ...base];
   }, [buildInitMessage, promptPreviewByMode.chat?.systemPrompt, promptPreviewByMode.chat?.systemPromptRedacted, stripNotebookSyntheticMessages]);
 
+  const areMessagesEqual = useCallback((a: Message[], b: Message[]) => {
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      const left = a[i];
+      const right = b[i];
+      if (
+        left.id !== right.id ||
+        left.role !== right.role ||
+        left.mode !== right.mode ||
+        left.content !== right.content
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }, []);
+
   useEffect(() => {
     if (!historyLoadResult) return;
 
@@ -356,19 +374,22 @@ export const useDiagramStudio = () => {
     const index = getNotebookChatIndex();
     if (index === null) return;
     if (!notebookChatModeRef.current) {
-      mainChatRef.current = messages;
+      mainChatRef.current = getMessages();
       notebookChatModeRef.current = true;
     }
     notebookChatIndexRef.current = index;
     const info = notebookChatRef.current[index] ?? { messages: [] };
     const nextMessages = buildNotebookChatMessages(info, systemPromptRawByMode.chat);
-    setMessages(nextMessages);
+    if (!areMessagesEqual(getMessages(), nextMessages)) {
+      setMessages(nextMessages);
+    }
   }, [
+    areMessagesEqual,
     buildNotebookChatMessages,
     getNotebookChatIndex,
+    getMessages,
     historySteps,
     isNotebookChatMode,
-    messages,
     setMessages,
     systemPromptRawByMode.chat,
   ]);
