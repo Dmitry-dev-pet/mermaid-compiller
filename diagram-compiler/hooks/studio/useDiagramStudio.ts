@@ -10,9 +10,10 @@ import { useMarkdownMermaid } from './useMarkdownMermaid';
 import { useManualEditRecorder } from './useManualEditRecorder';
 import { useInteractionRecorder } from './useInteractionRecorder';
 import { usePromptPreview } from './usePromptPreview';
+import { useNotebookChat } from './useNotebookChat';
 import { useProjects } from './useProjects';
 import type { DiagramMarker } from '../core/useHistory';
-import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE, INITIAL_CHAT_MESSAGE, LLM_TIMEOUT_RETRIES } from '../../constants';
+import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { detectLanguage } from '../../utils';
 import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState, Message } from '../../types';
 import {
@@ -30,7 +31,6 @@ import { runLLMRequest } from '../../services/llmRequestRunner';
 import { runAutoFixLoop } from './autoFix';
 import { trackAnalyticsEvent } from '../../services/analyticsService';
 import { useNotebookBuild } from './useNotebookBuild';
-import type { TimeStep } from '../../services/history/types';
 
 export const useDiagramStudio = () => {
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
@@ -110,12 +110,26 @@ export const useDiagramStudio = () => {
     });
   }, [appendTimeStep]);
 
-  const isNotebookChatMode = useMemo(() => {
-    return appState.isNotebookBuildEnabled
-      && editorTab === 'markdown_mermaid'
-      && isMarkdownLike(mermaidState.code)
-      && markdownMermaidBlocks.length > 0;
+  const notebookContext = useMemo(() => {
+    const isEnabled = appState.isNotebookBuildEnabled;
+    const hasBlocks = markdownMermaidBlocks.length > 0;
+    const isMarkdownTab = editorTab === 'markdown_mermaid';
+    return {
+      isEnabled,
+      hasBlocks,
+      isMarkdownTab,
+      isNotebookChatMode: isEnabled && isMarkdownTab && isMarkdownLike(mermaidState.code) && hasBlocks,
+      isNotebookDiagramChat: isEnabled && isMarkdownTab && hasBlocks,
+      isNotebookDataEnabled: isEnabled && hasBlocks,
+      isNotebookChatEnabled: isEnabled && !isMarkdownTab,
+    };
   }, [appState.isNotebookBuildEnabled, editorTab, markdownMermaidBlocks.length, mermaidState.code]);
+  const {
+    isNotebookChatMode,
+    isNotebookDiagramChat,
+    isNotebookDataEnabled,
+    isNotebookChatEnabled,
+  } = notebookContext;
 
   const getNotebookChatIndex = useCallback(() => {
     if (!isNotebookChatMode) return null;
@@ -139,42 +153,6 @@ export const useDiagramStudio = () => {
     }
     return safeAppendTimeStep(args);
   }, [getNotebookChatIndex, isNotebookChatMode, safeAppendTimeStep]);
-
-  const stripNotebookSyntheticMessages = useCallback((list: Message[]) => {
-    return list.filter((m) => m.id !== 'init' && m.id !== 'notebook-chat-md' && m.id !== 'notebook-raw-intent');
-  }, []);
-
-  const buildInitMessage = useCallback((): Message => ({
-    id: 'init',
-    role: 'assistant',
-    content: INITIAL_CHAT_MESSAGE,
-    timestamp: 0,
-    mode: 'system',
-  }), []);
-
-  const buildNotebookChatMap = useCallback((steps: TimeStep[]) => {
-    const map: Record<number, { messages: Message[]; rawIntent?: Message }> = {};
-    steps.forEach((step) => {
-      const meta = step.meta as Record<string, unknown> | undefined;
-      if (!meta || meta.mode !== 'notebook') return;
-      const blockIndex = typeof meta.blockIndex === 'number' ? meta.blockIndex : null;
-      if (blockIndex === null) return;
-      const info = map[blockIndex] ?? { messages: [] };
-      const nextMessages = [...info.messages, ...(step.messages ?? [])];
-      info.messages = nextMessages;
-      if (!info.rawIntent && typeof meta.notebookPlanIntent === 'string') {
-        info.rawIntent = {
-          id: `notebook-raw-${blockIndex}`,
-          role: 'assistant',
-          content: meta.notebookPlanIntent,
-          timestamp: step.createdAt,
-          mode: 'system',
-        };
-      }
-      map[blockIndex] = info;
-    });
-    return map;
-  }, []);
 
   const toggleScrollSync = useCallback(() => {
     setAppState((prev) => ({ ...prev, isScrollSyncEnabled: !prev.isScrollSyncEnabled }));
@@ -259,17 +237,6 @@ export const useDiagramStudio = () => {
     mermaidState.isValid,
   ]);
 
-  const isNotebookDiagramChat =
-    appState.isNotebookBuildEnabled &&
-    editorTab === 'markdown_mermaid' &&
-    markdownMermaidBlocks.length > 0;
-  const isNotebookDataEnabled =
-    appState.isNotebookBuildEnabled &&
-    markdownMermaidBlocks.length > 0;
-  const isNotebookChatEnabled =
-    appState.isNotebookBuildEnabled &&
-    editorTab !== 'markdown_mermaid';
-
   const chatMessagesForView = useMemo(() => {
     if (isNotebookChatMode) return messages;
     if (notebookChatModeRef.current && mainChatRef.current) {
@@ -294,54 +261,25 @@ export const useDiagramStudio = () => {
     getDocsContext,
   });
 
-  const buildDocsIntentText = useMemo(() => {
-    if (diagramIntent?.content?.trim()) {
-      return diagramIntent.content.trim();
-    }
-    if (!markdownMermaidBlocks.length) return '';
-    const index = Math.max(0, Math.min(markdownMermaidActiveIndex, markdownMermaidBlocks.length - 1));
-    const rawIntent = notebookChatRef.current[index]?.rawIntent?.content;
-    if (rawIntent?.trim()) return rawIntent.trim();
-    return '';
-  }, [diagramIntent?.content, historySteps, markdownMermaidActiveIndex, markdownMermaidBlocks.length]);
-
-  const buildNotebookChatMessages = useCallback((info: { messages: Message[]; rawIntent?: Message } | null, includeRaw: boolean) => {
-    const init = buildInitMessage();
-    const base = info ? stripNotebookSyntheticMessages(info.messages) : [];
-    const systemPrompt = promptPreviewByMode.chat?.systemPromptRedacted
-      || promptPreviewByMode.chat?.systemPrompt
-      || 'No system prompt available.';
-    const systemPromptMessage: Message = {
-      id: 'notebook-chat-md',
-      role: 'assistant',
-      content: `chat.md\n\n${systemPrompt}`,
-      timestamp: 0,
-      mode: 'system',
-    };
-    const raw = includeRaw && info?.rawIntent
-      ? [{ ...info.rawIntent, id: 'notebook-raw-intent' }]
-      : [];
-    const promptMessages = includeRaw ? raw : [systemPromptMessage];
-    return [init, ...promptMessages, ...base];
-  }, [buildInitMessage, promptPreviewByMode.chat?.systemPrompt, promptPreviewByMode.chat?.systemPromptRedacted, stripNotebookSyntheticMessages]);
-
-  const areMessagesEqual = useCallback((a: Message[], b: Message[]) => {
-    if (a === b) return true;
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i += 1) {
-      const left = a[i];
-      const right = b[i];
-      if (
-        left.id !== right.id ||
-        left.role !== right.role ||
-        left.mode !== right.mode ||
-        left.content !== right.content
-      ) {
-        return false;
-      }
-    }
-    return true;
-  }, []);
+  const { buildDocsIntentText } = useNotebookChat({
+    isNotebookChatMode,
+    isNotebookDataEnabled,
+    getNotebookChatIndex,
+    markdownMermaidBlocksLength: markdownMermaidBlocks.length,
+    markdownMermaidActiveIndex,
+    historySteps,
+    messages,
+    setMessages,
+    getMessages,
+    diagramIntentContent: diagramIntent?.content ?? null,
+    systemPrompt: promptPreviewByMode.chat?.systemPrompt ?? '',
+    systemPromptRedacted: promptPreviewByMode.chat?.systemPromptRedacted ?? '',
+    isSystemPromptRaw: systemPromptRawByMode.chat,
+    notebookChatRef,
+    notebookChatIndexRef,
+    mainChatRef,
+    notebookChatModeRef,
+  });
 
   useEffect(() => {
     if (!historyLoadResult) return;
@@ -385,58 +323,11 @@ export const useDiagramStudio = () => {
   }, [historyLoadResult, isHistoryReady]);
 
   useEffect(() => {
-    if (!isNotebookDataEnabled) {
-      notebookChatRef.current = {};
-      return;
-    }
-    notebookChatRef.current = buildNotebookChatMap(historySteps);
-  }, [buildNotebookChatMap, historySteps, isNotebookDataEnabled]);
-
-  useEffect(() => {
-    if (!isNotebookChatMode) return;
-    const index = getNotebookChatIndex();
-    if (index === null) return;
-    if (!notebookChatModeRef.current) {
-      mainChatRef.current = getMessages();
-      notebookChatModeRef.current = true;
-    }
-    notebookChatIndexRef.current = index;
-    const info = notebookChatRef.current[index] ?? { messages: [] };
-    const nextMessages = buildNotebookChatMessages(info, systemPromptRawByMode.chat);
-    if (!areMessagesEqual(getMessages(), nextMessages)) {
-      setMessages(nextMessages);
-    }
-  }, [
-    areMessagesEqual,
-    buildNotebookChatMessages,
-    getNotebookChatIndex,
-    getMessages,
-    historySteps,
-    isNotebookChatMode,
-    setMessages,
-    systemPromptRawByMode.chat,
-  ]);
-
-  useEffect(() => {
-    if (isNotebookChatMode) {
-      const index = getNotebookChatIndex();
-      if (index === null) return;
-      const info = notebookChatRef.current[index] ?? { messages: [] };
-      info.messages = stripNotebookSyntheticMessages(messages);
-      notebookChatRef.current[index] = info;
-      return;
-    }
-
-    if (notebookChatIndexRef.current !== null) {
-      if (mainChatRef.current) {
-        setMessages(mainChatRef.current);
-      }
+    if (!isNotebookChatMode) {
       notebookChatIndexRef.current = null;
       notebookChatModeRef.current = false;
-      return;
     }
-    mainChatRef.current = messages;
-  }, [getNotebookChatIndex, isNotebookChatMode, messages, setMessages, stripNotebookSyntheticMessages]);
+  }, [isNotebookChatMode, notebookChatIndexRef, notebookChatModeRef]);
 
   const {
     projects,

@@ -73,6 +73,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
     },
   };
   const intentPreview = promptPreviewByMode[docsMode]?.intentText || intentText || '';
+  const docsPreview = activeDocEntry?.text || '';
   const containerRef = useRef<HTMLDivElement>(null);
   const [splitRatio, setSplitRatio] = useState(0.5);
   const dragRef = useRef<{ startY: number; startRatio: number } | null>(null);
@@ -240,9 +241,20 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
         <div style={{ flexBasis: `${splitRatio * 100}%` }} className="min-h-0 overflow-auto">
           <div className="px-4 py-3">
             <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">{activeBuildDocName}</div>
-            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
-              {activeDocEntry?.text || 'No documentation loaded for this type.'}
-            </pre>
+            {docsPreview ? (
+              <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
+                <code
+                  className="language-markdown"
+                  dangerouslySetInnerHTML={{
+                    __html: highlight(docsPreview, languages.markdown, 'markdown'),
+                  }}
+                />
+              </pre>
+            ) : (
+              <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                No documentation loaded for this type.
+              </div>
+            )}
           </div>
         </div>
         <div
