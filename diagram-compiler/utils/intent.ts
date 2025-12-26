@@ -2,6 +2,20 @@ export const normalizeIntentText = (input: string): string => {
   const trimmed = input.trim();
   if (!trimmed) return '';
 
+  const dedupeRepeatedBlock = (text: string): string => {
+    const marker = '## Summary';
+    const normalized = text.trim();
+    const secondIndex = normalized.indexOf(marker, marker.length);
+    if (secondIndex === -1) return text;
+    const head = normalized.slice(0, secondIndex).trim();
+    const tail = normalized.slice(secondIndex).trim();
+    const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
+    if (normalize(head) === normalize(tail)) {
+      return head;
+    }
+    return text;
+  };
+
   const withoutPrefix = trimmed.replace(/^intent:\s*/i, '');
   const sectionStart = withoutPrefix.search(/^##\s+/m);
 
@@ -23,7 +37,7 @@ export const normalizeIntentText = (input: string): string => {
       kept.push(line);
     }
     const normalized = kept.join('\n').trim();
-    if (normalized) return normalized;
+    if (normalized) return dedupeRepeatedBlock(normalized);
   }
 
   const lines = withoutPrefix.split(/\r?\n/);
@@ -35,5 +49,5 @@ export const normalizeIntentText = (input: string): string => {
   }
 
   const normalized = kept.join('\n').trim();
-  return normalized || withoutPrefix;
+  return dedupeRepeatedBlock(normalized || withoutPrefix);
 };
