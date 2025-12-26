@@ -109,6 +109,16 @@ export const useDiagramStudio = () => {
     });
   }, [appendTimeStep]);
 
+  const isNotebookChatMode = useMemo(() => {
+    return isMarkdownLike(mermaidState.code) && markdownMermaidBlocks.length > 0;
+  }, [markdownMermaidBlocks.length, mermaidState.code]);
+
+  const getNotebookChatIndex = useCallback(() => {
+    if (!isNotebookChatMode) return null;
+    const index = typeof markdownMermaidActiveIndex === 'number' ? markdownMermaidActiveIndex : 0;
+    return Math.max(0, Math.min(index, Math.max(0, markdownMermaidBlocks.length - 1)));
+  }, [isNotebookChatMode, markdownMermaidActiveIndex, markdownMermaidBlocks.length]);
+
   const safeRecordTimeStep = useCallback((args: Parameters<typeof appendTimeStep>[0]) => {
     if (args.type === 'chat' && isNotebookChatMode) {
       const blockIndex = getNotebookChatIndex();
@@ -125,16 +135,6 @@ export const useDiagramStudio = () => {
     }
     return safeAppendTimeStep(args);
   }, [getNotebookChatIndex, isNotebookChatMode, safeAppendTimeStep]);
-
-  const isNotebookChatMode = useMemo(() => {
-    return isMarkdownLike(mermaidState.code) && markdownMermaidBlocks.length > 0;
-  }, [markdownMermaidBlocks.length, mermaidState.code]);
-
-  const getNotebookChatIndex = useCallback(() => {
-    if (!isNotebookChatMode) return null;
-    const index = typeof markdownMermaidActiveIndex === 'number' ? markdownMermaidActiveIndex : 0;
-    return Math.max(0, Math.min(index, Math.max(0, markdownMermaidBlocks.length - 1)));
-  }, [isNotebookChatMode, markdownMermaidActiveIndex, markdownMermaidBlocks.length]);
 
   const stripInitMessage = useCallback((list: Message[]) => {
     return list.filter((m) => m.id !== 'init');
