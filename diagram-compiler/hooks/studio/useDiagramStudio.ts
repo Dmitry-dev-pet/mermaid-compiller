@@ -12,9 +12,9 @@ import { useInteractionRecorder } from './useInteractionRecorder';
 import { usePromptPreview } from './usePromptPreview';
 import { useProjects } from './useProjects';
 import type { DiagramMarker } from '../core/useHistory';
-import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE, LLM_TIMEOUT_RETRIES } from '../../constants';
+import { AUTO_FIX_MAX_ATTEMPTS, DEFAULT_MERMAID_STATE, INITIAL_CHAT_MESSAGE, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { detectLanguage } from '../../utils';
-import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState } from '../../types';
+import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState, Message } from '../../types';
 import {
   appendEmptyMermaidBlockToMarkdown,
   createMermaidNotebookMarkdown,
@@ -30,6 +30,7 @@ import { runLLMRequest } from '../../services/llmRequestRunner';
 import { runAutoFixLoop } from './autoFix';
 import { trackAnalyticsEvent } from '../../services/analyticsService';
 import { useNotebookBuild } from './useNotebookBuild';
+import type { TimeStep } from '../../services/history/types';
 
 export const useDiagramStudio = () => {
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
@@ -41,6 +42,7 @@ export const useDiagramStudio = () => {
     isHistoryReady,
     historySession,
     historyLoadResult,
+    historySteps,
     appendTimeStep,
     updateCurrentRevision,
     diagramMarkers,
@@ -69,6 +71,9 @@ export const useDiagramStudio = () => {
   const isHydratingRef = useRef(true);
   const lastManualRecordedCodeRef = useRef<string>('');
   const diagramTypeWaitRef = useRef<{ target: DiagramType; resolve: () => void } | null>(null);
+  const notebookChatRef = useRef<Record<number, { messages: Message[]; rawIntent?: Message }>>({});
+  const notebookChatIndexRef = useRef<number | null>(null);
+  const allMessagesRef = useRef<Message[] | null>(null);
   const {
     buildDocsEntries,
     buildDocsSelection,
@@ -103,6 +108,76 @@ export const useDiagramStudio = () => {
       console.error('Failed to record history step', e);
     });
   }, [appendTimeStep]);
+
+  const safeRecordTimeStep = useCallback((args: Parameters<typeof appendTimeStep>[0]) => {
+    if (args.type === 'chat' && isNotebookChatMode) {
+      const blockIndex = getNotebookChatIndex();
+      if (blockIndex !== null) {
+        return safeAppendTimeStep({
+          ...args,
+          meta: {
+            ...args.meta,
+            mode: 'notebook',
+            blockIndex,
+          },
+        });
+      }
+    }
+    return safeAppendTimeStep(args);
+  }, [getNotebookChatIndex, isNotebookChatMode, safeAppendTimeStep]);
+
+  const isNotebookChatMode = useMemo(() => {
+    return isMarkdownLike(mermaidState.code) && markdownMermaidBlocks.length > 0;
+  }, [markdownMermaidBlocks.length, mermaidState.code]);
+
+  const getNotebookChatIndex = useCallback(() => {
+    if (!isNotebookChatMode) return null;
+    const index = typeof markdownMermaidActiveIndex === 'number' ? markdownMermaidActiveIndex : 0;
+    return Math.max(0, Math.min(index, Math.max(0, markdownMermaidBlocks.length - 1)));
+  }, [isNotebookChatMode, markdownMermaidActiveIndex, markdownMermaidBlocks.length]);
+
+  const stripInitMessage = useCallback((list: Message[]) => {
+    return list.filter((m) => m.id !== 'init');
+  }, []);
+
+  const buildInitMessage = useCallback((): Message => ({
+    id: 'init',
+    role: 'assistant',
+    content: INITIAL_CHAT_MESSAGE,
+    timestamp: 0,
+    mode: 'system',
+  }), []);
+
+  const buildNotebookChatMap = useCallback((steps: TimeStep[]) => {
+    const map: Record<number, { messages: Message[]; rawIntent?: Message }> = {};
+    steps.forEach((step) => {
+      const meta = step.meta as Record<string, unknown> | undefined;
+      if (!meta || meta.mode !== 'notebook') return;
+      const blockIndex = typeof meta.blockIndex === 'number' ? meta.blockIndex : null;
+      if (blockIndex === null) return;
+      const info = map[blockIndex] ?? { messages: [] };
+      const nextMessages = [...info.messages, ...(step.messages ?? [])];
+      info.messages = nextMessages;
+      if (!info.rawIntent && typeof meta.notebookPlanIntent === 'string') {
+        info.rawIntent = {
+          id: `notebook-raw-${blockIndex}`,
+          role: 'assistant',
+          content: meta.notebookPlanIntent,
+          timestamp: step.createdAt,
+          mode: 'system',
+        };
+      }
+      map[blockIndex] = info;
+    });
+    return map;
+  }, []);
+
+  const buildNotebookChatMessages = useCallback((info: { messages: Message[]; rawIntent?: Message } | null, includeRaw: boolean) => {
+    const init = buildInitMessage();
+    const base = info ? stripInitMessage(info.messages) : [];
+    const raw = includeRaw && info?.rawIntent ? [info.rawIntent] : [];
+    return [init, ...raw, ...base];
+  }, [buildInitMessage, stripInitMessage]);
 
   const toggleScrollSync = useCallback(() => {
     setAppState((prev) => ({ ...prev, isScrollSyncEnabled: !prev.isScrollSyncEnabled }));
@@ -240,6 +315,50 @@ export const useDiagramStudio = () => {
     if (historyLoadResult) return;
     isHydratingRef.current = false;
   }, [historyLoadResult, isHistoryReady]);
+
+  useEffect(() => {
+    if (!isNotebookChatMode) {
+      notebookChatRef.current = {};
+      notebookChatIndexRef.current = null;
+      return;
+    }
+    notebookChatRef.current = buildNotebookChatMap(historySteps);
+  }, [buildNotebookChatMap, historySteps, isNotebookChatMode]);
+
+  useEffect(() => {
+    if (!isNotebookChatMode) return;
+    const index = getNotebookChatIndex();
+    if (index === null) return;
+    notebookChatIndexRef.current = index;
+    const info = notebookChatRef.current[index] ?? { messages: [] };
+    const nextMessages = buildNotebookChatMessages(info, systemPromptRawByMode.chat);
+    setMessages(nextMessages);
+  }, [
+    buildNotebookChatMessages,
+    getNotebookChatIndex,
+    historySteps,
+    isNotebookChatMode,
+    setMessages,
+    systemPromptRawByMode.chat,
+  ]);
+
+  useEffect(() => {
+    if (!isNotebookChatMode) {
+      allMessagesRef.current = messages;
+      return;
+    }
+    const index = getNotebookChatIndex();
+    if (index === null) return;
+    const info = notebookChatRef.current[index] ?? { messages: [] };
+    info.messages = stripInitMessage(messages);
+    notebookChatRef.current[index] = info;
+  }, [getNotebookChatIndex, isNotebookChatMode, messages, stripInitMessage]);
+
+  useEffect(() => {
+    if (isNotebookChatMode) return;
+    if (!allMessagesRef.current) return;
+    setMessages(allMessagesRef.current);
+  }, [isNotebookChatMode, setMessages]);
 
   const {
     projects,
@@ -442,7 +561,7 @@ export const useDiagramStudio = () => {
       trackAnalyticsEvent,
       getDocsContext,
       setIsProcessing,
-      recordTimeStep: appendTimeStep,
+      recordTimeStep: safeRecordTimeStep,
     });
 
   const resolveFixLanguage = useCallback(() => {
