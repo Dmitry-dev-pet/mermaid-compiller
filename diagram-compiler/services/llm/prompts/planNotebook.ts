@@ -12,6 +12,7 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
 - Use the user's request and optional requestedN.
 - If requestedN is provided and > 0, you MUST use it as resolvedN.
 - Each diagram must have an independent buildPrompt and explicit diagramType.
+- Every buildPrompt must include the constraint: no styling directives or color instructions (no theme/look/init/colors).
 - Use a shared glossary to keep terminology consistent.
 - Keep goals concise and non-overlapping.{{languageInstruction}}
 
@@ -50,6 +51,7 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
 - Используй запрос пользователя и optional requestedN.
 - Если requestedN задан и > 0, ОБЯЗАТЕЛЬНО используй его как resolvedN.
 - Каждая диаграмма должна иметь независимый buildPrompt и явный diagramType.
+- Каждый buildPrompt должен фиксировать ограничение: без стилевых директив и цветовых инструкций (без theme/look/init/colors).
 - Используй общий glossary для согласованности терминов.
 - Цели должны быть краткими и не пересекаться.{{languageInstruction}}
 

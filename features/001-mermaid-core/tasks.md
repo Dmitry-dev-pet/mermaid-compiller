@@ -16,6 +16,7 @@
 - [x] For each diagram: up to 3 attempts (build + validate + auto-fix); on 3 failures continue to next block.
 - [x] Restore original `diagramType` after notebook pipeline completes.
 - [x] Record progress messages and history meta per block (notebook mode, block index, diagram type).
+- [x] Зафиксировать в плане/интенте ограничение: без theme/look директив и разноцветных оформлений.
 
 ---
 

@@ -25,6 +25,7 @@ Intent:
 - ...
 - If the request is ambiguous, ask focused questions (especially about the number of diagrams and their types).
 - If the user provided N (diagram count), include it under Constraints.
+- Always include constraint: no styling directives or color instructions (no theme/look/init/colors).
 - Do NOT invent Mermaid code.{{languageInstruction}}
 
 # Docs Context
@@ -54,6 +55,7 @@ Intent:
 - ...
 - Если запрос неоднозначен, задавай точные вопросы (особенно про количество диаграмм и их типы).
 - Если пользователь задал N (количество диаграмм), включи это в Constraints.
+- Всегда фиксируй ограничение: без стилевых директив и цветовых инструкций (без theme/look/init/colors).
 - НЕ генерируй Mermaid-код.{{languageInstruction}}
 
 # Контекст документации

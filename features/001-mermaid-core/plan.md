@@ -17,6 +17,7 @@
 13. [x] Per-block docs via diagramType switching (variant B) + await docs load.
 14. [x] Retry up to 3 attempts per diagram; continue on failure.
 15. [x] Record progress + history meta per block.
+16. [x] Ensure notebook plan fixes the constraint: no styling directives/colors in blocks.
 
 ---
 
