@@ -1,9 +1,10 @@
 import { validateMermaid, extractMermaidCode } from '../../services/mermaidService';
 import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmService';
 import type { StudioContext } from './actionsContext';
-import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
+import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { runAutoFixLoop } from './autoFix';
 import type { Message } from '../../types';
+import { retryOnTimeout, TimeoutError } from '../../services/llmTimeout';
 
 export const createRecompileHandler = (ctx: StudioContext) => {
   return async () => {
@@ -32,7 +33,16 @@ export const createRecompileHandler = (ctx: StudioContext) => {
         mode: 'recompile',
       });
 
-      const rawCode = await generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language);
+      const rawCode = await retryOnTimeout(
+        () => generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language),
+        {
+          attempts: LLM_TIMEOUT_RETRIES,
+          onTimeout: (attempt) => {
+            if (attempt >= LLM_TIMEOUT_RETRIES) return;
+            alert(`Recompile timeout. Retrying (${attempt + 1}/${LLM_TIMEOUT_RETRIES})...`);
+          },
+        }
+      );
       const cleanCode = extractMermaidCode(rawCode);
       const validation = await validateMermaid(cleanCode, { logError: false });
 
@@ -61,6 +71,9 @@ export const createRecompileHandler = (ctx: StudioContext) => {
       });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
+      if (e instanceof TimeoutError) {
+        alert(`Recompile timed out after ${LLM_TIMEOUT_RETRIES} attempts.`);
+      }
       alert(`Generation failed (${ctx.getCurrentModelName()}): ${message}`);
       const stepMessages: Message[] = [];
       stepMessages.push(ctx.addMessage('assistant', `Error generating diagram (${ctx.getCurrentModelName()}): ${message}`, 'build'));
@@ -108,12 +121,21 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
         maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
         validate: (code) => validateMermaid(code, { logError: false }),
         fix: async (code, errorMessage) => {
-          const fixedRaw = await fixDiagram(
-            code,
-            errorMessage || ctx.mermaidState.errorMessage || 'Unknown error',
-            ctx.aiConfig,
-            docs,
-            language
+          const fixedRaw = await retryOnTimeout(
+            () => fixDiagram(
+              code,
+              errorMessage || ctx.mermaidState.errorMessage || 'Unknown error',
+              ctx.aiConfig,
+              docs,
+              language
+            ),
+            {
+              attempts: LLM_TIMEOUT_RETRIES,
+              onTimeout: (attempt) => {
+                if (attempt >= LLM_TIMEOUT_RETRIES) return;
+                alert(`Fix timeout. Retrying (${attempt + 1}/${LLM_TIMEOUT_RETRIES})...`);
+              },
+            }
           );
           return extractMermaidCode(fixedRaw);
         },
@@ -155,6 +177,9 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
       });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
+      if (e instanceof TimeoutError) {
+        alert(`Fix timed out after ${LLM_TIMEOUT_RETRIES} attempts.`);
+      }
       alert(`Fix failed (${ctx.getCurrentModelName()}): ${message}`);
       ctx.trackAnalyticsEvent('diagram_fix_failed', {
         ...(await ctx.getAnalyticsContext('fix')),
@@ -185,12 +210,24 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
     try {
       const docs = await ctx.getDocsContext('analyze');
       const language = ctx.resolveAnalyzeLanguage();
-      const explanation = await analyzeDiagram(diagramCode, ctx.aiConfig, docs, language);
+      const explanation = await retryOnTimeout(
+        () => analyzeDiagram(diagramCode, ctx.aiConfig, docs, language),
+        {
+          attempts: LLM_TIMEOUT_RETRIES,
+          onTimeout: (attempt) => {
+            if (attempt >= LLM_TIMEOUT_RETRIES) return;
+            alert(`Analyze timeout. Retrying (${attempt + 1}/${LLM_TIMEOUT_RETRIES})...`);
+          },
+        }
+      );
       const stepMessages: Message[] = [];
       stepMessages.push(ctx.addMessage('assistant', explanation, 'analyze'));
       await ctx.safeRecordTimeStep({ type: 'analyze', messages: stepMessages, meta: { diagramType: ctx.appState.diagramType } });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
+      if (e instanceof TimeoutError) {
+        alert(`Analysis timed out after ${LLM_TIMEOUT_RETRIES} attempts.`);
+      }
       alert(`Analysis failed (${ctx.getCurrentModelName()}): ${message}`);
       const stepMessages: Message[] = [];
       stepMessages.push(ctx.addMessage('assistant', `Error analyzing diagram (${ctx.getCurrentModelName()}): ${message}`, 'analyze'));

@@ -46,4 +46,25 @@ describe('buildSystemPrompt', () => {
     expect(prompt).not.toContain('Preferred Diagram Type');
     expect(prompt).not.toContain('You MUST generate');
   });
+
+  it('builds notebook chat prompt without diagram type rule', () => {
+    const prompt = buildSystemPrompt('chat_notebook', {
+      diagramType: 'sequence',
+      docsContext: 'docs',
+      language: 'English',
+    });
+
+    expect(prompt).toContain('notebook assistant');
+    expect(prompt).not.toContain('Preferred Diagram Type');
+  });
+
+  it('builds notebook planner prompt with JSON requirement', () => {
+    const prompt = buildSystemPrompt('plan_notebook', {
+      docsContext: 'docs',
+      language: 'English',
+    });
+
+    expect(prompt).toContain('Output ONLY valid JSON');
+    expect(prompt).toContain('schemaVersion');
+  });
 });

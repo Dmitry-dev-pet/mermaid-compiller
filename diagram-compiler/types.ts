@@ -81,6 +81,34 @@ export interface DiagramIntent {
   updatedAt: number;
 }
 
+export type NotebookPlanGlossaryTerm = {
+  term: string;
+  meaning?: string;
+  aliases?: string[];
+};
+
+export type NotebookPlanDiagram = {
+  id?: string;
+  order?: number;
+  title: string;
+  diagramType: DiagramType | 'other';
+  goal?: string;
+  buildPrompt: string;
+  acceptance?: string[];
+};
+
+export type NotebookPlan = {
+  schemaVersion: string;
+  mode?: string;
+  userRequest?: string;
+  requestedN?: number | null;
+  resolvedN: number;
+  title?: string;
+  glossary?: NotebookPlanGlossaryTerm[];
+  diagrams: NotebookPlanDiagram[];
+  notes?: string[];
+};
+
 export type DocsMode = 'chat' | 'build' | 'analyze' | 'fix';
 
 export type PromptPreviewMode = 'chat' | 'build' | 'analyze' | 'fix';
@@ -137,6 +165,8 @@ export interface AppState {
   theme: 'light' | 'dark';
   language: string;
   analyzeLanguage: string;
+  isNotebookBuildEnabled: boolean;
+  notebookBuildCount: number | null;
 }
 
 export type InteractionEventType =

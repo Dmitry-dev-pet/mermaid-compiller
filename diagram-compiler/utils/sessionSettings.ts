@@ -1,4 +1,5 @@
 import type { AIConfig, AppState } from '../types';
+import { DEFAULT_APP_STATE } from '../constants';
 import type { SessionSettings } from '../services/history/types';
 
 export const buildSessionSettings = (
@@ -16,6 +17,6 @@ export const applySessionSettings = (
   setAppState: (value: AppState) => void,
   setAiConfig: (value: AIConfig) => void
 ) => {
-  setAppState(settings.appState);
+  setAppState({ ...DEFAULT_APP_STATE, ...settings.appState });
   setAiConfig(settings.aiConfig);
 };

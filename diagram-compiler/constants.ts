@@ -4,6 +4,9 @@ export const MERMAID_VERSION = "v11.12.2";
 
 export const AUTO_FIX_MAX_ATTEMPTS = 5;
 export const BUILD_MAX_ATTEMPTS = 3;
+export const NOTEBOOK_DIAGRAM_MAX_ATTEMPTS = 3;
+export const LLM_TIMEOUT_MS = 40_000;
+export const LLM_TIMEOUT_RETRIES = 3;
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
   provider: 'openrouter',
@@ -39,6 +42,8 @@ export const DEFAULT_APP_STATE: AppState = {
   theme: 'light',
   language: 'auto',
   analyzeLanguage: 'auto',
+  isNotebookBuildEnabled: false,
+  notebookBuildCount: null,
 };
 
 export const DEFAULT_MERMAID_STATE: MermaidState = {

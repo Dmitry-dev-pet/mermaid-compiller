@@ -184,6 +184,16 @@ Fix it.`,
     return this.fetchCompletion(messages, config, systemPrompt);
   }
 
+  async chatNotebook(
+    messages: Message[],
+    config: AIConfig,
+    docsContext: string,
+    language: string
+  ): Promise<string> {
+    const systemPrompt = buildSystemPrompt('chat_notebook', { docsContext, language });
+    return this.fetchCompletion(messages, config, systemPrompt);
+  }
+
   async analyzeDiagram(
     code: string,
     config: AIConfig,
@@ -205,5 +215,15 @@ ${code}
     };
 
     return this.fetchCompletion([analyzeMsg], config, systemPrompt);
+  }
+
+  async planNotebook(
+    messages: Message[],
+    config: AIConfig,
+    docsContext: string,
+    language: string
+  ): Promise<string> {
+    const systemPrompt = buildSystemPrompt('plan_notebook', { docsContext, language });
+    return this.fetchCompletion(messages, config, systemPrompt);
   }
 }

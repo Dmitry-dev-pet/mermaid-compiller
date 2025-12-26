@@ -11,7 +11,6 @@ interface ChatColumnProps {
   onBuild: (text?: string) => void;
   onClear: () => void;
   onNewProject: () => void;
-  onNewMarkdownNotebook: (args?: { blocks?: number }) => void;
   isProcessing: boolean;
   hasIntent: boolean;
   onSetPromptPreview: (
@@ -45,6 +44,10 @@ interface ChatColumnProps {
   onPreviewProjectSnapshot: (sessionId: string) => Promise<void>;
   onClearProjectPreview: () => void;
   deleteUndoMs: number;
+  isNotebookBuildEnabled: boolean;
+  notebookBuildCount: number | null;
+  onNotebookBuildEnabledChange: (enabled: boolean) => void;
+  onNotebookBuildCountChange: (count: number | null) => void;
 }
 
 const ChatColumn: React.FC<ChatColumnProps> = ({
@@ -53,7 +56,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onBuild,
   onClear,
   onNewProject,
-  onNewMarkdownNotebook,
   isProcessing,
   hasIntent,
   onSetPromptPreview,
@@ -74,6 +76,10 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onPreviewProjectSnapshot,
   onClearProjectPreview,
   deleteUndoMs,
+  isNotebookBuildEnabled,
+  notebookBuildCount,
+  onNotebookBuildEnabledChange,
+  onNotebookBuildCountChange,
   onDiagramTypeChange,
   detectedDiagramType,
   isMarkdownNotebook,
@@ -468,14 +474,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                 <Plus size={12} /> Новый проект
               </button>
               <button
-                onClick={() => onNewMarkdownNotebook({ blocks: 3 })}
-                className="text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 transition-colors"
-                title="Открыть Markdown-ноутбук проекта с описаниями и множеством Mermaid-схем (смотри вкладку Markdown; блоки редактируются во вкладках Mermaid 1, Mermaid 2, ...)"
-                type="button"
-              >
-                <FileText size={12} /> MD notebook
-              </button>
-              <button
                 onClick={onClear}
                 className="text-xs text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors"
                 title="Clear chat history"
@@ -489,6 +487,40 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
               <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline whitespace-nowrap">
                 Enter: Chat • Ctrl/Cmd+Enter: Build
               </span>
+              <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+                <label className="inline-flex items-center gap-1 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="accent-blue-500"
+                    checked={isNotebookBuildEnabled}
+                    onChange={(e) => onNotebookBuildEnabledChange(e.target.checked)}
+                  />
+                  <span className="flex items-center gap-1">
+                    <FileText size={12} /> MD notebook
+                  </span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={notebookBuildCount ?? ''}
+                  placeholder="N"
+                  className="w-14 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-[10px] text-slate-700 dark:text-slate-200 disabled:opacity-50"
+                  disabled={!isNotebookBuildEnabled}
+                  onChange={(e) => {
+                    const next = e.target.value.trim();
+                    if (!next) {
+                      onNotebookBuildCountChange(null);
+                      return;
+                    }
+                    const parsed = Number(next);
+                    if (Number.isNaN(parsed) || parsed <= 0) {
+                      onNotebookBuildCountChange(null);
+                      return;
+                    }
+                    onNotebookBuildCountChange(Math.floor(parsed));
+                  }}
+                />
+              </div>
               <button
                 onClick={() => handleSubmit('chat')}
                 disabled={!input.trim() || isProcessing}
@@ -509,7 +541,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                     ? MODE_BUTTON_DISABLED
                     : MODE_UI.build.button
                 }`}
-                title={input.trim() ? 'Build diagram from this prompt' : 'Build diagram from intent'}
+                title={
+                  isNotebookBuildEnabled
+                    ? (input.trim() ? 'Build notebook from this prompt' : 'Build notebook from intent')
+                    : (input.trim() ? 'Build diagram from this prompt' : 'Build diagram from intent')
+                }
               >
                 <Play size={14} /> Build
               </button>

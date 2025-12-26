@@ -5,5 +5,7 @@ export interface LLMProviderStrategy {
   generateDiagram(messages: Message[], config: AIConfig, diagramType: string, docsContext: string, language: string): Promise<string>;
   fixDiagram(code: string, errorMessage: string, config: AIConfig, docsContext: string, language: string): Promise<string>;
   chat(messages: Message[], config: AIConfig, diagramType: string, docsContext: string, language: string): Promise<string>;
+  chatNotebook(messages: Message[], config: AIConfig, docsContext: string, language: string): Promise<string>;
   analyzeDiagram(code: string, config: AIConfig, docsContext: string, language: string): Promise<string>;
+  planNotebook(messages: Message[], config: AIConfig, docsContext: string, language: string): Promise<string>;
 }

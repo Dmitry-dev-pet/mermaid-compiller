@@ -2,6 +2,7 @@ import { AIConfig, Message, DiagramType, Model } from '../types';
 import { LLMProviderStrategy } from './llm/LLMProviderStrategy';
 import { OpenRouterStrategy } from './llm/OpenRouterStrategy';
 import { CliproxyStrategy } from './llm/CliproxyStrategy';
+import { withTimeout } from './llmTimeout';
 
 // Instantiate strategies
 const openRouterStrategy = new OpenRouterStrategy();
@@ -37,7 +38,7 @@ export const generateDiagram = async (
   language: string
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.generateDiagram(messages, config, diagramType, docsContext, language);
+  return withTimeout(strategy.generateDiagram(messages, config, diagramType, docsContext, language));
 };
 
 export const fixDiagram = async (
@@ -48,7 +49,7 @@ export const fixDiagram = async (
   language: string
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.fixDiagram(code, error, config, docsContext, language);
+  return withTimeout(strategy.fixDiagram(code, error, config, docsContext, language));
 };
 
 export const chat = async (
@@ -59,7 +60,7 @@ export const chat = async (
   language: string
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.chat(messages, config, diagramType, docsContext, language);
+  return withTimeout(strategy.chat(messages, config, diagramType, docsContext, language));
 };
 
 export const analyzeDiagram = async (
@@ -69,5 +70,25 @@ export const analyzeDiagram = async (
   language: string
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.analyzeDiagram(code, config, docsContext, language);
+  return withTimeout(strategy.analyzeDiagram(code, config, docsContext, language));
+};
+
+export const planNotebook = async (
+  messages: Message[],
+  config: AIConfig,
+  docsContext: string,
+  language: string
+): Promise<string> => {
+  const strategy = getStrategy(config);
+  return withTimeout(strategy.planNotebook(messages, config, docsContext, language));
+};
+
+export const chatNotebook = async (
+  messages: Message[],
+  config: AIConfig,
+  docsContext: string,
+  language: string
+): Promise<string> => {
+  const strategy = getStrategy(config);
+  return withTimeout(strategy.chatNotebook(messages, config, docsContext, language));
 };

@@ -4,9 +4,10 @@ import { stripMermaidCode } from '../../utils';
 import { normalizeIntentText } from '../../utils/intent';
 import type { Message } from '../../types';
 import type { StudioContext } from './actionsContext';
-import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS } from '../../constants';
+import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { runAutoFixLoop } from './autoFix';
 import { runAttemptLoop } from './retry';
+import { retryOnTimeout } from '../../services/llmTimeout';
 
 const buildIntent = (ctx: StudioContext, args: {
   prompt: string;
@@ -152,16 +153,27 @@ export const createBuildHandler = (ctx: StudioContext) => {
         initialValidation,
         maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
         validate: (code) => validateMermaid(code, { logError: false }),
-        fix: async (code, errorMessage) => {
-          const fixedRaw = await fixDiagram(
-            code,
-            errorMessage,
-            ctx.aiConfig,
-            docs,
-            language
-          );
-          return extractMermaidCode(fixedRaw);
-        },
+              fix: async (code, errorMessage) => {
+                const fixedRaw = await retryOnTimeout(
+                  () => fixDiagram(
+                    code,
+                    errorMessage,
+                    ctx.aiConfig,
+                    docs,
+                    language
+                  ),
+                  {
+                    attempts: LLM_TIMEOUT_RETRIES,
+                    onTimeout: (attempt) => {
+                      if (attempt >= LLM_TIMEOUT_RETRIES) return;
+                      stepMessages.push(
+                        ctx.addMessage('assistant', `Auto-fix timeout. Retrying (${attempt + 1}/${LLM_TIMEOUT_RETRIES})...`, 'build')
+                      );
+                    },
+                  }
+                );
+                return extractMermaidCode(fixedRaw);
+              },
         onIteration: ctx.applyCompiledResult,
       });
 

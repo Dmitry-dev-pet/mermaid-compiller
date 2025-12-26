@@ -74,10 +74,11 @@ function App() {
     setAnalyzeLanguage,
     togglePreviewFullScreen,
     toggleScrollSync,
+    setNotebookBuildEnabled,
+    setNotebookBuildCount,
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
-    startMarkdownNotebook,
     appendMarkdownMermaidBlock,
     interactionRecorder,
   } = useDiagramStudio();
@@ -191,7 +192,6 @@ function App() {
                 onBuild={handleBuildFromPrompt}
                 onClear={clearMessages}
                 onNewProject={startNewProject}
-                onNewMarkdownNotebook={startMarkdownNotebook}
                 isProcessing={isProcessing}
                 hasIntent={!!diagramIntent?.content.trim()}
                 onSetPromptPreview={setPromptPreview}
@@ -216,6 +216,10 @@ function App() {
                 onSelectDiagramStep={goToDiagramStep}
                 buildDocsSelectionKey={buildDocsSelectionKey}
                 promptPreviewKey={promptPreviewKey}
+                isNotebookBuildEnabled={appState.isNotebookBuildEnabled}
+                notebookBuildCount={appState.notebookBuildCount}
+                onNotebookBuildEnabledChange={setNotebookBuildEnabled}
+                onNotebookBuildCountChange={setNotebookBuildCount}
               />
             </div>
 
