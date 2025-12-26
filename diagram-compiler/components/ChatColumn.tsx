@@ -21,7 +21,8 @@ interface ChatColumnProps {
     tokenCounts?: PromptTokenCounts,
     systemPrompt?: string,
     systemPromptRedacted?: string,
-    language?: string
+    language?: string,
+    intentText?: string
   ) => void;
   diagramType: import('../types').DiagramType;
   onDiagramTypeChange: (type: import('../types').DiagramType) => void;
@@ -294,6 +295,10 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       };
       const redacted = formatRequestPreview(preview, { redactDocs: true });
       const raw = formatRequestPreview(preview, { redactDocs: false });
+      const intentMessage = preview.messages.find((message) => /^Intent:\s*/i.test(message.content.trim()));
+      const intentText = intentMessage
+        ? intentMessage.content.replace(/^Intent:\s*/i, '').trim()
+        : undefined;
       onSetPromptPreview(
         mode,
         title,
@@ -302,7 +307,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         tokenCounts,
         preview.systemPrompt,
         preview.systemPromptRedacted,
-        preview.language
+        preview.language,
+        intentText
       );
     } catch (error: unknown) {
       if (requestId !== previewRequestRef.current) return;

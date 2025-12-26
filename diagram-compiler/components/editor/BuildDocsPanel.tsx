@@ -1,4 +1,5 @@
 import React from 'react';
+import { highlight, languages } from 'prismjs';
 import type { DocsEntry } from '../../services/docsContextService';
 import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
 import { MODE_UI } from '../../utils/uiModes';
@@ -210,6 +211,19 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
           <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
             {activeDocEntry?.text || 'No documentation loaded for this type.'}
           </pre>
+          {docsMode === 'build' && isSystemPromptRaw && promptPreviewByMode.build?.intentText && (
+            <div className="mt-4">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Intent</div>
+              <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
+                <code
+                  className="language-markdown"
+                  dangerouslySetInnerHTML={{
+                    __html: highlight(promptPreviewByMode.build.intentText, languages.markdown, 'markdown'),
+                  }}
+                />
+              </pre>
+            </div>
+          )}
         </div>
       </div>
     </div>

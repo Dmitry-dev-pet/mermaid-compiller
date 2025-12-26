@@ -274,7 +274,8 @@ Fix it.`,
     tokenCounts?: PromptTokenCounts,
     systemPrompt?: string,
     systemPromptRedacted?: string,
-    language?: string
+    language?: string,
+    intentText?: string
   ) => {
     setPromptPreviewByMode((prev) => ({
       ...prev,
@@ -288,6 +289,7 @@ Fix it.`,
         language,
         updatedAt: Date.now(),
         tokenCounts,
+        intentText,
       },
     }));
   }, []);

@@ -138,6 +138,7 @@ export interface PromptPreviewTab {
   language?: string;
   updatedAt: number;
   tokenCounts?: PromptTokenCounts;
+  intentText?: string;
 }
 
 export interface PromptTokenCounts {
