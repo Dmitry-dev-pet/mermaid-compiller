@@ -211,9 +211,11 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
           <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
             {activeDocEntry?.text || 'No documentation loaded for this type.'}
           </pre>
-          {docsMode === 'build' && isSystemPromptRaw && promptPreviewByMode.build?.intentText && (
+          {docsMode === 'build' && promptPreviewByMode.build?.intentText && (
             <div className="mt-4">
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Intent</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+                Intent{isSystemPromptRaw ? ' (Raw)' : ''}
+              </div>
               <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
                 <code
                   className="language-markdown"
