@@ -9,6 +9,7 @@
 1. Установить зависимости: `npm install`
 2. Запустить dev-сервер: `npm run dev`
 3. Сборка/превью: `npm run build` / `npm run preview`
+4. Проверка типов: `npm run typecheck`
 
 ## UX
 
@@ -26,4 +27,4 @@
 
 ---
 
-Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts).
+Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts, typecheck).

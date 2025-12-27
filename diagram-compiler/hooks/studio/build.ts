@@ -1,7 +1,7 @@
 import { validateMermaid, extractMermaidCode } from '../../services/mermaidService';
 import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmService';
 import { stripMermaidCode } from '../../utils';
-import { normalizeIntentText } from '../../utils/intent';
+import { normalizeIntentText, resolveIntentFromInput } from '../../utils/intent';
 import type { Message } from '../../types';
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
@@ -9,28 +9,6 @@ import { runAutoFixLoop } from './autoFix';
 import { runAttemptLoop } from './retry';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import { formatTimeoutRetryMessage } from './stepMessageUtils';
-
-const buildIntent = (ctx: StudioContext, args: {
-  prompt: string;
-  relevantMessages: Message[];
-}): { content: string; source: 'chat' | 'build' | 'fallback' } | null => {
-  const { prompt, relevantMessages } = args;
-  if (prompt) {
-    return { content: prompt, source: 'build' };
-  }
-
-  const existing = ctx.getCurrentIntent();
-  if (existing?.content.trim()) {
-    return { content: existing.content, source: existing.source };
-  }
-
-  const lastUserText = ctx.getLastUserText(relevantMessages).trim();
-  if (lastUserText) {
-    return { content: lastUserText, source: 'fallback' };
-  }
-
-  return null;
-};
 
 const tryAnalyzeAfterBuild = async (ctx: StudioContext, args: { code: string; docs: string; language: string }) => {
   try {
@@ -70,7 +48,12 @@ export const createBuildHandler = (ctx: StudioContext) => {
       const docs = await ctx.getDocsContext('build');
       const relevantMessages = ctx.getRelevantMessages();
 
-      const intent = buildIntent(ctx, { prompt, relevantMessages });
+      const intent = resolveIntentFromInput({
+        prompt,
+        diagramIntent: ctx.getCurrentIntent(),
+        messages: relevantMessages,
+        allowFallback: true,
+      });
       if (!intent) {
         stepMessages.push(ctx.addMessage('assistant', 'Nothing to build yet. Use Chat to define intent.', 'build'));
         ctx.trackAnalyticsEvent('diagram_build_failed', {

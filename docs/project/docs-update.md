@@ -14,6 +14,7 @@
 3. Проверить пути в `services/docsContextService.ts`.
 4. Обновить `MERMAID_VERSION` в `diagram-compiler/constants.ts`.
 5. Прогнать `npm test`.
+6. Прогнать `npm run typecheck`.
 
 ## Как понять, какие файлы нужны
 
@@ -24,4 +25,4 @@
 
 ---
 
-Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts).
+Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts, typecheck).

@@ -55,13 +55,18 @@
     npm run preview
     ```
 
+5.  **Проверка типов:**
+    ```bash
+    npm run typecheck
+    ```
+
 ## 📁 Структура Проекта
 
 *   `diagram-compiler/src/`
     *   `components/`: UI компоненты (`Header`, `EditorColumn`, `ChatColumn`...).
     *   `hooks/`: Кастомные хуки.
         *   `hooks/core/`: Базовые хуки состояния (`useAI`, `useMermaid`, `useLayout`, `useChat`, `useHistory`).
-*   `hooks/studio/`: Оркестрация и studio-логика (`useDiagramStudio`, `useNotebookBuild`, `useBuildDocs`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`).
+*   `hooks/studio/`: Оркестрация и studio-логика (`useDiagramStudio`, `useNotebookBuild`, `useNotebookChat`, `useBuildDocs`, `useFixFlow`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`).
     *   `services/`: Бизнес-логика.
         *   `llm/`: Стратегии подключения к LLM (`OpenRouterStrategy`, `CliproxyStrategy`).
         *   `mermaidService.ts`: Валидация и рендер.
@@ -88,4 +93,4 @@
 
 ---
 
-Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts, refactors).
+Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts, typecheck, refactors).

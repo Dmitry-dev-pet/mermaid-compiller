@@ -1,3 +1,38 @@
+import type { DiagramIntent, Message } from '../types';
+
+export type ResolvedIntent = {
+  content: string;
+  source: 'build' | 'chat' | 'fallback';
+};
+
+export const resolveIntentFromInput = (args: {
+  prompt: string;
+  diagramIntent: DiagramIntent | null;
+  messages: Message[];
+  allowFallback?: boolean;
+}): ResolvedIntent | null => {
+  const prompt = args.prompt.trim();
+  if (prompt) return { content: prompt, source: 'build' };
+
+  const diagramIntent = args.diagramIntent;
+  if (diagramIntent?.content.trim()) {
+    return {
+      content: diagramIntent.content,
+      source: diagramIntent.source ?? 'chat',
+    };
+  }
+
+  if (args.allowFallback === false) return null;
+
+  const fallback = args.messages
+    .slice()
+    .reverse()
+    .find((m) => m.id !== 'init' && m.role === 'user' && m.content.trim().length > 0)?.content;
+  if (fallback) return { content: fallback, source: 'fallback' };
+
+  return null;
+};
+
 export const normalizeIntentText = (input: string): string => {
   const trimmed = input.trim();
   if (!trimmed) return '';

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { DocsEntry } from '../../services/docsContextService';
 import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
 import { getSystemPromptPath, isSystemPromptPath } from '../../utils/systemPrompts';
@@ -43,6 +43,7 @@ export const useBuildDocsState = ({
   buildDocsActivePath,
   onBuildDocsActivePathChange,
 }: BuildDocsPanelState) => {
+  const prevDocsModeRef = useRef<DocsMode | null>(null);
   const activePrompt = useMemo(() => {
     if (docsMode === 'chat') return promptPreviewByMode.chat;
     if (docsMode === 'build') return promptPreviewByMode.build;
@@ -93,6 +94,12 @@ export const useBuildDocsState = ({
     if (buildDocsActivePath && buildDocsEntries.some((entry) => entry.path === buildDocsActivePath)) return;
     onBuildDocsActivePathChange(systemPromptPath);
   }, [buildDocsActivePath, buildDocsEntries, onBuildDocsActivePathChange, systemPromptPath]);
+
+  useEffect(() => {
+    if (prevDocsModeRef.current === docsMode) return;
+    prevDocsModeRef.current = docsMode;
+    onBuildDocsActivePathChange(systemPromptPath);
+  }, [docsMode, onBuildDocsActivePathChange, systemPromptPath]);
 
   return {
     systemPromptEntry,

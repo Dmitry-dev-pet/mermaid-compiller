@@ -51,6 +51,18 @@ npm run build
 npm run preview
 ```
 
+## Проверка типов
+
+Из корня:
+```bash
+npm run typecheck
+```
+
+Или из `diagram-compiler/`:
+```bash
+npm run typecheck
+```
+
 ## Запуск production-статики
 
 После сборки:
@@ -71,4 +83,4 @@ node server.js
 
 ---
 
-Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts).
+Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts, typecheck).

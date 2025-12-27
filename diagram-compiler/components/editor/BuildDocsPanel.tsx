@@ -4,6 +4,7 @@ import type { DocsEntry } from '../../services/docsContextService';
 import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
 import { MODE_UI } from '../../utils/uiModes';
 import { isSystemPromptPath } from '../../utils/systemPrompts';
+import { useBuildDocsContent } from '../../hooks/editor/useBuildDocsContent';
 
 interface BuildDocsPanelProps {
   docsPanel: 'mode' | 'all';
@@ -12,6 +13,8 @@ interface BuildDocsPanelProps {
   onDocsModeChange: (mode: DocsMode) => void;
   promptPreviewByMode: Record<PromptPreviewMode, PromptPreviewTab | null>;
   intentText?: string;
+  analyzeCode?: string;
+  fixDetailsText?: string;
   buildDocsEntries: DocsEntry[];
   buildDocsActivePath: string;
   onBuildDocsActivePathChange: (path: string) => void;
@@ -41,6 +44,8 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
   onDocsModeChange,
   promptPreviewByMode,
   intentText,
+  analyzeCode,
+  fixDetailsText,
   buildDocsEntries,
   buildDocsActivePath,
   onBuildDocsActivePathChange,
@@ -72,8 +77,16 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
       inactive: MODE_UI.fix.buttonInactive ?? '',
     },
   };
-  const intentPreview = promptPreviewByMode[docsMode]?.intentText || intentText || '';
-  const docsPreview = activeDocEntry?.text || '';
+  const { intentPreview, topPanelTitle, topPanelText } = useBuildDocsContent({
+    docsMode,
+    promptPreviewByMode,
+    intentText,
+    analyzeCode,
+    fixDetailsText,
+    activeDocEntry,
+    isSystemPromptRaw,
+    activeBuildDocName,
+  });
   const containerRef = useRef<HTMLDivElement>(null);
   const [splitRatio, setSplitRatio] = useState(0.5);
   const dragRef = useRef<{ startY: number; startRatio: number } | null>(null);
@@ -240,19 +253,19 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
       <div ref={containerRef} className="flex-1 min-h-0 flex flex-col">
         <div style={{ flexBasis: `${splitRatio * 100}%` }} className="min-h-0 overflow-auto">
           <div className="px-4 py-3">
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">{activeBuildDocName}</div>
-            {docsPreview ? (
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">{topPanelTitle}</div>
+            {topPanelText ? (
               <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
                 <code
                   className="language-markdown"
                   dangerouslySetInnerHTML={{
-                    __html: highlight(docsPreview, languages.markdown, 'markdown'),
+                    __html: highlight(topPanelText, languages.markdown, 'markdown'),
                   }}
                 />
               </pre>
             ) : (
               <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">
-                No documentation loaded for this type.
+                {isSystemPromptRaw ? 'Raw prompt is not available yet.' : 'No documentation loaded for this type.'}
               </div>
             )}
           </div>
@@ -270,9 +283,13 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
             {intentPreview ? (
               <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
                 <code
-                  className="language-markdown"
+                  className={docsMode === 'analyze' ? 'language-mermaid' : 'language-markdown'}
                   dangerouslySetInnerHTML={{
-                    __html: highlight(intentPreview, languages.markdown, 'markdown'),
+                    __html: highlight(
+                      intentPreview,
+                      docsMode === 'analyze' ? languages.mermaid : languages.markdown,
+                      docsMode === 'analyze' ? 'mermaid' : 'markdown'
+                    ),
                   }}
                 />
               </pre>

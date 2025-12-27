@@ -42,4 +42,4 @@ UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 
 ---
 
-Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts).
+Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts).

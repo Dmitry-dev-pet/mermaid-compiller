@@ -44,4 +44,4 @@
 
 ---
 
-Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build meta, LLM timeouts).
+Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build meta, LLM timeouts).

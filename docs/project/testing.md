@@ -20,6 +20,11 @@ npm --prefix diagram-compiler test
 - Для SPA: `npm --prefix diagram-compiler run lint`.
 - Для корня (legacy/статик): `npm run lint`.
 
+## Проверка типов
+
+- Для SPA: `npm --prefix diagram-compiler run typecheck`.
+- Из корня: `npm run typecheck`.
+
 ---
 
-Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook plan tests, LLM timeouts).
+Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook plan tests, LLM timeouts, typecheck).

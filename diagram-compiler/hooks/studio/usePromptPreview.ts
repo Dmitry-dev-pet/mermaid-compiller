@@ -3,7 +3,7 @@ import type { DiagramIntent, DiagramType, DocsMode, LLMRequestPreview, Message, 
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import { detectLanguage } from '../../utils';
 import { validateMermaidDiagramCode } from '../../services/mermaidService';
-import { normalizeIntentText } from '../../utils/intent';
+import { normalizeIntentText, resolveIntentFromInput } from '../../utils/intent';
 
 type ResolveActiveMermaidContext = () => {
   code: string;
@@ -214,7 +214,13 @@ Fix it.`,
 
     let previewMessages = [...relevantMessages];
     if (mode === 'build') {
-      const intentText = normalizeIntentText(trimmed || diagramIntent?.content.trim() || '');
+      const resolvedIntent = resolveIntentFromInput({
+        prompt: trimmed,
+        diagramIntent,
+        messages: relevantMessages,
+        allowFallback: true,
+      });
+      const intentText = normalizeIntentText(resolvedIntent?.content ?? '');
       if (!intentText) {
         return {
           mode,
@@ -255,7 +261,7 @@ Fix it.`,
       messages: llmMessages,
     };
   }, [
-    diagramIntent?.content,
+    diagramIntent,
     diagramType,
     getDocsContext,
     getDiagramContextMessage,

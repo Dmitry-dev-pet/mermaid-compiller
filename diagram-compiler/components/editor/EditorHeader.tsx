@@ -7,11 +7,13 @@ import { MODE_BUTTON_DISABLED, MODE_UI } from '../../utils/uiModes';
 interface EditorHeaderProps {
   mermaidState: MermaidState;
   isMarkdown: boolean;
+  showMarkdownStats: boolean;
   markdownValidCount: number;
   markdownInvalidCount: number;
   isProcessing: boolean;
   isAIReady: boolean;
   isReadOnly: boolean;
+  canAnalyze: boolean;
   analyzeLanguage: string;
   onAnalyzeLanguageChange: (lang: string) => void;
   onAnalyze: () => void;
@@ -30,11 +32,13 @@ interface EditorHeaderProps {
 const EditorHeader: React.FC<EditorHeaderProps> = ({
   mermaidState,
   isMarkdown,
+  showMarkdownStats,
   markdownValidCount,
   markdownInvalidCount,
   isProcessing,
   isAIReady,
   isReadOnly,
+  canAnalyze,
   analyzeLanguage,
   onAnalyzeLanguageChange,
   onAnalyze,
@@ -49,7 +53,6 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
   isMarkdownMermaidTab,
   isBuildDocsTab,
 }) => {
-  const canAnalyze = isAIReady && mermaidState.code.trim().length > 0 && !isProcessing && !isReadOnly;
   const actionButtonBase =
     'px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap';
   return (
@@ -57,19 +60,13 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
       <div className="flex flex-col flex-1 min-w-0">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-xs font-mono w-full">
           <div className="flex items-center gap-2 min-w-0">
-            {isMarkdown && <span className="text-blue-600 dark:text-blue-400 font-bold">📄 Markdown</span>}
-            {isMarkdown && markdownValidCount + markdownInvalidCount > 0 && (
+            {showMarkdownStats && <span className="text-blue-600 dark:text-blue-400 font-bold">📄 Markdown</span>}
+            {showMarkdownStats && markdownValidCount + markdownInvalidCount > 0 && (
               <span className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400">
                 <span>{markdownValidCount}</span>
                 <span>·</span>
                 <span>{markdownInvalidCount}</span>
               </span>
-            )}
-            {!isMarkdown && mermaidState.status === 'valid' && (
-              <span
-                className="inline-flex h-3 w-3 rounded-full bg-green-500 ring-1 ring-green-700"
-                title="Valid diagram"
-              />
             )}
             {!isMarkdown && mermaidState.status === 'invalid' && (
               <span

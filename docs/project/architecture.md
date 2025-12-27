@@ -22,11 +22,15 @@
      - `useChat` — сообщения и генератор ID.
      - `useHistory` — загрузка и запись истории.
      - `useLayout` — размеры колонок, тема, язык, fullscreen.
+   - `hooks/editor/*` — логика вкладок и Build Docs контента.
+     - `useEditorTabs` — переключение вкладок и сохранение буфера.
+     - `useBuildDocsContent` — сборка превью для Build Docs.
    - `hooks/studio/*` — оркестрация и studio-логика.
      - `useDiagramStudio` — единая точка оркестрации состояния и действий.
      - `useNotebookBuild` — сборка Markdown notebook (planner → build блоков).
+     - `useNotebookChat` — чат per-диаграмму в notebook-режиме.
      - `useProjects` — управление проектами (сессиями) и их настройками.
-     - `useBuildDocs`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`, `useDiagramExport`.
+     - `useBuildDocs`, `useFixFlow`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`, `useDiagramExport`.
 
 3. **Сервисы** (`diagram-compiler/services`)
    - `llmService` — фасад над стратегиями (`OpenRouterStrategy`, `CliproxyStrategy`).
@@ -87,4 +91,4 @@
 
 ---
 
-Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts, refactor hooks/services).
+Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts, typecheck, refactor hooks/services).

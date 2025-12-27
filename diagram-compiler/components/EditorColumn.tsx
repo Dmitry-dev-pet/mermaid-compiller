@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { DocsMode, EditorTab, MermaidState, PromptPreviewMode, PromptPreviewTab } from '../types';
 import { highlight, languages } from 'prismjs';
 import 'prismjs/themes/prism.css';
@@ -12,6 +12,7 @@ import { computeMarkdownBlockScrollTops, resolveActiveMarkdownBlockIndex } from 
 import { EDITOR_LINE_HEIGHT, EDITOR_PADDING } from '../utils/uiTokens';
 import { useFloatingTooltip } from '../hooks/useFloatingTooltip';
 import { useBuildDocsState } from '../hooks/editor/useBuildDocsState';
+import { useEditorTabs } from '../hooks/editor/useEditorTabs';
 import { useMarkdownMermaidBlockState } from '../hooks/markdown/useMarkdownMermaidBlockState';
 import { transformMarkdownMermaid } from '../utils/markdownMermaid';
 import BuildDocsPanel from './editor/BuildDocsPanel';
@@ -109,6 +110,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
+  const editorValueRef = useRef<string>('');
   const [copied, setCopied] = React.useState(false);
   const [docsPanel, setDocsPanel] = React.useState<'mode' | 'all'>('mode');
   const { showTooltip: showTabTooltip, hideTooltip: hideTabTooltip, portal: tooltipPortal } = useFloatingTooltip();
@@ -171,14 +173,35 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   };
 
   const editorValue = isMarkdownMermaidMode ? activeMarkdownBlock?.code ?? '' : mermaidState.code;
+  useEffect(() => {
+    editorValueRef.current = editorValue;
+  }, [editorValue]);
   const editorLineCount = editorValue.split('\n').length;
   const editorLineNumbers = Array.from({ length: Math.max(editorLineCount, 1) }, (_, i) => i + 1);
   const markdownValidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === true).length;
   const markdownInvalidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === false).length;
-  const isMarkdown = isMarkdownLike(mermaidState.code);
+  const hasMarkdownBlocks = markdownMermaidBlocks.length > 0;
+  const isMarkdown = isMarkdownLike(mermaidState.code) || hasMarkdownBlocks;
   const canFix = !isReadOnly && (isMarkdown
     ? markdownInvalidCount > 0
     : mermaidState.status === 'invalid');
+  const analyzeCode = markdownMermaidBlocks.length > 0
+    ? activeMarkdownBlock?.code ?? ''
+    : mermaidState.code;
+  const isAnalyzeValid = markdownMermaidBlocks.length > 0
+    ? activeMarkdownDiagnostics?.isValid !== false
+    : mermaidState.isValid;
+  const fixErrorMessage = markdownMermaidBlocks.length > 0
+    ? activeMarkdownDiagnostics?.errorMessage ?? ''
+    : mermaidState.errorMessage ?? '';
+  const fixDetailsText = analyzeCode.trim()
+    ? `Code:\n\`\`\`mermaid\n${analyzeCode}\n\`\`\`\n\nError:\n${fixErrorMessage || 'No error details.'}`
+    : '';
+  const canAnalyze = isAIReady
+    && !isProcessing
+    && !isReadOnly
+    && !!analyzeCode.trim()
+    && isAnalyzeValid;
   const highlightMarkdownWithMermaid = (code: string) => {
     return transformMarkdownMermaid(code, {
       markdown: (segment) => highlight(segment, languages.markdown, 'markdown'),
@@ -227,7 +250,15 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     : mermaidState.errorLine ?? null;
   const editorHighlight = isMarkdownMermaidMode ? highlightMarkdownMermaidCode : highlightEditorCode;
 
-  const showEditorTabs = isMarkdown && markdownMermaidBlocks.length > 0 && !isBuildDocsTab;
+  const { handleActiveTabChange } = useEditorTabs({
+    activeTab,
+    onActiveTabChange,
+    onChange,
+    mermaidCode: mermaidState.code,
+    editorValueRef,
+  });
+
+  const showEditorTabs = isMarkdown && markdownMermaidBlocks.length > 0;
   const canSyncScroll = isScrollSyncEnabled && isMarkdown && !isMarkdownMermaidMode && !isBuildDocsTab;
   const { handleScrollSync } = useScrollSync({
     enabled: canSyncScroll,
@@ -249,17 +280,19 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-l border-r border-slate-200 dark:border-slate-800">
-      <EditorHeader
-        mermaidState={mermaidState}
-        isMarkdown={isMarkdown}
-        markdownValidCount={markdownValidCount}
-        markdownInvalidCount={markdownInvalidCount}
-        isProcessing={isProcessing}
-        isAIReady={isAIReady}
-        isReadOnly={isReadOnly}
-        analyzeLanguage={analyzeLanguage}
-        onAnalyzeLanguageChange={onAnalyzeLanguageChange}
-        onAnalyze={onAnalyze}
+        <EditorHeader
+          mermaidState={mermaidState}
+          isMarkdown={isMarkdown}
+          showMarkdownStats={hasMarkdownBlocks}
+          markdownValidCount={markdownValidCount}
+          markdownInvalidCount={markdownInvalidCount}
+          isProcessing={isProcessing}
+          isAIReady={isAIReady}
+          isReadOnly={isReadOnly}
+          canAnalyze={canAnalyze}
+          analyzeLanguage={analyzeLanguage}
+          onAnalyzeLanguageChange={onAnalyzeLanguageChange}
+          onAnalyze={onAnalyze}
         onFixSyntax={onFixSyntax}
         canFix={canFix}
         onSnapshot={onSnapshot}
@@ -267,13 +300,27 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
         onCopy={handleCopy}
         copied={copied}
         activeTab={activeTab}
-        onActiveTabChange={onActiveTabChange}
+          onActiveTabChange={handleActiveTabChange}
         isMarkdownMermaidTab={isMarkdownMermaidMode}
         isBuildDocsTab={isBuildDocsTab}
       />
 
       {/* Editor Area */}
       <div className="flex-1 relative flex flex-col overflow-hidden group">
+        {showEditorTabs && (
+          <MarkdownTabs
+            activeTab={activeTab}
+            markdownMermaidBlocks={markdownMermaidBlocks}
+            markdownMermaidDiagnostics={markdownMermaidDiagnostics}
+            markdownMermaidActiveIndex={markdownMermaidActiveIndex}
+            onMarkdownMermaidActiveIndexChange={onMarkdownMermaidActiveIndexChange}
+            onActiveTabChange={handleActiveTabChange}
+            onAppendMarkdownMermaidBlock={onAppendMarkdownMermaidBlock}
+            onShowTooltip={showTabTooltip}
+            onHideTooltip={hideTabTooltip}
+          />
+        )}
+        {tooltipPortal}
         {isBuildDocsTab ? (
           <BuildDocsPanel
             docsPanel={docsPanel}
@@ -282,6 +329,8 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
             onDocsModeChange={onDocsModeChange}
             promptPreviewByMode={promptPreviewByMode}
             intentText={intentText}
+            analyzeCode={analyzeCode}
+            fixDetailsText={fixDetailsText}
             buildDocsEntries={buildDocsEntries}
             buildDocsActivePath={buildDocsActivePath}
             onBuildDocsActivePathChange={onBuildDocsActivePathChange}
@@ -296,42 +345,27 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
             activeDocEntry={activeDocEntry}
           />
         ) : (
-          <>
-            {showEditorTabs && (
-              <MarkdownTabs
-                activeTab={activeTab}
-                markdownMermaidBlocks={markdownMermaidBlocks}
-                markdownMermaidDiagnostics={markdownMermaidDiagnostics}
-                markdownMermaidActiveIndex={markdownMermaidActiveIndex}
-                onMarkdownMermaidActiveIndexChange={onMarkdownMermaidActiveIndexChange}
-                onActiveTabChange={onActiveTabChange}
-                onAppendMarkdownMermaidBlock={onAppendMarkdownMermaidBlock}
-                onShowTooltip={showTabTooltip}
-                onHideTooltip={hideTabTooltip}
-              />
-            )}
-            {tooltipPortal}
-            <CodeEditorPanel
-              lineNumbersRef={lineNumbersRef}
-              scrollContainerRef={scrollContainerRef}
-              lineNumbers={editorLineNumbers}
-              errorLine={editorErrorLine}
-              onScroll={handleScroll}
-              editorValue={editorValue}
-              onValueChange={(value) => {
-                if (isReadOnly) return;
-                if (isMarkdownMermaidMode) {
-                  if (!activeMarkdownBlock) return;
-                  const nextMarkdown = replaceMermaidBlockInMarkdown(mermaidState.code, activeMarkdownBlock, value);
-                  onChange(nextMarkdown);
-                  return;
-                }
-                onChange(value);
-              }}
-              highlight={editorHighlight}
-              isReadOnly={isReadOnly}
-            />
-          </>
+          <CodeEditorPanel
+            lineNumbersRef={lineNumbersRef}
+            scrollContainerRef={scrollContainerRef}
+            lineNumbers={editorLineNumbers}
+            errorLine={editorErrorLine}
+            onScroll={handleScroll}
+            editorValue={editorValue}
+            onValueChange={(value) => {
+              if (isReadOnly) return;
+              editorValueRef.current = value;
+              if (isMarkdownMermaidMode) {
+                if (!activeMarkdownBlock) return;
+                const nextMarkdown = replaceMermaidBlockInMarkdown(mermaidState.code, activeMarkdownBlock, value);
+                onChange(nextMarkdown);
+                return;
+              }
+              onChange(value);
+            }}
+            highlight={editorHighlight}
+            isReadOnly={isReadOnly}
+          />
         )}
       </div>
     </div>

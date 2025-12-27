@@ -50,12 +50,12 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   isMarkdownNotebook,
   isCodeEmpty,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [sortKey, setSortKey] = useState<'updated' | 'created' | 'name'>('updated');
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectTitle, setEditingProjectTitle] = useState('');
   const [undoProjectId, setUndoProjectId] = useState<string | null>(null);
-  const [undoProjectTitle, setUndoProjectTitle] = useState<string>('');
+  const [undoProjectTitle, setUndoProjectTitle] = useState('');
   const undoTimerRef = React.useRef<number | null>(null);
 
   const activeProject = useMemo(
@@ -170,7 +170,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
               <Plus size={12} /> New
             </button>
             <button
-              onClick={() => activeProjectId && onDeleteProject(activeProjectId)}
+              onClick={() => activeProject && handleDelete(activeProject)}
               disabled={!activeProjectId}
               className="text-xs text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
               type="button"
@@ -191,29 +191,29 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                     onChange={(e) => onDiagramTypeChange(e.target.value as DiagramType)}
                     className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
                   >
-              <option value="architecture">Architecture</option>
-              <option value="block">Block</option>
-              <option value="c4">C4 (experimental)</option>
-              <option value="class">Class Diagram</option>
-              <option value="er">Entity Relationship</option>
-              <option value="sequence">Sequence Diagram</option>
-              <option value="flowchart">Flowchart</option>
-              <option value="gantt">Gantt</option>
-              <option value="gitGraph">Git Graph</option>
-              <option value="kanban">Kanban</option>
-              <option value="mindmap">Mindmap</option>
-              <option value="packet">Packet</option>
-              <option value="pie">Pie</option>
-              <option value="quadrantChart">Quadrant Chart</option>
-              <option value="radar">Radar</option>
-              <option value="requirementDiagram">Requirement Diagram</option>
-              <option value="sankey">Sankey</option>
-              <option value="state">State Diagram</option>
-              <option value="timeline">Timeline</option>
-              <option value="treemap">Treemap</option>
-              <option value="userJourney">User Journey</option>
-              <option value="xychart">XY Chart</option>
-              <option value="zenuml">ZenUML</option>
+                    <option value="architecture">Architecture</option>
+                    <option value="block">Block</option>
+                    <option value="c4">C4 (experimental)</option>
+                    <option value="class">Class Diagram</option>
+                    <option value="er">Entity Relationship</option>
+                    <option value="sequence">Sequence Diagram</option>
+                    <option value="flowchart">Flowchart</option>
+                    <option value="gantt">Gantt</option>
+                    <option value="gitGraph">Git Graph</option>
+                    <option value="kanban">Kanban</option>
+                    <option value="mindmap">Mindmap</option>
+                    <option value="packet">Packet</option>
+                    <option value="pie">Pie</option>
+                    <option value="quadrantChart">Quadrant Chart</option>
+                    <option value="radar">Radar</option>
+                    <option value="requirementDiagram">Requirement Diagram</option>
+                    <option value="sankey">Sankey</option>
+                    <option value="state">State Diagram</option>
+                    <option value="timeline">Timeline</option>
+                    <option value="treemap">Treemap</option>
+                    <option value="userJourney">User Journey</option>
+                    <option value="xychart">XY Chart</option>
+                    <option value="zenuml">ZenUML</option>
                   </select>
                 )}
               </div>
@@ -250,29 +250,29 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                       onChange={(e) => onDiagramTypeChange(e.target.value as DiagramType)}
                       className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
                     >
-                <option value="architecture">Architecture</option>
-                <option value="block">Block</option>
-                <option value="c4">C4 (experimental)</option>
-                <option value="class">Class Diagram</option>
-                <option value="er">Entity Relationship</option>
-                <option value="sequence">Sequence Diagram</option>
-                <option value="flowchart">Flowchart</option>
-                <option value="gantt">Gantt</option>
-                <option value="gitGraph">Git Graph</option>
-                <option value="kanban">Kanban</option>
-                <option value="mindmap">Mindmap</option>
-                <option value="packet">Packet</option>
-                <option value="pie">Pie</option>
-                <option value="quadrantChart">Quadrant Chart</option>
-                <option value="radar">Radar</option>
-                <option value="requirementDiagram">Requirement Diagram</option>
-                <option value="sankey">Sankey</option>
-                <option value="state">State Diagram</option>
-                <option value="timeline">Timeline</option>
-                <option value="treemap">Treemap</option>
-                <option value="userJourney">User Journey</option>
-                <option value="xychart">XY Chart</option>
-                <option value="zenuml">ZenUML</option>
+                      <option value="architecture">Architecture</option>
+                      <option value="block">Block</option>
+                      <option value="c4">C4 (experimental)</option>
+                      <option value="class">Class Diagram</option>
+                      <option value="er">Entity Relationship</option>
+                      <option value="sequence">Sequence Diagram</option>
+                      <option value="flowchart">Flowchart</option>
+                      <option value="gantt">Gantt</option>
+                      <option value="gitGraph">Git Graph</option>
+                      <option value="kanban">Kanban</option>
+                      <option value="mindmap">Mindmap</option>
+                      <option value="packet">Packet</option>
+                      <option value="pie">Pie</option>
+                      <option value="quadrantChart">Quadrant Chart</option>
+                      <option value="radar">Radar</option>
+                      <option value="requirementDiagram">Requirement Diagram</option>
+                      <option value="sankey">Sankey</option>
+                      <option value="state">State Diagram</option>
+                      <option value="timeline">Timeline</option>
+                      <option value="treemap">Treemap</option>
+                      <option value="userJourney">User Journey</option>
+                      <option value="xychart">XY Chart</option>
+                      <option value="zenuml">ZenUML</option>
                     </select>
                   )}
                 </div>
@@ -347,8 +347,8 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                       }}
                     >
                       <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      {isEditing ? (
+                        <div className="flex-1 min-w-0">
+                          {isEditing ? (
                             <input
                               value={editingProjectTitle}
                               onChange={(e) => setEditingProjectTitle(e.target.value)}
@@ -365,7 +365,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                               className="w-full text-xs px-2 py-1 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200"
                               autoFocus
                             />
-                      ) : (
+                          ) : (
                             <button
                               type="button"
                               onClick={() => void handleOpenProject(project.id)}
@@ -374,11 +374,11 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                             >
                               {project.title}
                             </button>
-                      )}
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-                        Updated: {formatProjectTimestamp(project.updatedAt ?? project.createdAt)}
-                      </div>
-                    </div>
+                          )}
+                          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                            Updated: {formatProjectTimestamp(project.updatedAt ?? project.createdAt)}
+                          </div>
+                        </div>
                         <div className="flex items-center gap-1">
                           {isEditing ? (
                             <>

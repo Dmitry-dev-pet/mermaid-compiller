@@ -22,7 +22,7 @@ export type StudioActionsDeps = {
   addMessage: (role: 'user' | 'assistant', content: string, mode?: Message['mode']) => Message;
   getMessages: () => Message[];
   getDiagramContextCode?: () => string;
-  getAnalyticsContext?: (mode: DocsMode) => Promise<AnalyticsContext>;
+  getAnalyticsContext: (mode: DocsMode) => Promise<AnalyticsContext>;
   trackAnalyticsEvent?: (event: string, payload?: Record<string, unknown>) => void;
   resolveMermaidUpdateTarget?: () => MermaidUpdateTarget | null;
   setIsProcessing: (value: boolean) => void;
@@ -186,18 +186,8 @@ ${code}
     }));
   };
 
-  const getAnalyticsContext = async (mode: DocsMode) => {
-    return deps.getAnalyticsContext
-      ? deps.getAnalyticsContext(mode)
-      : {
-          provider: deps.aiConfig.provider,
-          model: deps.aiConfig.selectedModelId || null,
-          modelParams: { temperature: 0.2 },
-          modelFilters: deps.aiConfig.filtersByProvider[deps.aiConfig.provider] ?? null,
-          diagramType: deps.appState.diagramType,
-          language: deps.appState.language ?? null,
-          analyzeLanguage: deps.appState.analyzeLanguage ?? null,
-        };
+  const getAnalyticsContext = (mode: DocsMode) => {
+    return deps.getAnalyticsContext(mode);
   };
 
   const trackAnalyticsEvent = (event: string, payload: Record<string, unknown> = {}) => {

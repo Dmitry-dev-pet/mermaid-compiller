@@ -19,4 +19,4 @@
 
 ---
 
-Обновлено: 2025-12-26. Согласовано с текущей реализацией (notebook build, LLM timeouts, refactors).
+Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts, refactors).

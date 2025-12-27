@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react';
 import { EditorTab } from '../../types';
 import { MermaidMarkdownBlock } from '../../services/mermaidService';
 import { getDiagramTypeLabel, getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
+import { getMarkdownDiagramTabTooltip, getMarkdownMermaidDiagnosticsCounts } from '../../utils/markdownTabs';
 
 interface MarkdownTabsProps {
   activeTab: EditorTab;
@@ -27,10 +28,11 @@ const MarkdownTabs: React.FC<MarkdownTabsProps> = ({
   onShowTooltip,
   onHideTooltip,
 }) => {
-  const isMarkdownMermaidTab = activeTab === 'markdown_mermaid';
+  const isMarkdownMermaidTab = activeTab === 'markdown_mermaid' || activeTab === 'build_docs';
+  const isBuildDocsMode = activeTab === 'build_docs';
+  const isMarkdownOverviewTab = activeTab === 'code' || activeTab === 'build_docs' || activeTab === 'markdown_mermaid';
 
-  const validCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === true).length;
-  const invalidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === false).length;
+  const { validCount, invalidCount } = getMarkdownMermaidDiagnosticsCounts(markdownMermaidDiagnostics);
 
   return (
     <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 px-2 py-1 bg-white dark:bg-slate-900">
@@ -41,7 +43,7 @@ const MarkdownTabs: React.FC<MarkdownTabsProps> = ({
         onMouseMove={(e) => onShowTooltip(e, 'Markdown (notebook)')}
         onMouseLeave={onHideTooltip}
         className={`px-2 py-0.5 text-[10px] rounded border ${
-          activeTab === 'code'
+          isMarkdownOverviewTab
             ? 'bg-blue-600 text-white border-blue-600'
             : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
         }`}
@@ -49,7 +51,7 @@ const MarkdownTabs: React.FC<MarkdownTabsProps> = ({
       >
         MD
       </button>
-      {activeTab === 'code' && (validCount > 0 || invalidCount > 0) && (
+      {(validCount > 0 || invalidCount > 0) && (
         <span className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
           <span className="inline-flex items-center gap-1">
             <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-emerald-700" />
@@ -68,14 +70,20 @@ const MarkdownTabs: React.FC<MarkdownTabsProps> = ({
         const isInvalid = diagnostics?.isValid === false;
         const diagramLabel = getDiagramTypeLabel(block.diagramType);
         const diagramShortLabel = getDiagramTypeShortLabel(block.diagramType);
-        const tooltipText = `${diagramLabel} #${index + 1}${isInvalid ? ' (invalid)' : ''}`;
+        const tooltipText = getMarkdownDiagramTabTooltip({
+          diagramLabel,
+          index,
+          isInvalid,
+        });
         return (
           <button
             key={`md-mermaid-tab-${block.index}`}
             type="button"
             onClick={() => {
               onMarkdownMermaidActiveIndexChange(index);
-              onActiveTabChange('markdown_mermaid');
+              if (!isBuildDocsMode) {
+                onActiveTabChange('markdown_mermaid');
+              }
             }}
             onMouseEnter={(e) => onShowTooltip(e, tooltipText)}
             onMouseMove={(e) => onShowTooltip(e, tooltipText)}

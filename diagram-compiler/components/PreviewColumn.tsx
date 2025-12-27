@@ -380,7 +380,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     if (!mount) return;
     renderMarkdown(mount);
 
-    const mermaidBlocks = Array.from(mount.querySelectorAll(MERMAID_CODE_BLOCK_SELECTOR));
+    const mermaidBlocks = Array.from(mount.querySelectorAll(MERMAID_CODE_BLOCK_SELECTOR)) as HTMLElement[];
     if (mermaidBlocks.length === 0) return;
 
     let isCancelled = false;
@@ -472,7 +472,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
 
     mount.innerHTML = buildDocsHtml;
 
-    const mermaidBlocks = Array.from(mount.querySelectorAll(MERMAID_CODE_BLOCK_SELECTOR));
+    const mermaidBlocks = Array.from(mount.querySelectorAll(MERMAID_CODE_BLOCK_SELECTOR)) as HTMLElement[];
     if (mermaidBlocks.length === 0) return;
 
     let isCancelled = false;

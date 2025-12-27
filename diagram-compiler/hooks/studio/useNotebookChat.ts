@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { INITIAL_CHAT_MESSAGE } from '../../constants';
 import type { Message } from '../../types';
 import type { TimeStep } from '../../services/history/types';
@@ -19,11 +19,16 @@ interface UseNotebookChatParams {
   systemPrompt: string;
   systemPromptRedacted: string;
   isSystemPromptRaw: boolean;
-  notebookChatRef: React.MutableRefObject<Record<number, NotebookChatInfo>>;
-  notebookChatIndexRef: React.MutableRefObject<number | null>;
-  mainChatRef: React.MutableRefObject<Message[] | null>;
-  notebookChatModeRef: React.MutableRefObject<boolean>;
 }
+
+interface UseNotebookChatViewParams {
+  isNotebookChatMode: boolean;
+  messages: Message[];
+}
+
+export const useNotebookChatView = ({ isNotebookChatMode, messages }: UseNotebookChatViewParams) => {
+  return useMemo(() => (isNotebookChatMode ? messages : messages), [isNotebookChatMode, messages]);
+};
 
 const buildNotebookChatMap = (steps: TimeStep[]) => {
   const map: Record<number, NotebookChatInfo> = {};
@@ -126,11 +131,11 @@ export const useNotebookChat = ({
   systemPrompt,
   systemPromptRedacted,
   isSystemPromptRaw,
-  notebookChatRef,
-  notebookChatIndexRef,
-  mainChatRef,
-  notebookChatModeRef,
 }: UseNotebookChatParams) => {
+  const notebookChatRef = useRef<Record<number, NotebookChatInfo>>({});
+  const notebookChatIndexRef = useRef<number | null>(null);
+  const mainChatRef = useRef<Message[] | null>(null);
+  const notebookChatModeRef = useRef(false);
   const buildDocsIntentText = useMemo(() => {
     if (diagramIntentContent?.trim()) {
       return diagramIntentContent.trim();

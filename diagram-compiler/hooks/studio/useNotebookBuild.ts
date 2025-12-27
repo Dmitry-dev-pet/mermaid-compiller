@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import type { DiagramIntent, DiagramType, Message, NotebookPlan } from '../../types';
 import { detectLanguage } from '../../utils';
 import { normalizeIntentText } from '../../utils/intent';
-import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES, NOTEBOOK_DIAGRAM_MAX_ATTEMPTS } from '../../constants';
+import { NOTEBOOK_BUILD_RETRY_CONFIG } from './notebookBuildConfig';
 import { extractMermaidBlocksFromMarkdown, extractMermaidCode, replaceMermaidBlockInMarkdown, validateMermaid } from '../../services/mermaidService';
 import { fixDiagram, generateDiagram, planNotebook } from '../../services/llmService';
 import { runAutoFixLoop } from './autoFix';
@@ -130,7 +130,7 @@ const requestNotebookPlan = async (args: {
   const rawPlan = await runLLMRequest({
     task: 'planner',
     run: () => planNotebook([plannerMessage], args.aiConfig, args.docs, args.language),
-    retries: LLM_TIMEOUT_RETRIES,
+    retries: NOTEBOOK_BUILD_RETRY_CONFIG.plannerTimeoutRetries,
     onTimeout: (notice) => {
       args.addMessage(
         'assistant',
@@ -226,12 +226,12 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         let success = false;
         let attempts = 0;
         let lastError = '';
-        while (attempts < NOTEBOOK_DIAGRAM_MAX_ATTEMPTS && !success) {
+        while (attempts < NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts && !success) {
           attempts += 1;
           blockMessages.push(
             deps.addMessage(
               'assistant',
-              `Notebook build: блок ${i + 1}, попытка ${attempts}/${NOTEBOOK_DIAGRAM_MAX_ATTEMPTS}...`,
+              `Notebook build: блок ${i + 1}, попытка ${attempts}/${NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts}...`,
               'build'
             )
           );
@@ -261,7 +261,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                 blockDocs,
                 language
               ),
-              retries: 1,
+              retries: NOTEBOOK_BUILD_RETRY_CONFIG.buildRequestRetries,
             });
             const cleanCode = extractMermaidCode(rawCode).trim();
             if (!cleanCode) {
@@ -276,13 +276,13 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             const { code: currentCode, validation, attempts: autoFixAttempts } = await runAutoFixLoop({
               initialCode: cleanCode,
               initialValidation,
-              maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
+              maxAttempts: NOTEBOOK_BUILD_RETRY_CONFIG.autoFixAttempts,
               validate: (code) => validateMermaid(code, { logError: false }),
               fix: async (code, errorMessage) => {
                 const fixedRaw = await runLLMRequest({
                   task: 'notebook-fix',
                   run: () => fixDiagram(code, errorMessage, deps.aiConfig, blockDocs, language),
-                  retries: 1,
+                  retries: NOTEBOOK_BUILD_RETRY_CONFIG.fixRequestRetries,
                 });
                 return extractMermaidCode(fixedRaw);
               },
@@ -316,11 +316,11 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             }
           } catch (e: unknown) {
             lastError = e instanceof Error ? e.message : String(e);
-            if (e instanceof TimeoutError && attempts < NOTEBOOK_DIAGRAM_MAX_ATTEMPTS) {
+            if (e instanceof TimeoutError && attempts < NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts) {
               blockMessages.push(
                 deps.addMessage(
                   'assistant',
-                  formatTimeoutRetryMessage('Notebook build', attempts + 1, NOTEBOOK_DIAGRAM_MAX_ATTEMPTS),
+                  formatTimeoutRetryMessage('Notebook build', attempts + 1, NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts),
                   'build'
                 )
               );
@@ -339,7 +339,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           blockMessages.push(
             deps.addMessage(
               'assistant',
-              `Notebook build: блок ${i + 1} невалиден после ${NOTEBOOK_DIAGRAM_MAX_ATTEMPTS} попыток.`,
+              `Notebook build: блок ${i + 1} невалиден после ${NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts} попыток.`,
               'build'
             )
           );
