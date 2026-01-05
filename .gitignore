@@ -12,3 +12,4 @@ diagram-compiler/.env*
 agent/
 prompts-improvements.md
 PROMPTS.md
+mermaid_prompt_ru.md
