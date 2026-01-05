@@ -1,7 +1,8 @@
-import { AIConfig, Message, Model, DiagramType } from '../../types';
+import type { AIConfig, Message, Model, DiagramType, ModelParams } from '../../types';
 import { LLMProviderStrategy } from './LLMProviderStrategy';
 import { buildSystemPrompt } from './prompts';
 import { deriveModelVendor } from './modelVendor';
+import { resolveModelParams } from './modelParams';
 
 interface CliproxyModel {
   id: string;
@@ -21,7 +22,8 @@ export class CliproxyStrategy implements LLMProviderStrategy {
   private async fetchCompletion(
     messages: Message[],
     config: AIConfig,
-    systemPrompt?: string
+    systemPrompt?: string,
+    modelParams?: ModelParams | null
   ): Promise<string> {
     const baseUrl = config.proxyEndpoint.replace(/\/$/, '');
     const apiKey = config.proxyKey;
@@ -56,7 +58,7 @@ export class CliproxyStrategy implements LLMProviderStrategy {
         body: JSON.stringify({
           model,
           messages: apiMessages,
-          temperature: 0.2,
+          ...resolveModelParams(modelParams),
         }),
       });
 
@@ -155,10 +157,11 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     config: AIConfig,
     diagramType: DiagramType,
     docsContext: string,
-    language: string
+    language: string,
+    modelParams?: ModelParams | null
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt('generate', { diagramType, docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt);
+    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
   }
 
   async fixDiagram(
@@ -166,7 +169,8 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     errorMessage: string,
     config: AIConfig,
     docsContext: string,
-    language: string
+    language: string,
+    modelParams?: ModelParams | null
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt('fix', { docsContext, language });
 
@@ -185,7 +189,7 @@ Fix it.`,
       timestamp: Date.now()
     };
 
-    return this.fetchCompletion([fixMsg], config, systemPrompt);
+    return this.fetchCompletion([fixMsg], config, systemPrompt, modelParams);
   }
 
   async chat(
@@ -193,27 +197,30 @@ Fix it.`,
     config: AIConfig,
     diagramType: DiagramType,
     docsContext: string,
-    language: string
+    language: string,
+    modelParams?: ModelParams | null
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt('chat', { diagramType, docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt);
+    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
   }
 
   async chatNotebook(
     messages: Message[],
     config: AIConfig,
     docsContext: string,
-    language: string
+    language: string,
+    modelParams?: ModelParams | null
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt('chat_notebook', { docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt);
+    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
   }
 
   async analyzeDiagram(
     code: string,
     config: AIConfig,
     docsContext: string,
-    language: string
+    language: string,
+    modelParams?: ModelParams | null
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt('analyze', { docsContext, language });
 
@@ -229,16 +236,17 @@ ${code}
       timestamp: Date.now()
     };
 
-    return this.fetchCompletion([analyzeMsg], config, systemPrompt);
+    return this.fetchCompletion([analyzeMsg], config, systemPrompt, modelParams);
   }
 
   async planNotebook(
     messages: Message[],
     config: AIConfig,
     docsContext: string,
-    language: string
+    language: string,
+    modelParams?: ModelParams | null
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt('plan_notebook', { docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt);
+    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
   }
 }

@@ -1,7 +1,7 @@
-import { useCallback } from 'react';
+import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { detectLanguage } from '../../utils';
-import type { AIConfig, MermaidState } from '../../types';
+import type { AIConfig, MermaidState, ModelParams, Message } from '../../types';
 import {
   detectMermaidDiagramType,
   extractMermaidBlocksFromMarkdown,
@@ -13,10 +13,11 @@ import type { MermaidMarkdownBlock } from '../../services/mermaidService';
 import { fixDiagram } from '../../services/llmService';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import { runAutoFixLoop } from './autoFix';
-import { trackAnalyticsEvent } from '../../services/analyticsService';
+import { createProgressTracker } from './progressTracker';
 
 type FixFlowDeps = {
   aiConfig: AIConfig;
+  modelParams: ModelParams | null;
   appDiagramType: string | null;
   connectionStatus: string;
   messages: Array<{ id: string; role: string; content: string }>;
@@ -27,6 +28,7 @@ type FixFlowDeps = {
   setMarkdownMermaidActiveIndex: (index: number) => void;
   handleMermaidChange: (code: string) => void;
   addMessage: (role: 'assistant' | 'user', content: string, mode?: string) => { id: string; role: string; content: string };
+  setMessages: Dispatch<SetStateAction<Message[]>>;
   safeAppendTimeStep: (args: {
     type: string;
     messages: Array<{ id: string; role: string; content: string }>;
@@ -35,12 +37,16 @@ type FixFlowDeps = {
     meta?: Record<string, unknown>;
   }) => Promise<void>;
   getDocsContext: (mode: 'fix') => Promise<string>;
-  getAnalyticsContext: (mode: 'fix') => Promise<Record<string, unknown>>;
+  trackAnalyticsWithContext: (event: string, mode: 'fix', payload?: Record<string, unknown>) => Promise<void>;
   setIsProcessing: (value: boolean) => void;
   baseHandleFixSyntax: () => Promise<void>;
 };
 
 export const useFixFlow = (deps: FixFlowDeps) => {
+  const pushStatus = useCallback((content: string) => {
+    deps.addMessage('assistant', content, 'fix');
+  }, [deps]);
+
   const resolveFixLanguage = useCallback(() => {
     const basis = deps.messages
       .slice()
@@ -166,8 +172,10 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     docs: string;
     language: string;
     initialValidation: Awaited<ReturnType<typeof validateMermaidDiagramCode>>;
+    onAttempt?: (attempt: number, validation: Awaited<ReturnType<typeof validateMermaidDiagramCode>>) => void;
   }) => {
-    const { block, markdown, docs, language, initialValidation } = args;
+    const { block, markdown, docs, language, initialValidation, onAttempt } = args;
+    let iteration = 0;
     const { code: currentCode, validation, attempts } = await runAutoFixLoop({
       initialCode: block.code,
       initialValidation,
@@ -176,10 +184,16 @@ export const useFixFlow = (deps: FixFlowDeps) => {
       fix: async (code, errorMessage) => {
         const fixedRaw = await runLLMRequest({
           task: 'markdown-fix',
-          run: () => fixDiagram(code, errorMessage, deps.aiConfig, docs, language),
+          run: () => fixDiagram(code, errorMessage, deps.aiConfig, docs, language, deps.modelParams),
           retries: LLM_TIMEOUT_RETRIES,
         });
         return extractMermaidCode(fixedRaw);
+      },
+      onIteration: (_code, nextValidation) => {
+        if (iteration > 0) {
+          onAttempt?.(iteration, nextValidation);
+        }
+        iteration += 1;
       },
     });
 
@@ -211,6 +225,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
 
   const handleFixAllMarkdownBlocks = useCallback(async () => {
     if (deps.connectionStatus !== 'connected') {
+      pushStatus('Исправление (все блоки)\n- офлайн: подключите AI');
       await deps.safeAppendTimeStep({
         type: 'fix',
         messages: [],
@@ -224,11 +239,17 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     try {
       const docs = await deps.getDocsContext('fix');
       const language = resolveFixLanguage();
-      const analyticsContext = await deps.getAnalyticsContext('fix');
 
       let markdown = deps.mermaidState.code;
       let blocks = extractMermaidBlocksFromMarkdown(markdown);
-
+      pushStatus(
+        [
+          'Исправление (все блоки)',
+          '- старт',
+          `- блоков: ${blocks.length}`,
+          `- язык: ${language}`,
+        ].join('\n')
+      );
       for (let i = 0; i < blocks.length; i += 1) {
         const block = blocks[i];
         const initialValidation = await validateMermaidDiagramCode(block.code, { logError: false });
@@ -237,13 +258,15 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         deps.setMarkdownMermaidActiveIndex(i);
 
         const diagramType = block.diagramType ?? deps.appDiagramType;
-        const startMessage = deps.addMessage(
-          'assistant',
-          `Fix: блок ${i + 1} из ${blocks.length} (${diagramType ?? 'unknown'})`,
-          'fix'
-        );
-        trackAnalyticsEvent('diagram_fix_started', {
-          ...analyticsContext,
+        const label = `блок ${i + 1} из ${blocks.length} (${diagramType ?? 'unknown'})`;
+        const tracker = createProgressTracker({
+          setMessages: deps.setMessages,
+          prefix: `[fix-block:${i}] `,
+          mode: 'fix',
+        });
+        tracker.update(`Fix: ${label} — start.`);
+        pushStatus(`Исправление: ${label}\n- старт`);
+        await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
           diagramType,
           mode: 'fix',
           codeLength: block.code.length,
@@ -263,6 +286,11 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           docs,
           language,
           initialValidation,
+          onAttempt: (attempt, nextValidation) => {
+            tracker.update(
+              `Fix: ${label} — попытка ${attempt}/${AUTO_FIX_MAX_ATTEMPTS}.${nextValidation.isValid ? ' Валиден.' : ''}`
+            );
+          },
         });
 
         if (changed || cleared) {
@@ -292,9 +320,10 @@ export const useFixFlow = (deps: FixFlowDeps) => {
             `Fix остановлен после блока ${i + 1}: исправление не удалось.`,
             'fix'
           );
+          const progressMessage = tracker.getMessage();
           await deps.safeAppendTimeStep({
             type: 'fix',
-            messages: [startMessage, resultMessage, stopMessage],
+            messages: [progressMessage, resultMessage, stopMessage].filter(Boolean) as Message[],
             nextMermaid,
             setCurrentRevisionId: cleared ? null : undefined,
             meta: {
@@ -303,11 +332,14 @@ export const useFixFlow = (deps: FixFlowDeps) => {
               isValid: !!validation.isValid,
               cleared,
               diagramType,
-              mode: 'markdown_all',
+              mode: 'notebook',
+              fixMode: 'markdown_all',
               blockIndex: i,
+              totalBlocks: blocks.length,
               stopped: true,
             },
           });
+          pushStatus(`Исправление: ${label}\n- не удалось после ${attempts} попыток`);
           return;
         }
 
@@ -326,9 +358,10 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           }),
           'fix'
         );
+        const progressMessage = tracker.getMessage();
         await deps.safeAppendTimeStep({
           type: 'fix',
-          messages: [startMessage, resultMessage],
+          messages: [progressMessage, resultMessage].filter(Boolean) as Message[],
           nextMermaid,
           setCurrentRevisionId: cleared ? null : undefined,
           meta: {
@@ -337,13 +370,17 @@ export const useFixFlow = (deps: FixFlowDeps) => {
             isValid: !!validation.isValid,
             cleared,
             diagramType,
-            mode: 'markdown_all',
+            mode: 'notebook',
+            fixMode: 'markdown_all',
             blockIndex: i,
+            totalBlocks: blocks.length,
           },
         });
+        pushStatus(
+          `Исправление: ${label}\n- итог: ${validation.isValid ? 'валиден' : 'невалиден'}`
+        );
 
-        trackAnalyticsEvent('diagram_fix_success', {
-          ...analyticsContext,
+        await deps.trackAnalyticsWithContext('diagram_fix_success', 'fix', {
           diagramType,
           mode: 'fix',
           attempts,
@@ -357,9 +394,8 @@ export const useFixFlow = (deps: FixFlowDeps) => {
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      const analyticsContext = await deps.getAnalyticsContext('fix');
-      trackAnalyticsEvent('diagram_fix_failed', {
-        ...analyticsContext,
+      pushStatus(`Исправление (все блоки)\n- ошибка: ${message}`);
+      await deps.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         mode: 'fix',
         error: 'exception',
         durationMs: Date.now() - startedAt,
@@ -375,6 +411,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     }
   }, [
     deps,
+    pushStatus,
     resolveFixLanguage,
     runMarkdownFix,
     summarizeFixOutcome,
@@ -410,6 +447,12 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     }
 
     if (deps.connectionStatus !== 'connected') {
+      pushStatus('Исправление\n- офлайн: подключите AI');
+      await deps.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
+        mode: 'fix',
+        error: 'offline',
+        diagramType: targetBlock.diagramType ?? deps.appDiagramType,
+      });
       await deps.safeAppendTimeStep({
         type: 'fix',
         messages: [],
@@ -422,16 +465,23 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     deps.setIsProcessing(true);
     try {
       const diagramType = targetBlock.diagramType ?? deps.appDiagramType;
-      const startMessage = deps.addMessage(
-        'assistant',
-        `Fix: блок ${targetIndex + 1} (${diagramType ?? 'unknown'})`,
-        'fix'
-      );
+      const label = `блок ${targetIndex + 1} (${diagramType ?? 'unknown'})`;
+      const tracker = createProgressTracker({
+        setMessages: deps.setMessages,
+        prefix: `[fix-block:${targetIndex}] `,
+        mode: 'fix',
+      });
+      tracker.update(`Fix: ${label} — start.`);
       const docs = await deps.getDocsContext('fix');
       const language = resolveFixLanguage();
-      const analyticsContext = await deps.getAnalyticsContext('fix');
-      trackAnalyticsEvent('diagram_fix_started', {
-        ...analyticsContext,
+      pushStatus(
+        [
+          `Исправление: ${label}`,
+          '- старт',
+          `- язык: ${language}`,
+        ].join('\n')
+      );
+      await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
         diagramType,
         mode: 'fix',
         codeLength: targetBlock.code.length,
@@ -453,6 +503,11 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         docs,
         language,
         initialValidation,
+        onAttempt: (attempt, nextValidation) => {
+          tracker.update(
+            `Fix: ${label} — попытка ${attempt}/${AUTO_FIX_MAX_ATTEMPTS}.${nextValidation.isValid ? ' Валиден.' : ''}`
+          );
+        },
       });
 
       if (changed || cleared) {
@@ -474,9 +529,10 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         }),
         'fix'
       );
+      const progressMessage = tracker.getMessage();
       await deps.safeAppendTimeStep({
         type: 'fix',
-        messages: [startMessage, resultMessage],
+        messages: [progressMessage, resultMessage].filter(Boolean) as Message[],
         nextMermaid,
         setCurrentRevisionId: cleared ? null : undefined,
         meta: {
@@ -485,11 +541,17 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           isValid: !!validation.isValid,
           cleared,
           diagramType,
+          mode: 'notebook',
+          fixMode: 'block',
+          blockIndex: targetIndex,
+          totalBlocks: deps.markdownMermaidBlocks.length,
         },
       });
+      pushStatus(
+        `Исправление: ${label}\n- итог: ${validation.isValid ? 'валиден' : 'невалиден'}`
+      );
 
-      trackAnalyticsEvent('diagram_fix_success', {
-        ...analyticsContext,
+      await deps.trackAnalyticsWithContext('diagram_fix_success', 'fix', {
         diagramType,
         mode: 'fix',
         attempts,
@@ -502,9 +564,8 @@ export const useFixFlow = (deps: FixFlowDeps) => {
       });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      const analyticsContext = await deps.getAnalyticsContext('fix');
-      trackAnalyticsEvent('diagram_fix_failed', {
-        ...analyticsContext,
+      pushStatus(`Исправление: ошибка ${message}`);
+      await deps.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         mode: 'fix',
         error: 'exception',
         durationMs: Date.now() - startedAt,
@@ -517,6 +578,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
   }, [
     deps,
     handleFixAllMarkdownBlocks,
+    pushStatus,
     resolveFixLanguage,
     runMarkdownFix,
     summarizeFixOutcome,

@@ -30,6 +30,7 @@ export type DiagramMarker = {
   type: TimeStepType;
   createdAt: number;
   revisionId: string;
+  meta?: StepMeta;
 };
 
 export type DiagramStepAnchors = Record<string, string>;
@@ -188,6 +189,7 @@ export const useHistory = () => {
           type: step.type,
           createdAt: step.createdAt,
           revisionId: rev,
+          meta: step.meta,
         });
       }
       prevRevisionId = rev;

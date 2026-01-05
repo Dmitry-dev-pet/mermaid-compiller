@@ -14,16 +14,19 @@ import { useNotebookChat, useNotebookChatView } from './useNotebookChat';
 import { useProjects } from './useProjects';
 import type { DiagramMarker } from '../core/useHistory';
 import { DEFAULT_MERMAID_STATE } from '../../constants';
-import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState } from '../../types';
+import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState, ModelParams } from '../../types';
 import {
   appendEmptyMermaidBlockToMarkdown,
   createMermaidNotebookMarkdown,
   detectMermaidDiagramType,
+  extractMermaidBlocksFromMarkdown,
   isMarkdownLike,
 } from '../../services/mermaidService';
-import { trackAnalyticsEvent } from '../../services/analyticsService';
+import { trackAnalyticsEvent as trackAnalyticsEventService } from '../../services/analyticsService';
+import { createAnalyticsAdapter } from '../../services/analyticsAdapter';
 import { useNotebookBuild } from './useNotebookBuild';
 import { useFixFlow } from './useFixFlow';
+import { useNotebookContext } from './useNotebookContext';
 
 export const useDiagramStudio = () => {
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
@@ -31,6 +34,7 @@ export const useDiagramStudio = () => {
   const { appState, setAppState, startResize, setDiagramType, toggleTheme, setAnalyzeLanguage, togglePreviewFullScreen } = useLayout();
   const { messages, setMessages, addMessage, clearMessages, resetMessages, getMessages } = useChat();
   const interactionRecorder = useInteractionRecorder();
+  const [modelParams, setModelParams] = useState<ModelParams | null>(null);
   const {
     isHistoryReady,
     historySession,
@@ -62,25 +66,14 @@ export const useDiagramStudio = () => {
   const previewLoadingRef = useRef<Set<string>>(new Set());
 
   const isHydratingRef = useRef(true);
+  const hydratedSessionIdRef = useRef<string | null>(null);
+  const seededNotebookSessionIdsRef = useRef<Set<string>>(new Set());
   const lastManualRecordedCodeRef = useRef<string>('');
   const diagramTypeWaitRef = useRef<{ target: DiagramType; resolve: () => void } | null>(null);
-  const {
-    buildDocsEntries,
-    buildDocsSelection,
-    buildDocsSelectionKey,
-    buildDocsActivePath,
-    setBuildDocsActivePath,
-    getDocsContext,
-    getDocsSelectionSummary,
-    loadBuildDocsEntries,
-    toggleBuildDocSelection,
-    docsMode,
-    setDocsMode,
-    systemPromptRawByMode,
-    setSystemPromptRaw,
-    buildDocsSelectionsByMode,
-    setBuildDocSelectionForMode,
-  } = useBuildDocs(appState.diagramType);
+  const clearProjectPreview = useCallback(() => {
+    setPreviewMermaidState(null);
+  }, []);
+
 
   const {
     markdownMermaidBlocks,
@@ -94,28 +87,36 @@ export const useDiagramStudio = () => {
   });
 
   const safeAppendTimeStep = useCallback((args: Parameters<typeof appendTimeStep>[0]) => {
-    return appendTimeStep(args).catch((e) => {
+    const nextMeta = { ...(args.meta ?? {}) } as Record<string, unknown>;
+    if (!('mode' in nextMeta)) {
+      nextMeta.mode = isMarkdownLike(mermaidState.code) ? 'markdown' : 'mermaid';
+    }
+    if (
+      editorTab === 'markdown_mermaid'
+      && typeof nextMeta.blockIndex !== 'number'
+      && markdownMermaidBlocks.length > 0
+    ) {
+      nextMeta.blockIndex = Math.max(0, Math.min(markdownMermaidActiveIndex, markdownMermaidBlocks.length - 1));
+      nextMeta.totalBlocks = markdownMermaidBlocks.length;
+    }
+    return appendTimeStep({ ...args, meta: nextMeta }).catch((e) => {
       console.error('Failed to record history step', e);
     });
-  }, [appendTimeStep]);
+  }, [
+    appendTimeStep,
+    editorTab,
+    markdownMermaidActiveIndex,
+    markdownMermaidBlocks.length,
+    mermaidState.code,
+  ]);
 
-  const notebookContext = useMemo(() => {
-    const isEnabled = appState.isNotebookBuildEnabled;
-    const hasBlocks = markdownMermaidBlocks.length > 0;
-    const isMarkdownTab = editorTab === 'markdown_mermaid';
-    return {
-      isEnabled,
-      hasBlocks,
-      isMarkdownTab,
-      isNotebookChatMode: isEnabled && isMarkdownTab && isMarkdownLike(mermaidState.code) && hasBlocks,
-      isNotebookDiagramChat: isEnabled && isMarkdownTab && hasBlocks,
-      isNotebookDataEnabled: isEnabled && hasBlocks,
-      isNotebookChatEnabled: isEnabled && !isMarkdownTab,
-    };
-  }, [appState.isNotebookBuildEnabled, editorTab, markdownMermaidBlocks.length, mermaidState.code]);
+  const notebookContext = useNotebookContext({
+    editorTab,
+    mermaidCode: mermaidState.code,
+    markdownBlocksLength: markdownMermaidBlocks.length,
+  });
   const {
     isNotebookChatMode,
-    isNotebookDiagramChat,
     isNotebookDataEnabled,
     isNotebookChatEnabled,
   } = notebookContext;
@@ -143,12 +144,42 @@ export const useDiagramStudio = () => {
     return safeAppendTimeStep(args);
   }, [getNotebookChatIndex, isNotebookChatMode, safeAppendTimeStep]);
 
+  const historyModeByStepId = useMemo(() => {
+    const map = new Map<string, string | undefined>();
+    historySteps.forEach((step) => {
+      const meta = step.meta as Record<string, unknown> | undefined;
+      map.set(step.id, typeof meta?.mode === 'string' ? meta.mode : undefined);
+    });
+    return map;
+  }, [historySteps]);
+
+  const editorDiagramMarkers = useMemo(() => {
+    const isMarkdownContext = isMarkdownLike(mermaidState.code) && markdownMermaidBlocks.length > 0;
+    const isDiagramTab = editorTab === 'markdown_mermaid';
+    return diagramMarkers.filter((marker) => {
+      const mode = historyModeByStepId.get(marker.stepId);
+      if (isMarkdownContext) {
+        if (marker.type !== 'build') return false;
+        if (isDiagramTab) {
+          const meta = (marker.meta ?? {}) as Record<string, unknown>;
+          const blockIndex = typeof meta.blockIndex === 'number' ? meta.blockIndex : null;
+          return blockIndex === markdownMermaidActiveIndex;
+        }
+        return mode === 'markdown' || mode === 'markdown_all' || mode === 'notebook';
+      }
+      return mode !== 'markdown' && mode !== 'markdown_all' && mode !== 'notebook';
+    });
+  }, [
+    diagramMarkers,
+    editorTab,
+    historyModeByStepId,
+    markdownMermaidActiveIndex,
+    markdownMermaidBlocks.length,
+    mermaidState.code,
+  ]);
+
   const toggleScrollSync = useCallback(() => {
     setAppState((prev) => ({ ...prev, isScrollSyncEnabled: !prev.isScrollSyncEnabled }));
-  }, [setAppState]);
-
-  const setNotebookBuildEnabled = useCallback((enabled: boolean) => {
-    setAppState((prev) => ({ ...prev, isNotebookBuildEnabled: enabled }));
   }, [setAppState]);
 
   const setNotebookBuildCount = useCallback((count: number | null) => {
@@ -173,7 +204,61 @@ export const useDiagramStudio = () => {
     return detectMermaidDiagramType(mermaidState.code);
   }, [editorTab, markdownMermaidActiveIndex, markdownMermaidBlocks, mermaidState.code]);
 
+  const resolvedAppDiagramType = useMemo<DiagramType>(() => {
+    if (appState.diagramType !== 'auto') return appState.diagramType;
+    return detectedDiagramType ?? 'flowchart';
+  }, [appState.diagramType, detectedDiagramType]);
+
+  const notebookDiagramTypeByBlock = useMemo(() => {
+    const map = new Map<number, DiagramType>();
+    historySteps.forEach((step) => {
+      const meta = step.meta as Record<string, unknown> | undefined;
+      if (!meta || meta.mode !== 'notebook') return;
+      const blockIndex = typeof meta.blockIndex === 'number' ? meta.blockIndex : null;
+      const diagramType = typeof meta.diagramType === 'string' ? (meta.diagramType as DiagramType) : null;
+      if (blockIndex === null || !diagramType) return;
+      map.set(blockIndex, diagramType);
+    });
+    return map;
+  }, [historySteps]);
+
+  const docsDiagramType = useMemo<DiagramType>(() => {
+    if (markdownMermaidBlocks.length > 0) {
+      const plannedType =
+        notebookDiagramTypeByBlock.get(markdownMermaidActiveIndex)
+        ?? notebookDiagramTypeByBlock.get(0)
+        ?? null;
+      const activeBlock = markdownMermaidBlocks[markdownMermaidActiveIndex] ?? markdownMermaidBlocks[0];
+      return plannedType ?? activeBlock?.diagramType ?? resolvedAppDiagramType;
+    }
+    return resolvedAppDiagramType;
+  }, [
+    markdownMermaidActiveIndex,
+    markdownMermaidBlocks,
+    notebookDiagramTypeByBlock,
+    resolvedAppDiagramType,
+  ]);
+
+  const {
+    buildDocsEntries,
+    buildDocsSelection,
+    buildDocsSelectionKey,
+    buildDocsActivePath,
+    setBuildDocsActivePath,
+    getDocsContext,
+    getDocsSelectionSummary,
+    loadBuildDocsEntries,
+    toggleBuildDocSelection,
+    docsMode,
+    setDocsMode,
+    systemPromptRawByMode,
+    setSystemPromptRaw,
+    buildDocsSelectionsByMode,
+    setBuildDocSelectionForMode,
+  } = useBuildDocs(docsDiagramType);
+
   useEffect(() => {
+    if (appState.diagramType === 'auto') return;
     if (!detectedDiagramType) return;
     if (editorTab !== 'code' && editorTab !== 'markdown_mermaid') return;
     if (editorTab === 'code' && mermaidState.source === 'compiled') return;
@@ -196,7 +281,10 @@ export const useDiagramStudio = () => {
         return {
           code: activeBlock.code.trim(),
           errorMessage: diagnostics?.errorMessage,
-          diagramType: activeBlock.diagramType ?? appState.diagramType,
+          diagramType:
+            notebookDiagramTypeByBlock.get(markdownMermaidActiveIndex)
+            ?? activeBlock.diagramType
+            ?? resolvedAppDiagramType,
           isValid: diagnostics?.isValid,
         };
       }
@@ -206,24 +294,26 @@ export const useDiagramStudio = () => {
       return {
         code: '',
         errorMessage: undefined,
-        diagramType: appState.diagramType,
+        diagramType: resolvedAppDiagramType,
         isValid: true,
       };
     }
     return {
       code: rawCode,
       errorMessage: mermaidState.errorMessage,
-      diagramType: appState.diagramType,
+      diagramType: detectedDiagramType ?? resolvedAppDiagramType,
       isValid: mermaidState.isValid,
     };
   }, [
-    appState.diagramType,
+    detectedDiagramType,
     markdownMermaidActiveIndex,
     markdownMermaidBlocks,
     markdownMermaidDiagnostics,
     mermaidState.code,
     mermaidState.errorMessage,
     mermaidState.isValid,
+    notebookDiagramTypeByBlock,
+    resolvedAppDiagramType,
   ]);
 
   const chatMessagesForView = useNotebookChatView({ isNotebookChatMode, messages });
@@ -234,7 +324,7 @@ export const useDiagramStudio = () => {
     resetPromptPreview,
     setPromptPreview,
   } = usePromptPreview({
-    diagramType: appState.diagramType,
+    diagramType: docsDiagramType,
     analyzeLanguage: appState.analyzeLanguage ?? 'auto',
     appLanguage: appState.language ?? 'auto',
     isNotebookChatEnabled,
@@ -254,19 +344,30 @@ export const useDiagramStudio = () => {
     messages,
     setMessages,
     getMessages,
-    diagramIntentContent: diagramIntent?.content ?? null,
+    diagramIntent,
+    setDiagramIntent,
     systemPrompt: promptPreviewByMode.chat?.systemPrompt ?? '',
     systemPromptRedacted: promptPreviewByMode.chat?.systemPromptRedacted ?? '',
     isSystemPromptRaw: systemPromptRawByMode.chat,
   });
+  const resolvedBuildDocsIntentText = useMemo(() => buildDocsIntentText?.trim() || '', [buildDocsIntentText]);
 
   useEffect(() => {
     if (!historyLoadResult) return;
+    const sessionId = historyLoadResult.session.id;
+    if (hydratedSessionIdRef.current === sessionId) return;
+    hydratedSessionIdRef.current = sessionId;
 
     setMessages((prev) => {
       const init = prev.find((m) => m.id === 'init');
-      const loaded = historyLoadResult.messages.filter((m) => m.id !== 'init');
-      return init ? [init, ...loaded] : loaded;
+      const docMessages = historySteps
+        .filter((step) => {
+          const meta = step.meta as Record<string, unknown> | undefined;
+          return meta?.mode !== 'notebook';
+        })
+        .flatMap((step) => step.messages ?? [])
+        .filter((m) => m.id !== 'init');
+      return init ? [init, ...docMessages] : docMessages;
     });
 
     if (historyLoadResult.currentRevisionMermaid !== null) {
@@ -290,7 +391,46 @@ export const useDiagramStudio = () => {
     }
 
     isHydratingRef.current = false;
-  }, [historyLoadResult, isNotebookChatMode, setMermaidState, setMessages]);
+  }, [historyLoadResult, historySteps, setMermaidState, setMessages]);
+
+  useEffect(() => {
+    if (!historySession?.id) return;
+    const sessionId = historySession.id;
+    if (seededNotebookSessionIdsRef.current.has(sessionId)) return;
+    if (historySession.currentRevisionId) {
+      seededNotebookSessionIdsRef.current.add(sessionId);
+      return;
+    }
+    if (historySteps.length > 0) {
+      seededNotebookSessionIdsRef.current.add(sessionId);
+      return;
+    }
+
+    seededNotebookSessionIdsRef.current.add(sessionId);
+    const markdown = createMermaidNotebookMarkdown({ blocks: 1 });
+    lastManualRecordedCodeRef.current = markdown;
+    setMermaidState((prev) => ({
+      ...prev,
+      code: markdown,
+      isValid: true,
+      lastValidCode: markdown,
+      errorMessage: undefined,
+      errorLine: undefined,
+      source: 'compiled',
+      status: 'valid',
+    }));
+    void safeAppendTimeStep({
+      type: 'seed',
+      messages: [],
+      nextMermaid: {
+        code: markdown,
+        isValid: true,
+        errorMessage: undefined,
+        errorLine: undefined,
+      },
+      meta: { seeded: 'notebook' },
+    });
+  }, [historySession?.currentRevisionId, historySession?.id, historySteps.length, safeAppendTimeStep, setMermaidState]);
 
   useEffect(() => {
     if (!isHistoryReady) return;
@@ -313,6 +453,8 @@ export const useDiagramStudio = () => {
     setAppState,
     aiConfig,
     setAiConfig,
+    modelParams,
+    setModelParams,
     historySession,
     sessions,
     startNewSession,
@@ -329,6 +471,7 @@ export const useDiagramStudio = () => {
     setDiagramIntent,
     setEditorTab,
     setMermaidState,
+    clearProjectPreview,
     lastManualRecordedCodeRef,
     isHydratingRef,
   });
@@ -363,10 +506,6 @@ export const useDiagramStudio = () => {
     previewCacheRef.current[sessionId] = nextState;
     setPreviewMermaidState(nextState);
   }, [buildPreviewState, loadSessionSnapshot]);
-
-  const clearProjectPreview = useCallback(() => {
-    setPreviewMermaidState(null);
-  }, []);
 
   useEffect(() => {
     if (editorTab !== 'build_docs') return;
@@ -433,6 +572,20 @@ export const useDiagramStudio = () => {
     setMarkdownMermaidActiveIndex,
   ]);
 
+  const openNotebookBlock = useCallback((index: number) => {
+    if (!markdownMermaidBlocks.length) return;
+    const safeIndex = Math.max(0, Math.min(index, markdownMermaidBlocks.length - 1));
+    setMarkdownMermaidActiveIndex(safeIndex);
+    setEditorTab('markdown_mermaid');
+  }, [markdownMermaidBlocks.length, setMarkdownMermaidActiveIndex]);
+
+  const backToNotebookMainChat = useCallback(() => {
+    if (markdownMermaidBlocks.length) {
+      setMarkdownMermaidActiveIndex(0);
+    }
+    setEditorTab('code');
+  }, [markdownMermaidBlocks.length, setMarkdownMermaidActiveIndex, setEditorTab]);
+
   const setDiagramTypeAndWait = useCallback((target: DiagramType) => {
     if (appState.diagramType === target) return Promise.resolve();
     return new Promise<void>((resolve) => {
@@ -443,11 +596,13 @@ export const useDiagramStudio = () => {
 
   const { handleNotebookBuild } = useNotebookBuild({
     aiConfig,
+    modelParams,
     appState,
     connectionState,
     messages,
     diagramIntent,
     addMessage,
+    setMessages,
     safeAppendTimeStep,
     setIsProcessing,
     setMarkdownMermaidActiveIndex,
@@ -458,36 +613,48 @@ export const useDiagramStudio = () => {
     loadBuildDocsEntries,
   });
 
-  const getAnalyticsContext = useCallback(async (mode: DocsMode) => {
-    const docsUsage = await getDocsSelectionSummary(mode);
-    const activeContext = resolveActiveMermaidContext();
-    return {
-      provider: aiConfig.provider,
-      model: aiConfig.selectedModelId || null,
-      modelParams: { temperature: 0.2 },
-      modelFilters: aiConfig.filtersByProvider[aiConfig.provider] ?? null,
-      diagramType: activeContext.diagramType ?? appState.diagramType,
-      language: appState.language ?? null,
-      analyzeLanguage: appState.analyzeLanguage ?? null,
-      docsUsage,
-    };
+  const analyticsAdapter = useMemo(() => {
+    return createAnalyticsAdapter({
+      aiConfig,
+      appState,
+      modelParams,
+      getDocsUsageSummary: getDocsSelectionSummary,
+      resolveDiagramType: () => resolveActiveMermaidContext().diagramType ?? appState.diagramType,
+      trackEvent: trackAnalyticsEventService,
+    });
   }, [
-    aiConfig.filtersByProvider,
-    aiConfig.provider,
-    aiConfig.selectedModelId,
-    appState.analyzeLanguage,
-    appState.diagramType,
-    appState.language,
+    aiConfig,
+    appState,
     getDocsSelectionSummary,
+    modelParams,
     resolveActiveMermaidContext,
   ]);
 
-  const { handleChatMessage, handleBuildFromPrompt: baseHandleBuildFromPrompt, handleRecompile, handleFixSyntax: baseHandleFixSyntax, handleAnalyze } =
+  const getAnalyticsContext = useCallback((mode: DocsMode) => {
+    return analyticsAdapter.getContext(mode);
+  }, [analyticsAdapter]);
+
+  const trackAnalyticsEvent = useCallback((event: string, payload?: Record<string, unknown>) => {
+    analyticsAdapter.track(event, payload);
+  }, [analyticsAdapter]);
+
+  const trackAnalyticsWithContext = useCallback((event: string, mode: DocsMode, payload?: Record<string, unknown>) => {
+    return analyticsAdapter.trackWithContext(event, mode, payload);
+  }, [analyticsAdapter]);
+
+  const {
+    handleChatMessage: baseHandleChatMessage,
+    handleBuildFromPrompt: baseHandleBuildFromPrompt,
+    handleRecompile,
+    handleFixSyntax: baseHandleFixSyntax,
+    handleAnalyze,
+  } =
     createStudioActions({
       aiConfig,
       connectionState,
       appState,
       isNotebookChatEnabled,
+      modelParams,
       mermaidState,
       diagramIntent,
       setDiagramIntent,
@@ -498,6 +665,7 @@ export const useDiagramStudio = () => {
       resolveMermaidUpdateTarget,
       getAnalyticsContext,
       trackAnalyticsEvent,
+      trackAnalyticsWithContext,
       getDocsContext,
       setIsProcessing,
       recordTimeStep: safeRecordTimeStep,
@@ -505,7 +673,8 @@ export const useDiagramStudio = () => {
 
   const { handleFixSyntax } = useFixFlow({
     aiConfig,
-    appDiagramType: appState.diagramType,
+    modelParams,
+    appDiagramType: resolvedAppDiagramType,
     connectionStatus: connectionState.status,
     messages,
     mermaidState,
@@ -515,20 +684,56 @@ export const useDiagramStudio = () => {
     setMarkdownMermaidActiveIndex,
     handleMermaidChange,
     addMessage,
+    setMessages,
     safeAppendTimeStep,
     getDocsContext,
-    getAnalyticsContext,
+    trackAnalyticsWithContext,
     setIsProcessing,
     baseHandleFixSyntax,
   });
 
+  const runWithActiveDiagramContext = useCallback(async <T,>(action: () => Promise<T>) => {
+    const originalDiagramType = appState.diagramType;
+    const targetDiagramType = resolveActiveMermaidContext().diagramType ?? originalDiagramType;
+    try {
+      await setDiagramTypeAndWait(targetDiagramType);
+      await loadBuildDocsEntries(targetDiagramType);
+      return await action();
+    } finally {
+      await setDiagramTypeAndWait(originalDiagramType);
+    }
+  }, [
+    appState.diagramType,
+    loadBuildDocsEntries,
+    resolveActiveMermaidContext,
+    setDiagramTypeAndWait,
+  ]);
+
+  const handleChatMessage = useCallback(async (text: string) => {
+    if (editorTab === 'code') {
+      return baseHandleChatMessage(text);
+    }
+
+    return runWithActiveDiagramContext(() => baseHandleChatMessage(text));
+  }, [
+    baseHandleChatMessage,
+    editorTab,
+    runWithActiveDiagramContext,
+  ]);
+
   const handleBuildFromPrompt = useCallback(async (text?: string) => {
-    if (appState.isNotebookBuildEnabled && editorTab !== 'markdown_mermaid') {
+    if (editorTab === 'code') {
       await handleNotebookBuild(text);
       return;
     }
-    await baseHandleBuildFromPrompt(text);
-  }, [appState.isNotebookBuildEnabled, baseHandleBuildFromPrompt, editorTab, handleNotebookBuild]);
+
+    await runWithActiveDiagramContext(() => baseHandleBuildFromPrompt(text));
+  }, [
+    baseHandleBuildFromPrompt,
+    editorTab,
+    handleNotebookBuild,
+    runWithActiveDiagramContext,
+  ]);
 
   const handleManualSnapshot = useCallback(async () => {
     if (isProcessing) return;
@@ -564,8 +769,9 @@ export const useDiagramStudio = () => {
     safeAppendTimeStep,
   ]);
 
-  const goToDiagramStep = async (marker: Pick<DiagramMarker, 'stepId'> | string) => {
+  const goToDiagramStep = async (marker: DiagramMarker | Pick<DiagramMarker, 'stepId'> | string) => {
     const stepId = typeof marker === 'string' ? marker : marker.stepId;
+    const markerMeta = typeof marker === 'string' ? null : (marker.meta ?? null);
     const revision = await selectDiagramStep(stepId);
     if (!revision) return;
 
@@ -584,8 +790,25 @@ export const useDiagramStudio = () => {
         : 'empty',
       source: 'compiled',
     }));
+    if (editorTab === 'markdown_mermaid') {
+      const blocks = extractMermaidBlocksFromMarkdown(revision.mermaid);
+      const metaBlockIndex = markerMeta && typeof markerMeta.blockIndex === 'number'
+        ? markerMeta.blockIndex
+        : null;
+      const safeMetaIndex =
+        metaBlockIndex !== null && metaBlockIndex >= 0 && metaBlockIndex < blocks.length
+          ? metaBlockIndex
+          : null;
+      const firstNonEmptyIndex = blocks.findIndex((block) => block.code.trim().length > 0);
+      const nextIndex =
+        safeMetaIndex !== null
+          ? safeMetaIndex
+          : firstNonEmptyIndex >= 0
+            ? firstNonEmptyIndex
+            : 0;
+      setMarkdownMermaidActiveIndex(nextIndex);
+    }
   };
-
 
   const handleDiagramTypeChange = async (type: DiagramType) => {
     setDiagramType(type);
@@ -616,6 +839,7 @@ export const useDiagramStudio = () => {
     handleManualSnapshot,
     diagramMarkers,
     diagramStepAnchors,
+    editorDiagramMarkers,
     selectedStepId,
     projects,
     activeProjectId,
@@ -657,15 +881,16 @@ export const useDiagramStudio = () => {
     setAnalyzeLanguage,
     togglePreviewFullScreen,
     toggleScrollSync,
-    setNotebookBuildEnabled,
     setNotebookBuildCount,
-    isNotebookDiagramChat,
-    buildDocsIntentText,
+    buildDocsIntentText: resolvedBuildDocsIntentText,
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
     startMarkdownNotebook,
     appendMarkdownMermaidBlock,
+    openNotebookBlock,
+    backToNotebookMainChat,
+    isNotebookChatMode,
     interactionRecorder,
   };
 };

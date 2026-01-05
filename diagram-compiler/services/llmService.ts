@@ -1,4 +1,4 @@
-import { AIConfig, Message, DiagramType, Model } from '../types';
+import type { AIConfig, Message, DiagramType, Model, ModelParams } from '../types';
 import { LLMProviderStrategy } from './llm/LLMProviderStrategy';
 import { OpenRouterStrategy } from './llm/OpenRouterStrategy';
 import { CliproxyStrategy } from './llm/CliproxyStrategy';
@@ -34,10 +34,11 @@ export const generateDiagram = async (
   config: AIConfig,
   diagramType: DiagramType,
   docsContext: string,
-  language: string
+  language: string,
+  modelParams?: ModelParams | null
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.generateDiagram(messages, config, diagramType, docsContext, language);
+  return strategy.generateDiagram(messages, config, diagramType, docsContext, language, modelParams);
 };
 
 export const fixDiagram = async (
@@ -45,10 +46,11 @@ export const fixDiagram = async (
   error: string,
   config: AIConfig,
   docsContext: string,
-  language: string
+  language: string,
+  modelParams?: ModelParams | null
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.fixDiagram(code, error, config, docsContext, language);
+  return strategy.fixDiagram(code, error, config, docsContext, language, modelParams);
 };
 
 export const chat = async (
@@ -56,38 +58,42 @@ export const chat = async (
   config: AIConfig,
   diagramType: DiagramType,
   docsContext: string,
-  language: string
+  language: string,
+  modelParams?: ModelParams | null
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.chat(messages, config, diagramType, docsContext, language);
+  return strategy.chat(messages, config, diagramType, docsContext, language, modelParams);
 };
 
 export const analyzeDiagram = async (
   code: string,
   config: AIConfig,
   docsContext: string,
-  language: string
+  language: string,
+  modelParams?: ModelParams | null
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.analyzeDiagram(code, config, docsContext, language);
+  return strategy.analyzeDiagram(code, config, docsContext, language, modelParams);
 };
 
 export const planNotebook = async (
   messages: Message[],
   config: AIConfig,
   docsContext: string,
-  language: string
+  language: string,
+  modelParams?: ModelParams | null
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.planNotebook(messages, config, docsContext, language);
+  return strategy.planNotebook(messages, config, docsContext, language, modelParams);
 };
 
 export const chatNotebook = async (
   messages: Message[],
   config: AIConfig,
   docsContext: string,
-  language: string
+  language: string,
+  modelParams?: ModelParams | null
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.chatNotebook(messages, config, docsContext, language);
+  return strategy.chatNotebook(messages, config, docsContext, language, modelParams);
 };

@@ -19,6 +19,9 @@ import BuildDocsPanel from './editor/BuildDocsPanel';
 import CodeEditorPanel from './editor/CodeEditorPanel';
 import EditorHeader from './editor/EditorHeader';
 import MarkdownTabs from './editor/MarkdownTabs';
+import type { DiagramMarker } from '../hooks/core/useHistory';
+import { DIAGRAM_TYPE_LABELS } from '../utils/diagramTypeMeta';
+import { MODE_UI, MODE_BUTTON_DISABLED, UiMode } from '../utils/uiModes';
 
 // Define minimal Mermaid grammar
 languages.mermaid = {
@@ -69,6 +72,9 @@ interface EditorColumnProps {
   scrollSyncPayload: ScrollSyncPayload | null;
   onScrollSync: (payload: ScrollSyncMeasure) => void;
   hoveredMarkdownIndex: number | null;
+  diagramMarkers?: DiagramMarker[];
+  selectedStepId?: string | null;
+  onSelectDiagramStep?: (step: DiagramMarker) => void | Promise<void>;
 }
 
 const EditorColumn: React.FC<EditorColumnProps> = ({
@@ -106,7 +112,10 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   isScrollSyncEnabled,
   scrollSyncPayload,
   onScrollSync,
-  hoveredMarkdownIndex
+  hoveredMarkdownIndex,
+  diagramMarkers = [],
+  selectedStepId = null,
+  onSelectDiagramStep,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
@@ -144,6 +153,52 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     activeTab,
     hoveredIndex: hoveredMarkdownIndex,
   });
+
+  const markersUi = useMemo(() => {
+    return diagramMarkers.map((m) => {
+      const isSelected = m.stepId === selectedStepId;
+      const meta = (m.meta ?? {}) as Record<string, unknown>;
+      const diagramTypeRaw = typeof meta.diagramType === 'string' ? meta.diagramType : '';
+      const diagramType = diagramTypeRaw ? DIAGRAM_TYPE_LABELS[diagramTypeRaw] ?? diagramTypeRaw : '';
+      const blockIndex = typeof meta.blockIndex === 'number' ? meta.blockIndex : null;
+      const totalBlocks = typeof meta.totalBlocks === 'number' ? meta.totalBlocks : null;
+      const blockLabel =
+        blockIndex !== null
+          ? totalBlocks && totalBlocks > 0
+            ? `block ${blockIndex + 1}/${totalBlocks}`
+            : `block ${blockIndex + 1}`
+          : '';
+      const label =
+        m.type === 'build'
+          ? (isMarkdownMermaidMode ? (blockLabel || 'Diagram') : (diagramType || 'Diagram'))
+          : m.type === 'fix'
+            ? 'Fix'
+            : m.type === 'recompile'
+              ? 'Run'
+              : m.type === 'manual_edit'
+                ? 'Snapshot'
+                : m.type === 'seed'
+                  ? 'Seed'
+                  : m.type;
+      const detailParts = isMarkdownMermaidMode ? [] : [blockLabel].filter(Boolean);
+      const detail = detailParts.join(' · ');
+      const uiMode: UiMode =
+        m.type === 'fix'
+          ? 'fix'
+          : m.type === 'analyze'
+            ? 'analyze'
+            : m.type === 'build' || m.type === 'recompile'
+              ? 'build'
+              : m.type === 'chat'
+                ? 'chat'
+                : 'system';
+      const modeStyles = MODE_UI[uiMode];
+      const activeClass = modeStyles.button ?? MODE_BUTTON_DISABLED;
+      const inactiveClass = modeStyles.buttonInactive ?? MODE_BUTTON_DISABLED;
+
+      return { ...m, isSelected, label, detail, activeClass, inactiveClass };
+    });
+  }, [diagramMarkers, isMarkdownMermaidMode, selectedStepId]);
 
   const markdownBlockScrollTops = useMemo(() => {
     if (!isMarkdownLike(mermaidState.code)) return [];
@@ -319,6 +374,31 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
             onShowTooltip={showTabTooltip}
             onHideTooltip={hideTabTooltip}
           />
+        )}
+        {!isBuildDocsTab && diagramMarkers.length > 0 && (
+          <div className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 px-4 py-2">
+            <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+              {activeTab === 'markdown_mermaid' ? 'Markdown history' : 'Diagram history'}
+            </div>
+            <div className="flex gap-1 overflow-x-auto pb-1">
+              {markersUi.map((m) => (
+                <button
+                  key={m.stepId}
+                  type="button"
+                  onClick={() => onSelectDiagramStep?.(m)}
+                  className={`shrink-0 px-2 py-1 rounded-full text-[10px] border transition-colors ${
+                    m.isSelected ? m.activeClass : m.inactiveClass
+                  }`}
+                  title={`Step #${m.stepIndex + 1} • ${m.label}${m.detail ? ` • ${m.detail}` : ''}`}
+                >
+                  <span className="flex flex-col leading-tight">
+                    <span>#{m.stepIndex + 1} {m.label}</span>
+                    {m.detail && <span className="text-[9px] opacity-70">{m.detail}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {tooltipPortal}
         {isBuildDocsTab ? (

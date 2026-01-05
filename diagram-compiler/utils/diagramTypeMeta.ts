@@ -2,6 +2,7 @@ import type { DiagramType } from '../types';
 import type { MermaidDirection } from './inlineDirectionCommand';
 
 export const DIAGRAM_TYPE_LABELS: Record<DiagramType, string> = {
+  auto: 'Auto',
   architecture: 'Architecture',
   block: 'Block',
   c4: 'C4 (experimental)',
@@ -28,6 +29,7 @@ export const DIAGRAM_TYPE_LABELS: Record<DiagramType, string> = {
 };
 
 export const DIAGRAM_TYPE_SHORT_LABELS: Record<DiagramType, string> = {
+  auto: 'AUTO',
   architecture: 'AR',
   block: 'BL',
   c4: 'C4',
@@ -54,6 +56,7 @@ export const DIAGRAM_TYPE_SHORT_LABELS: Record<DiagramType, string> = {
 };
 
 export const DIAGRAM_TYPE_SUPPORTS_INLINE_DIRECTION: Record<DiagramType, boolean> = {
+  auto: false,
   architecture: false,
   block: false,
   c4: false,
@@ -80,6 +83,7 @@ export const DIAGRAM_TYPE_SUPPORTS_INLINE_DIRECTION: Record<DiagramType, boolean
 };
 
 export const DIAGRAM_TYPE_SUPPORTS_INLINE_LOOK: Record<DiagramType, boolean> = {
+  auto: false,
   architecture: false,
   block: false,
   c4: false,

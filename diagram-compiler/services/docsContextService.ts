@@ -7,7 +7,16 @@ const commonDocs = [
   'packages/mermaid/src/docs/config/configuration.md',
 ];
 
+const optionalDocs = [
+  'packages/mermaid/src/docs/intro/getting-started.md',
+  'intro/examples.md',
+  'intro/diagram-type-guide.md',
+  'packages/mermaid/src/docs/config/directives.md',
+  'packages/mermaid/src/docs/config/theming.md',
+];
+
 const diagramDocs: Record<DiagramType, string[]> = {
+  auto: [],
   architecture: ['packages/mermaid/src/docs/syntax/architecture.md'],
   block: ['packages/mermaid/src/docs/syntax/block.md'],
   c4: ['packages/mermaid/src/docs/syntax/c4.md'],
@@ -37,11 +46,6 @@ export type DocsEntry = { path: string; text: string; isOptional?: boolean };
 
 export const getDocsPaths = (diagramType: DiagramType): Array<{ path: string; isOptional?: boolean }> => {
   const specific = diagramDocs[diagramType] || [];
-  const optionalDocs = [
-    'packages/mermaid/src/docs/intro/getting-started.md',
-    'packages/mermaid/src/docs/config/directives.md',
-    'packages/mermaid/src/docs/config/theming.md',
-  ];
   const requiredPaths = [...specific, ...commonDocs];
   return [
     ...requiredPaths.map((path) => ({ path })),
@@ -90,6 +94,33 @@ export const formatDocsContext = (entries: DocsEntry[]): string => {
     }
   });
   return context;
+};
+
+let notebookDocsEntriesCache: DocsEntry[] | null = null;
+let notebookDocsContextCache: string | null = null;
+
+export const getNotebookDocsPaths = (): Array<{ path: string; isOptional?: boolean }> => {
+  return [
+    ...commonDocs.map((path) => ({ path })),
+    ...optionalDocs.map((path) => ({ path, isOptional: true })),
+  ];
+};
+
+export const fetchNotebookDocsEntries = async (): Promise<DocsEntry[]> => {
+  if (notebookDocsEntriesCache) return notebookDocsEntriesCache;
+  const paths = getNotebookDocsPaths();
+  const results = await Promise.all(
+    paths.map(({ path, isOptional }) => fetchLocalDoc(path, !!isOptional))
+  );
+  notebookDocsEntriesCache = results;
+  return results;
+};
+
+export const fetchNotebookDocsContext = async (): Promise<string> => {
+  if (notebookDocsContextCache) return notebookDocsContextCache;
+  const entries = await fetchNotebookDocsEntries();
+  notebookDocsContextCache = formatDocsContext(entries);
+  return notebookDocsContextCache;
 };
 
 export const fetchDocsContext = async (diagramType: DiagramType): Promise<string> => {

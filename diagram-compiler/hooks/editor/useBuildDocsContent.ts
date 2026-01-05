@@ -28,7 +28,7 @@ export const useBuildDocsContent = ({
     ? analyzePreview
     : docsMode === 'fix'
       ? fixPreview
-      : (promptPreviewByMode[docsMode]?.intentText || intentText || '');
+      : (intentText || '');
   const docsPreview = activeDocEntry?.text || '';
   const rawPromptPreview = promptPreviewByMode[docsMode]?.rawContent || '';
   const topPanelTitle = isSystemPromptRaw

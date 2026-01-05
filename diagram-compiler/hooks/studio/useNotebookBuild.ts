@@ -1,26 +1,31 @@
 import { useCallback } from 'react';
-import type { DiagramIntent, DiagramType, Message, NotebookPlan } from '../../types';
-import { detectLanguage } from '../../utils';
+import type { DiagramIntent, DiagramType, Message, NotebookPlan, ModelParams } from '../../types';
+import { detectLanguage, generateId } from '../../utils';
 import { normalizeIntentText } from '../../utils/intent';
 import { NOTEBOOK_BUILD_RETRY_CONFIG } from './notebookBuildConfig';
-import { extractMermaidBlocksFromMarkdown, extractMermaidCode, replaceMermaidBlockInMarkdown, validateMermaid } from '../../services/mermaidService';
+import { detectMermaidDiagramType, extractMermaidBlocksFromMarkdown, extractMermaidCode, parseMermaidJsonResponse, replaceMermaidBlockInMarkdown, validateMermaid } from '../../services/mermaidService';
+import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
+import { fetchNotebookDocsContext } from '../../services/docsContextService';
 import { fixDiagram, generateDiagram, planNotebook } from '../../services/llmService';
 import { runAutoFixLoop } from './autoFix';
 import { normalizeNotebookPlan, parseNotebookPlan } from '../../services/notebookPlanService';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import { TimeoutError } from '../../services/llmTimeout';
 import { formatTimeoutRetryMessage } from './stepMessageUtils';
+import { createProgressTracker } from './progressTracker';
 
 const NOTEBOOK_STYLE_CONSTRAINT_EN = 'No styling directives or color instructions (no theme/look/init/colors).';
 const NOTEBOOK_STYLE_CONSTRAINT_RU = 'Без стилевых директив и цветовых инструкций (без theme/look/init/colors).';
 
 type NotebookBuildDeps = {
   aiConfig: import('../../types').AIConfig;
+  modelParams: ModelParams | null;
   appState: import('../../types').AppState;
   connectionState: import('../../types').ConnectionState;
   messages: Message[];
   diagramIntent: DiagramIntent | null;
   addMessage: (role: 'user' | 'assistant', content: string, mode?: Message['mode']) => Message;
+  setMessages: import('react').Dispatch<import('react').SetStateAction<Message[]>>;
   safeAppendTimeStep: (args: {
     type: import('../../services/history/types').TimeStepType;
     messages: Message[];
@@ -35,6 +40,35 @@ type NotebookBuildDeps = {
   setMermaidState: (updater: (prev: import('../../types').MermaidState) => import('../../types').MermaidState) => void;
   getDocsContext: (mode: import('../../types').DocsMode) => Promise<string>;
   loadBuildDocsEntries: (type: DiagramType) => Promise<unknown>;
+};
+
+export const parseNotebookCountFromText = (text: string): number | null => {
+  const normalized = text.toLowerCase();
+  const explicitMatch = normalized.match(
+    /(?:^|\s)(?:n|count|qty|quantity|кол-?во|количество|число)\s*[:=]?\s*(\d+)(?:\s|$)/
+  );
+  if (explicitMatch) {
+    const value = Number(explicitMatch[1]);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+  }
+
+  const trailingMatch = normalized.match(
+    /(?:^|\s)(\d+)\s*(?:diagrams?|diagram|blocks?|mermaid blocks?|диаграмм(?:ы|а)?|блок(?:ов|а|и)?|схем(?:ы|а)?)(?:\s|$)/
+  );
+  if (trailingMatch) {
+    const value = Number(trailingMatch[1]);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+  }
+
+  const leadingMatch = normalized.match(
+    /(?:^|\s)(?:diagrams?|diagram|blocks?|mermaid blocks?|диаграмм(?:ы|а)?|блок(?:ов|а|и)?|схем(?:ы|а)?)\s*[:=]?\s*(\d+)(?:\s|$)/
+  );
+  if (leadingMatch) {
+    const value = Number(leadingMatch[1]);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+  }
+
+  return null;
 };
 
 const formatNotebookRawIntent = (args: {
@@ -97,6 +131,22 @@ const resolveNotebookPrompt = (messages: Message[], diagramIntent: DiagramIntent
   return null;
 };
 
+const resolveNotebookRequestedN = (args: {
+  explicitCount: number | null;
+  promptText: string;
+  messages: Message[];
+}): number | null => {
+  if (args.explicitCount && args.explicitCount > 0) return args.explicitCount;
+  const fromPrompt = parseNotebookCountFromText(args.promptText);
+  if (fromPrompt) return fromPrompt;
+  const lastUserText = args.messages
+    .slice()
+    .reverse()
+    .find((m) => m.id !== 'init' && m.role === 'user' && m.content.trim().length > 0)?.content;
+  if (!lastUserText) return null;
+  return parseNotebookCountFromText(lastUserText);
+};
+
 const buildNotebookMarkdown = (plan: NotebookPlan) => {
   const title = plan.title?.trim() || 'Diagram notebook';
   const sections = plan.diagrams.map((diagram, index) => {
@@ -113,41 +163,173 @@ const replaceNotebookBlock = (markdown: string, index: number, code: string) => 
   return replaceMermaidBlockInMarkdown(markdown, block, code);
 };
 
-const requestNotebookPlan = async (args: {
+const buildPlannerMessageContent = (args: {
+  prompt: string;
+  requestedN: number | null;
+  attempt: number;
+  lastCount: number | null;
+  lastInvalidTypes: number | null;
+  forcedDiagramType: DiagramType | null;
+  allowedDiagramTypes: string[] | null;
+}) => {
+  const supportedTypes =
+    'architecture, block, c4, class, er, flowchart, gantt, gitGraph, kanban, mindmap, packet, pie, quadrantChart, radar, requirementDiagram, sankey, sequence, state, timeline, treemap, userJourney, xychart, zenuml';
+  const lines = [
+    `userRequest: """${args.prompt}"""`,
+    `requestedN: ${args.requestedN ?? 'null'}`,
+    `forcedDiagramType: ${args.forcedDiagramType ?? 'null'}`,
+    `supportedDiagramTypes: ${supportedTypes}`,
+  ];
+  if (args.allowedDiagramTypes?.length) {
+    lines.push(`allowedDiagramTypes: ${args.allowedDiagramTypes.join(', ')}`);
+  }
+  if (args.requestedN && args.attempt > 1) {
+    const mismatchNote = args.lastCount ? `Previous response had ${args.lastCount} diagrams.` : '';
+    lines.push(
+      `IMPORTANT: Return exactly ${args.requestedN} diagrams.${mismatchNote ? ` ${mismatchNote}` : ''}`
+    );
+  }
+  if (args.lastInvalidTypes && args.attempt > 1) {
+    const invalidNote = `Previous response had ${args.lastInvalidTypes} unsupported diagram type(s).`;
+    lines.push(`IMPORTANT: Use only supported diagram types. ${invalidNote}`);
+  }
+  return lines.join('\n');
+};
+
+type PlannerRunner = (message: Message) => Promise<string>;
+
+export const requestNotebookPlan = async (args: {
   aiConfig: import('../../types').AIConfig;
+  modelParams: ModelParams | null;
   prompt: string;
   requestedN: number | null;
   docs: string;
   language: string;
   addMessage: NotebookBuildDeps['addMessage'];
+  forcedDiagramType?: DiagramType | null;
+  allowedDiagramTypes?: string[] | null;
+  runPlanner?: PlannerRunner;
 }): Promise<NotebookPlan> => {
-  const plannerMessage: Message = {
-    id: `notebook-plan-${Date.now()}`,
-    role: 'user',
-    content: `userRequest: """${args.prompt}"""\nrequestedN: ${args.requestedN ?? 'null'}`,
-    timestamp: Date.now(),
-  };
-  const rawPlan = await runLLMRequest({
-    task: 'planner',
-    run: () => planNotebook([plannerMessage], args.aiConfig, args.docs, args.language),
-    retries: NOTEBOOK_BUILD_RETRY_CONFIG.plannerTimeoutRetries,
-    onTimeout: (notice) => {
-      args.addMessage(
-        'assistant',
-        formatTimeoutRetryMessage('Planner', notice.attempt, notice.maxAttempts),
-        'build'
-      );
-    },
-  });
-  const parsedPlan = parseNotebookPlan(rawPlan);
-  const normalized = normalizeNotebookPlan(parsedPlan, args.requestedN);
-  if (args.requestedN && normalized.diagrams.length !== args.requestedN) {
-    throw new Error(`Planner returned ${normalized.diagrams.length} diagrams; expected ${args.requestedN}.`);
+  const runPlanner: PlannerRunner = args.runPlanner ?? ((message) => (
+    planNotebook([message], args.aiConfig, args.docs, args.language, args.modelParams)
+  ));
+  const maxAttempts = Math.max(1, NOTEBOOK_BUILD_RETRY_CONFIG.plannerCountRetries + 1);
+  let lastCount: number | null = null;
+  let lastInvalidTypes: number | null = null;
+  let lastParseError: string | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const plannerMessage: Message = {
+      id: `notebook-plan-${Date.now()}-${attempt}`,
+      role: 'user',
+      content: buildPlannerMessageContent({
+        prompt: args.prompt,
+        requestedN: args.requestedN,
+        attempt,
+        lastCount,
+        lastInvalidTypes,
+        forcedDiagramType: args.forcedDiagramType ?? null,
+        allowedDiagramTypes: args.allowedDiagramTypes ?? null,
+      }),
+      timestamp: Date.now(),
+    };
+    const rawPlan = await runLLMRequest({
+      task: 'planner',
+      run: () => runPlanner(plannerMessage),
+      retries: NOTEBOOK_BUILD_RETRY_CONFIG.plannerTimeoutRetries,
+      onTimeout: (notice) => {
+        args.addMessage(
+          'assistant',
+          formatTimeoutRetryMessage('Planner', notice.attempt, notice.maxAttempts),
+          'build'
+        );
+      },
+    });
+    let parsedPlan: NotebookPlan;
+    try {
+      parsedPlan = parseNotebookPlan(rawPlan);
+    } catch (error: unknown) {
+      lastParseError = error instanceof Error ? error.message : String(error);
+      if (attempt < maxAttempts) {
+        args.addMessage(
+          'assistant',
+          'Planner returned invalid JSON. Retrying...',
+          'build'
+        );
+        continue;
+      }
+      throw new Error(lastParseError || 'Planner returned invalid JSON.');
+    }
+    let normalized = normalizeNotebookPlan(parsedPlan, args.requestedN);
+    const allowedTypes = args.allowedDiagramTypes?.length ? new Set(args.allowedDiagramTypes) : null;
+    const invalidTypes = normalized.diagrams.filter((diagram) => {
+      if (diagram.diagramType === 'other') return true;
+      if (!allowedTypes) return false;
+      return !allowedTypes.has(diagram.diagramType);
+    });
+    if (invalidTypes.length) {
+      lastInvalidTypes = invalidTypes.length;
+      if (attempt < maxAttempts) {
+        args.addMessage(
+          'assistant',
+          `Planner returned ${lastInvalidTypes} unsupported diagram type(s). Retrying...`,
+          'build'
+        );
+        continue;
+      }
+      if (allowedTypes) {
+        const fallbackType = args.allowedDiagramTypes?.[0] ?? 'flowchart';
+        normalized = {
+          ...normalized,
+          diagrams: normalized.diagrams.map((diagram) =>
+            allowedTypes.has(diagram.diagramType) ? diagram : { ...diagram, diagramType: fallbackType }
+          ),
+        };
+      } else {
+        throw new Error(`Planner returned ${lastInvalidTypes} unsupported diagram type(s).`);
+      }
+    }
+    if (args.requestedN && normalized.diagrams.length !== args.requestedN) {
+      lastCount = normalized.diagrams.length;
+      if (attempt < maxAttempts) {
+        args.addMessage(
+          'assistant',
+          `Planner returned ${lastCount} diagrams; expected ${args.requestedN}. Retrying...`,
+          'build'
+        );
+        continue;
+      }
+      throw new Error(`Planner returned ${normalized.diagrams.length} diagrams; expected ${args.requestedN}.`);
+    }
+    if (!args.requestedN && normalized.diagrams.length < 2) {
+      lastCount = normalized.diagrams.length;
+      if (attempt < maxAttempts) {
+        args.addMessage(
+          'assistant',
+          `Planner returned ${lastCount} diagram(s); expected at least 2. Retrying...`,
+          'build'
+        );
+        continue;
+      }
+    }
+    return normalized;
   }
-  return normalized;
+
+  throw new Error('Planner retries exhausted.');
 };
 
 export const useNotebookBuild = (deps: NotebookBuildDeps) => {
+  const createEphemeralMessage = useCallback(
+    (role: Message['role'], content: string, mode?: Message['mode']): Message => ({
+      id: generateId(),
+      role,
+      content,
+      timestamp: Date.now(),
+      mode,
+    }),
+    []
+  );
+
   const applyNotebookMarkdown = useCallback((nextMarkdown: string) => {
     deps.setMermaidState((prev) => ({
       ...prev,
@@ -162,86 +344,142 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
   }, [deps]);
 
   const handleNotebookBuild = useCallback(async (text?: string) => {
+    const pushStatus = (content: string) => {
+      deps.addMessage('assistant', content, 'build');
+    };
     if (deps.connectionState.status !== 'connected') {
+      pushStatus('Сборка ноутбука\n- офлайн: подключите AI');
       await deps.safeAppendTimeStep({
         type: 'build',
-        messages: [deps.addMessage('assistant', "I'm offline. Connect AI to generate diagrams.", 'build')],
-        meta: { mode: 'notebook', error: 'offline' },
+        messages: [deps.addMessage('assistant', 'Офлайн. Подключите AI для генерации диаграмм.', 'build')],
+        meta: { error: 'offline' },
       });
       return;
     }
 
     const prompt = resolveNotebookPrompt(deps.messages, deps.diagramIntent, text);
     if (!prompt) {
+      pushStatus('Сборка ноутбука\n- нет intent');
       await deps.safeAppendTimeStep({
         type: 'build',
-        messages: [deps.addMessage('assistant', 'Nothing to build yet. Use Chat to define intent.', 'build')],
-        meta: { mode: 'notebook', error: 'no_intent' },
+        messages: [deps.addMessage('assistant', 'Нет intent для сборки. Используйте чат, чтобы описать задачу.', 'build')],
+        meta: { error: 'no_intent' },
       });
       return;
     }
 
     const originalDiagramType = deps.appState.diagramType;
-    const requestedN = deps.appState.notebookBuildCount ?? null;
+    const fallbackDiagramType = originalDiagramType === 'auto' ? 'flowchart' : originalDiagramType;
+    const requestedN = resolveNotebookRequestedN({
+      explicitCount: deps.appState.notebookBuildCount ?? null,
+      promptText: prompt.content,
+      messages: deps.messages,
+    });
     const language = deps.appState.language !== 'auto' ? deps.appState.language : detectLanguage(prompt.content);
+    const forcedDiagramType = deps.appState.diagramType !== 'auto' ? deps.appState.diagramType : null;
+    const allowedDiagramTypes =
+      deps.appState.diagramType === 'auto' ? [...MAIN_DIAGRAM_TYPES] : null;
 
     deps.setIsProcessing(true);
     try {
-      const docs = await deps.getDocsContext('build');
-      const plan = await requestNotebookPlan({
+      pushStatus(
+        [
+          'Сборка ноутбука',
+          '- старт',
+          `- язык: ${language}`,
+          `- N: ${requestedN ?? 'auto'}`,
+          forcedDiagramType ? `- тип: ${forcedDiagramType}` : '',
+          allowedDiagramTypes ? `- main: ${allowedDiagramTypes.join(' / ')}` : '',
+        ].filter(Boolean).join('\n')
+      );
+      const docs = await fetchNotebookDocsContext();
+      pushStatus('Планировщик\n- запрашиваю план');
+      let plan = await requestNotebookPlan({
         aiConfig: deps.aiConfig,
+        modelParams: deps.modelParams,
         prompt: prompt.content,
         requestedN,
         docs,
         language,
-        addMessage: deps.addMessage,
+        addMessage: createEphemeralMessage,
+        forcedDiagramType,
+        allowedDiagramTypes,
       });
-
-      deps.addMessage('assistant', `Notebook plan: ${plan.diagrams.length} diagrams.`, 'build');
+      pushStatus(
+        [
+          'Планировщик',
+          `- план готов`,
+          `- диаграмм: ${plan.resolvedN}`,
+        ].join('\n')
+      );
+      if (forcedDiagramType) {
+        plan = {
+          ...plan,
+          diagrams: plan.diagrams.map((diagram) => ({
+            ...diagram,
+            diagramType: forcedDiagramType,
+          })),
+        };
+      }
 
       let currentMarkdown = buildNotebookMarkdown(plan);
       applyNotebookMarkdown(currentMarkdown);
       deps.setMarkdownMermaidActiveIndex(0);
-      deps.setEditorTab('markdown_mermaid');
+      pushStatus('Ноутбук\n- создан markdown-скелет');
+
+      // Seed per-block chats with their raw intent as soon as the plan is available.
+      for (let i = 0; i < plan.diagrams.length; i += 1) {
+        const diagram = plan.diagrams[i];
+        const targetDiagramType = diagram.diagramType === 'other' ? fallbackDiagramType : diagram.diagramType;
+        const rawIntent = formatNotebookRawIntent({ diagram, plan, language });
+        await deps.safeAppendTimeStep({
+          type: 'system',
+          messages: [],
+          meta: {
+            mode: 'notebook',
+            blockIndex: i,
+            totalBlocks: plan.diagrams.length,
+            diagramType: targetDiagramType,
+            notebookPlanIntent: rawIntent,
+            phase: 'plan',
+          },
+        });
+      }
+      pushStatus('Ноутбук\n- raw intent сохранён');
 
       for (let i = 0; i < plan.diagrams.length; i += 1) {
         const diagram = plan.diagrams[i];
         const blockMessages: Message[] = [];
-        const targetDiagramType = diagram.diagramType === 'other' ? originalDiagramType : diagram.diagramType;
+        const targetDiagramType = diagram.diagramType === 'other' ? fallbackDiagramType : diagram.diagramType;
         const rawIntent = formatNotebookRawIntent({ diagram, plan, language });
+        const diagramTitle = diagram.title?.trim() || `Diagram ${i + 1}`;
+        const blockLabel = `блок ${i + 1}/${plan.diagrams.length} - ${targetDiagramType} - ${diagramTitle}`;
+        const tracker = createProgressTracker({
+          setMessages: deps.setMessages,
+          prefix: `[notebook-block:${i}] `,
+          mode: 'build',
+        });
+        const updateBlockMessage = (content: string) => tracker.update(content);
 
         deps.setMarkdownMermaidActiveIndex(i);
         await deps.setDiagramTypeAndWait(targetDiagramType);
         await deps.loadBuildDocsEntries(targetDiagramType);
         const blockDocs = await deps.getDocsContext('build');
 
-        blockMessages.push(
-          deps.addMessage(
-            'assistant',
-            `Notebook build: блок ${i + 1} из ${plan.diagrams.length} (${targetDiagramType}).`,
-            'build'
-          )
-        );
+        updateBlockMessage(`Сборка: ${blockLabel} — старт.`);
 
         let success = false;
         let attempts = 0;
         let lastError = '';
+        let lastAutoFix = 0;
         while (attempts < NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts && !success) {
           attempts += 1;
-          blockMessages.push(
-            deps.addMessage(
-              'assistant',
-              `Notebook build: блок ${i + 1}, попытка ${attempts}/${NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts}...`,
-              'build'
-            )
-          );
+          updateBlockMessage(`Сборка: ${blockLabel} — попытка ${attempts}/${NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts}.`);
 
           const intentText = normalizeIntentText(diagram.buildPrompt || '');
           if (!intentText) {
             lastError = 'empty_build_prompt';
-            blockMessages.push(
-              deps.addMessage('assistant', `Attempt ${attempts}: empty build prompt.`, 'build')
-            );
+            updateBlockMessage(`Сборка: ${blockLabel} — пустой build prompt.`);
             continue;
           }
 
@@ -259,29 +497,53 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                 deps.aiConfig,
                 targetDiagramType,
                 blockDocs,
-                language
+                language,
+                deps.modelParams
               ),
               retries: NOTEBOOK_BUILD_RETRY_CONFIG.buildRequestRetries,
             });
-            const cleanCode = extractMermaidCode(rawCode).trim();
-            if (!cleanCode) {
+            const parsed = parseMermaidJsonResponse(rawCode);
+            const cleanCode = parsed?.status === 'ok' && parsed.mermaid
+              ? parsed.mermaid
+              : extractMermaidCode(rawCode);
+            const cleaned = cleanCode.trim();
+            if (!cleaned) {
               lastError = 'no_mermaid_code';
-              blockMessages.push(
-                deps.addMessage('assistant', `Attempt ${attempts}: no Mermaid code returned.`, 'build')
+              updateBlockMessage(`Сборка: ${blockLabel} — нет Mermaid кода.`);
+              continue;
+            }
+            if (parsed && parsed.status !== 'ok') {
+              lastError = parsed.reason || 'json_status_not_ok';
+              updateBlockMessage(`Сборка: ${blockLabel} — JSON status ${parsed.status}.`);
+              continue;
+            }
+            const parsedType = parsed?.diagramType ?? null;
+            const detectedType = detectMermaidDiagramType(cleaned);
+            if (detectedType && detectedType !== targetDiagramType) {
+              lastError = `type_mismatch:${detectedType}`;
+              updateBlockMessage(
+                `Сборка: ${blockLabel} — ожидали ${targetDiagramType}, получили ${detectedType}. Повтор.`
+              );
+              continue;
+            }
+            if (parsedType && parsedType !== targetDiagramType) {
+              lastError = `type_mismatch:${parsedType}`;
+              updateBlockMessage(
+                `Сборка: ${blockLabel} — ожидали ${targetDiagramType}, получили ${parsedType}. Повтор.`
               );
               continue;
             }
 
-            const initialValidation = await validateMermaid(cleanCode, { logError: false });
+            const initialValidation = await validateMermaid(cleaned, { logError: false });
             const { code: currentCode, validation, attempts: autoFixAttempts } = await runAutoFixLoop({
-              initialCode: cleanCode,
+              initialCode: cleaned,
               initialValidation,
               maxAttempts: NOTEBOOK_BUILD_RETRY_CONFIG.autoFixAttempts,
               validate: (code) => validateMermaid(code, { logError: false }),
               fix: async (code, errorMessage) => {
                 const fixedRaw = await runLLMRequest({
                   task: 'notebook-fix',
-                  run: () => fixDiagram(code, errorMessage, deps.aiConfig, blockDocs, language),
+                  run: () => fixDiagram(code, errorMessage, deps.aiConfig, blockDocs, language, deps.modelParams),
                   retries: NOTEBOOK_BUILD_RETRY_CONFIG.fixRequestRetries,
                 });
                 return extractMermaidCode(fixedRaw);
@@ -291,58 +553,48 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                 applyNotebookMarkdown(currentMarkdown);
               },
             });
+            lastAutoFix = autoFixAttempts;
 
             currentMarkdown = replaceNotebookBlock(currentMarkdown, i, currentCode);
             applyNotebookMarkdown(currentMarkdown);
 
             if (validation.isValid) {
               success = true;
-              blockMessages.push(
-                deps.addMessage(
-                  'assistant',
-                  `Notebook build: блок ${i + 1} готов.${autoFixAttempts ? ` Auto-fix ${autoFixAttempts}.` : ''}`,
-                  'build'
-                )
-              );
+              updateBlockMessage(`Сборка: ${blockLabel} — готово.`);
             } else {
               lastError = validation.errorMessage || 'invalid_mermaid';
-              blockMessages.push(
-                deps.addMessage(
-                  'assistant',
-                  `Attempt ${attempts}: Mermaid still invalid.${autoFixAttempts ? ` Auto-fix ${autoFixAttempts}.` : ''}`,
-                  'build'
-                )
-              );
+              updateBlockMessage(`Сборка: ${blockLabel} — Mermaid всё ещё невалиден.`);
             }
           } catch (e: unknown) {
             lastError = e instanceof Error ? e.message : String(e);
             if (e instanceof TimeoutError && attempts < NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts) {
-              blockMessages.push(
-                deps.addMessage(
-                  'assistant',
-                  formatTimeoutRetryMessage('Notebook build', attempts + 1, NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts),
-                  'build'
-                )
+              updateBlockMessage(
+                `Сборка: ${blockLabel} — таймаут, повтор ${attempts + 1}/${NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts}.`
               );
             }
-            blockMessages.push(
-              deps.addMessage(
-                'assistant',
-                `Attempt ${attempts} failed (${deps.aiConfig.selectedModelId ? `model=${deps.aiConfig.selectedModelId}` : 'model=unknown'}): ${lastError}`,
-                'build'
-              )
+            updateBlockMessage(
+              `Сборка: ${blockLabel} — попытка ${attempts} не удалась (${deps.aiConfig.selectedModelId ? `model=${deps.aiConfig.selectedModelId}` : 'model=unknown'}): ${lastError}`
             );
           }
         }
 
         if (!success) {
-          blockMessages.push(
-            deps.addMessage(
-              'assistant',
-              `Notebook build: блок ${i + 1} невалиден после ${NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts} попыток.`,
-              'build'
-            )
+          updateBlockMessage(
+            `Сборка: ${blockLabel} — невалиден после ${NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts} попыток.`
           );
+        }
+
+        updateBlockMessage(
+          [
+            `Сборка: ${blockLabel} — ${success ? 'готов' : 'невалиден'}.`,
+            `- попытки: ${attempts}/${NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts}`,
+            lastAutoFix ? `- auto-fix: ${lastAutoFix}` : '',
+            lastError ? `- последняя ошибка: ${lastError}` : '',
+          ].filter(Boolean).join('\n')
+        );
+        const progressMessage = tracker.getMessage();
+        if (progressMessage) {
+          blockMessages.push(progressMessage);
         }
 
         await deps.safeAppendTimeStep({
@@ -355,22 +607,25 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             errorLine: undefined,
           },
           meta: {
-            mode: 'notebook',
-            blockIndex: i,
             diagramType: targetDiagramType,
+            blockIndex: i,
+            totalBlocks: plan.diagrams.length,
             attempts,
             success,
             error: success ? undefined : lastError,
             notebookPlanIntent: rawIntent,
+            buildPrompt: diagram.buildPrompt?.trim() || '',
+            mode: 'notebook',
           },
         });
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
+      pushStatus(`Сборка ноутбука\n- ошибка: ${message}`);
       await deps.safeAppendTimeStep({
         type: 'build',
-        messages: [deps.addMessage('assistant', `Notebook build failed: ${message}`, 'build')],
-        meta: { mode: 'notebook', error: message },
+        messages: [deps.addMessage('assistant', `Сборка ноутбука не удалась: ${message}`, 'build')],
+        meta: { error: message },
       });
     } finally {
       await deps.setDiagramTypeAndWait(originalDiagramType);

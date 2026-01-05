@@ -30,11 +30,11 @@ export const useEditorTabs = ({
     if (activeTab === 'code' && tab !== 'code' && editorValueRef.current !== mermaidCode) {
       onChange(editorValueRef.current);
     }
-    if (activeTab === 'build_docs' && tab === 'markdown_mermaid') {
-      return;
-    }
     if (tab === 'build_docs' && activeTab === 'build_docs') {
       onActiveTabChange(lastNonBuildTabRef.current || 'code');
+      return;
+    }
+    if (activeTab === 'build_docs' && tab === 'markdown_mermaid') {
       return;
     }
     if (tab !== 'build_docs') {

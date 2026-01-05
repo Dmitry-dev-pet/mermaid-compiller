@@ -295,7 +295,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
               </pre>
             ) : (
               <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">
-                Intent is not available yet. Use Chat to define it.
+                Intent is not available for this block yet.
               </div>
             )}
           </div>

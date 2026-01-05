@@ -1,4 +1,4 @@
-import { validateMermaid, extractMermaidCode } from '../../services/mermaidService';
+import { validateMermaid, extractMermaidCode, parseMermaidJsonResponse } from '../../services/mermaidService';
 import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmService';
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
@@ -10,75 +10,93 @@ import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMess
 
 export const createRecompileHandler = (ctx: StudioContext) => {
   return async () => {
+    const stepMessages: Message[] = [];
+    const pushStatus = (content: string) => {
+      stepMessages.push(ctx.addMessage('assistant', content, 'build'));
+    };
     if (ctx.connectionState.status !== 'connected') {
       alert('Connect AI first!');
-      ctx.trackAnalyticsEvent('diagram_recompile_failed', {
-        ...(await ctx.getAnalyticsContext('build')),
+      pushStatus('Пересборка\n- офлайн: подключите AI');
+      await ctx.trackAnalyticsWithContext('diagram_recompile_failed', 'build', {
         mode: 'recompile',
         error: 'offline',
       });
-      await ctx.safeRecordTimeStep({ type: 'recompile', messages: [], meta: { error: 'offline' } });
+      await ctx.safeRecordTimeStep({ type: 'recompile', messages: stepMessages, meta: { error: 'offline' } });
       return;
     }
 
     const startedAt = Date.now();
     ctx.setIsProcessing(true);
     try {
-      const analyticsContext = await ctx.getAnalyticsContext('build');
       const docs = await ctx.getDocsContext('build');
       const language = ctx.resolveLanguage();
       const relevantMessages = ctx.getRelevantMessages();
       const llmMessages = ctx.buildLLMMessages(relevantMessages);
+      pushStatus(
+        [
+          'Пересборка',
+          '- старт',
+          `- тип: ${ctx.appState.diagramType}`,
+          `- язык: ${language}`,
+          `- модель: ${ctx.getCurrentModelName()}`,
+        ].join('\n')
+      );
 
-      ctx.trackAnalyticsEvent('diagram_recompile_started', {
-        ...analyticsContext,
+      await ctx.trackAnalyticsWithContext('diagram_recompile_started', 'build', {
         mode: 'recompile',
       });
 
       const rawCode = await runLLMRequest({
         task: 'recompile',
-        run: () => generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language),
+        run: () => generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams),
         retries: LLM_TIMEOUT_RETRIES,
         onTimeout: (notice) => {
           alert(formatTimeoutRetryMessage('Recompile', notice.attempt, notice.maxAttempts));
         },
       });
-      const cleanCode = extractMermaidCode(rawCode);
+      const parsed = parseMermaidJsonResponse(rawCode);
+      const cleanCode = parsed?.status === 'ok' && parsed.mermaid
+        ? parsed.mermaid
+        : extractMermaidCode(rawCode);
       const validation = await validateMermaid(cleanCode, { logError: false });
+      pushStatus(
+        [
+          'Пересборка',
+          `- валидация: ${validation.isValid ? 'валидна' : 'невалидна'}`,
+          `- символов: ${cleanCode.length}`,
+        ].join('\n')
+      );
 
       ctx.applyCompiledResult(cleanCode, validation);
-      const stepMessages: Message[] = [];
-      stepMessages.push(
-        ctx.addMessage(
-          'assistant',
-          `Generated ${ctx.appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}`,
-          'build'
-        )
+      pushStatus(
+        [
+          'Пересборка (итог)',
+          `- диаграмма: ${ctx.appState.diagramType}`,
+          `- ${validation.isValid ? 'валидна' : 'с ошибками'}`,
+        ].join('\n')
       );
       await ctx.safeRecordTimeStep({
         type: 'recompile',
         messages: stepMessages,
         nextMermaid: ctx.resolveMermaidUpdate(cleanCode, validation),
-        meta: { diagramType: ctx.appState.diagramType },
+        meta: { diagramType: ctx.appState.diagramType, isValid: !!validation.isValid },
       });
-      ctx.trackAnalyticsEvent('diagram_recompile_success', {
-        ...analyticsContext,
+      await ctx.trackAnalyticsWithContext('diagram_recompile_success', 'build', {
         mode: 'recompile',
         isValid: !!validation.isValid,
         errorLine: validation.errorLine,
         durationMs: Date.now() - startedAt,
         codeLength: cleanCode.length,
       });
+      pushStatus('Пересборка\n- история сохранена');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof TimeoutError) {
         alert(formatTimeoutFinalMessage('Recompile', LLM_TIMEOUT_RETRIES));
       }
       alert(`Generation failed (${ctx.getCurrentModelName()}): ${message}`);
-      const stepMessages: Message[] = [];
-      stepMessages.push(ctx.addMessage('assistant', `Error generating diagram (${ctx.getCurrentModelName()}): ${message}`, 'build'));
-      ctx.trackAnalyticsEvent('diagram_recompile_failed', {
-        ...(await ctx.getAnalyticsContext('build')),
+      pushStatus(`Пересборка: ошибка (${ctx.getCurrentModelName()}): ${message}`);
+      await ctx.trackAnalyticsWithContext('diagram_recompile_failed', 'build', {
         mode: 'recompile',
         error: 'exception',
       });
@@ -91,25 +109,33 @@ export const createRecompileHandler = (ctx: StudioContext) => {
 
 export const createFixSyntaxHandler = (ctx: StudioContext) => {
   return async () => {
+    const stepMessages: Message[] = [];
+    const pushStatus = (content: string) => {
+      stepMessages.push(ctx.addMessage('assistant', content, 'fix'));
+    };
     if (ctx.connectionState.status !== 'connected') {
-      ctx.trackAnalyticsEvent('diagram_fix_failed', {
-        ...(await ctx.getAnalyticsContext('fix')),
-        mode: 'fix',
+      pushStatus('Исправление\n- офлайн: подключите AI');
+      await ctx.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         error: 'offline',
       });
-      await ctx.safeRecordTimeStep({ type: 'fix', messages: [], meta: { error: 'offline' } });
+      await ctx.safeRecordTimeStep({ type: 'fix', messages: stepMessages, meta: { error: 'offline' } });
       return;
     }
 
     const startedAt = Date.now();
     ctx.setIsProcessing(true);
     try {
-      const analyticsContext = await ctx.getAnalyticsContext('fix');
       const docs = await ctx.getDocsContext('fix');
       const language = ctx.resolveLanguage();
-      ctx.trackAnalyticsEvent('diagram_fix_started', {
-        ...analyticsContext,
-        mode: 'fix',
+      pushStatus(
+        [
+          'Исправление',
+          '- старт',
+          `- язык: ${language}`,
+          `- модель: ${ctx.getCurrentModelName()}`,
+        ].join('\n')
+      );
+      await ctx.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
         codeLength: ctx.mermaidState.code.length,
       });
 
@@ -128,7 +154,8 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
               errorMessage || ctx.mermaidState.errorMessage || 'Unknown error',
               ctx.aiConfig,
               docs,
-              language
+              language,
+              ctx.modelParams
             ),
             retries: LLM_TIMEOUT_RETRIES,
             onTimeout: (notice) => {
@@ -137,8 +164,17 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
           });
           return extractMermaidCode(fixedRaw);
         },
-        onIteration: ctx.applyValidationPreservingSource,
+        onIteration: (code, nextValidation) => {
+          ctx.applyValidationPreservingSource(code, nextValidation);
+        },
       });
+      pushStatus(
+        [
+          'Исправление',
+          `- валидация: ${validation.isValid ? 'валидна' : 'невалидна'}`,
+          `- попытки: ${attempts}`,
+        ].join('\n')
+      );
 
       const changed = currentCode !== startCode;
       const cleared = !currentCode.trim();
@@ -152,7 +188,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
         : null;
       await ctx.safeRecordTimeStep({
         type: 'fix',
-        messages: [],
+        messages: stepMessages,
         nextMermaid,
         setCurrentRevisionId: cleared ? null : undefined,
         meta: {
@@ -162,9 +198,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
           cleared,
         },
       });
-      ctx.trackAnalyticsEvent('diagram_fix_success', {
-        ...analyticsContext,
-        mode: 'fix',
+      await ctx.trackAnalyticsWithContext('diagram_fix_success', 'fix', {
         attempts,
         changed,
         cleared,
@@ -173,18 +207,18 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
         durationMs: Date.now() - startedAt,
         codeLength: currentCode.length,
       });
+      pushStatus('Исправление\n- история сохранена');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof TimeoutError) {
         alert(formatTimeoutFinalMessage('Fix', LLM_TIMEOUT_RETRIES));
       }
       alert(`Fix failed (${ctx.getCurrentModelName()}): ${message}`);
-      ctx.trackAnalyticsEvent('diagram_fix_failed', {
-        ...(await ctx.getAnalyticsContext('fix')),
-        mode: 'fix',
+      pushStatus(`Исправление: ошибка (${ctx.getCurrentModelName()}): ${message}`);
+      await ctx.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         error: 'exception',
       });
-      await ctx.safeRecordTimeStep({ type: 'fix', messages: [], meta: { error: message } });
+      await ctx.safeRecordTimeStep({ type: 'fix', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);
     }
@@ -193,12 +227,17 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
 
 export const createAnalyzeHandler = (ctx: StudioContext) => {
   return async () => {
+    const stepMessages: Message[] = [];
+    const pushStatus = (content: string) => {
+      stepMessages.push(ctx.addMessage('assistant', content, 'analyze'));
+    };
     const diagramCode = ctx.getDiagramContextCode ? ctx.getDiagramContextCode().trim() : ctx.mermaidState.code.trim();
     if (ctx.connectionState.status !== 'connected' || !diagramCode) {
       alert('Connect AI and provide Mermaid code first!');
+      pushStatus('Анализ\n- офлайн или нет кода');
       await ctx.safeRecordTimeStep({
         type: 'analyze',
-        messages: [],
+        messages: stepMessages,
         meta: { error: ctx.connectionState.status !== 'connected' ? 'offline' : 'no_code' },
       });
       return;
@@ -208,16 +247,30 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
     try {
       const docs = await ctx.getDocsContext('analyze');
       const language = ctx.resolveAnalyzeLanguage();
+      pushStatus(
+        [
+          'Анализ',
+          '- старт',
+          `- язык: ${language}`,
+          `- модель: ${ctx.getCurrentModelName()}`,
+        ].join('\n')
+      );
       const explanation = await runLLMRequest({
         task: 'analyze',
-        run: () => analyzeDiagram(diagramCode, ctx.aiConfig, docs, language),
+        run: () => analyzeDiagram(diagramCode, ctx.aiConfig, docs, language, ctx.modelParams),
         retries: LLM_TIMEOUT_RETRIES,
         onTimeout: (notice) => {
           alert(formatTimeoutRetryMessage('Analyze', notice.attempt, notice.maxAttempts));
         },
       });
-      const stepMessages: Message[] = [];
       stepMessages.push(ctx.addMessage('assistant', explanation, 'analyze'));
+      pushStatus(
+        [
+          'Анализ',
+          '- завершён',
+          `- символов: ${explanation.length}`,
+        ].join('\n')
+      );
       await ctx.safeRecordTimeStep({ type: 'analyze', messages: stepMessages, meta: { diagramType: ctx.appState.diagramType } });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
@@ -225,8 +278,7 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
         alert(formatTimeoutFinalMessage('Analyze', LLM_TIMEOUT_RETRIES));
       }
       alert(`Analysis failed (${ctx.getCurrentModelName()}): ${message}`);
-      const stepMessages: Message[] = [];
-      stepMessages.push(ctx.addMessage('assistant', `Error analyzing diagram (${ctx.getCurrentModelName()}): ${message}`, 'analyze'));
+      pushStatus(`Анализ: ошибка (${ctx.getCurrentModelName()}): ${message}`);
       await ctx.safeRecordTimeStep({ type: 'analyze', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);

@@ -8,7 +8,7 @@ vi.mock('mermaid', () => ({
 }));
 
 import mermaid from 'mermaid';
-import { extractMermaidCode, validateMermaid } from './mermaidService';
+import { extractMermaidCode, parseMermaidJsonResponse, validateMermaid } from './mermaidService';
 
 describe('mermaidService', () => {
   const mermaidMock = mermaid as unknown as { initialize: any; parse: any };
@@ -34,6 +34,22 @@ describe('mermaidService', () => {
 
   it('extractMermaidCode returns empty string for non-mermaid text', () => {
     expect(extractMermaidCode('just text')).toBe('');
+  });
+
+  it('parseMermaidJsonResponse reads ok response', () => {
+    const input = JSON.stringify({
+      status: 'ok',
+      diagram_type: 'sequenceDiagram',
+      mermaid: 'flowchart TD\nA-->B',
+    });
+    const parsed = parseMermaidJsonResponse(input);
+    expect(parsed?.status).toBe('ok');
+    expect(parsed?.diagramType).toBe('sequence');
+    expect(parsed?.mermaid).toBe('flowchart TD\nA-->B');
+  });
+
+  it('parseMermaidJsonResponse returns null for invalid json', () => {
+    expect(parseMermaidJsonResponse('not json')).toBeNull();
   });
 
   it('validateMermaid marks empty code as valid', async () => {

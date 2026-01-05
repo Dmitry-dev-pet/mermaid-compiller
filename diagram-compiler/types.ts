@@ -1,7 +1,8 @@
 export type Provider = 'openrouter' | 'cliproxy';
 
 export type DiagramType =
-  'architecture'
+  'auto'
+  | 'architecture'
   | 'block'
   | 'c4'
   | 'class'
@@ -60,6 +61,8 @@ export interface AIConfig {
   selectedModelIdByProvider: Record<Provider, string>;
   filtersByProvider: ProviderFilters;
 }
+
+export type ModelParams = Record<string, number | string | boolean | null>;
 
 export interface ConnectionState {
   status: 'disconnected' | 'connecting' | 'connected' | 'failed';
@@ -166,7 +169,6 @@ export interface AppState {
   theme: 'light' | 'dark';
   language: string;
   analyzeLanguage: string;
-  isNotebookBuildEnabled: boolean;
   notebookBuildCount: number | null;
 }
 

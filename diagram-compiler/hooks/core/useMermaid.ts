@@ -15,22 +15,38 @@ export const useMermaid = () => {
     }));
 
     // 2. Validate asynchronously without awaiting in the main thread
-    validateMermaid(newCode, { logError: false }).then(validation => {
-       setMermaidState(prev => {
-           // Verify we are still validating the latest code to avoid race conditions
-           if (prev.code !== newCode) return prev; 
-           
-           return {
-               ...prev,
-               isValid: validation.isValid ?? false,
-               lastValidCode: validation.lastValidCode ?? prev.lastValidCode,
-               errorMessage: validation.errorMessage,
-               errorLine: validation.errorLine,
-               status: newCode.trim() ? (validation.isValid ? 'valid' : 'invalid') : 'empty',
-               source: prev.source === 'compiled' ? 'user-override' : prev.source,
-           };
-       });
-    });
+    validateMermaid(newCode, { logError: false })
+      .then(validation => {
+        setMermaidState(prev => {
+          // Verify we are still validating the latest code to avoid race conditions
+          if (prev.code !== newCode) return prev;
+
+          return {
+            ...prev,
+            isValid: validation.isValid ?? false,
+            lastValidCode: validation.lastValidCode ?? prev.lastValidCode,
+            errorMessage: validation.errorMessage,
+            errorLine: validation.errorLine,
+            status: newCode.trim() ? (validation.isValid ? 'valid' : 'invalid') : 'empty',
+            source: prev.source === 'compiled' ? 'user-override' : prev.source,
+          };
+        });
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setMermaidState(prev => {
+          if (prev.code !== newCode) return prev;
+
+          return {
+            ...prev,
+            isValid: false,
+            errorMessage: message,
+            errorLine: prev.errorLine,
+            status: newCode.trim() ? 'invalid' : 'empty',
+            source: prev.source === 'compiled' ? 'user-override' : prev.source,
+          };
+        });
+      });
   }, []);
 
   return {

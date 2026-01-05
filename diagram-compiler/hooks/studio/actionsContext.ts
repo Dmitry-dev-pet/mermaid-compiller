@@ -1,5 +1,14 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { AIConfig, AppState, ConnectionState, MermaidState, Message, DiagramIntent, DocsMode } from '../../types';
+import type {
+  AIConfig,
+  AppState,
+  ConnectionState,
+  MermaidState,
+  Message,
+  DiagramIntent,
+  DocsMode,
+  ModelParams,
+} from '../../types';
 import { MermaidMarkdownBlock, replaceMermaidBlockInMarkdown, validateMermaid } from '../../services/mermaidService';
 import type { AnalyticsContext } from '../../services/analyticsService';
 import { detectLanguage } from '../../utils';
@@ -14,6 +23,7 @@ export type StudioActionsDeps = {
   aiConfig: AIConfig;
   connectionState: ConnectionState;
   appState: AppState;
+  modelParams: ModelParams | null;
   isNotebookChatEnabled?: boolean;
   mermaidState: MermaidState;
   diagramIntent: DiagramIntent | null;
@@ -24,6 +34,7 @@ export type StudioActionsDeps = {
   getDiagramContextCode?: () => string;
   getAnalyticsContext: (mode: DocsMode) => Promise<AnalyticsContext>;
   trackAnalyticsEvent?: (event: string, payload?: Record<string, unknown>) => void;
+  trackAnalyticsWithContext?: (event: string, mode: DocsMode, payload?: Record<string, unknown>) => Promise<void>;
   resolveMermaidUpdateTarget?: () => MermaidUpdateTarget | null;
   setIsProcessing: (value: boolean) => void;
   getDocsContext: (mode: DocsMode) => Promise<string>;
@@ -53,6 +64,7 @@ export type StudioContext = StudioActionsDeps & {
   applyValidationPreservingSource: (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => void;
   getAnalyticsContext: (mode: DocsMode) => Promise<AnalyticsContext>;
   trackAnalyticsEvent: (event: string, payload?: Record<string, unknown>) => void;
+  trackAnalyticsWithContext: (event: string, mode: DocsMode, payload?: Record<string, unknown>) => Promise<void>;
   getCurrentModelName: () => string;
   getDocsContext: (mode: DocsMode) => Promise<string>;
   safeRecordTimeStep: StudioActionsDeps['recordTimeStep'];
@@ -61,7 +73,7 @@ export type StudioContext = StudioActionsDeps & {
 export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {
   const normalizeText = (text: string) => text.replace(/\s+/g, ' ').trim();
   const getRelevantMessages = () => deps.getMessages().filter((m) => m.id !== 'init');
-  const isNotebookChatEnabled = deps.isNotebookChatEnabled ?? deps.appState.isNotebookBuildEnabled;
+  const isNotebookChatEnabled = deps.isNotebookChatEnabled ?? true;
 
   const resolveLanguage = (text?: string): string => {
     if (deps.appState.language && deps.appState.language !== 'auto') {
@@ -194,6 +206,20 @@ ${code}
     deps.trackAnalyticsEvent?.(event, payload);
   };
 
+  const trackAnalyticsWithContext = async (
+    event: string,
+    mode: DocsMode,
+    payload: Record<string, unknown> = {}
+  ) => {
+    if (deps.trackAnalyticsWithContext) {
+      await deps.trackAnalyticsWithContext(event, mode, payload);
+      return;
+    }
+    if (!deps.trackAnalyticsEvent) return;
+    const context = await deps.getAnalyticsContext(mode);
+    deps.trackAnalyticsEvent(event, { ...context, ...payload, mode });
+  };
+
   const applyValidationPreservingSource = (code: string, v: Awaited<ReturnType<typeof validateMermaid>>) => {
     deps.setMermaidState((prev) => ({
       ...prev,
@@ -237,6 +263,7 @@ ${code}
     applyValidationPreservingSource,
     getAnalyticsContext,
     trackAnalyticsEvent,
+    trackAnalyticsWithContext,
     getCurrentModelName,
     safeRecordTimeStep,
   };

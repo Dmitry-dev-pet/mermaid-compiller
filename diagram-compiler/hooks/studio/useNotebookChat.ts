@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { INITIAL_CHAT_MESSAGE } from '../../constants';
-import type { Message } from '../../types';
+import type { DiagramIntent, Message } from '../../types';
 import type { TimeStep } from '../../services/history/types';
+import { resolveNotebookRawIntent } from './notebookIntent';
 
 type NotebookChatInfo = { messages: Message[]; rawIntent?: Message };
 
@@ -15,7 +16,8 @@ interface UseNotebookChatParams {
   messages: Message[];
   setMessages: Dispatch<SetStateAction<Message[]>>;
   getMessages: () => Message[];
-  diagramIntentContent?: string | null;
+  diagramIntent: DiagramIntent | null;
+  setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
   systemPrompt: string;
   systemPromptRedacted: string;
   isSystemPromptRaw: boolean;
@@ -54,18 +56,46 @@ const buildNotebookChatMap = (steps: TimeStep[]) => {
   return map;
 };
 
-const resolveNotebookRawIntent = (steps: TimeStep[], blockIndex: number) => {
-  for (const step of steps) {
+const resolveNotebookBlockIntent = (steps: TimeStep[], blockIndex: number): DiagramIntent | null => {
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const step = steps[i];
     const meta = step.meta as Record<string, unknown> | undefined;
     if (!meta || meta.mode !== 'notebook') continue;
     if (typeof meta.blockIndex !== 'number' || meta.blockIndex !== blockIndex) continue;
-    if (typeof meta.notebookPlanIntent === 'string') return meta.notebookPlanIntent;
+    const intent = typeof meta.intent === 'string' ? meta.intent.trim() : '';
+    if (!intent) continue;
+    const rawSource = meta.intentSource;
+    const source =
+      rawSource === 'chat' || rawSource === 'build' || rawSource === 'fallback'
+        ? (rawSource as DiagramIntent['source'])
+        : step.type === 'chat'
+          ? 'chat'
+          : step.type === 'build'
+            ? 'build'
+            : 'fallback';
+    return { content: intent, source, updatedAt: step.createdAt };
   }
-  return '';
+
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const step = steps[i];
+    const meta = step.meta as Record<string, unknown> | undefined;
+    if (!meta || meta.mode !== 'notebook') continue;
+    if (typeof meta.blockIndex !== 'number' || meta.blockIndex !== blockIndex) continue;
+    const planIntent = typeof meta.notebookPlanIntent === 'string' ? meta.notebookPlanIntent.trim() : '';
+    if (!planIntent) continue;
+    return { content: planIntent, source: 'build', updatedAt: step.createdAt };
+  }
+
+  return null;
 };
 
-const stripNotebookSyntheticMessages = (list: Message[]) => {
-  return list.filter((m) => m.id !== 'init' && m.id !== 'notebook-chat-md' && m.id !== 'notebook-raw-intent');
+const stripNotebookSyntheticMessages = (list: Message[], excludeIds?: Set<string>) => {
+  return list.filter((m) => (
+    m.id !== 'init'
+    && m.id !== 'notebook-chat-md'
+    && m.id !== 'notebook-raw-intent'
+    && !excludeIds?.has(m.id)
+  ));
 };
 
 const buildInitMessage = (): Message => ({
@@ -92,10 +122,10 @@ const buildNotebookChatMessages = (
     timestamp: 0,
     mode: 'system',
   };
-  const raw = includeRaw && info?.rawIntent
+  const raw = info?.rawIntent
     ? [{ ...info.rawIntent, id: 'notebook-raw-intent' }]
     : [];
-  const promptMessages = includeRaw ? raw : [systemPromptMessage];
+  const promptMessages = includeRaw ? raw : [...raw, systemPromptMessage];
   return [init, ...promptMessages, ...base];
 };
 
@@ -127,7 +157,8 @@ export const useNotebookChat = ({
   messages,
   setMessages,
   getMessages,
-  diagramIntentContent,
+  diagramIntent,
+  setDiagramIntent,
   systemPrompt,
   systemPromptRedacted,
   isSystemPromptRaw,
@@ -135,19 +166,20 @@ export const useNotebookChat = ({
   const notebookChatRef = useRef<Record<number, NotebookChatInfo>>({});
   const notebookChatIndexRef = useRef<number | null>(null);
   const mainChatRef = useRef<Message[] | null>(null);
+  const mainDiagramIntentRef = useRef<DiagramIntent | null>(null);
   const notebookChatModeRef = useRef(false);
   const buildDocsIntentText = useMemo(() => {
-    if (diagramIntentContent?.trim()) {
-      return diagramIntentContent.trim();
+    if (isNotebookDataEnabled) {
+      if (!markdownMermaidBlocksLength) return '';
+      const index = Math.max(0, Math.min(markdownMermaidActiveIndex, markdownMermaidBlocksLength - 1));
+      const rawIntent = resolveNotebookRawIntent(historySteps, index);
+      return rawIntent?.trim() || '';
     }
-    if (!markdownMermaidBlocksLength) return '';
-    const index = Math.max(0, Math.min(markdownMermaidActiveIndex, markdownMermaidBlocksLength - 1));
-    const rawIntent = resolveNotebookRawIntent(historySteps, index);
-    if (rawIntent?.trim()) return rawIntent.trim();
-    return '';
+    return diagramIntent?.content?.trim() || '';
   }, [
-    diagramIntentContent,
+    diagramIntent,
     historySteps,
+    isNotebookDataEnabled,
     markdownMermaidActiveIndex,
     markdownMermaidBlocksLength,
   ]);
@@ -166,6 +198,7 @@ export const useNotebookChat = ({
     if (index === null) return;
     if (!notebookChatModeRef.current) {
       mainChatRef.current = getMessages();
+      mainDiagramIntentRef.current = diagramIntent;
       notebookChatModeRef.current = true;
     }
     notebookChatIndexRef.current = index;
@@ -179,15 +212,27 @@ export const useNotebookChat = ({
     if (!areMessagesEqual(getMessages(), nextMessages)) {
       setMessages(nextMessages);
     }
+    const nextIntent = resolveNotebookBlockIntent(historySteps, index);
+    if (
+      (nextIntent?.content ?? '') !== (diagramIntent?.content ?? '')
+      || (nextIntent?.source ?? 'fallback') !== (diagramIntent?.source ?? 'fallback')
+    ) {
+      setDiagramIntent(nextIntent);
+    }
   }, [
     getNotebookChatIndex,
     getMessages,
     isNotebookChatMode,
+    historySteps,
     isSystemPromptRaw,
+    diagramIntent,
+    setDiagramIntent,
     mainChatRef,
+    mainDiagramIntentRef,
     notebookChatIndexRef,
     notebookChatModeRef,
     notebookChatRef,
+    markdownMermaidBlocksLength,
     setMessages,
     systemPrompt,
     systemPromptRedacted,
@@ -197,6 +242,10 @@ export const useNotebookChat = ({
     if (isNotebookChatMode) {
       const index = getNotebookChatIndex();
       if (index === null) return;
+      const hasNotebookSynthetic = messages.some(
+        (m) => m.id === 'notebook-chat-md' || m.id === 'notebook-raw-intent'
+      );
+      if (!hasNotebookSynthetic) return;
       const info = notebookChatRef.current[index];
       const nextInfo = {
         messages: stripNotebookSyntheticMessages(messages),
@@ -206,19 +255,35 @@ export const useNotebookChat = ({
       return;
     }
 
-    if (notebookChatIndexRef.current !== null) {
-      if (mainChatRef.current) {
+    if (notebookChatModeRef.current) {
+      if (mainChatRef.current && !areMessagesEqual(getMessages(), mainChatRef.current)) {
         setMessages(mainChatRef.current);
+      }
+      if (
+        mainDiagramIntentRef.current
+        && (
+          mainDiagramIntentRef.current.content !== (diagramIntent?.content ?? '')
+          || mainDiagramIntentRef.current.source !== (diagramIntent?.source ?? 'fallback')
+        )
+      ) {
+        setDiagramIntent(mainDiagramIntentRef.current);
+      } else if (!mainDiagramIntentRef.current && diagramIntent) {
+        setDiagramIntent(null);
       }
       notebookChatIndexRef.current = null;
       notebookChatModeRef.current = false;
       return;
     }
     mainChatRef.current = messages;
+    mainDiagramIntentRef.current = diagramIntent;
   }, [
     getNotebookChatIndex,
+    getMessages,
     isNotebookChatMode,
+    diagramIntent,
+    setDiagramIntent,
     mainChatRef,
+    mainDiagramIntentRef,
     messages,
     notebookChatIndexRef,
     notebookChatModeRef,

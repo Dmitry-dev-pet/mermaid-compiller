@@ -18,8 +18,8 @@ type ChatProjectsProps = {
   diagramType: DiagramType;
   onDiagramTypeChange: (type: DiagramType) => void;
   detectedDiagramType: DiagramType | null;
-  isMarkdownNotebook: boolean;
-  isCodeEmpty: boolean;
+  notebookBuildCount: number | null;
+  onNotebookBuildCountChange: (count: number | null) => void;
 };
 
 const formatProjectTimestamp = (ts?: number) => {
@@ -47,8 +47,8 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   diagramType,
   onDiagramTypeChange,
   detectedDiagramType,
-  isMarkdownNotebook,
-  isCodeEmpty,
+  notebookBuildCount,
+  onNotebookBuildCountChange,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [sortKey, setSortKey] = useState<'updated' | 'created' | 'name'>('updated');
@@ -185,12 +185,93 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
                 <span>Diagram type</span>
-                {isCodeEmpty && !isMarkdownNotebook && (
+                <select
+                  value={diagramType}
+                  onChange={(e) => onDiagramTypeChange(e.target.value as DiagramType)}
+                  className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                >
+                  <option value="auto">Main (FC/ER/SD)</option>
+                  <option value="architecture">Architecture</option>
+                  <option value="block">Block</option>
+                  <option value="c4">C4 (experimental)</option>
+                  <option value="class">Class Diagram</option>
+                  <option value="er">Entity Relationship</option>
+                  <option value="sequence">Sequence Diagram</option>
+                  <option value="flowchart">Flowchart</option>
+                  <option value="gantt">Gantt</option>
+                  <option value="gitGraph">Git Graph</option>
+                  <option value="kanban">Kanban</option>
+                  <option value="mindmap">Mindmap</option>
+                  <option value="packet">Packet</option>
+                  <option value="pie">Pie</option>
+                  <option value="quadrantChart">Quadrant Chart</option>
+                  <option value="radar">Radar</option>
+                  <option value="requirementDiagram">Requirement Diagram</option>
+                  <option value="sankey">Sankey</option>
+                  <option value="state">State Diagram</option>
+                  <option value="timeline">Timeline</option>
+                  <option value="treemap">Treemap</option>
+                  <option value="userJourney">User Journey</option>
+                  <option value="xychart">XY Chart</option>
+                  <option value="zenuml">ZenUML</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <span>Count</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={notebookBuildCount ?? ''}
+                  placeholder="auto"
+                  className="w-20 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                  onChange={(e) => {
+                    const next = e.target.value.trim();
+                    if (!next) {
+                      onNotebookBuildCountChange(null);
+                      return;
+                    }
+                    const parsed = Number(next);
+                    if (Number.isNaN(parsed) || parsed <= 0) {
+                      onNotebookBuildCountChange(null);
+                      return;
+                    }
+                    onNotebookBuildCountChange(Math.floor(parsed));
+                  }}
+                />
+              </div>
+            </div>
+            {diagramType === 'auto' && (
+              <span className="block text-[10px] text-slate-400 dark:text-slate-500">
+                Main ограничен: FC / ER / SD
+              </span>
+            )}
+            {detectedLabel && diagramType === 'auto' && (
+              <span className="block text-[10px] text-slate-400 dark:text-slate-500">
+                Detected: {detectedLabel}
+              </span>
+            )}
+            {detectedLabel && diagramType !== 'auto' && !isDetectedMatch && (
+              <span className="block text-[10px] text-amber-500">
+                {detectedLabel} (selected: {selectedLabel})
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      {!isExpanded && activeProject && (
+        <div className="mx-3 mb-2 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 px-2 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{activeProject.title}</div>
+            <div className="flex flex-col text-[11px] text-slate-500 dark:text-slate-400">
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <span>Diagram type</span>
                   <select
                     value={diagramType}
                     onChange={(e) => onDiagramTypeChange(e.target.value as DiagramType)}
                     className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
                   >
+                    <option value="auto">Main (FC/ER/SD)</option>
                     <option value="architecture">Architecture</option>
                     <option value="block">Block</option>
                     <option value="c4">C4 (experimental)</option>
@@ -215,81 +296,44 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                     <option value="xychart">XY Chart</option>
                     <option value="zenuml">ZenUML</option>
                   </select>
-                )}
-              </div>
-              {isMarkdownNotebook ? (
-                <span className="w-40 mt-1 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 inline-flex items-center">
-                  Markdown
-                </span>
-              ) : !isCodeEmpty ? (
-                <span className="w-40 mt-1 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 inline-flex items-center">
-                  {selectedLabel}
-                </span>
-              ) : null}
-            </div>
-            {!isMarkdownNotebook && detectedLabel && (
-              <span className={`block text-[10px] ${isDetectedMatch ? 'text-emerald-500' : 'text-amber-500'}`}>
-                {detectedLabel}
-                {!isDetectedMatch ? ` (выбрано: ${selectedLabel})` : ''}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-      {!isExpanded && activeProject && (
-        <div className="mx-3 mb-2 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 px-2 py-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{activeProject.title}</div>
-            <div className="flex flex-col text-[11px] text-slate-500 dark:text-slate-400">
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2">
-                  <span>Diagram type</span>
-                  {isCodeEmpty && !isMarkdownNotebook && (
-                    <select
-                      value={diagramType}
-                      onChange={(e) => onDiagramTypeChange(e.target.value as DiagramType)}
-                      className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
-                    >
-                      <option value="architecture">Architecture</option>
-                      <option value="block">Block</option>
-                      <option value="c4">C4 (experimental)</option>
-                      <option value="class">Class Diagram</option>
-                      <option value="er">Entity Relationship</option>
-                      <option value="sequence">Sequence Diagram</option>
-                      <option value="flowchart">Flowchart</option>
-                      <option value="gantt">Gantt</option>
-                      <option value="gitGraph">Git Graph</option>
-                      <option value="kanban">Kanban</option>
-                      <option value="mindmap">Mindmap</option>
-                      <option value="packet">Packet</option>
-                      <option value="pie">Pie</option>
-                      <option value="quadrantChart">Quadrant Chart</option>
-                      <option value="radar">Radar</option>
-                      <option value="requirementDiagram">Requirement Diagram</option>
-                      <option value="sankey">Sankey</option>
-                      <option value="state">State Diagram</option>
-                      <option value="timeline">Timeline</option>
-                      <option value="treemap">Treemap</option>
-                      <option value="userJourney">User Journey</option>
-                      <option value="xychart">XY Chart</option>
-                      <option value="zenuml">ZenUML</option>
-                    </select>
-                  )}
                 </div>
-                {isMarkdownNotebook ? (
-                  <span className="w-40 mt-1 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 inline-flex items-center">
-                    Markdown
-                  </span>
-                ) : !isCodeEmpty ? (
-                  <span className="w-40 mt-1 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 inline-flex items-center">
-                    {selectedLabel}
-                  </span>
-                ) : null}
+                <div className="flex items-center gap-2 mt-1">
+                  <span>Count</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={notebookBuildCount ?? ''}
+                    placeholder="auto"
+                    className="w-20 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                    onChange={(e) => {
+                      const next = e.target.value.trim();
+                      if (!next) {
+                        onNotebookBuildCountChange(null);
+                        return;
+                      }
+                      const parsed = Number(next);
+                      if (Number.isNaN(parsed) || parsed <= 0) {
+                        onNotebookBuildCountChange(null);
+                        return;
+                      }
+                      onNotebookBuildCountChange(Math.floor(parsed));
+                    }}
+                  />
+                </div>
               </div>
-              {!isMarkdownNotebook && detectedLabel && (
-                <span className={`block text-[10px] ${isDetectedMatch ? 'text-emerald-500' : 'text-amber-500'}`}>
-                  {detectedLabel}
-                  {!isDetectedMatch ? ` (выбрано: ${selectedLabel})` : ''}
+              {diagramType === 'auto' && (
+                <span className="block text-[10px] text-slate-400 dark:text-slate-500">
+                  Main ограничен: FC / ER / SD
+                </span>
+              )}
+              {detectedLabel && diagramType === 'auto' && (
+                <span className="block text-[10px] text-slate-400 dark:text-slate-500">
+                  Detected: {detectedLabel}
+                </span>
+              )}
+              {detectedLabel && diagramType !== 'auto' && !isDetectedMatch && (
+                <span className="block text-[10px] text-amber-500">
+                  {detectedLabel} (selected: {selectedLabel})
                 </span>
               )}
             </div>

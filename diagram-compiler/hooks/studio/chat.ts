@@ -6,45 +6,78 @@ import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMess
 import { stripMermaidCode } from '../../utils';
 import { normalizeIntentText } from '../../utils/intent';
 import type { Message } from '../../types';
+import { ANALYTICS_EVENTS, type ChatAnalyticsPayload } from '../../services/analyticsEvents';
 import type { StudioContext } from './actionsContext';
 
 export const createChatHandler = (ctx: StudioContext) => {
   return async (text: string) => {
     const stepMessages: Message[] = [];
+    const pushStatus = (content: string) => {
+      stepMessages.push(ctx.addMessage('assistant', content, 'chat'));
+    };
     stepMessages.push(ctx.addMessage('user', text, 'chat'));
     if (ctx.connectionState.status !== 'connected') {
-      stepMessages.push(ctx.addMessage('assistant', "I'm offline. Connect AI to generate diagrams.", 'chat'));
+      pushStatus('Офлайн. Подключите AI для генерации.');
+      const payload: ChatAnalyticsPayload = { error: 'offline' };
+      await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatFailed, 'chat', payload);
       await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages });
       return;
     }
 
     const language = ctx.resolveLanguage(text);
 
+    const startedAt = Date.now();
     ctx.setIsProcessing(true);
     try {
+      pushStatus(
+        [
+          'Чат',
+          `- старт`,
+          `- язык: ${language}`,
+          `- ${ctx.getCurrentModelName()}`,
+          ctx.isNotebookChatEnabled ? '- режим: notebook' : '',
+        ].filter(Boolean).join('\n')
+      );
+      const startedPayload: ChatAnalyticsPayload = {
+        hasPrompt: text.trim().length > 0,
+      };
+      await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatStarted, 'chat', startedPayload);
       const relevantMessages = ctx.getRelevantMessages();
-      const llmMessages = ctx.buildLLMMessages(relevantMessages);
+      const llmMessagesBase = ctx.buildLLMMessages(relevantMessages);
+      const notebookCount = ctx.isNotebookChatEnabled ? ctx.appState.notebookBuildCount : null;
+      const notebookCountMessage = notebookCount
+        ? {
+            id: 'notebook-count',
+            role: 'user' as const,
+            content: language === 'Russian'
+              ? `Количество диаграмм: ${notebookCount}.`
+              : `Diagram count: ${notebookCount}.`,
+            timestamp: Date.now(),
+          }
+        : null;
+      const llmMessages = notebookCountMessage ? [...llmMessagesBase, notebookCountMessage] : llmMessagesBase;
 
       const docs = await ctx.getDocsContext('chat');
       const responseText = await runLLMRequest({
         task: 'chat',
         run: () => (
           ctx.isNotebookChatEnabled
-            ? chatNotebook(llmMessages, ctx.aiConfig, docs, language)
-            : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language)
+            ? chatNotebook(llmMessages, ctx.aiConfig, docs, language, ctx.modelParams)
+            : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
         ),
         retries: LLM_TIMEOUT_RETRIES,
         onTimeout: (notice) => {
-          stepMessages.push(
-            ctx.addMessage(
-              'assistant',
-              formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts),
-              'chat'
-            )
-          );
+          pushStatus(formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts));
         },
       });
       const intentText = normalizeIntentText(stripMermaidCode(responseText));
+      pushStatus(
+        [
+          'Чат',
+          `- ответ получен`,
+          `- длина intent: ${intentText.length}`,
+        ].join('\n')
+      );
       stepMessages.push(ctx.addMessage('assistant', intentText, 'chat'));
       if (intentText) {
         ctx.setCurrentIntent({
@@ -53,15 +86,23 @@ export const createChatHandler = (ctx: StudioContext) => {
           updatedAt: Date.now(),
         });
       }
+      const successPayload: ChatAnalyticsPayload = {
+        durationMs: Date.now() - startedAt,
+        intentLength: intentText.length,
+      };
+      await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatSuccess, 'chat', successPayload);
       await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages, meta: { intent: intentText || null } });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof TimeoutError) {
-        stepMessages.push(
-          ctx.addMessage('assistant', formatTimeoutFinalMessage('Chat', LLM_TIMEOUT_RETRIES), 'chat')
-        );
+        pushStatus(formatTimeoutFinalMessage('Chat', LLM_TIMEOUT_RETRIES));
       }
-      stepMessages.push(ctx.addMessage('assistant', `Error (${ctx.getCurrentModelName()}): ${message}`, 'chat'));
+      const failedPayload: ChatAnalyticsPayload = {
+        error: 'exception',
+        durationMs: Date.now() - startedAt,
+      };
+      await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatFailed, 'chat', failedPayload);
+      pushStatus(`Чат: ошибка (${ctx.getCurrentModelName()}): ${message}`);
       await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages, meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);

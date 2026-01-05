@@ -1,9 +1,12 @@
 import React, { useCallback, useMemo, useRef, useEffect, useState } from 'react';
-import { FileText, MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
 import { LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
-import type { DiagramMarker } from '../hooks/core/useHistory';
 import ChatProjects from './ChatProjects';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../utils/uiModes';
+import './chat-markdown.css';
+import ChatMarkdownTabs from './chat/ChatMarkdownTabs';
+import ChatStatusGroup from './chat/ChatStatusGroup';
+import { parseNotebookBuildMessage } from './chat/chatMessageUtils';
 
 interface ChatColumnProps {
   messages: Message[];
@@ -28,15 +31,12 @@ interface ChatColumnProps {
   diagramType: import('../types').DiagramType;
   onDiagramTypeChange: (type: import('../types').DiagramType) => void;
   detectedDiagramType: import('../types').DiagramType | null;
-  isMarkdownNotebook: boolean;
-  isCodeEmpty: boolean;
   onPreviewPrompt: (mode: PromptPreviewMode, input: string) => Promise<LLMRequestPreview>;
   buildDocsSelectionKey: string;
   promptPreviewKey: string;
-  diagramMarkers?: DiagramMarker[];
-  diagramStepAnchors?: Record<string, string>;
-  selectedStepId?: string | null;
-  onSelectDiagramStep?: (stepId: string) => void | Promise<void>;
+  onOpenNotebookBlock?: (index: number) => void;
+  isNotebookChatMode?: boolean;
+  onBackToNotebookMainChat?: () => void;
   projects: React.ComponentProps<typeof ChatProjects>['projects'];
   activeProjectId: React.ComponentProps<typeof ChatProjects>['activeProjectId'];
   onOpenProject: (sessionId: string) => void | Promise<void>;
@@ -46,11 +46,8 @@ interface ChatColumnProps {
   onPreviewProjectSnapshot: (sessionId: string) => Promise<void>;
   onClearProjectPreview: () => void;
   deleteUndoMs: number;
-  isNotebookBuildEnabled: boolean;
   notebookBuildCount: number | null;
-  onNotebookBuildEnabledChange: (enabled: boolean) => void;
   onNotebookBuildCountChange: (count: number | null) => void;
-  isNotebookDiagramChat: boolean;
 }
 
 const ChatColumn: React.FC<ChatColumnProps> = ({
@@ -63,13 +60,14 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   hasIntent,
   onSetPromptPreview,
   diagramType,
+  onDiagramTypeChange,
+  detectedDiagramType,
   onPreviewPrompt,
-  diagramMarkers = [],
-  diagramStepAnchors = {},
-  selectedStepId = null,
   buildDocsSelectionKey,
   promptPreviewKey,
-  onSelectDiagramStep,
+  onOpenNotebookBlock,
+  isNotebookChatMode = false,
+  onBackToNotebookMainChat,
   projects,
   activeProjectId,
   onOpenProject,
@@ -79,23 +77,15 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onPreviewProjectSnapshot,
   onClearProjectPreview,
   deleteUndoMs,
-  isNotebookBuildEnabled,
   notebookBuildCount,
-  onNotebookBuildEnabledChange,
   onNotebookBuildCountChange,
-  isNotebookDiagramChat,
   intentText,
-  onDiagramTypeChange,
-  detectedDiagramType,
-  isMarkdownNotebook,
-  isCodeEmpty
 }) => {
   const [input, setInput] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
-  const messageElsRef = useRef<Record<string, HTMLDivElement | null>>({});
   const isAtBottomRef = useRef(true);
+  const prevMessagesCountRef = useRef(messages.length);
   const previewRequestRef = useRef(0);
   const previewTimerRef = useRef<number | null>(null);
   const lastMessageTimestamp = messages[messages.length - 1]?.timestamp ?? 0;
@@ -105,63 +95,33 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     return Math.max(1, Math.ceil(trimmed.length / 4));
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
   useEffect(() => {
-    if (isAtBottomRef.current) scrollToBottom();
-  }, [messages]);
+    const prevCount = prevMessagesCountRef.current;
+    const nextCount = messages.length;
+    prevMessagesCountRef.current = nextCount;
 
-  useEffect(() => {
-    if (!focusedMessageId) return;
-    const t = window.setTimeout(() => setFocusedMessageId(null), 1600);
-    return () => window.clearTimeout(t);
-  }, [focusedMessageId]);
+    // When chat resets (new project / clear), avoid smooth scrolling artifacts.
+    if (nextCount < prevCount) {
+      const el = messagesContainerRef.current;
+      if (el) {
+        el.scrollTo({ top: 0, behavior: 'auto' });
+      }
+      isAtBottomRef.current = true;
+      return;
+    }
 
-  const scrollToMessage = (messageId: string) => {
-    const el = messageElsRef.current[messageId];
-    if (!el) return false;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setFocusedMessageId(messageId);
-    return true;
-  };
+    if (isAtBottomRef.current) scrollToBottom('smooth');
+  }, [messages.length]);
 
   const onMessagesScroll = () => {
     const el = messagesContainerRef.current;
     if (!el) return;
     const thresholdPx = 64;
     isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < thresholdPx;
-  };
-
-  const markersUi = useMemo(() => {
-    return diagramMarkers.map((m) => {
-      const isSelected = m.stepId === selectedStepId;
-      const label =
-        m.type === 'build'
-          ? 'Build'
-          : m.type === 'fix'
-            ? 'Fix'
-            : m.type === 'recompile'
-              ? 'Run'
-              : m.type === 'manual_edit'
-                ? 'Snapshot'
-                : m.type === 'seed'
-                  ? 'Seed'
-                  : m.type;
-
-      return { ...m, isSelected, label };
-    });
-  }, [diagramMarkers, selectedStepId]);
-
-  const handleMarkerClick = (stepId: string) => {
-    onSelectDiagramStep?.(stepId);
-    const anchor = diagramStepAnchors[stepId];
-    if (anchor) {
-      requestAnimationFrame(() => scrollToMessage(anchor));
-    } else {
-      requestAnimationFrame(() => scrollToBottom());
-    }
   };
 
   const formatMessagesForPreview = useCallback((previewMessages: Message[]) => {
@@ -173,6 +133,71 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         return `[${roleLabel}] ${content}`;
       })
       .join('\n\n');
+  }, []);
+
+  const shouldRenderMarkdown = (message: Message, isStatus: boolean) => {
+    if (message.role !== 'assistant' || isStatus) return false;
+    const text = message.content.trim();
+    if (!text) return false;
+    return /(^|\n)#{1,6}\s+/.test(text) || /^Intent:\s*/i.test(text);
+  };
+
+  const isStatusMessage = useCallback((message: Message) => {
+    if (message.role !== 'assistant') return false;
+    if (!message.content) return false;
+    const content = message.content.replace(/^\[notebook-block:\d+\]\s*/i, '').trim();
+    return /^(Build|Chat|Fix|Analyze|Recompile|Notebook|Planner|Notebook block|Сборка|Чат|Исправление|Анализ|Пересборка|Ноутбук|Планировщик)(:|\s|\n)/i
+      .test(content);
+  }, []);
+
+  const lastStatusIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (isStatusMessage(messages[i])) return i;
+    }
+    return -1;
+  }, [isStatusMessage, messages]);
+
+  const renderItems = useMemo(() => {
+    const items: Array<
+      | { kind: 'message'; message: Message }
+      | { kind: 'statusGroup'; messages: Message[] }
+    > = [];
+    let currentGroup: Message[] | null = null;
+    for (const message of messages) {
+      if (isStatusMessage(message)) {
+        if (!currentGroup) {
+          currentGroup = [];
+          items.push({ kind: 'statusGroup', messages: currentGroup });
+        }
+        currentGroup.push(message);
+      } else {
+        currentGroup = null;
+        items.push({ kind: 'message', message });
+      }
+    }
+    return items;
+  }, [isStatusMessage, messages]);
+
+  const getStatusStyle = useCallback((mode?: Message['mode']) => {
+    const base =
+      'text-slate-500 dark:text-slate-400 font-mono text-[11px] leading-snug tracking-tight';
+    const accent = (() => {
+      switch (mode) {
+        case 'build':
+          return '';
+        case 'chat':
+          return '';
+        case 'fix':
+          return '';
+        case 'analyze':
+          return '';
+        case 'system':
+          return '';
+        default:
+          return '';
+      }
+    })();
+    return `${base} ${accent}`;
   }, []);
 
   const parseDocsContext = useCallback((docsContext: string) => {
@@ -206,6 +231,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
     return entries;
   }, []);
+
 
   const formatRequestPreview = useCallback(
     (preview: LLMRequestPreview, options: { redactDocs: boolean }) => {
@@ -349,63 +375,42 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     updatePromptPreview,
   ]);
 
-  const assistantModeStyles = {
-    chat: MODE_UI.chat.bubble,
-    build: MODE_UI.build.bubble,
-    fix: MODE_UI.fix.bubble,
-    analyze: MODE_UI.analyze.bubble,
-    system: MODE_UI.system.bubble,
-  };
-
   return (
     <div className="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50">
-      <ChatProjects
-        projects={projects}
-        activeProjectId={activeProjectId}
-        onNewProject={onNewProject}
-        onOpenProject={onOpenProject}
-        onRenameProject={onRenameProject}
-        onDeleteProject={onDeleteProject}
-        onUndoDeleteProject={onUndoDeleteProject}
-        onPreviewProjectSnapshot={onPreviewProjectSnapshot}
-        onClearProjectPreview={onClearProjectPreview}
-        deleteUndoMs={deleteUndoMs}
-        diagramType={diagramType}
-        onDiagramTypeChange={onDiagramTypeChange}
-        detectedDiagramType={detectedDiagramType}
-        isMarkdownNotebook={isMarkdownNotebook}
-        isCodeEmpty={isCodeEmpty}
-      />
+        <ChatProjects
+          projects={projects}
+          activeProjectId={activeProjectId}
+          onNewProject={onNewProject}
+          onOpenProject={onOpenProject}
+          onRenameProject={onRenameProject}
+          onDeleteProject={onDeleteProject}
+          onUndoDeleteProject={onUndoDeleteProject}
+          onPreviewProjectSnapshot={onPreviewProjectSnapshot}
+          onClearProjectPreview={onClearProjectPreview}
+          deleteUndoMs={deleteUndoMs}
+          diagramType={diagramType}
+          onDiagramTypeChange={onDiagramTypeChange}
+          detectedDiagramType={detectedDiagramType}
+          notebookBuildCount={notebookBuildCount}
+          onNotebookBuildCountChange={onNotebookBuildCountChange}
+        />
+
+      {isNotebookChatMode && onBackToNotebookMainChat && (
+        <div className="px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+          <span>Чат диаграммы</span>
+          <button
+            type="button"
+            onClick={onBackToNotebookMainChat}
+            className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+          >
+            <ArrowLeft size={12} />
+            Назад в основной чат
+          </button>
+        </div>
+      )}
 
       {/* Messages */}
-      <div ref={messagesContainerRef} onScroll={onMessagesScroll} className="flex-1 overflow-y-auto p-4 space-y-4">
-        {diagramMarkers.length > 0 && (
-          <div className="sticky top-0 -mt-4 -mx-4 px-4 py-2 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200/70 dark:border-slate-800/70 z-10">
-            <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
-              Diagram renders
-            </div>
-            <div className="flex gap-1 overflow-x-auto pb-1">
-	              {markersUi.map((m) => {
-	                return (
-	                  <button
-	                    key={m.stepId}
-	                    type="button"
-	                    onClick={() => handleMarkerClick(m.stepId)}
-	                    className={`shrink-0 px-2 py-1 rounded-full text-[10px] border transition-colors ${
-	                      m.isSelected
-	                        ? 'bg-blue-600 text-white border-blue-600'
-	                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
-	                    }`}
-	                    title={`Step #${m.stepIndex + 1} • ${m.label}`}
-	                  >
-	                    #{m.stepIndex + 1} {m.label}
-	                  </button>
-	                );
-	              })}
-            </div>
-          </div>
-        )}
-
+      <div ref={messagesContainerRef} onScroll={onMessagesScroll} className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500 text-sm text-center px-4">
              <MessageSquare size={32} className="mb-2 opacity-50" />
@@ -414,37 +419,74 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           </div>
         ) : (
           <>
-            {messages.map((msg) => {
+            {renderItems.map((item, index) => {
+              if (item.kind === 'statusGroup') {
+                const isLatestGroup = index === renderItems.length - 1;
+                return (
+                  <ChatStatusGroup
+                    key={`status-${index}`}
+                    messages={item.messages}
+                    isProcessing={isProcessing}
+                    isLatestGroup={isLatestGroup}
+                    onOpenNotebookBlock={onOpenNotebookBlock}
+                  />
+                );
+              }
+
+              const msg = item.message;
               const isErrorMessage =
                 msg.role === 'assistant' &&
                 /^(Error|Build failed|Analysis failed|Fix failed|Generation failed|Error generating diagram|Error analyzing diagram)(?:\s*\(.*?\))?:/.test(msg.content);
-              const assistantStyle = assistantModeStyles[msg.mode ?? 'chat'] ?? MODE_UI.chat.bubble;
+              const notebookBuildMeta = parseNotebookBuildMessage(msg);
+              const isStatus = isStatusMessage(msg);
+              const statusStyle = isStatus ? getStatusStyle(msg.mode) : '';
+              const messageText = notebookBuildMeta ? notebookBuildMeta.text : msg.content;
+              const isMarkdown = shouldRenderMarkdown(msg, isStatus);
+              const isLatest = msg.id === messages[messages.length - 1]?.id;
+              const isLatestStatus = isStatus && messages[lastStatusIndex]?.id === msg.id;
+              const maxWidthClass = 'max-w-full';
+              const paddingClass = msg.role === 'user' ? 'px-0 py-0' : 'px-0 py-0';
               return (
-              <div 
-                key={msg.id} 
-                className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-              >
-                <div 
-                  ref={(el) => {
-                    messageElsRef.current[msg.id] = el;
-                  }}
-                  className={`max-w-[90%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap break-words transition-shadow ${
-                    focusedMessageId === msg.id ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-50 dark:ring-offset-slate-900' : ''
-                  } ${
-                    msg.role === 'user' 
-                      ? 'bg-blue-600 text-white rounded-br-none shadow-sm' 
-                      : isErrorMessage
-                        ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-200 rounded-bl-none shadow-sm font-mono text-[12px] leading-relaxed'
-                        : `${assistantStyle} rounded-bl-none shadow-sm`
-                  }`}
+                <div
+                  key={msg.id}
+                  className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                 >
-                  {msg.content}
+                  <div
+                    className={`${maxWidthClass} ${isStatus ? 'px-0 py-0' : paddingClass} rounded-md text-sm whitespace-pre-wrap break-words ${
+                      msg.role === 'user'
+                        ? 'bg-slate-200/10 dark:bg-slate-100/5 border border-slate-200/10 dark:border-white/5 text-slate-200 dark:text-slate-200 rounded-full shadow-none px-3 py-1'
+                        : isErrorMessage
+                          ? 'bg-transparent text-red-700 dark:text-red-200 rounded-none shadow-none font-mono text-[12px] leading-relaxed'
+                          : isStatus
+                            ? `${statusStyle} rounded-none ${isLatestStatus ? 'text-slate-700 dark:text-slate-200' : ''}`
+                            : `bg-transparent border-0 shadow-none text-slate-900 dark:text-slate-100 rounded-none ${isLatest ? 'text-slate-950 dark:text-white' : ''}`
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 whitespace-pre-wrap break-words">
+                        {isMarkdown ? (
+                          <ChatMarkdownTabs rawText={messageText} isLatest={isLatest} />
+                        ) : (
+                          messageText
+                        )}
+                      </div>
+                      {notebookBuildMeta && typeof onOpenNotebookBlock === 'function' && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenNotebookBlock?.(notebookBuildMeta.blockIndex)}
+                          className="shrink-0 rounded-full p-1 text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200"
+                          title="Open diagram"
+                        >
+                          <ArrowUpRight size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <span className="sr-only">
+                    {msg.role === 'user' ? 'You' : 'Assistant'}
+                  </span>
                 </div>
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 px-1">
-                  {msg.role === 'user' ? 'You' : 'Assistant'}
-                </span>
-              </div>
-            );
+              );
             })}
             {isProcessing && (
               <div className="flex items-start">
@@ -497,44 +539,10 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
               <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline whitespace-nowrap">
                 Enter: Chat • Ctrl/Cmd+Enter: Build
               </span>
-              <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
-                <label className="inline-flex items-center gap-1 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    className="accent-blue-500"
-                    checked={isNotebookBuildEnabled}
-                    onChange={(e) => onNotebookBuildEnabledChange(e.target.checked)}
-                  />
-                  <span className="flex items-center gap-1">
-                    <FileText size={12} /> MD notebook
-                  </span>
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={notebookBuildCount ?? ''}
-                  placeholder="N"
-                  className="w-14 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-[10px] text-slate-700 dark:text-slate-200 disabled:opacity-50"
-                  disabled={!isNotebookBuildEnabled}
-                  onChange={(e) => {
-                    const next = e.target.value.trim();
-                    if (!next) {
-                      onNotebookBuildCountChange(null);
-                      return;
-                    }
-                    const parsed = Number(next);
-                    if (Number.isNaN(parsed) || parsed <= 0) {
-                      onNotebookBuildCountChange(null);
-                      return;
-                    }
-                    onNotebookBuildCountChange(Math.floor(parsed));
-                  }}
-                />
-              </div>
               <button
                 onClick={() => handleSubmit('chat')}
                 disabled={!input.trim() || isProcessing}
-                className={`px-2.5 py-1.5 text-xs rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
+                className={`px-2.5 py-1.5 text-xs rounded-md disabled:opacity-80 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
                   !input.trim() || isProcessing
                     ? MODE_BUTTON_DISABLED
                     : MODE_UI.chat.button
@@ -546,16 +554,12 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
               <button
                 onClick={() => handleSubmit('build')}
                 disabled={(!input.trim() && !hasIntent) || isProcessing}
-                className={`px-2.5 py-1.5 text-xs rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
+                className={`px-2.5 py-1.5 text-xs rounded-md disabled:opacity-80 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
                   (!input.trim() && !hasIntent) || isProcessing
                     ? MODE_BUTTON_DISABLED
                     : MODE_UI.build.button
                 }`}
-                title={
-                  (isNotebookBuildEnabled && !isNotebookDiagramChat)
-                    ? (input.trim() ? 'Build notebook from this prompt' : 'Build notebook from intent')
-                    : (input.trim() ? 'Build diagram from this prompt' : 'Build diagram from intent')
-                }
+                title={input.trim() ? 'Build notebook from this prompt' : 'Build notebook from intent'}
               >
                 <Play size={14} /> Build
               </button>

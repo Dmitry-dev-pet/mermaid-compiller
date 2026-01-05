@@ -1,5 +1,6 @@
 import { useEffect, type MutableRefObject } from 'react';
 import type { MermaidState } from '../../types';
+import { isMarkdownLike } from '../../services/mermaidService';
 
 type ManualEditRecorderArgs = {
   isHistoryReady: boolean;
@@ -11,6 +12,7 @@ type ManualEditRecorderArgs = {
   appendTimeStep: (args: {
     type: 'manual_edit';
     messages: [];
+    meta?: Record<string, unknown>;
     nextMermaid?: Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'> | null;
     setCurrentRevisionId?: string | null;
   }) => Promise<void>;
@@ -49,6 +51,7 @@ export const useManualEditRecorder = ({
         appendTimeStep({
           type: 'manual_edit',
           messages: [],
+          meta: { mode: isMarkdownLike(code) ? 'markdown' : 'mermaid' },
           nextMermaid: null,
           setCurrentRevisionId: null,
         }).catch((e) => console.error('Failed to record manual edit step', e));
@@ -68,6 +71,7 @@ export const useManualEditRecorder = ({
       appendTimeStep({
         type: 'manual_edit',
         messages: [],
+        meta: { mode: isMarkdownLike(code) ? 'markdown' : 'mermaid' },
         nextMermaid: {
           code,
           isValid: mermaidState.isValid,

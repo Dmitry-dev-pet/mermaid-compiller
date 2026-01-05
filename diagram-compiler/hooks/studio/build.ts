@@ -1,4 +1,4 @@
-import { validateMermaid, extractMermaidCode } from '../../services/mermaidService';
+import { validateMermaid, extractMermaidCode, parseMermaidJsonResponse } from '../../services/mermaidService';
 import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmService';
 import { stripMermaidCode } from '../../utils';
 import { normalizeIntentText, resolveIntentFromInput } from '../../utils/intent';
@@ -14,7 +14,7 @@ const tryAnalyzeAfterBuild = async (ctx: StudioContext, args: { code: string; do
   try {
     const explanation = await runLLMRequest({
       task: 'analyze-summary',
-      run: () => analyzeDiagram(args.code, ctx.aiConfig, args.docs, args.language),
+      run: () => analyzeDiagram(args.code, ctx.aiConfig, args.docs, args.language, ctx.modelParams),
       retries: 1,
     });
     return stripMermaidCode(explanation).trim();
@@ -27,13 +27,14 @@ export const createBuildHandler = (ctx: StudioContext) => {
   return async (text?: string) => {
     const prompt = text?.trim() ?? '';
     const stepMessages: Message[] = [];
+    const pushStatus = (content: string) => {
+      stepMessages.push(ctx.addMessage('assistant', content, 'build'));
+    };
     if (prompt) stepMessages.push(ctx.addMessage('user', prompt, 'build'));
 
     if (ctx.connectionState.status !== 'connected') {
-      stepMessages.push(ctx.addMessage('assistant', "I'm offline. Connect AI to generate diagrams.", 'build'));
-      ctx.trackAnalyticsEvent('diagram_build_failed', {
-        ...(await ctx.getAnalyticsContext('build')),
-        mode: 'build',
+      pushStatus('Офлайн. Подключите AI для генерации диаграмм.');
+      await ctx.trackAnalyticsWithContext('diagram_build_failed', 'build', {
         error: 'offline',
       });
       await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages });
@@ -44,7 +45,15 @@ export const createBuildHandler = (ctx: StudioContext) => {
 
     ctx.setIsProcessing(true);
     try {
-      const analyticsContext = await ctx.getAnalyticsContext('build');
+      pushStatus(
+        [
+          'Сборка',
+          `- старт`,
+          `- тип: ${ctx.appState.diagramType}`,
+          `- язык: ${language}`,
+          `- модель: ${ctx.getCurrentModelName()}`,
+        ].join('\n')
+      );
       const docs = await ctx.getDocsContext('build');
       const relevantMessages = ctx.getRelevantMessages();
 
@@ -55,10 +64,8 @@ export const createBuildHandler = (ctx: StudioContext) => {
         allowFallback: true,
       });
       if (!intent) {
-        stepMessages.push(ctx.addMessage('assistant', 'Nothing to build yet. Use Chat to define intent.', 'build'));
-        ctx.trackAnalyticsEvent('diagram_build_failed', {
-          ...analyticsContext,
-          mode: 'build',
+        pushStatus('Нет intent для сборки. Используйте чат, чтобы описать задачу.');
+        await ctx.trackAnalyticsWithContext('diagram_build_failed', 'build', {
           error: 'no_intent',
         });
         await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages });
@@ -66,9 +73,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
       }
 
       const startedAt = Date.now();
-      ctx.trackAnalyticsEvent('diagram_build_started', {
-        ...analyticsContext,
-        mode: 'build',
+      await ctx.trackAnalyticsWithContext('diagram_build_started', 'build', {
         intentSource: intent.source,
         hasPrompt: !!prompt,
       });
@@ -83,43 +88,67 @@ export const createBuildHandler = (ctx: StudioContext) => {
         source: intent.source,
         updatedAt: Date.now(),
       });
+      pushStatus(
+        [
+          'Сборка',
+          `- intent готов`,
+          `- источник: ${intent.source}`,
+          `- длина: ${normalizedIntent.length}`,
+        ].join('\n')
+      );
 
       const beforeSummary = `Build (before): Intent (${intent.source}). ${ctx.normalizeText(normalizedIntent)}`;
-      stepMessages.push(ctx.addMessage('assistant', beforeSummary, 'build'));
+      pushStatus(beforeSummary);
 
+      const attemptNotes: string[] = [];
       const attemptResult = await runAttemptLoop({
         maxAttempts: BUILD_MAX_ATTEMPTS,
         onAttempt: (attempt) => {
-          stepMessages.push(
-            ctx.addMessage('assistant', `Build attempt ${attempt}/${BUILD_MAX_ATTEMPTS}...`, 'build')
-          );
+          attemptNotes.push(`попытка ${attempt}/${BUILD_MAX_ATTEMPTS}`);
         },
         onEmpty: (attempt) => {
-          stepMessages.push(ctx.addMessage('assistant', `Attempt ${attempt}: no Mermaid code returned.`, 'build'));
+          attemptNotes.push(`попытка ${attempt}: пустой ответ`);
         },
         onError: (attempt, error) => {
           const message = error instanceof Error ? error.message : String(error);
-          stepMessages.push(
-            ctx.addMessage('assistant', `Attempt ${attempt} failed (${ctx.getCurrentModelName()}): ${message}`, 'build')
-          );
+          attemptNotes.push(`попытка ${attempt}: ошибка ${message}`);
         },
         execute: async () => {
           const rawCode = await runLLMRequest({
             task: 'build',
-            run: () => generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language),
+            run: () => generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams),
             retries: 1,
           });
+          const parsed = parseMermaidJsonResponse(rawCode);
+          if (parsed) {
+            if (parsed.status !== 'ok') {
+              attemptNotes.push(`json status: ${parsed.status}${parsed.reason ? ` (${parsed.reason})` : ''}`);
+              return null;
+            }
+            if (!parsed.mermaid?.trim()) {
+              attemptNotes.push('json: нет mermaid');
+              return null;
+            }
+            if (ctx.appState.diagramType !== 'auto' && parsed.diagramType && parsed.diagramType !== ctx.appState.diagramType) {
+              attemptNotes.push(`json: несоответствие diagram_type ${parsed.diagramType}`);
+              return null;
+            }
+            return parsed.mermaid;
+          }
+
           const cleanCode = extractMermaidCode(rawCode);
           return cleanCode.trim() ? cleanCode : null;
         },
       });
 
+      if (attemptNotes.length > 0) {
+        pushStatus(['Сборка', '- попытки', ...attemptNotes.map((note) => `- ${note}`)].join('\n'));
+      }
+
       if (!attemptResult.value?.trim()) {
         const reason = attemptResult.lastError ? 'build_attempts_failed' : 'no_mermaid_code';
-        stepMessages.push(ctx.addMessage('assistant', 'Build failed: no Mermaid code returned.', 'build'));
-        ctx.trackAnalyticsEvent('diagram_build_failed', {
-          ...analyticsContext,
-          mode: 'build',
+        pushStatus(`Сборка\n- не удалось: ${reason}`);
+        await ctx.trackAnalyticsWithContext('diagram_build_failed', 'build', {
           error: reason,
           attempts: attemptResult.attempts,
           emptyResponses: attemptResult.emptyResponses,
@@ -153,23 +182,27 @@ export const createBuildHandler = (ctx: StudioContext) => {
                     errorMessage,
                     ctx.aiConfig,
                     docs,
-                    language
+                    language,
+                    ctx.modelParams
                   ),
                   retries: LLM_TIMEOUT_RETRIES,
                   onTimeout: (notice) => {
-                    stepMessages.push(
-                      ctx.addMessage(
-                        'assistant',
-                        formatTimeoutRetryMessage('Auto-fix', notice.attempt, notice.maxAttempts),
-                        'build'
-                      )
-                    );
+                    pushStatus(formatTimeoutRetryMessage('Auto-fix', notice.attempt, notice.maxAttempts));
                   },
                 });
                 return extractMermaidCode(fixedRaw);
               },
-        onIteration: ctx.applyCompiledResult,
+        onIteration: (code, nextValidation) => {
+          ctx.applyCompiledResult(code, nextValidation);
+        },
       });
+      pushStatus(
+        [
+          'Сборка',
+          `- валидация: ${validation.isValid ? 'валидна' : 'невалидна'}`,
+          autoFixAttempts ? `- auto-fix: ${autoFixAttempts}` : '',
+        ].filter(Boolean).join('\n')
+      );
 
       const autoFixNote =
         autoFixAttempts === 0
@@ -183,17 +216,16 @@ export const createBuildHandler = (ctx: StudioContext) => {
         docs,
         language,
       });
-
-      stepMessages.push(
-        ctx.addMessage(
-          'assistant',
-          `Build (after): Built ${ctx.appState.diagramType} diagram. ${validation.isValid ? 'Valid.' : 'Contains errors.'}${autoFixNote}${afterSummary ? `\nSummary: ${afterSummary}` : ''}`,
-          'build'
-        )
+      pushStatus(
+        [
+          'Сборка (итог)',
+          `- диаграмма: ${ctx.appState.diagramType}`,
+          `- ${validation.isValid ? 'валидна' : 'с ошибками'}`,
+          autoFixNote ? `- ${autoFixNote.trim().replace(/\.$/, '')}` : '',
+          afterSummary ? `- сводка: ${afterSummary}` : '',
+        ].filter(Boolean).join('\n')
       );
-      ctx.trackAnalyticsEvent('diagram_build_success', {
-        ...analyticsContext,
-        mode: 'build',
+      await ctx.trackAnalyticsWithContext('diagram_build_success', 'build', {
         isValid: !!validation.isValid,
         errorLine: validation.errorLine,
         buildAttempts: attemptResult.attempts,
@@ -208,6 +240,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
         nextMermaid: ctx.resolveMermaidUpdate(currentCode, validation),
         meta: {
           diagramType: ctx.appState.diagramType,
+          isValid: !!validation.isValid,
           autoFixAttempts: autoFixAttempts,
           buildAttempts: attemptResult.attempts,
           emptyResponses: attemptResult.emptyResponses,
@@ -215,12 +248,11 @@ export const createBuildHandler = (ctx: StudioContext) => {
           intentSource: intent.source,
         },
       });
+      pushStatus('Сборка\n- история сохранена');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      stepMessages.push(ctx.addMessage('assistant', `Build failed (${ctx.getCurrentModelName()}): ${message}`, 'build'));
-      ctx.trackAnalyticsEvent('diagram_build_failed', {
-        ...(await ctx.getAnalyticsContext('build')),
-        mode: 'build',
+      pushStatus(`Сборка: ошибка (${ctx.getCurrentModelName()}): ${message}`);
+      await ctx.trackAnalyticsWithContext('diagram_build_failed', 'build', {
         error: 'exception',
       });
       await ctx.safeRecordTimeStep({ type: 'build', messages: stepMessages, meta: { error: message } });

@@ -80,11 +80,11 @@ const MarkdownTabs: React.FC<MarkdownTabsProps> = ({
             key={`md-mermaid-tab-${block.index}`}
             type="button"
             onClick={() => {
-              onMarkdownMermaidActiveIndexChange(index);
-              if (!isBuildDocsMode) {
-                onActiveTabChange('markdown_mermaid');
-              }
-            }}
+            onMarkdownMermaidActiveIndexChange(index);
+            if (!isBuildDocsMode) {
+              onActiveTabChange('markdown_mermaid');
+            }
+          }}
             onMouseEnter={(e) => onShowTooltip(e, tooltipText)}
             onMouseMove={(e) => onShowTooltip(e, tooltipText)}
             onMouseLeave={onHideTooltip}

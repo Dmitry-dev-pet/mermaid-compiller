@@ -1,0 +1,105 @@
+.chat-markdown {
+  font-size: 11px;
+  line-height: 1.18;
+  color: inherit;
+}
+
+.chat-markdown p {
+  margin: 0.1rem 0;
+}
+
+.chat-md-prelude {
+  display: inline-block;
+  margin-right: 0.35rem;
+  color: inherit;
+}
+
+.chat-md-tabs {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-md-tab {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1.18;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(148, 163, 184, 0.4);
+  cursor: pointer;
+  display: inline;
+}
+
+.chat-md-tab:hover {
+  text-decoration-color: rgba(148, 163, 184, 0.7);
+}
+
+.chat-md-tab-active {
+  text-decoration-color: rgba(148, 163, 184, 0.9);
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.7);
+}
+
+.chat-md-divider {
+  opacity: 0.5;
+  padding: 0 0.2rem;
+  display: inline;
+}
+
+.chat-diagram-type {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #60a5fa;
+}
+
+.dark .chat-diagram-type {
+  color: #93c5fd;
+}
+
+.chat-markdown code {
+  font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 10px;
+  background: rgba(148, 163, 184, 0.2);
+  padding: 0 0.15rem;
+  border-radius: 4px;
+}
+
+.chat-markdown pre {
+  background: rgba(148, 163, 184, 0.2);
+  padding: 0.25rem 0.35rem;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 0.1rem 0 0.15rem 1rem;
+}
+
+.chat-markdown li {
+  margin: 0.08rem 0;
+}
+
+.chat-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.dark .chat-markdown code {
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.dark .chat-markdown pre {
+  background: rgba(30, 41, 59, 0.6);
+}

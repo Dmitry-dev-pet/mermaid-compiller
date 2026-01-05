@@ -35,4 +35,4 @@ export const MODE_UI: Record<UiMode, { bubble: string; button?: string; buttonIn
 };
 
 export const MODE_BUTTON_DISABLED =
-  'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500';
+  'border border-slate-300/60 dark:border-slate-500/60 bg-slate-100/70 dark:bg-slate-800/70 text-slate-500 dark:text-slate-300';

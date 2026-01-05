@@ -1,4 +1,4 @@
-import type { AIConfig, AppState, Message } from '../../types';
+import type { AIConfig, AppState, Message, ModelParams } from '../../types';
 
 export type TimeStepType =
   | 'seed'
@@ -25,7 +25,7 @@ export interface HistorySession {
 export interface SessionSettings {
   appState: AppState;
   aiConfig: AIConfig;
-  modelParams?: Record<string, number | string | boolean | null>;
+  modelParams?: ModelParams;
 }
 
 export interface TimeStep {

@@ -6,10 +6,12 @@ export type DocsUsageSummary = {
   excludedPaths: string[];
 };
 
+import type { ModelParams } from '../types';
+
 export type AnalyticsContext = {
   provider: string | null;
   model: string | null;
-  modelParams: Record<string, number | string | boolean | null>;
+  modelParams: ModelParams;
   modelFilters: Record<string, unknown> | null;
   diagramType: string | null;
   language: string | null;

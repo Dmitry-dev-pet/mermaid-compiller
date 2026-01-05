@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction, type MutableRefObject } from 'react';
-import type { AIConfig, AppState, DiagramIntent, EditorTab, MermaidState } from '../../types';
+import type { AIConfig, AppState, DiagramIntent, EditorTab, MermaidState, ModelParams } from '../../types';
 import type { HistorySession, SessionPreview, SessionSettings, SessionSnapshot } from '../../services/history/types';
 import { DEFAULT_MERMAID_STATE } from '../../constants';
 import { applySessionSettings, buildSessionSettings } from '../../utils/sessionSettings';
@@ -10,6 +10,8 @@ type UseProjectsArgs = {
   setAppState: Dispatch<SetStateAction<AppState>>;
   aiConfig: AIConfig;
   setAiConfig: Dispatch<SetStateAction<AIConfig>>;
+  modelParams: ModelParams | null;
+  setModelParams: Dispatch<SetStateAction<ModelParams | null>>;
   historySession: HistorySession | null;
   sessions: HistorySession[];
   startNewSession: (args?: { title?: string; settings?: SessionSettings }) => Promise<HistorySession>;
@@ -26,6 +28,7 @@ type UseProjectsArgs = {
   setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
   setEditorTab: Dispatch<SetStateAction<EditorTab>>;
   setMermaidState: Dispatch<SetStateAction<MermaidState>>;
+  clearProjectPreview: () => void;
   lastManualRecordedCodeRef: MutableRefObject<string>;
   isHydratingRef: MutableRefObject<boolean>;
 };
@@ -36,6 +39,8 @@ export const useProjects = ({
   setAppState,
   aiConfig,
   setAiConfig,
+  modelParams,
+  setModelParams,
   historySession,
   sessions,
   startNewSession,
@@ -52,6 +57,7 @@ export const useProjects = ({
   setDiagramIntent,
   setEditorTab,
   setMermaidState,
+  clearProjectPreview,
   lastManualRecordedCodeRef,
   isHydratingRef,
 }: UseProjectsArgs) => {
@@ -61,8 +67,8 @@ export const useProjects = ({
     const settings = historySession?.settings;
     if (!settings) return;
     skipNextSettingsSaveRef.current = true;
-    applySessionSettings(settings, setAppState, setAiConfig);
-  }, [historySession?.id, historySession?.settings, setAiConfig, setAppState]);
+    applySessionSettings(settings, setAppState, setAiConfig, setModelParams);
+  }, [historySession?.id, historySession?.settings, setAiConfig, setAppState, setModelParams]);
 
   useEffect(() => {
     if (!historySession?.id) return;
@@ -70,18 +76,21 @@ export const useProjects = ({
       skipNextSettingsSaveRef.current = false;
       return;
     }
-    const settings = buildSessionSettings(appState, aiConfig);
+    const settings = buildSessionSettings(appState, aiConfig, modelParams ?? undefined);
     const timer = window.setTimeout(() => {
       saveSessionSettings(historySession.id, settings).catch((e) => {
         console.error('Failed to save session settings', e);
       });
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [aiConfig, appState, historySession?.id, saveSessionSettings]);
+  }, [aiConfig, appState, historySession?.id, modelParams, saveSessionSettings]);
 
   const startNewProject = useCallback(async () => {
     if (isProcessing) return;
-    await startNewSession({ settings: buildSessionSettings(appState, aiConfig) });
+    clearProjectPreview();
+    const nextAppState = { ...appState, diagramType: 'auto', notebookBuildCount: null };
+    await startNewSession({ settings: buildSessionSettings(nextAppState, aiConfig, modelParams ?? undefined) });
+    setAppState(nextAppState);
     resetMessages();
     lastManualRecordedCodeRef.current = '';
     setDiagramIntent(null);
@@ -91,25 +100,38 @@ export const useProjects = ({
   }, [
     aiConfig,
     appState,
+    clearProjectPreview,
     isProcessing,
     lastManualRecordedCodeRef,
     resetMessages,
     resetPromptPreview,
+    setAppState,
     setDiagramIntent,
     setEditorTab,
     setMermaidState,
     startNewSession,
+    modelParams,
   ]);
 
   const openProject = useCallback(async (sessionId: string) => {
     if (isProcessing) return;
     if (historySession?.id === sessionId) return;
+    clearProjectPreview();
     isHydratingRef.current = true;
     setDiagramIntent(null);
     resetPromptPreview();
     setEditorTab('code');
     await loadSession(sessionId);
-  }, [historySession?.id, isProcessing, isHydratingRef, loadSession, resetPromptPreview, setDiagramIntent, setEditorTab]);
+  }, [
+    clearProjectPreview,
+    historySession?.id,
+    isProcessing,
+    isHydratingRef,
+    loadSession,
+    resetPromptPreview,
+    setDiagramIntent,
+    setEditorTab,
+  ]);
 
   const renameProject = useCallback(async (sessionId: string, title: string) => {
     await renameHistorySession(sessionId, title);

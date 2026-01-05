@@ -32,8 +32,7 @@ function App() {
     handleFixSyntax,
     handleAnalyze,
     handleManualSnapshot,
-    diagramMarkers,
-    diagramStepAnchors,
+    editorDiagramMarkers,
     selectedStepId,
     projects,
     activeProjectId,
@@ -74,14 +73,15 @@ function App() {
     setAnalyzeLanguage,
     togglePreviewFullScreen,
     toggleScrollSync,
-    setNotebookBuildEnabled,
     setNotebookBuildCount,
-    isNotebookDiagramChat,
     buildDocsIntentText,
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
     appendMarkdownMermaidBlock,
+    openNotebookBlock,
+    backToNotebookMainChat,
+    isNotebookChatMode,
     interactionRecorder,
   } = useDiagramStudio();
   const buildDocsSystemPrompts = {
@@ -200,12 +200,7 @@ function App() {
                 diagramType={appState.diagramType}
                 onDiagramTypeChange={setDiagramType}
                 detectedDiagramType={detectedDiagramType}
-                isMarkdownNotebook={editorTab === 'code' && isMarkdownLike(mermaidState.code)}
-                isCodeEmpty={!mermaidState.code.trim()}
                 onPreviewPrompt={buildPromptPreview}
-                diagramMarkers={diagramMarkers}
-                diagramStepAnchors={diagramStepAnchors}
-                selectedStepId={selectedStepId}
                 projects={projects}
                 activeProjectId={activeProjectId}
                 onOpenProject={openProject}
@@ -215,15 +210,14 @@ function App() {
                 onPreviewProjectSnapshot={showProjectPreview}
                 onClearProjectPreview={clearProjectPreview}
                 deleteUndoMs={deleteUndoMs}
-                onSelectDiagramStep={goToDiagramStep}
                 buildDocsSelectionKey={buildDocsSelectionKey}
                 promptPreviewKey={promptPreviewKey}
-                isNotebookBuildEnabled={appState.isNotebookBuildEnabled}
                 notebookBuildCount={appState.notebookBuildCount}
-                onNotebookBuildEnabledChange={setNotebookBuildEnabled}
                 onNotebookBuildCountChange={setNotebookBuildCount}
-                isNotebookDiagramChat={isNotebookDiagramChat}
                 intentText={buildDocsIntentText}
+                onOpenNotebookBlock={openNotebookBlock}
+                isNotebookChatMode={isNotebookChatMode}
+                onBackToNotebookMainChat={backToNotebookMainChat}
               />
             </div>
 
@@ -271,6 +265,9 @@ function App() {
                 scrollSyncPayload={scrollSyncPayload}
                 onScrollSync={handleEditorScrollSync}
                 hoveredMarkdownIndex={hoveredMarkdownIndexForView}
+                diagramMarkers={editorDiagramMarkers}
+                selectedStepId={selectedStepId}
+                onSelectDiagramStep={goToDiagramStep}
               />
             </div>
 

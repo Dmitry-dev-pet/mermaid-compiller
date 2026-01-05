@@ -34,7 +34,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
 };
 
 export const DEFAULT_APP_STATE: AppState = {
-  diagramType: 'sequence',
+  diagramType: 'auto',
   columnWidths: [25, 40, 35],
   isResizing: null,
   isPreviewFullScreen: false,
@@ -42,7 +42,6 @@ export const DEFAULT_APP_STATE: AppState = {
   theme: 'light',
   language: 'auto',
   analyzeLanguage: 'auto',
-  isNotebookBuildEnabled: false,
   notebookBuildCount: null,
 };
 
