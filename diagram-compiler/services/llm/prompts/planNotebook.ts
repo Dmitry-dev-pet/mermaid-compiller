@@ -16,6 +16,7 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
 - diagramType must be one of: architecture, block, c4, class, er, flowchart, gantt, gitGraph, kanban, mindmap, packet, pie, quadrantChart, radar, requirementDiagram, sequence, sankey, state, timeline, treemap, userJourney, xychart, zenuml.
 - If forcedDiagramType is provided in the user message, EVERY diagramType must equal it.
 - If allowedDiagramTypes is provided in the user message, choose each diagramType only from that list (you do NOT need to use all of them).
+- buildPrompt and acceptance MUST match diagramType; never mention a different diagram type.
 - Every buildPrompt must include the constraint: no styling directives or color instructions (no theme/look/init/colors).
 - Use a shared glossary to keep terminology consistent.
 - Keep goals concise and non-overlapping.{{languageInstruction}}
@@ -60,6 +61,7 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
 - diagramType должен быть одним из: architecture, block, c4, class, er, flowchart, gantt, gitGraph, kanban, mindmap, packet, pie, quadrantChart, radar, requirementDiagram, sequence, sankey, state, timeline, treemap, userJourney, xychart, zenuml.
 - Если forcedDiagramType задан в сообщении пользователя, КАЖДЫЙ diagramType должен быть равен ему.
 - Если allowedDiagramTypes задан в сообщении пользователя, каждый diagramType выбирай ТОЛЬКО из этого списка (не обязательно использовать все типы из списка).
+- buildPrompt и acceptance ДОЛЖНЫ соответствовать diagramType; не упоминай другой тип диаграммы.
 - Каждый buildPrompt должен фиксировать ограничение: без стилевых директив и цветовых инструкций (без theme/look/init/colors).
 - Используй общий glossary для согласованности терминов.
 - Цели должны быть краткими и не пересекаться.{{languageInstruction}}

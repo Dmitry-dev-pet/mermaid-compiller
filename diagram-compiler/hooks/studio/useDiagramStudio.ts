@@ -7,6 +7,7 @@ import { createStudioActions } from './studioActions';
 import { useHistory } from '../core/useHistory';
 import { useBuildDocs } from './useBuildDocs';
 import { useMarkdownMermaid } from './useMarkdownMermaid';
+import { useOperationLog } from './useOperationLog';
 import { useManualEditRecorder } from './useManualEditRecorder';
 import { useInteractionRecorder } from './useInteractionRecorder';
 import { usePromptPreview } from './usePromptPreview';
@@ -85,6 +86,17 @@ export const useDiagramStudio = () => {
     editorTab,
     setEditorTab,
   });
+
+  const {
+    operationLogs,
+    activeOperationLog,
+    setOperationLogs,
+    startOperation,
+    addOperationEvent,
+    finishOperation,
+    getOperationLog,
+    hydrateOperationLogs,
+  } = useOperationLog();
 
   const safeAppendTimeStep = useCallback((args: Parameters<typeof appendTimeStep>[0]) => {
     const nextMeta = { ...(args.meta ?? {}) } as Record<string, unknown>;
@@ -394,6 +406,11 @@ export const useDiagramStudio = () => {
   }, [historyLoadResult, historySteps, setMermaidState, setMessages]);
 
   useEffect(() => {
+    if (!historyLoadResult) return;
+    hydrateOperationLogs(historySteps);
+  }, [historyLoadResult, historySteps, hydrateOperationLogs]);
+
+  useEffect(() => {
     if (!historySession?.id) return;
     const sessionId = historySession.id;
     if (seededNotebookSessionIdsRef.current.has(sessionId)) return;
@@ -471,6 +488,7 @@ export const useDiagramStudio = () => {
     setDiagramIntent,
     setEditorTab,
     setMermaidState,
+    setOperationLogs,
     clearProjectPreview,
     lastManualRecordedCodeRef,
     isHydratingRef,
@@ -611,6 +629,10 @@ export const useDiagramStudio = () => {
     setMermaidState,
     getDocsContext,
     loadBuildDocsEntries,
+    startOperation,
+    addOperationEvent,
+    finishOperation,
+    getOperationLog,
   });
 
   const analyticsAdapter = useMemo(() => {
@@ -669,6 +691,10 @@ export const useDiagramStudio = () => {
       getDocsContext,
       setIsProcessing,
       recordTimeStep: safeRecordTimeStep,
+      startOperation,
+      addOperationEvent,
+      finishOperation,
+      getOperationLog,
     });
 
   const { handleFixSyntax } = useFixFlow({
@@ -815,6 +841,7 @@ export const useDiagramStudio = () => {
     setDiagramIntent(null);
     resetPromptPreview();
     setEditorTab('build_docs');
+    setNotebookBuildCount(type === 'auto' ? null : 1);
     void loadBuildDocsEntries(type);
   };
 
@@ -891,6 +918,8 @@ export const useDiagramStudio = () => {
     openNotebookBlock,
     backToNotebookMainChat,
     isNotebookChatMode,
+    operationLogs,
+    activeOperationLog,
     interactionRecorder,
   };
 };

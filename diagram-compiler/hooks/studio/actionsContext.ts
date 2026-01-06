@@ -45,6 +45,19 @@ export type StudioActionsDeps = {
     nextMermaid?: Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'> | null;
     setCurrentRevisionId?: string | null;
   }) => Promise<void>;
+  startOperation: (title: string) => string;
+  addOperationEvent: (opId: string, args: {
+    phase: import('../../types').OperationPhase;
+    level: import('../../types').OperationLevel;
+    title: string;
+    detail?: string;
+    blockIndex?: number;
+    attempt?: import('../../types').OperationEvent['attempt'];
+    metrics?: import('../../types').OperationEvent['metrics'];
+    error?: import('../../types').OperationEvent['error'];
+  }) => void;
+  finishOperation: (opId: string, status: import('../../types').OperationLog['status']) => void;
+  getOperationLog: (opId: string) => import('../../types').OperationLog | null;
 };
 
 export type StudioContext = StudioActionsDeps & {

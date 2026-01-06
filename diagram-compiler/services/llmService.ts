@@ -87,6 +87,17 @@ export const planNotebook = async (
   return strategy.planNotebook(messages, config, docsContext, language, modelParams);
 };
 
+export const summarizeBuild = async (
+  messages: Message[],
+  config: AIConfig,
+  docsContext: string,
+  language: string,
+  modelParams?: ModelParams | null
+): Promise<string> => {
+  const strategy = getStrategy(config);
+  return strategy.summarizeBuild(messages, config, docsContext, language, modelParams);
+};
+
 export const chatNotebook = async (
   messages: Message[],
   config: AIConfig,

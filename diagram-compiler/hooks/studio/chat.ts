@@ -4,7 +4,8 @@ import { TimeoutError } from '../../services/llmTimeout';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMessageUtils';
 import { stripMermaidCode } from '../../utils';
-import { normalizeIntentText } from '../../utils/intent';
+import { enforceAllowedDiagramTypesInIntent, normalizeIntentText } from '../../utils/intent';
+import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
 import type { Message } from '../../types';
 import { ANALYTICS_EVENTS, type ChatAnalyticsPayload } from '../../services/analyticsEvents';
 import type { StudioContext } from './actionsContext';
@@ -12,15 +13,37 @@ import type { StudioContext } from './actionsContext';
 export const createChatHandler = (ctx: StudioContext) => {
   return async (text: string) => {
     const stepMessages: Message[] = [];
+    const opId = ctx.startOperation('Чат');
+    const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
+      ctx.addOperationEvent(opId, args);
+    };
+    const finalizeStep = async (status: 'done' | 'error', meta?: Record<string, unknown>) => {
+      ctx.finishOperation(opId, status);
+      await ctx.safeRecordTimeStep({
+        type: 'chat',
+        messages: stepMessages,
+        meta: {
+          ...(meta ?? {}),
+          operationLog: ctx.getOperationLog(opId),
+        },
+      });
+    };
     const pushStatus = (content: string) => {
       stepMessages.push(ctx.addMessage('assistant', content, 'chat'));
     };
     stepMessages.push(ctx.addMessage('user', text, 'chat'));
     if (ctx.connectionState.status !== 'connected') {
       pushStatus('Офлайн. Подключите AI для генерации.');
+      logEvent({
+        phase: 'chat',
+        level: 'error',
+        title: 'Чат',
+        detail: 'offline',
+        error: { code: 'offline', message: 'AI offline' },
+      });
       const payload: ChatAnalyticsPayload = { error: 'offline' };
       await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatFailed, 'chat', payload);
-      await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages });
+      await finalizeStep('error', { error: 'offline' });
       return;
     }
 
@@ -38,6 +61,12 @@ export const createChatHandler = (ctx: StudioContext) => {
           ctx.isNotebookChatEnabled ? '- режим: notebook' : '',
         ].filter(Boolean).join('\n')
       );
+      logEvent({
+        phase: 'chat',
+        level: 'info',
+        title: 'Чат',
+        detail: `язык: ${language}`,
+      });
       const startedPayload: ChatAnalyticsPayload = {
         hasPrompt: text.trim().length > 0,
       };
@@ -70,7 +99,14 @@ export const createChatHandler = (ctx: StudioContext) => {
           pushStatus(formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts));
         },
       });
-      const intentText = normalizeIntentText(stripMermaidCode(responseText));
+      let intentText = normalizeIntentText(stripMermaidCode(responseText));
+      if (ctx.isNotebookChatEnabled) {
+        if (ctx.appState.diagramType === 'auto') {
+          intentText = enforceAllowedDiagramTypesInIntent(intentText, MAIN_DIAGRAM_TYPES);
+        } else {
+          intentText = enforceAllowedDiagramTypesInIntent(intentText, [ctx.appState.diagramType], ctx.appState.diagramType);
+        }
+      }
       pushStatus(
         [
           'Чат',
@@ -78,6 +114,12 @@ export const createChatHandler = (ctx: StudioContext) => {
           `- длина intent: ${intentText.length}`,
         ].join('\n')
       );
+      logEvent({
+        phase: 'chat',
+        level: 'info',
+        title: 'Чат',
+        detail: `intent ${intentText.length}`,
+      });
       stepMessages.push(ctx.addMessage('assistant', intentText, 'chat'));
       if (intentText) {
         ctx.setCurrentIntent({
@@ -91,7 +133,7 @@ export const createChatHandler = (ctx: StudioContext) => {
         intentLength: intentText.length,
       };
       await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatSuccess, 'chat', successPayload);
-      await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages, meta: { intent: intentText || null } });
+      await finalizeStep('done', { intent: intentText || null });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof TimeoutError) {
@@ -103,7 +145,14 @@ export const createChatHandler = (ctx: StudioContext) => {
       };
       await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatFailed, 'chat', failedPayload);
       pushStatus(`Чат: ошибка (${ctx.getCurrentModelName()}): ${message}`);
-      await ctx.safeRecordTimeStep({ type: 'chat', messages: stepMessages, meta: { error: message } });
+      logEvent({
+        phase: 'chat',
+        level: 'error',
+        title: 'Чат',
+        detail: message,
+        error: { code: 'exception', message },
+      });
+      await finalizeStep('error', { error: message });
     } finally {
       ctx.setIsProcessing(false);
     }

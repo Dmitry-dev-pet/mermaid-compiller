@@ -234,4 +234,15 @@ ${code}
     const systemPrompt = buildSystemPrompt('plan_notebook', { docsContext, language });
     return this.fetchCompletion(messages, config, systemPrompt, modelParams);
   }
+
+  async summarizeBuild(
+    messages: Message[],
+    config: AIConfig,
+    docsContext: string,
+    language: string,
+    modelParams?: ModelParams | null
+  ): Promise<string> {
+    const systemPrompt = buildSystemPrompt('summary', { docsContext, language });
+    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+  }
 }

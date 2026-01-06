@@ -299,16 +299,16 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                 </div>
                 <div className="flex items-center gap-2 mt-1">
                   <span>Count</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={notebookBuildCount ?? ''}
-                    placeholder="auto"
-                    className="w-20 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
-                    onChange={(e) => {
-                      const next = e.target.value.trim();
-                      if (!next) {
-                        onNotebookBuildCountChange(null);
+                <input
+                  type="number"
+                  min={1}
+                  value={notebookBuildCount ?? ''}
+                  placeholder="auto"
+                  className="w-20 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                  onChange={(e) => {
+                    const next = e.target.value.trim();
+                    if (!next) {
+                      onNotebookBuildCountChange(null);
                         return;
                       }
                       const parsed = Number(next);

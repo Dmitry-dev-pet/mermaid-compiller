@@ -8,4 +8,5 @@ export interface LLMProviderStrategy {
   chatNotebook(messages: Message[], config: AIConfig, docsContext: string, language: string, modelParams?: ModelParams | null): Promise<string>;
   analyzeDiagram(code: string, config: AIConfig, docsContext: string, language: string, modelParams?: ModelParams | null): Promise<string>;
   planNotebook(messages: Message[], config: AIConfig, docsContext: string, language: string, modelParams?: ModelParams | null): Promise<string>;
+  summarizeBuild(messages: Message[], config: AIConfig, docsContext: string, language: string, modelParams?: ModelParams | null): Promise<string>;
 }

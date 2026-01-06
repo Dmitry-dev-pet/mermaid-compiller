@@ -11,17 +11,46 @@ import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMess
 export const createRecompileHandler = (ctx: StudioContext) => {
   return async () => {
     const stepMessages: Message[] = [];
+    const opId = ctx.startOperation('Пересборка');
+    const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
+      ctx.addOperationEvent(opId, args);
+    };
+    const finalizeStep = async (
+      status: 'done' | 'error',
+      args?: {
+        meta?: Record<string, unknown>;
+        nextMermaid?: Pick<import('../../types').MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'> | null;
+      }
+    ) => {
+      ctx.finishOperation(opId, status);
+      await ctx.safeRecordTimeStep({
+        type: 'recompile',
+        messages: stepMessages,
+        nextMermaid: args?.nextMermaid ?? null,
+        meta: {
+          ...(args?.meta ?? {}),
+          operationLog: ctx.getOperationLog(opId),
+        },
+      });
+    };
     const pushStatus = (content: string) => {
       stepMessages.push(ctx.addMessage('assistant', content, 'build'));
     };
     if (ctx.connectionState.status !== 'connected') {
       alert('Connect AI first!');
       pushStatus('Пересборка\n- офлайн: подключите AI');
+      logEvent({
+        phase: 'compile',
+        level: 'error',
+        title: 'Пересборка',
+        detail: 'offline',
+        error: { code: 'offline', message: 'AI offline' },
+      });
       await ctx.trackAnalyticsWithContext('diagram_recompile_failed', 'build', {
         mode: 'recompile',
         error: 'offline',
       });
-      await ctx.safeRecordTimeStep({ type: 'recompile', messages: stepMessages, meta: { error: 'offline' } });
+      await finalizeStep('error', { meta: { error: 'offline' } });
       return;
     }
 
@@ -41,6 +70,12 @@ export const createRecompileHandler = (ctx: StudioContext) => {
           `- модель: ${ctx.getCurrentModelName()}`,
         ].join('\n')
       );
+      logEvent({
+        phase: 'compile',
+        level: 'info',
+        title: 'Пересборка',
+        detail: `тип: ${ctx.appState.diagramType}, язык: ${language}`,
+      });
 
       await ctx.trackAnalyticsWithContext('diagram_recompile_started', 'build', {
         mode: 'recompile',
@@ -66,6 +101,12 @@ export const createRecompileHandler = (ctx: StudioContext) => {
           `- символов: ${cleanCode.length}`,
         ].join('\n')
       );
+      logEvent({
+        phase: 'validate',
+        level: validation.isValid ? 'info' : 'warn',
+        title: 'Валидация',
+        detail: validation.isValid ? 'валидна' : 'невалидна',
+      });
 
       ctx.applyCompiledResult(cleanCode, validation);
       pushStatus(
@@ -75,9 +116,7 @@ export const createRecompileHandler = (ctx: StudioContext) => {
           `- ${validation.isValid ? 'валидна' : 'с ошибками'}`,
         ].join('\n')
       );
-      await ctx.safeRecordTimeStep({
-        type: 'recompile',
-        messages: stepMessages,
+      await finalizeStep('done', {
         nextMermaid: ctx.resolveMermaidUpdate(cleanCode, validation),
         meta: { diagramType: ctx.appState.diagramType, isValid: !!validation.isValid },
       });
@@ -96,11 +135,18 @@ export const createRecompileHandler = (ctx: StudioContext) => {
       }
       alert(`Generation failed (${ctx.getCurrentModelName()}): ${message}`);
       pushStatus(`Пересборка: ошибка (${ctx.getCurrentModelName()}): ${message}`);
+      logEvent({
+        phase: 'compile',
+        level: 'error',
+        title: 'Пересборка',
+        detail: message,
+        error: { code: 'exception', message },
+      });
       await ctx.trackAnalyticsWithContext('diagram_recompile_failed', 'build', {
         mode: 'recompile',
         error: 'exception',
       });
-      await ctx.safeRecordTimeStep({ type: 'recompile', messages: stepMessages, meta: { error: message } });
+      await finalizeStep('error', { meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);
     }
@@ -110,15 +156,45 @@ export const createRecompileHandler = (ctx: StudioContext) => {
 export const createFixSyntaxHandler = (ctx: StudioContext) => {
   return async () => {
     const stepMessages: Message[] = [];
+    const opId = ctx.startOperation('Исправление');
+    const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
+      ctx.addOperationEvent(opId, args);
+    };
+    const finalizeStep = async (
+      status: 'done' | 'error',
+      args?: {
+        meta?: Record<string, unknown>;
+        nextMermaid?: Pick<import('../../types').MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'> | null;
+      }
+    ) => {
+      ctx.finishOperation(opId, status);
+      await ctx.safeRecordTimeStep({
+        type: 'fix',
+        messages: stepMessages,
+        nextMermaid: args?.nextMermaid ?? null,
+        setCurrentRevisionId: args?.meta?.cleared ? null : undefined,
+        meta: {
+          ...(args?.meta ?? {}),
+          operationLog: ctx.getOperationLog(opId),
+        },
+      });
+    };
     const pushStatus = (content: string) => {
       stepMessages.push(ctx.addMessage('assistant', content, 'fix'));
     };
     if (ctx.connectionState.status !== 'connected') {
       pushStatus('Исправление\n- офлайн: подключите AI');
+      logEvent({
+        phase: 'fix',
+        level: 'error',
+        title: 'Исправление',
+        detail: 'offline',
+        error: { code: 'offline', message: 'AI offline' },
+      });
       await ctx.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         error: 'offline',
       });
-      await ctx.safeRecordTimeStep({ type: 'fix', messages: stepMessages, meta: { error: 'offline' } });
+      await finalizeStep('error', { meta: { error: 'offline' } });
       return;
     }
 
@@ -135,6 +211,12 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
           `- модель: ${ctx.getCurrentModelName()}`,
         ].join('\n')
       );
+      logEvent({
+        phase: 'fix',
+        level: 'info',
+        title: 'Исправление',
+        detail: `язык: ${language}`,
+      });
       await ctx.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
         codeLength: ctx.mermaidState.code.length,
       });
@@ -175,6 +257,13 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
           `- попытки: ${attempts}`,
         ].join('\n')
       );
+      logEvent({
+        phase: 'validate',
+        level: validation.isValid ? 'info' : 'warn',
+        title: 'Валидация',
+        detail: validation.isValid ? 'валидна' : 'невалидна',
+        metrics: attempts ? { autoFix: attempts } : undefined,
+      });
 
       const changed = currentCode !== startCode;
       const cleared = !currentCode.trim();
@@ -186,11 +275,8 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
             errorLine: validation.errorLine,
           }
         : null;
-      await ctx.safeRecordTimeStep({
-        type: 'fix',
-        messages: stepMessages,
+      await finalizeStep('done', {
         nextMermaid,
-        setCurrentRevisionId: cleared ? null : undefined,
         meta: {
           attempts,
           changed,
@@ -215,10 +301,17 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
       }
       alert(`Fix failed (${ctx.getCurrentModelName()}): ${message}`);
       pushStatus(`Исправление: ошибка (${ctx.getCurrentModelName()}): ${message}`);
+      logEvent({
+        phase: 'fix',
+        level: 'error',
+        title: 'Исправление',
+        detail: message,
+        error: { code: 'exception', message },
+      });
       await ctx.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         error: 'exception',
       });
-      await ctx.safeRecordTimeStep({ type: 'fix', messages: stepMessages, meta: { error: message } });
+      await finalizeStep('error', { meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);
     }
@@ -228,6 +321,21 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
 export const createAnalyzeHandler = (ctx: StudioContext) => {
   return async () => {
     const stepMessages: Message[] = [];
+    const opId = ctx.startOperation('Анализ');
+    const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
+      ctx.addOperationEvent(opId, args);
+    };
+    const finalizeStep = async (status: 'done' | 'error', meta?: Record<string, unknown>) => {
+      ctx.finishOperation(opId, status);
+      await ctx.safeRecordTimeStep({
+        type: 'analyze',
+        messages: stepMessages,
+        meta: {
+          ...(meta ?? {}),
+          operationLog: ctx.getOperationLog(opId),
+        },
+      });
+    };
     const pushStatus = (content: string) => {
       stepMessages.push(ctx.addMessage('assistant', content, 'analyze'));
     };
@@ -235,11 +343,14 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
     if (ctx.connectionState.status !== 'connected' || !diagramCode) {
       alert('Connect AI and provide Mermaid code first!');
       pushStatus('Анализ\n- офлайн или нет кода');
-      await ctx.safeRecordTimeStep({
-        type: 'analyze',
-        messages: stepMessages,
-        meta: { error: ctx.connectionState.status !== 'connected' ? 'offline' : 'no_code' },
+      logEvent({
+        phase: 'analyze',
+        level: 'error',
+        title: 'Анализ',
+        detail: ctx.connectionState.status !== 'connected' ? 'offline' : 'no_code',
+        error: { code: ctx.connectionState.status !== 'connected' ? 'offline' : 'no_code', message: 'Unavailable' },
       });
+      await finalizeStep('error', { error: ctx.connectionState.status !== 'connected' ? 'offline' : 'no_code' });
       return;
     }
 
@@ -255,6 +366,12 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
           `- модель: ${ctx.getCurrentModelName()}`,
         ].join('\n')
       );
+      logEvent({
+        phase: 'analyze',
+        level: 'info',
+        title: 'Анализ',
+        detail: `язык: ${language}`,
+      });
       const explanation = await runLLMRequest({
         task: 'analyze',
         run: () => analyzeDiagram(diagramCode, ctx.aiConfig, docs, language, ctx.modelParams),
@@ -271,7 +388,7 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
           `- символов: ${explanation.length}`,
         ].join('\n')
       );
-      await ctx.safeRecordTimeStep({ type: 'analyze', messages: stepMessages, meta: { diagramType: ctx.appState.diagramType } });
+      await finalizeStep('done', { diagramType: ctx.appState.diagramType });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof TimeoutError) {
@@ -279,7 +396,14 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
       }
       alert(`Analysis failed (${ctx.getCurrentModelName()}): ${message}`);
       pushStatus(`Анализ: ошибка (${ctx.getCurrentModelName()}): ${message}`);
-      await ctx.safeRecordTimeStep({ type: 'analyze', messages: stepMessages, meta: { error: message } });
+      logEvent({
+        phase: 'analyze',
+        level: 'error',
+        title: 'Анализ',
+        detail: message,
+        error: { code: 'exception', message },
+      });
+      await finalizeStep('error', { error: message });
     } finally {
       ctx.setIsProcessing(false);
     }

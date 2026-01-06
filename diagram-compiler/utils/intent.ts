@@ -1,4 +1,5 @@
 import type { DiagramIntent, Message } from '../types';
+import { normalizeDiagramType } from './diagramTypes';
 
 export type ResolvedIntent = {
   content: string;
@@ -85,4 +86,41 @@ export const normalizeIntentText = (input: string): string => {
 
   const normalized = kept.join('\n').trim();
   return dedupeRepeatedBlock(normalized || withoutPrefix);
+};
+
+export const enforceAllowedDiagramTypesInIntent = (
+  input: string,
+  allowedTypes: readonly string[],
+  fallbackType?: string
+): string => {
+  const trimmed = input.trim();
+  if (!trimmed || !allowedTypes.length) return input;
+  const fallback = fallbackType ?? allowedTypes[0];
+  const lines = input.split(/\r?\n/);
+  const startIndex = lines.findIndex((line) => /^##\s+Diagrams\b/i.test(line.trim()));
+  if (startIndex === -1) return input;
+
+  const stopIndex = lines.findIndex((line, idx) => idx > startIndex && /^##\s+/.test(line.trim()));
+  const endIndex = stopIndex === -1 ? lines.length : stopIndex;
+  const separators = [' — ', ' - '];
+
+  for (let i = startIndex + 1; i < endIndex; i += 1) {
+    const line = lines[i];
+    if (!/^\s*\d+\.\s+/.test(line)) continue;
+    let updated = line;
+    for (const separator of separators) {
+      if (!updated.includes(separator)) continue;
+      const parts = updated.split(separator);
+      if (parts.length < 3) continue;
+      const rawType = parts[1]?.trim() ?? '';
+      const normalized = normalizeDiagramType(rawType);
+      const nextType = normalized && allowedTypes.includes(normalized) ? normalized : fallback;
+      parts[1] = nextType;
+      updated = parts.join(separator);
+      break;
+    }
+    lines[i] = updated;
+  }
+
+  return lines.join('\n');
 };

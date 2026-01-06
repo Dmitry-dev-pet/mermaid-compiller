@@ -6,9 +6,10 @@ import { CHAT_NOTEBOOK_TEMPLATES } from './prompts/chatNotebook';
 import { FIX_TEMPLATES } from './prompts/fix';
 import { GENERATE_TEMPLATES } from './prompts/generate';
 import { PLAN_NOTEBOOK_TEMPLATES } from './prompts/planNotebook';
+import { SUMMARY_TEMPLATES } from './prompts/summary';
 import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
 
-export type PromptMode = 'generate' | 'fix' | 'chat' | 'chat_notebook' | 'analyze' | 'plan_notebook';
+export type PromptMode = 'generate' | 'fix' | 'chat' | 'chat_notebook' | 'analyze' | 'plan_notebook' | 'summary';
 
 type PromptArgs = {
   diagramType?: DiagramType;
@@ -30,6 +31,7 @@ const PROMPT_TEMPLATES: Record<PromptLanguage, Record<PromptMode, string>> = {
     chat_notebook: CHAT_NOTEBOOK_TEMPLATES.English,
     analyze: ANALYZE_TEMPLATES.English,
     plan_notebook: PLAN_NOTEBOOK_TEMPLATES.English,
+    summary: SUMMARY_TEMPLATES.English,
   },
   Russian: {
     generate: GENERATE_TEMPLATES.Russian,
@@ -38,6 +40,7 @@ const PROMPT_TEMPLATES: Record<PromptLanguage, Record<PromptMode, string>> = {
     chat_notebook: CHAT_NOTEBOOK_TEMPLATES.Russian,
     analyze: ANALYZE_TEMPLATES.Russian,
     plan_notebook: PLAN_NOTEBOOK_TEMPLATES.Russian,
+    summary: SUMMARY_TEMPLATES.Russian,
   },
 };
 

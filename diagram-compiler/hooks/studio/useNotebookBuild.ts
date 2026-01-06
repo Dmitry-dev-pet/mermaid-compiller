@@ -6,7 +6,7 @@ import { NOTEBOOK_BUILD_RETRY_CONFIG } from './notebookBuildConfig';
 import { detectMermaidDiagramType, extractMermaidBlocksFromMarkdown, extractMermaidCode, parseMermaidJsonResponse, replaceMermaidBlockInMarkdown, validateMermaid } from '../../services/mermaidService';
 import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
 import { fetchNotebookDocsContext } from '../../services/docsContextService';
-import { fixDiagram, generateDiagram, planNotebook } from '../../services/llmService';
+import { fixDiagram, generateDiagram, planNotebook, summarizeBuild } from '../../services/llmService';
 import { runAutoFixLoop } from './autoFix';
 import { normalizeNotebookPlan, parseNotebookPlan } from '../../services/notebookPlanService';
 import { runLLMRequest } from '../../services/llmRequestRunner';
@@ -16,6 +16,28 @@ import { createProgressTracker } from './progressTracker';
 
 const NOTEBOOK_STYLE_CONSTRAINT_EN = 'No styling directives or color instructions (no theme/look/init/colors).';
 const NOTEBOOK_STYLE_CONSTRAINT_RU = 'Без стилевых директив и цветовых инструкций (без theme/look/init/colors).';
+
+const normalizeSummaryText = (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const spaced = trimmed.replace(/([.!?])([A-Za-zА-Яа-я])/g, '$1 $2');
+  const prefixMatch = spaced.match(/^(Итог:|Summary:)\s*/i);
+  const prefix = prefixMatch?.[0] ?? '';
+  const rest = prefix ? spaced.slice(prefix.length).trim() : spaced;
+  const sentences = rest
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const unique: string[] = [];
+  for (const sentence of sentences) {
+    if (unique[unique.length - 1] === sentence) continue;
+    if (!unique.includes(sentence)) {
+      unique.push(sentence);
+    }
+  }
+  const rebuilt = unique.join(' ').trim();
+  return `${prefix}${rebuilt}`.trim();
+};
 
 type NotebookBuildDeps = {
   aiConfig: import('../../types').AIConfig;
@@ -40,6 +62,19 @@ type NotebookBuildDeps = {
   setMermaidState: (updater: (prev: import('../../types').MermaidState) => import('../../types').MermaidState) => void;
   getDocsContext: (mode: import('../../types').DocsMode) => Promise<string>;
   loadBuildDocsEntries: (type: DiagramType) => Promise<unknown>;
+  startOperation: (title: string) => string;
+  addOperationEvent: (opId: string, args: {
+    phase: import('../../types').OperationPhase;
+    level: import('../../types').OperationLevel;
+    title: string;
+    detail?: string;
+    blockIndex?: number;
+    attempt?: import('../../types').OperationEvent['attempt'];
+    metrics?: import('../../types').OperationEvent['metrics'];
+    error?: import('../../types').OperationEvent['error'];
+  }) => void;
+  finishOperation: (opId: string, status: import('../../types').OperationLog['status']) => void;
+  getOperationLog: (opId: string) => import('../../types').OperationLog | null;
 };
 
 export const parseNotebookCountFromText = (text: string): number | null => {
@@ -347,24 +382,76 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
     const pushStatus = (content: string) => {
       deps.addMessage('assistant', content, 'build');
     };
+    let resolvedPlanCount: number | null = null;
+    let plan: NotebookPlan | null = null;
+    let successBlocks = 0;
+    let failedBlocks = 0;
+    let summaryAdded = false;
+    const opId = deps.startOperation('Notebook build');
+    const logEvent = (args: Parameters<typeof deps.addOperationEvent>[1]) => {
+      deps.addOperationEvent(opId, args);
+    };
+    const finalizeOperation = async (
+      status: 'done' | 'error',
+      meta?: Record<string, unknown>,
+      messages?: Message[],
+      includeMainChatStep?: boolean
+    ) => {
+      deps.finishOperation(opId, status);
+      await deps.safeAppendTimeStep({
+        type: 'build',
+        messages: messages ?? [],
+        meta: {
+          ...(meta ?? {}),
+          mode: 'notebook',
+          operationLog: deps.getOperationLog(opId),
+        },
+      });
+      if (includeMainChatStep && messages?.length) {
+        await deps.safeAppendTimeStep({
+          type: 'build',
+          messages,
+          meta: {
+            ...(meta ?? {}),
+            operationLog: deps.getOperationLog(opId),
+          },
+        });
+      }
+    };
     if (deps.connectionState.status !== 'connected') {
       pushStatus('Сборка ноутбука\n- офлайн: подключите AI');
+      logEvent({
+        phase: 'build',
+        level: 'error',
+        title: 'Notebook build',
+        detail: 'offline',
+        error: { code: 'offline', message: 'AI offline' },
+      });
       await deps.safeAppendTimeStep({
         type: 'build',
         messages: [deps.addMessage('assistant', 'Офлайн. Подключите AI для генерации диаграмм.', 'build')],
-        meta: { error: 'offline' },
+        meta: { error: 'offline', operationLog: deps.getOperationLog(opId) },
       });
+      deps.finishOperation(opId, 'error');
       return;
     }
 
     const prompt = resolveNotebookPrompt(deps.messages, deps.diagramIntent, text);
     if (!prompt) {
       pushStatus('Сборка ноутбука\n- нет intent');
+      logEvent({
+        phase: 'planning',
+        level: 'error',
+        title: 'Intent',
+        detail: 'missing',
+        error: { code: 'no_intent', message: 'Intent missing' },
+      });
       await deps.safeAppendTimeStep({
         type: 'build',
         messages: [deps.addMessage('assistant', 'Нет intent для сборки. Используйте чат, чтобы описать задачу.', 'build')],
-        meta: { error: 'no_intent' },
+        meta: { error: 'no_intent', operationLog: deps.getOperationLog(opId) },
       });
+      deps.finishOperation(opId, 'error');
       return;
     }
 
@@ -392,9 +479,16 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           allowedDiagramTypes ? `- main: ${allowedDiagramTypes.join(' / ')}` : '',
         ].filter(Boolean).join('\n')
       );
+      logEvent({
+        phase: 'build',
+        level: 'info',
+        title: 'Notebook build',
+        detail: `N=${requestedN ?? 'auto'}`,
+      });
       const docs = await fetchNotebookDocsContext();
       pushStatus('Планировщик\n- запрашиваю план');
-      let plan = await requestNotebookPlan({
+      logEvent({ phase: 'planning', level: 'info', title: 'Planner', detail: 'request' });
+      plan = await requestNotebookPlan({
         aiConfig: deps.aiConfig,
         modelParams: deps.modelParams,
         prompt: prompt.content,
@@ -405,6 +499,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         forcedDiagramType,
         allowedDiagramTypes,
       });
+      resolvedPlanCount = plan.resolvedN;
       pushStatus(
         [
           'Планировщик',
@@ -412,6 +507,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           `- диаграмм: ${plan.resolvedN}`,
         ].join('\n')
       );
+      logEvent({ phase: 'planning', level: 'info', title: 'Planner', detail: `ready (${plan.resolvedN})` });
       if (forcedDiagramType) {
         plan = {
           ...plan,
@@ -426,6 +522,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
       applyNotebookMarkdown(currentMarkdown);
       deps.setMarkdownMermaidActiveIndex(0);
       pushStatus('Ноутбук\n- создан markdown-скелет');
+      logEvent({ phase: 'build', level: 'info', title: 'Notebook', detail: 'skeleton created' });
 
       // Seed per-block chats with their raw intent as soon as the plan is available.
       for (let i = 0; i < plan.diagrams.length; i += 1) {
@@ -446,6 +543,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         });
       }
       pushStatus('Ноутбук\n- raw intent сохранён');
+      logEvent({ phase: 'planning', level: 'info', title: 'Notebook', detail: 'raw intent saved' });
 
       for (let i = 0; i < plan.diagrams.length; i += 1) {
         const diagram = plan.diagrams[i];
@@ -453,7 +551,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         const targetDiagramType = diagram.diagramType === 'other' ? fallbackDiagramType : diagram.diagramType;
         const rawIntent = formatNotebookRawIntent({ diagram, plan, language });
         const diagramTitle = diagram.title?.trim() || `Diagram ${i + 1}`;
-        const blockLabel = `блок ${i + 1}/${plan.diagrams.length} - ${targetDiagramType} - ${diagramTitle}`;
+        const blockLabel = `${i + 1}/${plan.diagrams.length} - ${targetDiagramType} - ${diagramTitle}`;
         const tracker = createProgressTracker({
           setMessages: deps.setMessages,
           prefix: `[notebook-block:${i}] `,
@@ -467,6 +565,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         const blockDocs = await deps.getDocsContext('build');
 
         updateBlockMessage(`Сборка: ${blockLabel} — старт.`);
+        logEvent({ phase: 'build', level: 'info', title: 'Block', detail: blockLabel, blockIndex: i });
 
         let success = false;
         let attempts = 0;
@@ -475,6 +574,14 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         while (attempts < NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts && !success) {
           attempts += 1;
           updateBlockMessage(`Сборка: ${blockLabel} — попытка ${attempts}/${NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts}.`);
+          logEvent({
+            phase: 'build',
+            level: 'info',
+            title: 'Block attempt',
+            detail: blockLabel,
+            blockIndex: i,
+            attempt: { current: attempts, max: NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts },
+          });
 
           const intentText = normalizeIntentText(diagram.buildPrompt || '');
           if (!intentText) {
@@ -510,11 +617,25 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             if (!cleaned) {
               lastError = 'no_mermaid_code';
               updateBlockMessage(`Сборка: ${blockLabel} — нет Mermaid кода.`);
+              logEvent({
+                phase: 'build',
+                level: 'warn',
+                title: 'Block',
+                detail: 'no mermaid code',
+                blockIndex: i,
+              });
               continue;
             }
             if (parsed && parsed.status !== 'ok') {
               lastError = parsed.reason || 'json_status_not_ok';
               updateBlockMessage(`Сборка: ${blockLabel} — JSON status ${parsed.status}.`);
+              logEvent({
+                phase: 'build',
+                level: 'warn',
+                title: 'Block',
+                detail: `json ${parsed.status}`,
+                blockIndex: i,
+              });
               continue;
             }
             const parsedType = parsed?.diagramType ?? null;
@@ -524,6 +645,13 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               updateBlockMessage(
                 `Сборка: ${blockLabel} — ожидали ${targetDiagramType}, получили ${detectedType}. Повтор.`
               );
+              logEvent({
+                phase: 'build',
+                level: 'warn',
+                title: 'Block',
+                detail: `type mismatch ${detectedType}`,
+                blockIndex: i,
+              });
               continue;
             }
             if (parsedType && parsedType !== targetDiagramType) {
@@ -531,6 +659,13 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               updateBlockMessage(
                 `Сборка: ${blockLabel} — ожидали ${targetDiagramType}, получили ${parsedType}. Повтор.`
               );
+              logEvent({
+                phase: 'build',
+                level: 'warn',
+                title: 'Block',
+                detail: `type mismatch ${parsedType}`,
+                blockIndex: i,
+              });
               continue;
             }
 
@@ -565,6 +700,14 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               lastError = validation.errorMessage || 'invalid_mermaid';
               updateBlockMessage(`Сборка: ${blockLabel} — Mermaid всё ещё невалиден.`);
             }
+            logEvent({
+              phase: 'validate',
+              level: validation.isValid ? 'info' : 'warn',
+              title: 'Block validation',
+              detail: validation.isValid ? 'valid' : 'invalid',
+              blockIndex: i,
+              metrics: lastAutoFix ? { autoFix: lastAutoFix } : undefined,
+            });
           } catch (e: unknown) {
             lastError = e instanceof Error ? e.message : String(e);
             if (e instanceof TimeoutError && attempts < NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts) {
@@ -575,6 +718,14 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             updateBlockMessage(
               `Сборка: ${blockLabel} — попытка ${attempts} не удалась (${deps.aiConfig.selectedModelId ? `model=${deps.aiConfig.selectedModelId}` : 'model=unknown'}): ${lastError}`
             );
+            logEvent({
+              phase: 'build',
+              level: 'error',
+              title: 'Block',
+              detail: lastError,
+              blockIndex: i,
+              error: { code: 'block_error', message: lastError },
+            });
           }
         }
 
@@ -592,9 +743,22 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             lastError ? `- последняя ошибка: ${lastError}` : '',
           ].filter(Boolean).join('\n')
         );
+        logEvent({
+          phase: success ? 'build' : 'error',
+          level: success ? 'info' : 'error',
+          title: 'Block',
+          detail: `${blockLabel} — ${success ? 'готов' : 'невалиден'}`,
+          blockIndex: i,
+        });
         const progressMessage = tracker.getMessage();
         if (progressMessage) {
           blockMessages.push(progressMessage);
+        }
+
+        if (success) {
+          successBlocks += 1;
+        } else {
+          failedBlocks += 1;
         }
 
         await deps.safeAppendTimeStep({
@@ -622,12 +786,73 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       pushStatus(`Сборка ноутбука\n- ошибка: ${message}`);
+      logEvent({
+        phase: 'build',
+        level: 'error',
+        title: 'Notebook build',
+        detail: message,
+        error: { code: 'exception', message },
+      });
+      const summaryMessage = deps.addMessage(
+        'assistant',
+        `Итог: сборка ноутбука завершилась с ошибкой. ${message}`,
+        'build'
+      );
+      summaryAdded = true;
       await deps.safeAppendTimeStep({
         type: 'build',
-        messages: [deps.addMessage('assistant', `Сборка ноутбука не удалась: ${message}`, 'build')],
-        meta: { error: message },
+        messages: [summaryMessage],
+        meta: { error: message, operationLog: deps.getOperationLog(opId) },
       });
+      deps.finishOperation(opId, 'error');
     } finally {
+      if (!summaryAdded) {
+        const total = plan?.diagrams?.length ?? resolvedPlanCount ?? 0;
+        const typeList = plan?.diagrams?.map((diagram) => diagram.diagramType).filter(Boolean) ?? [];
+        const uniqueTypes = Array.from(new Set(typeList));
+        const fallbackSummaryParts = [
+          'Итог: сборка ноутбука завершена.',
+          total ? `Успешно ${successBlocks} из ${total}.` : `Успешно ${successBlocks}.`,
+          failedBlocks ? `Ошибок: ${failedBlocks}.` : '',
+          uniqueTypes.length ? `Типы: ${uniqueTypes.join(', ')}.` : '',
+        ].filter(Boolean);
+        let resolvedSummary = fallbackSummaryParts.join(' ');
+        try {
+          const summaryInput = [
+            `Блоки: ${total}`,
+            `Успешно: ${successBlocks}`,
+            `Ошибки: ${failedBlocks}`,
+            uniqueTypes.length ? `Типы: ${uniqueTypes.join(', ')}` : '',
+          ].filter(Boolean).join('\n');
+          const summaryText = await runLLMRequest({
+            task: 'build-summary',
+            run: () => summarizeBuild(
+              [{ id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() }],
+              deps.aiConfig,
+              '',
+              language,
+              deps.modelParams
+            ),
+            retries: 1,
+          });
+          const cleanedSummary = normalizeSummaryText(summaryText);
+          if (cleanedSummary) {
+            const summaryPrefix = language === 'Russian' ? 'Итог:' : 'Summary:';
+            resolvedSummary = cleanedSummary.toLowerCase().startsWith(summaryPrefix.toLowerCase())
+              ? cleanedSummary
+              : `${summaryPrefix} ${cleanedSummary}`;
+          }
+        } catch {
+          // fallback to deterministic summary
+        }
+        const summaryMessage = deps.addMessage('assistant', resolvedSummary, 'build');
+        await finalizeOperation(
+          'done',
+          { resolvedN: requestedN ?? resolvedPlanCount ?? null },
+          [summaryMessage],
+          true
+        );
+      }
       await deps.setDiagramTypeAndWait(originalDiagramType);
       deps.setIsProcessing(false);
     }

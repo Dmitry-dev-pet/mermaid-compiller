@@ -28,6 +28,7 @@ type UseProjectsArgs = {
   setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
   setEditorTab: Dispatch<SetStateAction<EditorTab>>;
   setMermaidState: Dispatch<SetStateAction<MermaidState>>;
+  setOperationLogs: Dispatch<SetStateAction<import('../../types').OperationLog[]>>;
   clearProjectPreview: () => void;
   lastManualRecordedCodeRef: MutableRefObject<string>;
   isHydratingRef: MutableRefObject<boolean>;
@@ -57,6 +58,7 @@ export const useProjects = ({
   setDiagramIntent,
   setEditorTab,
   setMermaidState,
+  setOperationLogs,
   clearProjectPreview,
   lastManualRecordedCodeRef,
   isHydratingRef,
@@ -97,6 +99,7 @@ export const useProjects = ({
     resetPromptPreview();
     setEditorTab('code');
     setMermaidState(DEFAULT_MERMAID_STATE);
+    setOperationLogs([]);
   }, [
     aiConfig,
     appState,
@@ -109,6 +112,7 @@ export const useProjects = ({
     setDiagramIntent,
     setEditorTab,
     setMermaidState,
+    setOperationLogs,
     startNewSession,
     modelParams,
   ]);
@@ -121,6 +125,7 @@ export const useProjects = ({
     setDiagramIntent(null);
     resetPromptPreview();
     setEditorTab('code');
+    setOperationLogs([]);
     await loadSession(sessionId);
   }, [
     clearProjectPreview,
@@ -131,6 +136,7 @@ export const useProjects = ({
     resetPromptPreview,
     setDiagramIntent,
     setEditorTab,
+    setOperationLogs,
   ]);
 
   const renameProject = useCallback(async (sessionId: string, title: string) => {

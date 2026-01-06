@@ -78,6 +78,40 @@ export interface Message {
   mode?: 'chat' | 'build' | 'fix' | 'analyze' | 'system';
 }
 
+export type OperationPhase =
+  | 'chat'
+  | 'planning'
+  | 'build'
+  | 'validate'
+  | 'fix'
+  | 'compile'
+  | 'done'
+  | 'error';
+
+export type OperationLevel = 'info' | 'warn' | 'error';
+
+export type OperationEvent = {
+  id: string;
+  opId: string;
+  createdAt: number;
+  phase: OperationPhase;
+  level: OperationLevel;
+  title: string;
+  detail?: string;
+  blockIndex?: number;
+  attempt?: { current: number; max: number };
+  metrics?: { autoFix?: number; tokens?: number; durationMs?: number };
+  error?: { code: string; message: string };
+};
+
+export type OperationLog = {
+  id: string;
+  status: 'running' | 'done' | 'error';
+  startedAt: number;
+  finishedAt?: number;
+  events: OperationEvent[];
+};
+
 export interface DiagramIntent {
   content: string;
   source: 'chat' | 'build' | 'fallback';

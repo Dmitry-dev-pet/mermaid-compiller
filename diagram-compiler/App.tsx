@@ -82,6 +82,8 @@ function App() {
     openNotebookBlock,
     backToNotebookMainChat,
     isNotebookChatMode,
+    operationLogs,
+    activeOperationLog,
     interactionRecorder,
   } = useDiagramStudio();
   const buildDocsSystemPrompts = {
@@ -218,6 +220,8 @@ function App() {
                 onOpenNotebookBlock={openNotebookBlock}
                 isNotebookChatMode={isNotebookChatMode}
                 onBackToNotebookMainChat={backToNotebookMainChat}
+                operationLogs={operationLogs}
+                activeOperationLog={activeOperationLog}
               />
             </div>
 

@@ -38,10 +38,39 @@ const DIAGRAM_TYPE_ALIASES: Record<string, DiagramType> = {
   zenuml: 'zenuml',
 };
 
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const DIAGRAM_TYPE_TOKENS = Object.keys(DIAGRAM_TYPE_ALIASES)
+  .map(escapeRegex)
+  .sort((a, b) => b.length - a.length);
+const DIAGRAM_TYPE_PATTERN = DIAGRAM_TYPE_TOKENS.join('|');
+
 const coerceDiagramType = (value: string | undefined): DiagramType | 'other' => {
   if (!value) return 'other';
   const normalized = value.replace(/\s+/g, '').toLowerCase();
   return DIAGRAM_TYPE_ALIASES[normalized] ?? 'other';
+};
+
+const normalizeTypeMentions = (text: string, diagramType: DiagramType): string => {
+  if (!text.trim()) return text;
+  if (diagramType === 'other') return text;
+  const target = diagramType;
+  let output = text;
+  if (DIAGRAM_TYPE_PATTERN) {
+    const aliasPattern = `(${DIAGRAM_TYPE_PATTERN})`;
+    output = output.replace(
+      new RegExp(`\\b(diagram\\s*(?:type)?\\s*[:\\-]?\\s*)${aliasPattern}\\b`, 'gi'),
+      `$1${target}`
+    );
+    output = output.replace(
+      new RegExp(`\\b(тип\\s*(?:диаграмм[аы]?|схемы)\\s*[:\\-]?\\s*)${aliasPattern}\\b`, 'gi'),
+      `$1${target}`
+    );
+    output = output.replace(
+      new RegExp(`\\b${aliasPattern}\\b\\s*(diagram|diagramme|diagramm|диаграмм[аы]?|схем[аы]?)\\b`, 'gi'),
+      `${target} $2`
+    );
+  }
+  return output;
 };
 
 const extractJsonObject = (raw: string): string | null => {
@@ -69,14 +98,16 @@ const sanitizeNotebookJson = (raw: string): string => {
 
 const normalizeDiagram = (diagram: NotebookPlanDiagram, index: number): NotebookPlanDiagram => {
   const diagramType = coerceDiagramType(diagram.diagramType as string);
+  const buildPrompt = diagram.buildPrompt?.trim() || '';
+  const acceptance = diagram.acceptance?.filter(Boolean) ?? [];
   return {
     id: diagram.id || `d${index + 1}`,
     order: diagram.order ?? index + 1,
     title: diagram.title?.trim() || `Diagram ${index + 1}`,
     diagramType,
     goal: diagram.goal?.trim(),
-    buildPrompt: diagram.buildPrompt?.trim() || '',
-    acceptance: diagram.acceptance?.filter(Boolean),
+    buildPrompt: normalizeTypeMentions(buildPrompt, diagramType),
+    acceptance: acceptance.map((item) => normalizeTypeMentions(item, diagramType)),
   };
 };
 
