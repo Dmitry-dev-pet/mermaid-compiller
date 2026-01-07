@@ -151,6 +151,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     if (message.role !== 'assistant') return false;
     if (!message.content) return false;
     const content = message.content.replace(/^\[notebook-block:\d+\]\s*/i, '').trim();
+    if (!/\n-\s/.test(content)) return false;
     return /^(Build|Chat|Fix|Analyze|Recompile|Notebook|Planner|Notebook block|Сборка|Чат|Исправление|Анализ|Пересборка|Ноутбук|Планировщик)(:|\s|\n)/i
       .test(content);
   }, []);
@@ -169,10 +170,22 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     [baseMessages, isStatusMessage]
   );
   const lastMarkdownMessage = markdownMessages[markdownMessages.length - 1] ?? null;
+  const summaryContent = useMemo(() => {
+    if (isNotebookChatMode) {
+      const raw = intentText?.trim();
+      return raw ? { content: raw } as Message : null;
+    }
+    return lastMarkdownMessage;
+  }, [intentText, isNotebookChatMode, lastMarkdownMessage]);
   const chatMessages = useMemo(
     () =>
-      baseMessages.filter((m) => !isStatusMessage(m) && !shouldRenderMarkdown(m, isStatusMessage(m))),
-    [baseMessages, isStatusMessage]
+      baseMessages.filter((m) => {
+        if (m.mode === 'system') return false;
+        if (isStatusMessage(m)) return false;
+        if (isNotebookChatMode) return true;
+        return !shouldRenderMarkdown(m, isStatusMessage(m));
+      }),
+    [baseMessages, isNotebookChatMode, isStatusMessage, shouldRenderMarkdown]
   );
   const parseDiagramTypesFromIntent = useCallback((text: string) => {
     if (!text.trim()) return [];
@@ -316,10 +329,12 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
 
   const chatSummaryMessage = useMemo(() => {
+    if (isNotebookChatMode) return null;
     if (!lastFinishedOperation) return null;
     const title = lastFinishedOperation.events[0]?.title ?? '';
     if (title !== 'Чат') return null;
-    const diagrams = lastMarkdownMessage ? parseDiagramsFromIntent(lastMarkdownMessage.content) : [];
+    if (!lastMarkdownMessage) return null;
+    const diagrams = parseDiagramsFromIntent(lastMarkdownMessage.content);
     if (diagrams.length) {
       const uniqueTypes = Array.from(new Set(diagrams.map((d) => d.type)));
       const header = `Предложено ${formatDiagramCount(diagrams.length)} (типы: ${uniqueTypes.join(', ')}).`;
@@ -331,10 +346,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       });
       return [header, 'Почему так:', ...reasons, 'Если нужно, уточните требования или нажмите Build для сборки.'].join('\n');
     }
-    return 'Ответ готов. Можете уточнить требования или нажать Build для генерации диаграммы.';
+    return null;
   }, [
     explainDiagramType,
     formatDiagramCount,
+    isNotebookChatMode,
     lastFinishedOperation,
     lastMarkdownMessage,
     parseDiagramsFromIntent,
@@ -616,8 +632,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
             Summary
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto p-2">
-            {lastMarkdownMessage ? (
-              <ChatMarkdownTabs rawText={lastMarkdownMessage.content} isLatest />
+            {summaryContent ? (
+              <ChatMarkdownTabs rawText={summaryContent.content} isLatest />
             ) : (
               <div className="text-[11px] text-slate-400 dark:text-slate-500">Нет summary.</div>
             )}
@@ -684,6 +700,10 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                       )}
                     </div>
                   ) : null;
+                  const analyzeLabel =
+                    msg.role === 'assistant' && msg.mode === 'analyze' && !isStatus
+                      ? 'Анализ'
+                      : '';
                   const messageBlock = (
                     <div
                       className={`${maxWidthClass} ${isStatus ? 'px-0 py-0' : paddingClass} rounded-md text-sm whitespace-pre-wrap break-words ${
@@ -698,6 +718,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                     >
                       <div className="flex items-start gap-2">
                         <div className="flex-1 whitespace-pre-wrap break-words">
+                          {analyzeLabel && (
+                            <div className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-1">
+                              {analyzeLabel}
+                            </div>
+                          )}
                           {messageText}
                         </div>
                         {notebookBuildMeta && typeof onOpenNotebookBlock === 'function' && (

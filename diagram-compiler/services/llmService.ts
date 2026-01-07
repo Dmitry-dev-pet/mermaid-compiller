@@ -65,6 +65,18 @@ export const chat = async (
   return strategy.chat(messages, config, diagramType, docsContext, language, modelParams);
 };
 
+export const chatDiagram = async (
+  messages: Message[],
+  config: AIConfig,
+  diagramType: DiagramType,
+  docsContext: string,
+  language: string,
+  modelParams?: ModelParams | null
+): Promise<string> => {
+  const strategy = getStrategy(config);
+  return strategy.chatDiagram(messages, config, diagramType, docsContext, language, modelParams);
+};
+
 export const analyzeDiagram = async (
   code: string,
   config: AIConfig,

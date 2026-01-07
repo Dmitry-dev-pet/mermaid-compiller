@@ -25,6 +25,7 @@ export type StudioActionsDeps = {
   appState: AppState;
   modelParams: ModelParams | null;
   isNotebookChatEnabled?: boolean;
+  isNotebookChatMode?: boolean;
   mermaidState: MermaidState;
   diagramIntent: DiagramIntent | null;
   setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
@@ -36,6 +37,7 @@ export type StudioActionsDeps = {
   trackAnalyticsEvent?: (event: string, payload?: Record<string, unknown>) => void;
   trackAnalyticsWithContext?: (event: string, mode: DocsMode, payload?: Record<string, unknown>) => Promise<void>;
   resolveMermaidUpdateTarget?: () => MermaidUpdateTarget | null;
+  getNotebookChatIndex?: () => number | null;
   setIsProcessing: (value: boolean) => void;
   getDocsContext: (mode: DocsMode) => Promise<string>;
   recordTimeStep: (args: {
@@ -63,6 +65,7 @@ export type StudioActionsDeps = {
 export type StudioContext = StudioActionsDeps & {
   getRelevantMessages: () => Message[];
   isNotebookChatEnabled: boolean;
+  isNotebookChatMode: boolean;
   resolveLanguage: (text?: string) => string;
   resolveAnalyzeLanguage: () => string;
   normalizeText: (text: string) => string;
@@ -80,6 +83,7 @@ export type StudioContext = StudioActionsDeps & {
   trackAnalyticsWithContext: (event: string, mode: DocsMode, payload?: Record<string, unknown>) => Promise<void>;
   getCurrentModelName: () => string;
   getDocsContext: (mode: DocsMode) => Promise<string>;
+  getNotebookChatIndex?: () => number | null;
   safeRecordTimeStep: StudioActionsDeps['recordTimeStep'];
 };
 
@@ -87,6 +91,7 @@ export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {
   const normalizeText = (text: string) => text.replace(/\s+/g, ' ').trim();
   const getRelevantMessages = () => deps.getMessages().filter((m) => m.id !== 'init');
   const isNotebookChatEnabled = deps.isNotebookChatEnabled ?? true;
+  const isNotebookChatMode = deps.isNotebookChatMode ?? false;
 
   const resolveLanguage = (text?: string): string => {
     if (deps.appState.language && deps.appState.language !== 'auto') {
@@ -250,6 +255,8 @@ ${code}
     return modelId ? `model=${modelId}` : 'model=unknown';
   };
 
+  const getNotebookChatIndex = () => deps.getNotebookChatIndex?.() ?? null;
+
   const safeRecordTimeStep: StudioActionsDeps['recordTimeStep'] = async (args) => {
     try {
       await deps.recordTimeStep(args);
@@ -262,6 +269,7 @@ ${code}
     ...deps,
     getRelevantMessages,
     isNotebookChatEnabled,
+    isNotebookChatMode,
     resolveLanguage,
     resolveAnalyzeLanguage,
     normalizeText,
@@ -278,6 +286,7 @@ ${code}
     trackAnalyticsEvent,
     trackAnalyticsWithContext,
     getCurrentModelName,
+    getNotebookChatIndex,
     safeRecordTimeStep,
   };
 };

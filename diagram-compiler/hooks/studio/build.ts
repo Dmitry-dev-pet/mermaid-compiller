@@ -46,6 +46,25 @@ const normalizeSummaryText = (text: string) => {
   return `${prefix}${rebuilt}`.trim();
 };
 
+const sanitizeSummaryText = (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = (fencedMatch?.[1] ?? trimmed).trim();
+  try {
+    const parsed = JSON.parse(candidate) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object') {
+      const content = typeof parsed.content === 'string' ? parsed.content.trim() : '';
+      if (content) return content;
+      const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+      if (summary) return summary;
+    }
+  } catch {
+    // ignore parse errors, fall back to raw text
+  }
+  return candidate;
+};
+
 const getFallbackMermaid = (diagramType: DiagramType): string | null => {
   switch (diagramType) {
     case 'flowchart':
@@ -91,8 +110,12 @@ export const createBuildHandler = (ctx: StudioContext) => {
     const prompt = text?.trim() ?? '';
     const stepMessages: Message[] = [];
     const opId = ctx.startOperation('Сборка');
+    const notebookBlockIndex = ctx.isNotebookChatMode ? ctx.getNotebookChatIndex?.() : null;
     const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
-      ctx.addOperationEvent(opId, args);
+      ctx.addOperationEvent(opId, {
+        ...args,
+        blockIndex: typeof notebookBlockIndex === 'number' ? notebookBlockIndex : args.blockIndex,
+      });
     };
     const finalizeStep = async (
       status: 'done' | 'error',
@@ -160,6 +183,8 @@ export const createBuildHandler = (ctx: StudioContext) => {
         diagramIntent: ctx.getCurrentIntent(),
         messages: relevantMessages,
         allowFallback: true,
+        preferAssistant: ctx.isNotebookChatMode,
+        assistantMode: 'chat',
       });
       if (!intent) {
         pushStatus('Нет intent для сборки. Используйте чат, чтобы описать задачу.');
@@ -202,8 +227,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
         ].join('\n')
       );
 
-      const beforeSummary = `Build (before): Intent (${intent.source}). ${ctx.normalizeText(normalizedIntent)}`;
-      pushStatus(beforeSummary);
+      // keep intent details in log only (no chat message)
       logEvent({
         phase: 'planning',
         level: 'info',
@@ -417,7 +441,9 @@ export const createBuildHandler = (ctx: StudioContext) => {
           ),
           retries: 1,
         });
-        const cleanedSummary = normalizeSummaryText(stripMermaidCode(summaryText));
+        const cleanedSummary = normalizeSummaryText(
+          sanitizeSummaryText(stripMermaidCode(summaryText))
+        );
         if (cleanedSummary) {
           resolvedSummary = cleanedSummary.toLowerCase().startsWith(summaryPrefix.toLowerCase())
             ? cleanedSummary

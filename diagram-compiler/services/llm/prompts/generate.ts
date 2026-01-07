@@ -16,6 +16,10 @@ Generate VALID Mermaid code based on the provided intent.
   - reason: string (required when status!="ok")
 - If any other instruction conflicts with this output format, follow the JSON rules above.
 - The input is an intent summary, not a full chat transcript.
+- General syntax and escaping:
+  - Node/ID identifiers must not contain spaces or special characters; visible text should be in quotes or label syntax.
+  - Escape HTML symbols < > & #.
+  - Comments use %%.
 - {{typeRule}}
 - Use provided documentation context if relevant.{{languageInstruction}}
 
@@ -37,6 +41,10 @@ Generate VALID Mermaid code based on the provided intent.
   - reason: string (обязательно при status!="ok")
 - Если есть конфликт с другими инструкциями, приоритет у JSON-формата выше.
 - Вход — это intent (намерение), а не полный диалог.
+- Синтаксис и экранирование:
+  - ID/идентификаторы без пробелов и спецсимволов; отображаемый текст — в кавычках или через метки.
+  - HTML-символы < > & # должны быть экранированы.
+  - Комментарии — через %%.
 - {{typeRule}}
 - Используй контекст документации, если он релевантен.{{languageInstruction}}
 

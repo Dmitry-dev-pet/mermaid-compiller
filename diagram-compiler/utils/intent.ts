@@ -11,6 +11,8 @@ export const resolveIntentFromInput = (args: {
   diagramIntent: DiagramIntent | null;
   messages: Message[];
   allowFallback?: boolean;
+  preferAssistant?: boolean;
+  assistantMode?: Message['mode'];
 }): ResolvedIntent | null => {
   const prompt = args.prompt.trim();
   if (prompt) return { content: prompt, source: 'build' };
@@ -21,6 +23,29 @@ export const resolveIntentFromInput = (args: {
       content: diagramIntent.content,
       source: diagramIntent.source ?? 'chat',
     };
+  }
+
+  const isStatusMessage = (message: Message) => {
+    if (message.role !== 'assistant') return false;
+    const content = message.content.trim();
+    if (!content) return false;
+    if (!/\n-\s/.test(content)) return false;
+    return /^(Chat|Чат|Build|Сборка|Analyze|Анализ|Fix|Исправление|Notebook|Ноутбук|Planner|Планировщик)(:|\s|\n)/i
+      .test(content);
+  };
+
+  if (args.preferAssistant) {
+    const fallbackAssistant = args.messages
+      .slice()
+      .reverse()
+      .find((m) => (
+        m.id !== 'init'
+        && m.role === 'assistant'
+        && (!args.assistantMode || m.mode === args.assistantMode)
+        && m.content.trim().length > 0
+        && !isStatusMessage(m)
+      ))?.content;
+    if (fallbackAssistant) return { content: fallbackAssistant, source: 'chat' };
   }
 
   if (args.allowFallback === false) return null;

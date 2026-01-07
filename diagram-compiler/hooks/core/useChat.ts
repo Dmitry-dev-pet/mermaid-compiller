@@ -7,33 +7,70 @@ const INITIAL_MESSAGES: Message[] = [
   { id: 'init', role: 'assistant', content: INITIAL_CHAT_MESSAGE, timestamp: 0, mode: 'system' },
 ];
 
+const MAIN_CHAT_CONTEXT = 'main';
+
+type MessagesByContext = Record<string, Message[]>;
+
 export const useChat = () => {
-  const [messages, setMessagesState] = useState<Message[]>(INITIAL_MESSAGES);
-  const messagesRef = useRef<Message[]>(messages);
+  const [messagesByContext, setMessagesByContextState] = useState<MessagesByContext>({
+    [MAIN_CHAT_CONTEXT]: INITIAL_MESSAGES,
+  });
+  const [activeContextId, setActiveContextIdState] = useState(MAIN_CHAT_CONTEXT);
+  const messagesRef = useRef<MessagesByContext>(messagesByContext);
+  const activeContextRef = useRef(activeContextId);
 
   useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+    messagesRef.current = messagesByContext;
+  }, [messagesByContext]);
+
+  useEffect(() => {
+    activeContextRef.current = activeContextId;
+  }, [activeContextId]);
+
+  const getMessagesForContext = useCallback((contextId?: string) => {
+    const key = contextId ?? activeContextRef.current;
+    return messagesRef.current[key] ?? (key === MAIN_CHAT_CONTEXT ? INITIAL_MESSAGES : []);
+  }, []);
+
+  const setMessagesForContext = useCallback(
+    (contextId: string, action: SetStateAction<Message[]>) => {
+      const prev = messagesRef.current[contextId] ?? [];
+      const next =
+        typeof action === 'function'
+          ? (action as (prev: Message[]) => Message[])(prev)
+          : action;
+
+      messagesRef.current = {
+        ...messagesRef.current,
+        [contextId]: next,
+      };
+      setMessagesByContextState(messagesRef.current);
+    },
+    []
+  );
 
   const setMessages: Dispatch<SetStateAction<Message[]>> = useCallback((action) => {
-    const next =
-      typeof action === 'function'
-        ? (action as (prev: Message[]) => Message[])(messagesRef.current)
-        : action;
-
-    messagesRef.current = next;
-    setMessagesState(next);
-  }, []);
+    const key = activeContextRef.current;
+    setMessagesForContext(key, action);
+  }, [setMessagesForContext]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
   }, [setMessages]);
 
   const resetMessages = useCallback(() => {
-    setMessages(INITIAL_MESSAGES);
-  }, [setMessages]);
+    messagesRef.current = { [MAIN_CHAT_CONTEXT]: INITIAL_MESSAGES };
+    setMessagesByContextState(messagesRef.current);
+    setActiveContextIdState(MAIN_CHAT_CONTEXT);
+  }, []);
 
-  const addMessage = useCallback((role: 'user' | 'assistant', content: string, mode?: Message['mode']) => {
+  const addMessage = useCallback((
+    role: 'user' | 'assistant',
+    content: string,
+    mode?: Message['mode'],
+    contextId?: string
+  ) => {
+    const targetContext = contextId ?? activeContextRef.current;
     const nextMessage: Message = {
       id: generateId(),
       role,
@@ -42,18 +79,30 @@ export const useChat = () => {
       mode,
     };
 
-    setMessages((prev) => [...prev, nextMessage]);
+    setMessagesForContext(targetContext, (prev) => [...prev, nextMessage]);
     return nextMessage;
-  }, [setMessages]);
+  }, [setMessagesForContext]);
 
-  const getMessages = useCallback(() => messagesRef.current, []);
+  const getMessages = useCallback((contextId?: string) => getMessagesForContext(contextId), [
+    getMessagesForContext,
+  ]);
+
+  const setActiveContextId = useCallback((contextId: string) => {
+    setActiveContextIdState(contextId);
+  }, []);
+
+  const messages = getMessagesForContext(activeContextId);
 
   return {
     messages,
     setMessages, // Exposed for bulk updates or specialized logic
+    setMessagesForContext,
     addMessage,
     clearMessages,
     resetMessages,
     getMessages,
+    getMessagesForContext,
+    activeContextId,
+    setActiveContextId,
   };
 };

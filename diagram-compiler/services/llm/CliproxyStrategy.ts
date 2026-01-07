@@ -204,6 +204,18 @@ Fix it.`,
     return this.fetchCompletion(messages, config, systemPrompt, modelParams);
   }
 
+  async chatDiagram(
+    messages: Message[],
+    config: AIConfig,
+    diagramType: DiagramType,
+    docsContext: string,
+    language: string,
+    modelParams?: ModelParams | null
+  ): Promise<string> {
+    const systemPrompt = buildSystemPrompt('chat_diagram', { diagramType, docsContext, language });
+    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+  }
+
   async chatNotebook(
     messages: Message[],
     config: AIConfig,

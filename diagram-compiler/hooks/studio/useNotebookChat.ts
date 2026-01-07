@@ -13,9 +13,8 @@ interface UseNotebookChatParams {
   markdownMermaidBlocksLength: number;
   markdownMermaidActiveIndex: number;
   historySteps: TimeStep[];
-  messages: Message[];
-  setMessages: Dispatch<SetStateAction<Message[]>>;
-  getMessages: () => Message[];
+  getMessagesForContext: (contextId: string) => Message[];
+  setMessagesForContext: (contextId: string, action: SetStateAction<Message[]>) => void;
   diagramIntent: DiagramIntent | null;
   setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
   systemPrompt: string;
@@ -154,9 +153,8 @@ export const useNotebookChat = ({
   markdownMermaidBlocksLength,
   markdownMermaidActiveIndex,
   historySteps,
-  messages,
-  setMessages,
-  getMessages,
+  getMessagesForContext,
+  setMessagesForContext,
   diagramIntent,
   setDiagramIntent,
   systemPrompt,
@@ -165,9 +163,6 @@ export const useNotebookChat = ({
 }: UseNotebookChatParams) => {
   const notebookChatRef = useRef<Record<number, NotebookChatInfo>>({});
   const notebookChatIndexRef = useRef<number | null>(null);
-  const mainChatRef = useRef<Message[] | null>(null);
-  const mainDiagramIntentRef = useRef<DiagramIntent | null>(null);
-  const notebookChatModeRef = useRef(false);
   const buildDocsIntentText = useMemo(() => {
     if (isNotebookDataEnabled) {
       if (!markdownMermaidBlocksLength) return '';
@@ -196,12 +191,8 @@ export const useNotebookChat = ({
     if (!isNotebookChatMode) return;
     const index = getNotebookChatIndex();
     if (index === null) return;
-    if (!notebookChatModeRef.current) {
-      mainChatRef.current = getMessages();
-      mainDiagramIntentRef.current = diagramIntent;
-      notebookChatModeRef.current = true;
-    }
     notebookChatIndexRef.current = index;
+    const contextId = `block:${index}`;
     const info = notebookChatRef.current[index] ?? { messages: [] };
     const nextMessages = buildNotebookChatMessages(
       info,
@@ -209,8 +200,23 @@ export const useNotebookChat = ({
       systemPrompt,
       systemPromptRedacted
     );
-    if (!areMessagesEqual(getMessages(), nextMessages)) {
-      setMessages(nextMessages);
+    const latestStepTimestamp = historySteps
+      .filter((step) => {
+        const meta = step.meta as Record<string, unknown> | undefined;
+        return meta?.mode === 'notebook' && meta?.blockIndex === index;
+      })
+      .reduce((max, step) => Math.max(max, step.createdAt), 0);
+    const latestMessageTimestamp = getMessagesForContext(contextId).reduce(
+      (max, message) => Math.max(max, message.timestamp ?? 0),
+      0
+    );
+    const shouldPreserveLiveMessages = latestMessageTimestamp > latestStepTimestamp;
+
+    if (
+      !areMessagesEqual(getMessagesForContext(contextId), nextMessages)
+      && !shouldPreserveLiveMessages
+    ) {
+      setMessagesForContext(contextId, nextMessages);
     }
     const nextIntent = resolveNotebookBlockIntent(historySteps, index);
     if (
@@ -221,74 +227,42 @@ export const useNotebookChat = ({
     }
   }, [
     getNotebookChatIndex,
-    getMessages,
+    getMessagesForContext,
     isNotebookChatMode,
     historySteps,
     isSystemPromptRaw,
     diagramIntent,
     setDiagramIntent,
-    mainChatRef,
-    mainDiagramIntentRef,
     notebookChatIndexRef,
-    notebookChatModeRef,
     notebookChatRef,
     markdownMermaidBlocksLength,
-    setMessages,
+    setMessagesForContext,
     systemPrompt,
     systemPromptRedacted,
   ]);
 
   useEffect(() => {
-    if (isNotebookChatMode) {
-      const index = getNotebookChatIndex();
-      if (index === null) return;
-      const hasNotebookSynthetic = messages.some(
-        (m) => m.id === 'notebook-chat-md' || m.id === 'notebook-raw-intent'
-      );
-      if (!hasNotebookSynthetic) return;
-      const info = notebookChatRef.current[index];
-      const nextInfo = {
-        messages: stripNotebookSyntheticMessages(messages),
-        rawIntent: info?.rawIntent,
-      };
-      notebookChatRef.current[index] = nextInfo;
-      return;
-    }
-
-    if (notebookChatModeRef.current) {
-      if (mainChatRef.current && !areMessagesEqual(getMessages(), mainChatRef.current)) {
-        setMessages(mainChatRef.current);
-      }
-      if (
-        mainDiagramIntentRef.current
-        && (
-          mainDiagramIntentRef.current.content !== (diagramIntent?.content ?? '')
-          || mainDiagramIntentRef.current.source !== (diagramIntent?.source ?? 'fallback')
-        )
-      ) {
-        setDiagramIntent(mainDiagramIntentRef.current);
-      } else if (!mainDiagramIntentRef.current && diagramIntent) {
-        setDiagramIntent(null);
-      }
-      notebookChatIndexRef.current = null;
-      notebookChatModeRef.current = false;
-      return;
-    }
-    mainChatRef.current = messages;
-    mainDiagramIntentRef.current = diagramIntent;
+    if (!isNotebookChatMode) return;
+    const index = getNotebookChatIndex();
+    if (index === null) return;
+    const contextId = `block:${index}`;
+    const currentMessages = getMessagesForContext(contextId);
+    const hasNotebookSynthetic = currentMessages.some(
+      (m) => m.id === 'notebook-chat-md' || m.id === 'notebook-raw-intent'
+    );
+    if (!hasNotebookSynthetic) return;
+    const info = notebookChatRef.current[index];
+    const nextInfo = {
+      messages: stripNotebookSyntheticMessages(currentMessages),
+      rawIntent: info?.rawIntent,
+    };
+    notebookChatRef.current[index] = nextInfo;
   }, [
     getNotebookChatIndex,
-    getMessages,
+    getMessagesForContext,
     isNotebookChatMode,
-    diagramIntent,
-    setDiagramIntent,
-    mainChatRef,
-    mainDiagramIntentRef,
-    messages,
     notebookChatIndexRef,
-    notebookChatModeRef,
     notebookChatRef,
-    setMessages,
   ]);
 
   return {

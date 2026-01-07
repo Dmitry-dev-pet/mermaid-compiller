@@ -84,7 +84,6 @@ function App() {
     isNotebookChatMode,
     operationLogs,
     activeOperationLog,
-    interactionRecorder,
   } = useDiagramStudio();
   const buildDocsSystemPrompts = {
     chat: {
@@ -179,7 +178,6 @@ function App() {
         onDisconnect={disconnectAI}
         theme={appState.theme}
         onToggleTheme={toggleTheme}
-        interactionRecorder={interactionRecorder}
       />
 
       <div

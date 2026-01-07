@@ -1,4 +1,4 @@
-import { chat, chatNotebook } from '../../services/llmService';
+import { chat, chatDiagram, chatNotebook } from '../../services/llmService';
 import { LLM_TIMEOUT_RETRIES } from '../../constants';
 import { TimeoutError } from '../../services/llmTimeout';
 import { runLLMRequest } from '../../services/llmRequestRunner';
@@ -14,8 +14,12 @@ export const createChatHandler = (ctx: StudioContext) => {
   return async (text: string) => {
     const stepMessages: Message[] = [];
     const opId = ctx.startOperation('Чат');
+    const notebookBlockIndex = ctx.isNotebookChatMode ? ctx.getNotebookChatIndex?.() : null;
     const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
-      ctx.addOperationEvent(opId, args);
+      ctx.addOperationEvent(opId, {
+        ...args,
+        blockIndex: typeof notebookBlockIndex === 'number' ? notebookBlockIndex : args.blockIndex,
+      });
     };
     const finalizeStep = async (status: 'done' | 'error', meta?: Record<string, unknown>) => {
       ctx.finishOperation(opId, status);
@@ -73,7 +77,8 @@ export const createChatHandler = (ctx: StudioContext) => {
       await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatStarted, 'chat', startedPayload);
       const relevantMessages = ctx.getRelevantMessages();
       const llmMessagesBase = ctx.buildLLMMessages(relevantMessages);
-      const notebookCount = ctx.isNotebookChatEnabled ? ctx.appState.notebookBuildCount : null;
+      const useNotebookIntent = ctx.isNotebookChatEnabled && !ctx.isNotebookChatMode;
+      const notebookCount = useNotebookIntent ? ctx.appState.notebookBuildCount : null;
       const notebookCountMessage = notebookCount
         ? {
             id: 'notebook-count',
@@ -90,50 +95,65 @@ export const createChatHandler = (ctx: StudioContext) => {
       const responseText = await runLLMRequest({
         task: 'chat',
         run: () => (
-          ctx.isNotebookChatEnabled
+          useNotebookIntent
             ? chatNotebook(llmMessages, ctx.aiConfig, docs, language, ctx.modelParams)
-            : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
+            : ctx.isNotebookChatMode
+              ? chatDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
+              : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
         ),
         retries: LLM_TIMEOUT_RETRIES,
         onTimeout: (notice) => {
           pushStatus(formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts));
         },
       });
-      let intentText = normalizeIntentText(stripMermaidCode(responseText));
-      if (ctx.isNotebookChatEnabled) {
+      const rawReply = stripMermaidCode(responseText).trim();
+      let intentText = normalizeIntentText(rawReply);
+      if (useNotebookIntent) {
         if (ctx.appState.diagramType === 'auto') {
           intentText = enforceAllowedDiagramTypesInIntent(intentText, MAIN_DIAGRAM_TYPES);
         } else {
           intentText = enforceAllowedDiagramTypesInIntent(intentText, [ctx.appState.diagramType], ctx.appState.diagramType);
         }
       }
+      const replyText = useNotebookIntent ? intentText : rawReply;
       pushStatus(
         [
           'Чат',
           `- ответ получен`,
-          `- длина intent: ${intentText.length}`,
+          `- длина ${useNotebookIntent ? 'intent' : 'ответа'}: ${replyText.length}`,
         ].join('\n')
       );
       logEvent({
         phase: 'chat',
         level: 'info',
         title: 'Чат',
-        detail: `intent ${intentText.length}`,
+        detail: `${useNotebookIntent ? 'intent' : 'reply'} ${replyText.length}`,
       });
-      stepMessages.push(ctx.addMessage('assistant', intentText, 'chat'));
-      if (intentText) {
+      stepMessages.push(ctx.addMessage('assistant', replyText || 'Ответ пустой. Уточните запрос.', 'chat'));
+      if (useNotebookIntent && intentText) {
         ctx.setCurrentIntent({
           content: intentText,
+          source: 'chat',
+          updatedAt: Date.now(),
+        });
+      } else if (ctx.isNotebookChatMode && rawReply) {
+        ctx.setCurrentIntent({
+          content: rawReply,
           source: 'chat',
           updatedAt: Date.now(),
         });
       }
       const successPayload: ChatAnalyticsPayload = {
         durationMs: Date.now() - startedAt,
-        intentLength: intentText.length,
+        intentLength: useNotebookIntent ? intentText.length : 0,
       };
       await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatSuccess, 'chat', successPayload);
-      await finalizeStep('done', { intent: intentText || null });
+      const resolvedIntent = useNotebookIntent
+        ? intentText || null
+        : ctx.isNotebookChatMode
+          ? rawReply || null
+          : null;
+      await finalizeStep('done', { intent: resolvedIntent });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof TimeoutError) {

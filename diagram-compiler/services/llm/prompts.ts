@@ -2,6 +2,7 @@ import type { DiagramType } from '../../types';
 import type { PromptLanguage } from './prompts/types';
 import { ANALYZE_TEMPLATES } from './prompts/analyze';
 import { CHAT_TEMPLATES } from './prompts/chat';
+import { CHAT_DIAGRAM_TEMPLATES } from './prompts/chatDiagram';
 import { CHAT_NOTEBOOK_TEMPLATES } from './prompts/chatNotebook';
 import { FIX_TEMPLATES } from './prompts/fix';
 import { GENERATE_TEMPLATES } from './prompts/generate';
@@ -9,7 +10,7 @@ import { PLAN_NOTEBOOK_TEMPLATES } from './prompts/planNotebook';
 import { SUMMARY_TEMPLATES } from './prompts/summary';
 import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
 
-export type PromptMode = 'generate' | 'fix' | 'chat' | 'chat_notebook' | 'analyze' | 'plan_notebook' | 'summary';
+export type PromptMode = 'generate' | 'fix' | 'chat' | 'chat_diagram' | 'chat_notebook' | 'analyze' | 'plan_notebook' | 'summary';
 
 type PromptArgs = {
   diagramType?: DiagramType;
@@ -28,6 +29,7 @@ const PROMPT_TEMPLATES: Record<PromptLanguage, Record<PromptMode, string>> = {
     generate: GENERATE_TEMPLATES.English,
     fix: FIX_TEMPLATES.English,
     chat: CHAT_TEMPLATES.English,
+    chat_diagram: CHAT_DIAGRAM_TEMPLATES.English,
     chat_notebook: CHAT_NOTEBOOK_TEMPLATES.English,
     analyze: ANALYZE_TEMPLATES.English,
     plan_notebook: PLAN_NOTEBOOK_TEMPLATES.English,
@@ -37,6 +39,7 @@ const PROMPT_TEMPLATES: Record<PromptLanguage, Record<PromptMode, string>> = {
     generate: GENERATE_TEMPLATES.Russian,
     fix: FIX_TEMPLATES.Russian,
     chat: CHAT_TEMPLATES.Russian,
+    chat_diagram: CHAT_DIAGRAM_TEMPLATES.Russian,
     chat_notebook: CHAT_NOTEBOOK_TEMPLATES.Russian,
     analyze: ANALYZE_TEMPLATES.Russian,
     plan_notebook: PLAN_NOTEBOOK_TEMPLATES.Russian,
@@ -65,7 +68,7 @@ const getLanguageInstruction = (language: string, promptLanguage: PromptLanguage
 
 const getDiagramTypeRule = (
   diagramType: DiagramType | undefined,
-  mode: 'generate' | 'chat' | 'chat_notebook',
+  mode: 'generate' | 'chat' | 'chat_diagram' | 'chat_notebook',
   promptLanguage: PromptLanguage
 ) => {
   const sanitizeTypeRuleForGenerate = (rule: string) => {
@@ -530,7 +533,7 @@ export const buildSystemPrompt = (mode: PromptMode, args: PromptArgs): string =>
   const promptLanguage = resolvePromptLanguage(args.language);
   const template = PROMPT_TEMPLATES[promptLanguage][mode];
 
-  const typeRule = mode === 'generate' || mode === 'chat' || mode === 'chat_notebook'
+  const typeRule = mode === 'generate' || mode === 'chat' || mode === 'chat_diagram' || mode === 'chat_notebook'
     ? getDiagramTypeRule(args.diagramType, mode, promptLanguage)
     : '';
 
