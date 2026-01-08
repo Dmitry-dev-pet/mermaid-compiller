@@ -35,6 +35,13 @@ export const createChatHandler = (ctx: StudioContext) => {
     const pushStatus = (content: string) => {
       stepMessages.push(ctx.addMessage('assistant', content, 'chat'));
     };
+    pushStatus('Чат\n- нажата');
+    logEvent({
+      phase: 'chat',
+      level: 'info',
+      title: 'Чат',
+      detail: 'нажата',
+    });
     stepMessages.push(ctx.addMessage('user', text, 'chat'));
     if (ctx.connectionState.status !== 'connected') {
       pushStatus('Офлайн. Подключите AI для генерации.');
@@ -116,20 +123,35 @@ export const createChatHandler = (ctx: StudioContext) => {
         }
       }
       const replyText = useNotebookIntent ? intentText : rawReply;
-      pushStatus(
-        [
-          'Чат',
-          `- ответ получен`,
-          `- длина ${useNotebookIntent ? 'intent' : 'ответа'}: ${replyText.length}`,
-        ].join('\n')
-      );
-      logEvent({
-        phase: 'chat',
-        level: 'info',
-        title: 'Чат',
-        detail: `${useNotebookIntent ? 'intent' : 'reply'} ${replyText.length}`,
-      });
-      stepMessages.push(ctx.addMessage('assistant', replyText || 'Ответ пустой. Уточните запрос.', 'chat'));
+      let replyMessage: Message | null = null;
+      if (replyText || useNotebookIntent) {
+        replyMessage = ctx.addMessage('assistant', replyText || 'Ответ пустой. Уточните запрос.', 'chat');
+        stepMessages.push(replyMessage);
+        logEvent({
+          phase: 'chat',
+          level: 'info',
+          title: 'Чат',
+          detail: `${useNotebookIntent ? 'intent' : 'reply'} ${replyText.length}`,
+        });
+        pushStatus(
+          [
+            'Чат',
+            `- ответ получен`,
+            `- длина ${useNotebookIntent ? 'intent' : 'ответа'}: ${replyText.length}`,
+          ].join('\n')
+        );
+      } else {
+        const fallbackReply = 'Ответ пустой. Уточните запрос.';
+        replyMessage = ctx.addMessage('assistant', fallbackReply, 'chat');
+        stepMessages.push(replyMessage);
+        logEvent({
+          phase: 'chat',
+          level: 'warn',
+          title: 'Чат',
+          detail: 'empty',
+        });
+        pushStatus('Чат\n- пустой ответ');
+      }
       if (useNotebookIntent && intentText) {
         ctx.setCurrentIntent({
           content: intentText,

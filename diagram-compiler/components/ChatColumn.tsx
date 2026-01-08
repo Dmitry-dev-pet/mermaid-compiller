@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowUpRight, MessageSquare, Play, Plus, Trash2 } from 'luci
 import { LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
 import ChatProjects from './ChatProjects';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../utils/uiModes';
+import { LLM_TIMEOUT_MS } from '../constants';
 import './chat-markdown.css';
 import ChatMarkdownTabs from './chat/ChatMarkdownTabs';
 import ChatOperationLog from './chat/ChatOperationLog';
@@ -51,6 +52,7 @@ interface ChatColumnProps {
   onNotebookBuildCountChange: (count: number | null) => void;
   operationLogs?: OperationLog[];
   activeOperationLog?: OperationLog | null;
+  llmRequestStartedAt?: number | null;
 }
 
 const ChatColumn: React.FC<ChatColumnProps> = ({
@@ -85,6 +87,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   intentText,
   operationLogs,
   activeOperationLog,
+  llmRequestStartedAt,
 }) => {
   const [input, setInput] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -94,6 +97,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   const previewRequestRef = useRef(0);
   const previewTimerRef = useRef<number | null>(null);
   const lastMessageTimestamp = messages[messages.length - 1]?.timestamp ?? 0;
+  const [timeoutRemainingMs, setTimeoutRemainingMs] = useState(0);
   const estimateTokens = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return 0;
@@ -101,7 +105,16 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  };
+
+  const formatCountdown = (ms: number) => {
+    const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
   useEffect(() => {
@@ -121,6 +134,21 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
     if (isAtBottomRef.current) scrollToBottom('smooth');
   }, [messages.length]);
+
+  useEffect(() => {
+    if (!isProcessing) {
+      setTimeoutRemainingMs(0);
+      return;
+    }
+    const startedAt = llmRequestStartedAt ?? Date.now();
+    setTimeoutRemainingMs(LLM_TIMEOUT_MS);
+    const interval = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const remaining = Math.max(0, LLM_TIMEOUT_MS - elapsed);
+      setTimeoutRemainingMs(remaining);
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [isProcessing, llmRequestStartedAt]);
 
   const onMessagesScroll = () => {
     const el = messagesContainerRef.current;
@@ -771,10 +799,9 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                 ))}
                 {isProcessing && (
                   <div className="flex items-start">
-                    <div className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-3 py-2 rounded-lg rounded-bl-none text-xs flex gap-1 items-center">
-                      <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                      <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                      <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                    <div className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-3 py-2 rounded-lg rounded-bl-none text-xs flex gap-2 items-center">
+                      <span>Таймаут через</span>
+                      <span className="font-mono">{formatCountdown(timeoutRemainingMs)}</span>
                     </div>
                   </div>
                 )}

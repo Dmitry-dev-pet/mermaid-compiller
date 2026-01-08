@@ -47,7 +47,7 @@ export type StudioActionsDeps = {
     nextMermaid?: Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'> | null;
     setCurrentRevisionId?: string | null;
   }) => Promise<void>;
-  startOperation: (title: string) => string;
+  startOperation: (title: string, contextId?: string) => string;
   addOperationEvent: (opId: string, args: {
     phase: import('../../types').OperationPhase;
     level: import('../../types').OperationLevel;

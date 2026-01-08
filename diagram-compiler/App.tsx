@@ -84,6 +84,7 @@ function App() {
     isNotebookChatMode,
     operationLogs,
     activeOperationLog,
+    llmRequestStartedAt,
   } = useDiagramStudio();
   const buildDocsSystemPrompts = {
     chat: {
@@ -220,6 +221,7 @@ function App() {
                 onBackToNotebookMainChat={backToNotebookMainChat}
                 operationLogs={operationLogs}
                 activeOperationLog={activeOperationLog}
+                llmRequestStartedAt={llmRequestStartedAt}
               />
             </div>
 

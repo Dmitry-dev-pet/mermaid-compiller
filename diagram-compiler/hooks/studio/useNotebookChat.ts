@@ -3,6 +3,7 @@ import { INITIAL_CHAT_MESSAGE } from '../../constants';
 import type { DiagramIntent, Message } from '../../types';
 import type { TimeStep } from '../../services/history/types';
 import { resolveNotebookRawIntent } from './notebookIntent';
+import { resolveChatContextId } from '../../utils/chatContext';
 
 type NotebookChatInfo = { messages: Message[]; rawIntent?: Message };
 
@@ -192,7 +193,7 @@ export const useNotebookChat = ({
     const index = getNotebookChatIndex();
     if (index === null) return;
     notebookChatIndexRef.current = index;
-    const contextId = `block:${index}`;
+    const contextId = resolveChatContextId(isNotebookChatMode, index);
     const info = notebookChatRef.current[index] ?? { messages: [] };
     const nextMessages = buildNotebookChatMessages(
       info,
@@ -200,20 +201,27 @@ export const useNotebookChat = ({
       systemPrompt,
       systemPromptRedacted
     );
+    const currentMessages = getMessagesForContext(contextId);
+    const hasRealMessages = currentMessages.some((message) => (
+      message.id !== 'init'
+      && message.id !== 'notebook-chat-md'
+      && message.id !== 'notebook-raw-intent'
+    ));
     const latestStepTimestamp = historySteps
       .filter((step) => {
         const meta = step.meta as Record<string, unknown> | undefined;
         return meta?.mode === 'notebook' && meta?.blockIndex === index;
       })
       .reduce((max, step) => Math.max(max, step.createdAt), 0);
-    const latestMessageTimestamp = getMessagesForContext(contextId).reduce(
+    const latestMessageTimestamp = currentMessages.reduce(
       (max, message) => Math.max(max, message.timestamp ?? 0),
       0
     );
     const shouldPreserveLiveMessages = latestMessageTimestamp > latestStepTimestamp;
 
     if (
-      !areMessagesEqual(getMessagesForContext(contextId), nextMessages)
+      !hasRealMessages
+      && !areMessagesEqual(currentMessages, nextMessages)
       && !shouldPreserveLiveMessages
     ) {
       setMessagesForContext(contextId, nextMessages);
@@ -245,7 +253,7 @@ export const useNotebookChat = ({
     if (!isNotebookChatMode) return;
     const index = getNotebookChatIndex();
     if (index === null) return;
-    const contextId = `block:${index}`;
+    const contextId = resolveChatContextId(isNotebookChatMode, index);
     const currentMessages = getMessagesForContext(contextId);
     const hasNotebookSynthetic = currentMessages.some(
       (m) => m.id === 'notebook-chat-md' || m.id === 'notebook-raw-intent'

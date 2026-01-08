@@ -106,6 +106,7 @@ export type OperationEvent = {
 
 export type OperationLog = {
   id: string;
+  contextId?: string;
   status: 'running' | 'done' | 'error';
   startedAt: number;
   finishedAt?: number;

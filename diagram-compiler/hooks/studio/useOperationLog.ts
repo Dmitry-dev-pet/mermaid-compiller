@@ -17,10 +17,11 @@ export const extractOperationLogsFromSteps = (steps: TimeStep[]): OperationLog[]
 export const useOperationLog = () => {
   const [operationLogs, setOperationLogs] = useState<OperationLog[]>([]);
 
-  const startOperation = useCallback((title: string) => {
+  const startOperation = useCallback((title: string, contextId?: string) => {
     const id = generateId();
     const log: OperationLog = {
       id,
+      contextId,
       status: 'running',
       startedAt: Date.now(),
       events: [

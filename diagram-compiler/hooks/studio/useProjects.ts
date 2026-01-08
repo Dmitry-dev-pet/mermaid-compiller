@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction, type MutableRefObject } from 'react';
-import type { AIConfig, AppState, DiagramIntent, EditorTab, MermaidState, ModelParams } from '../../types';
+import type { AIConfig, AppState, EditorTab, MermaidState, ModelParams } from '../../types';
 import type { HistorySession, SessionPreview, SessionSettings, SessionSnapshot } from '../../services/history/types';
 import { DEFAULT_MERMAID_STATE } from '../../constants';
 import { applySessionSettings, buildSessionSettings } from '../../utils/sessionSettings';
@@ -25,7 +25,7 @@ type UseProjectsArgs = {
   loadSessionSnapshot: (sessionId: string) => Promise<SessionSnapshot | null>;
   resetMessages: () => void;
   resetPromptPreview: () => void;
-  setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
+  resetDiagramIntents: () => void;
   setEditorTab: Dispatch<SetStateAction<EditorTab>>;
   setMermaidState: Dispatch<SetStateAction<MermaidState>>;
   setOperationLogs: Dispatch<SetStateAction<import('../../types').OperationLog[]>>;
@@ -55,7 +55,7 @@ export const useProjects = ({
   loadSessionSnapshot,
   resetMessages,
   resetPromptPreview,
-  setDiagramIntent,
+  resetDiagramIntents,
   setEditorTab,
   setMermaidState,
   setOperationLogs,
@@ -95,7 +95,7 @@ export const useProjects = ({
     setAppState(nextAppState);
     resetMessages();
     lastManualRecordedCodeRef.current = '';
-    setDiagramIntent(null);
+    resetDiagramIntents();
     resetPromptPreview();
     setEditorTab('code');
     setMermaidState(DEFAULT_MERMAID_STATE);
@@ -109,7 +109,7 @@ export const useProjects = ({
     resetMessages,
     resetPromptPreview,
     setAppState,
-    setDiagramIntent,
+    resetDiagramIntents,
     setEditorTab,
     setMermaidState,
     setOperationLogs,
@@ -122,7 +122,7 @@ export const useProjects = ({
     if (historySession?.id === sessionId) return;
     clearProjectPreview();
     isHydratingRef.current = true;
-    setDiagramIntent(null);
+    resetDiagramIntents();
     resetPromptPreview();
     setEditorTab('code');
     setOperationLogs([]);
@@ -134,7 +134,7 @@ export const useProjects = ({
     isHydratingRef,
     loadSession,
     resetPromptPreview,
-    setDiagramIntent,
+    resetDiagramIntents,
     setEditorTab,
     setOperationLogs,
   ]);

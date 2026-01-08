@@ -2,42 +2,23 @@ import { useCallback } from 'react';
 import type { DiagramIntent, DiagramType, Message, NotebookPlan, ModelParams } from '../../types';
 import { detectLanguage, generateId } from '../../utils';
 import { normalizeIntentText } from '../../utils/intent';
+import { normalizeSummaryText, sanitizeSummaryText } from '../../utils/buildSummary';
+import { sanitizeMermaidByType } from '../../utils/mermaidSanitizer';
 import { NOTEBOOK_BUILD_RETRY_CONFIG } from './notebookBuildConfig';
-import { detectMermaidDiagramType, extractMermaidBlocksFromMarkdown, extractMermaidCode, parseMermaidJsonResponse, replaceMermaidBlockInMarkdown, validateMermaid } from '../../services/mermaidService';
+import { extractMermaidBlocksFromMarkdown, replaceMermaidBlockInMarkdown } from '../../services/mermaidService';
 import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
 import { fetchNotebookDocsContext } from '../../services/docsContextService';
-import { fixDiagram, generateDiagram, planNotebook, summarizeBuild } from '../../services/llmService';
-import { runAutoFixLoop } from './autoFix';
+import { planNotebook, summarizeBuild } from '../../services/llmService';
 import { normalizeNotebookPlan, parseNotebookPlan } from '../../services/notebookPlanService';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import { TimeoutError } from '../../services/llmTimeout';
 import { formatTimeoutRetryMessage } from './stepMessageUtils';
 import { createProgressTracker } from './progressTracker';
+import { runBuildPipeline } from './buildPipeline';
 
 const NOTEBOOK_STYLE_CONSTRAINT_EN = 'No styling directives or color instructions (no theme/look/init/colors).';
 const NOTEBOOK_STYLE_CONSTRAINT_RU = 'Без стилевых директив и цветовых инструкций (без theme/look/init/colors).';
 
-const normalizeSummaryText = (text: string) => {
-  const trimmed = text.trim();
-  if (!trimmed) return '';
-  const spaced = trimmed.replace(/([.!?])([A-Za-zА-Яа-я])/g, '$1 $2');
-  const prefixMatch = spaced.match(/^(Итог:|Summary:)\s*/i);
-  const prefix = prefixMatch?.[0] ?? '';
-  const rest = prefix ? spaced.slice(prefix.length).trim() : spaced;
-  const sentences = rest
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const unique: string[] = [];
-  for (const sentence of sentences) {
-    if (unique[unique.length - 1] === sentence) continue;
-    if (!unique.includes(sentence)) {
-      unique.push(sentence);
-    }
-  }
-  const rebuilt = unique.join(' ').trim();
-  return `${prefix}${rebuilt}`.trim();
-};
 
 type NotebookBuildDeps = {
   aiConfig: import('../../types').AIConfig;
@@ -571,143 +552,156 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         let attempts = 0;
         let lastError = '';
         let lastAutoFix = 0;
-        while (attempts < NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts && !success) {
-          attempts += 1;
-          updateBlockMessage(`Сборка: ${blockLabel} — попытка ${attempts}/${NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts}.`);
-          logEvent({
-            phase: 'build',
-            level: 'info',
-            title: 'Block attempt',
-            detail: blockLabel,
-            blockIndex: i,
-            attempt: { current: attempts, max: NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts },
-          });
-
-          const intentText = normalizeIntentText(diagram.buildPrompt || '');
-          if (!intentText) {
-            lastError = 'empty_build_prompt';
-            updateBlockMessage(`Сборка: ${blockLabel} — пустой build prompt.`);
-            continue;
-          }
-
+        const intentText = normalizeIntentText(diagram.buildPrompt || '');
+        if (!intentText) {
+          lastError = 'empty_build_prompt';
+          updateBlockMessage(`Сборка: ${blockLabel} — пустой build prompt.`);
+        } else {
           try {
             const intentMessage: Message = {
-              id: `notebook-intent-${i + 1}-${attempts}`,
+              id: `notebook-intent-${i + 1}`,
               role: 'user',
               content: `Intent:\n${intentText}`,
               timestamp: Date.now(),
             };
-            const rawCode = await runLLMRequest({
-              task: 'notebook-build',
-              run: () => generateDiagram(
-                [intentMessage],
-                deps.aiConfig,
-                targetDiagramType,
-                blockDocs,
-                language,
-                deps.modelParams
-              ),
-              retries: NOTEBOOK_BUILD_RETRY_CONFIG.buildRequestRetries,
-            });
-            const parsed = parseMermaidJsonResponse(rawCode);
-            const cleanCode = parsed?.status === 'ok' && parsed.mermaid
-              ? parsed.mermaid
-              : extractMermaidCode(rawCode);
-            const cleaned = cleanCode.trim();
-            if (!cleaned) {
-              lastError = 'no_mermaid_code';
-              updateBlockMessage(`Сборка: ${blockLabel} — нет Mermaid кода.`);
-              logEvent({
-                phase: 'build',
-                level: 'warn',
-                title: 'Block',
-                detail: 'no mermaid code',
-                blockIndex: i,
-              });
-              continue;
-            }
-            if (parsed && parsed.status !== 'ok') {
-              lastError = parsed.reason || 'json_status_not_ok';
-              updateBlockMessage(`Сборка: ${blockLabel} — JSON status ${parsed.status}.`);
-              logEvent({
-                phase: 'build',
-                level: 'warn',
-                title: 'Block',
-                detail: `json ${parsed.status}`,
-                blockIndex: i,
-              });
-              continue;
-            }
-            const parsedType = parsed?.diagramType ?? null;
-            const detectedType = detectMermaidDiagramType(cleaned);
-            if (detectedType && detectedType !== targetDiagramType) {
-              lastError = `type_mismatch:${detectedType}`;
-              updateBlockMessage(
-                `Сборка: ${blockLabel} — ожидали ${targetDiagramType}, получили ${detectedType}. Повтор.`
-              );
-              logEvent({
-                phase: 'build',
-                level: 'warn',
-                title: 'Block',
-                detail: `type mismatch ${detectedType}`,
-                blockIndex: i,
-              });
-              continue;
-            }
-            if (parsedType && parsedType !== targetDiagramType) {
-              lastError = `type_mismatch:${parsedType}`;
-              updateBlockMessage(
-                `Сборка: ${blockLabel} — ожидали ${targetDiagramType}, получили ${parsedType}. Повтор.`
-              );
-              logEvent({
-                phase: 'build',
-                level: 'warn',
-                title: 'Block',
-                detail: `type mismatch ${parsedType}`,
-                blockIndex: i,
-              });
-              continue;
-            }
-
-            const initialValidation = await validateMermaid(cleaned, { logError: false });
-            const { code: currentCode, validation, attempts: autoFixAttempts } = await runAutoFixLoop({
-              initialCode: cleaned,
-              initialValidation,
-              maxAttempts: NOTEBOOK_BUILD_RETRY_CONFIG.autoFixAttempts,
-              validate: (code) => validateMermaid(code, { logError: false }),
-              fix: async (code, errorMessage) => {
-                const fixedRaw = await runLLMRequest({
-                  task: 'notebook-fix',
-                  run: () => fixDiagram(code, errorMessage, deps.aiConfig, blockDocs, language, deps.modelParams),
-                  retries: NOTEBOOK_BUILD_RETRY_CONFIG.fixRequestRetries,
-                });
-                return extractMermaidCode(fixedRaw);
+            const buildResult = await runBuildPipeline({
+              aiConfig: deps.aiConfig,
+              modelParams: deps.modelParams,
+              diagramType: targetDiagramType,
+              llmMessages: [intentMessage],
+              docs: blockDocs,
+              language,
+              maxAttempts: NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts,
+              autoFixMaxAttempts: NOTEBOOK_BUILD_RETRY_CONFIG.autoFixAttempts,
+              buildRequestRetries: NOTEBOOK_BUILD_RETRY_CONFIG.buildRequestRetries,
+              autoFixRequestRetries: NOTEBOOK_BUILD_RETRY_CONFIG.fixRequestRetries,
+              allowFallback: false,
+              callbacks: {
+                onAttempt: (attempt, max) => {
+                  attempts = attempt;
+                  updateBlockMessage(`Сборка: ${blockLabel} — попытка ${attempt}/${max}.`);
+                  logEvent({
+                    phase: 'build',
+                    level: 'info',
+                    title: 'Block attempt',
+                    detail: blockLabel,
+                    blockIndex: i,
+                    attempt: { current: attempt, max },
+                  });
+                },
+                onEmpty: (attempt, max) => {
+                  updateBlockMessage(`Сборка: ${blockLabel} — пустой ответ (${attempt}/${max}).`);
+                  logEvent({
+                    phase: 'build',
+                    level: 'warn',
+                    title: 'Block',
+                    detail: 'no mermaid code',
+                    blockIndex: i,
+                  });
+                },
+                onError: (attempt, max, message) => {
+                  lastError = message;
+                  updateBlockMessage(
+                    `Сборка: ${blockLabel} — попытка ${attempt}/${max} не удалась: ${message}`
+                  );
+                  logEvent({
+                    phase: 'build',
+                    level: 'error',
+                    title: 'Block',
+                    detail: message,
+                    blockIndex: i,
+                    error: { code: 'block_error', message },
+                  });
+                },
+                onJsonStatus: (attempt, status, reason) => {
+                  lastError = reason || `json_status_${status}`;
+                  updateBlockMessage(`Сборка: ${blockLabel} — JSON status ${status}.`);
+                  logEvent({
+                    phase: 'build',
+                    level: 'warn',
+                    title: 'Block',
+                    detail: `json ${status}`,
+                    blockIndex: i,
+                  });
+                },
+                onTypeMismatch: (attempt, expected, received) => {
+                  lastError = `type_mismatch:${received}`;
+                  updateBlockMessage(
+                    `Сборка: ${blockLabel} — ожидали ${expected}, получили ${received}. Повтор.`
+                  );
+                  logEvent({
+                    phase: 'build',
+                    level: 'warn',
+                    title: 'Block',
+                    detail: `type mismatch ${received}`,
+                    blockIndex: i,
+                  });
+                },
+                onAutoFixAttempt: (attempt, max, errorLine) => {
+                  logEvent({
+                    phase: 'fix',
+                    level: 'info',
+                    title: 'Auto-fix',
+                    detail: `attempt ${attempt}/${max}`,
+                    blockIndex: i,
+                    attempt: { current: attempt, max },
+                  });
+                  if (errorLine) {
+                    logEvent({
+                      phase: 'fix',
+                      level: 'warn',
+                      title: 'Auto-fix error',
+                      detail: errorLine,
+                      blockIndex: i,
+                      attempt: { current: attempt, max },
+                      error: { code: 'validation', message: errorLine },
+                    });
+                  }
+                },
+                onAutoFixIteration: (code) => {
+                  currentMarkdown = replaceNotebookBlock(currentMarkdown, i, code);
+                  applyNotebookMarkdown(currentMarkdown);
+                },
+                onValidation: (isValid, autoFixAttempts) => {
+                  lastAutoFix = autoFixAttempts;
+                  logEvent({
+                    phase: 'validate',
+                    level: isValid ? 'info' : 'warn',
+                    title: 'Block validation',
+                    detail: isValid ? 'valid' : 'invalid',
+                    blockIndex: i,
+                    metrics: lastAutoFix ? { autoFix: lastAutoFix } : undefined,
+                  });
+                },
+                onValidationError: (errorLine) => {
+                  logEvent({
+                    phase: 'validate',
+                    level: 'error',
+                    title: 'Ошибка',
+                    detail: errorLine || 'validation error',
+                    blockIndex: i,
+                    error: { code: 'validation', message: errorLine || 'validation error' },
+                  });
+                },
               },
-              onIteration: (code) => {
-                currentMarkdown = replaceNotebookBlock(currentMarkdown, i, code);
-                applyNotebookMarkdown(currentMarkdown);
-              },
             });
-            lastAutoFix = autoFixAttempts;
-
-            currentMarkdown = replaceNotebookBlock(currentMarkdown, i, currentCode);
-            applyNotebookMarkdown(currentMarkdown);
-
-            if (validation.isValid) {
-              success = true;
-              updateBlockMessage(`Сборка: ${blockLabel} — готово.`);
+            attempts = buildResult.attempts;
+            lastAutoFix = buildResult.autoFixAttempts;
+            if (buildResult.status === 'ok' && buildResult.code) {
+              const sanitizedCurrent = sanitizeMermaidByType(targetDiagramType, buildResult.code);
+              currentMarkdown = replaceNotebookBlock(currentMarkdown, i, sanitizedCurrent);
+              applyNotebookMarkdown(currentMarkdown);
+              if (buildResult.validation.isValid) {
+                success = true;
+                updateBlockMessage(`Сборка: ${blockLabel} — готово.`);
+              } else {
+                lastError = buildResult.validation.errorMessage || 'invalid_mermaid';
+                updateBlockMessage(`Сборка: ${blockLabel} — Mermaid всё ещё невалиден.`);
+              }
             } else {
-              lastError = validation.errorMessage || 'invalid_mermaid';
-              updateBlockMessage(`Сборка: ${blockLabel} — Mermaid всё ещё невалиден.`);
+              lastError = buildResult.lastError || 'no_mermaid_code';
+              updateBlockMessage(`Сборка: ${blockLabel} — нет Mermaid кода.`);
             }
-            logEvent({
-              phase: 'validate',
-              level: validation.isValid ? 'info' : 'warn',
-              title: 'Block validation',
-              detail: validation.isValid ? 'valid' : 'invalid',
-              blockIndex: i,
-              metrics: lastAutoFix ? { autoFix: lastAutoFix } : undefined,
-            });
           } catch (e: unknown) {
             lastError = e instanceof Error ? e.message : String(e);
             if (e instanceof TimeoutError && attempts < NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts) {
@@ -816,8 +810,14 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           failedBlocks ? `Ошибок: ${failedBlocks}.` : '',
           uniqueTypes.length ? `Типы: ${uniqueTypes.join(', ')}.` : '',
         ].filter(Boolean);
-        let resolvedSummary = fallbackSummaryParts.join(' ');
+        let resolvedSummary = normalizeSummaryText(fallbackSummaryParts.join(' '));
         try {
+          logEvent({
+            phase: 'build',
+            level: 'info',
+            title: 'Итог',
+            detail: 'generating',
+          });
           const summaryInput = [
             `Блоки: ${total}`,
             `Успешно: ${successBlocks}`,
@@ -835,15 +835,28 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             ),
             retries: 1,
           });
-          const cleanedSummary = normalizeSummaryText(summaryText);
+          const cleanedSummary = normalizeSummaryText(
+            sanitizeSummaryText(summaryText)
+          );
           if (cleanedSummary) {
             const summaryPrefix = language === 'Russian' ? 'Итог:' : 'Summary:';
             resolvedSummary = cleanedSummary.toLowerCase().startsWith(summaryPrefix.toLowerCase())
               ? cleanedSummary
               : `${summaryPrefix} ${cleanedSummary}`;
           }
+          logEvent({
+            phase: 'done',
+            level: 'info',
+            title: 'Итог',
+            detail: 'ready',
+          });
         } catch {
-          // fallback to deterministic summary
+          logEvent({
+            phase: 'error',
+            level: 'warn',
+            title: 'Итог',
+            detail: 'fallback',
+          });
         }
         const summaryMessage = deps.addMessage('assistant', resolvedSummary, 'build');
         await finalizeOperation(

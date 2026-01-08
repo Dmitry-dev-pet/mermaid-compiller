@@ -16,12 +16,31 @@ type RunLLMRequestArgs<T> = {
   onTimeout?: (notice: TimeoutNotice) => void;
 };
 
+type LLMRequestStartNotice = {
+  task: string;
+  attempt: number;
+  maxAttempts: number;
+  startedAt: number;
+};
+
+let requestStartListener: ((notice: LLMRequestStartNotice) => void) | null = null;
+
+export const setLLMRequestStartListener = (listener: ((notice: LLMRequestStartNotice) => void) | null) => {
+  requestStartListener = listener;
+};
+
 export const runLLMRequest = async <T>(args: RunLLMRequestArgs<T>): Promise<T> => {
   const maxAttempts = args.retries ?? LLM_TIMEOUT_RETRIES;
   const timeoutMs = args.timeoutMs ?? LLM_TIMEOUT_MS;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    requestStartListener?.({
+      task: args.task,
+      attempt,
+      maxAttempts,
+      startedAt: Date.now(),
+    });
     try {
       return await withTimeout(args.run(), timeoutMs);
     } catch (error) {

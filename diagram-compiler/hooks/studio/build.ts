@@ -1,109 +1,12 @@
-import { validateMermaid, extractMermaidCode, parseMermaidJsonResponse } from '../../services/mermaidService';
-import { generateDiagram, fixDiagram, analyzeDiagram, summarizeBuild } from '../../services/llmService';
+import { summarizeBuild } from '../../services/llmService';
 import { stripMermaidCode } from '../../utils';
 import { normalizeIntentText, resolveIntentFromInput } from '../../utils/intent';
 import type { Message } from '../../types';
 import type { StudioContext } from './actionsContext';
-import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
-import { runAutoFixLoop } from './autoFix';
-import { runAttemptLoop } from './retry';
+import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS } from '../../constants';
+import { runBuildPipeline } from './buildPipeline';
 import { runLLMRequest } from '../../services/llmRequestRunner';
-import { formatTimeoutRetryMessage } from './stepMessageUtils';
-import type { DiagramType } from '../../types';
-
-const tryAnalyzeAfterBuild = async (ctx: StudioContext, args: { code: string; docs: string; language: string }) => {
-  try {
-    const explanation = await runLLMRequest({
-      task: 'analyze-summary',
-      run: () => analyzeDiagram(args.code, ctx.aiConfig, args.docs, args.language, ctx.modelParams),
-      retries: 1,
-    });
-    return stripMermaidCode(explanation).trim();
-  } catch {
-    return '';
-  }
-};
-
-const normalizeSummaryText = (text: string) => {
-  const trimmed = text.trim();
-  if (!trimmed) return '';
-  const spaced = trimmed.replace(/([.!?])([A-Za-zА-Яа-я])/g, '$1 $2');
-  const prefixMatch = spaced.match(/^(Итог:|Summary:)\s*/i);
-  const prefix = prefixMatch?.[0] ?? '';
-  const rest = prefix ? spaced.slice(prefix.length).trim() : spaced;
-  const sentences = rest
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const unique: string[] = [];
-  for (const sentence of sentences) {
-    if (unique[unique.length - 1] === sentence) continue;
-    if (!unique.includes(sentence)) {
-      unique.push(sentence);
-    }
-  }
-  const rebuilt = unique.join(' ').trim();
-  return `${prefix}${rebuilt}`.trim();
-};
-
-const sanitizeSummaryText = (text: string) => {
-  const trimmed = text.trim();
-  if (!trimmed) return '';
-  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = (fencedMatch?.[1] ?? trimmed).trim();
-  try {
-    const parsed = JSON.parse(candidate) as Record<string, unknown>;
-    if (parsed && typeof parsed === 'object') {
-      const content = typeof parsed.content === 'string' ? parsed.content.trim() : '';
-      if (content) return content;
-      const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
-      if (summary) return summary;
-    }
-  } catch {
-    // ignore parse errors, fall back to raw text
-  }
-  return candidate;
-};
-
-const getFallbackMermaid = (diagramType: DiagramType): string | null => {
-  switch (diagramType) {
-    case 'flowchart':
-      return [
-        'flowchart TD',
-        'A["Start"] --> B["End"]',
-      ].join('\n');
-    case 'sequence':
-      return [
-        'sequenceDiagram',
-        'participant A as User',
-        'participant B as System',
-        'A->>B: Request',
-        'B-->>A: Response',
-      ].join('\n');
-    case 'er':
-      return [
-        'erDiagram',
-        'USER ||--o{ ORDER : places',
-        'USER {',
-        '  int id',
-        '}',
-        'ORDER {',
-        '  int id',
-        '}',
-      ].join('\n');
-    case 'architecture':
-      return [
-        'architecture-beta',
-        '  service client(server)[Client]',
-        '  service proxy(server)[Proxy]',
-        '  service target(server)[Target]',
-        '  client:R -- L:proxy',
-        '  proxy:R -- L:target',
-      ].join('\n');
-    default:
-      return null;
-  }
-};
+import { normalizeSummaryText, sanitizeSummaryText } from '../../utils/buildSummary';
 
 export const createBuildHandler = (ctx: StudioContext) => {
   return async (text?: string) => {
@@ -236,64 +139,92 @@ export const createBuildHandler = (ctx: StudioContext) => {
       });
 
       const attemptNotes: string[] = [];
-      const attemptResult = await runAttemptLoop({
+      const buildResult = await runBuildPipeline({
+        aiConfig: ctx.aiConfig,
+        modelParams: ctx.modelParams,
+        diagramType: ctx.appState.diagramType,
+        llmMessages,
+        docs,
+        language,
         maxAttempts: BUILD_MAX_ATTEMPTS,
-        onAttempt: (attempt) => {
-          attemptNotes.push(`попытка ${attempt}/${BUILD_MAX_ATTEMPTS}`);
-          logEvent({
-            phase: 'build',
-            level: 'info',
-            title: 'Генерация',
-            attempt: { current: attempt, max: BUILD_MAX_ATTEMPTS },
-          });
-        },
-        onEmpty: (attempt) => {
-          attemptNotes.push(`попытка ${attempt}: пустой ответ`);
-          logEvent({
-            phase: 'build',
-            level: 'warn',
-            title: 'Генерация',
-            detail: 'empty',
-            attempt: { current: attempt, max: BUILD_MAX_ATTEMPTS },
-          });
-        },
-        onError: (attempt, error) => {
-          const message = error instanceof Error ? error.message : String(error);
-          attemptNotes.push(`попытка ${attempt}: ошибка ${message}`);
-          logEvent({
-            phase: 'build',
-            level: 'error',
-            title: 'Генерация',
-            detail: message,
-            attempt: { current: attempt, max: BUILD_MAX_ATTEMPTS },
-            error: { code: 'build_error', message },
-          });
-        },
-        execute: async () => {
-          const rawCode = await runLLMRequest({
-            task: 'build',
-            run: () => generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams),
-            retries: 1,
-          });
-          const parsed = parseMermaidJsonResponse(rawCode);
-          if (parsed) {
-            if (parsed.status !== 'ok') {
-              attemptNotes.push(`json status: ${parsed.status}${parsed.reason ? ` (${parsed.reason})` : ''}`);
-              return null;
+        autoFixMaxAttempts: AUTO_FIX_MAX_ATTEMPTS,
+        callbacks: {
+          onAttempt: (attempt, max) => {
+            attemptNotes.push(`попытка ${attempt}/${max}`);
+            logEvent({
+              phase: 'build',
+              level: 'info',
+              title: 'Генерация',
+              attempt: { current: attempt, max },
+            });
+          },
+          onEmpty: (attempt, max) => {
+            attemptNotes.push(`попытка ${attempt}: пустой ответ`);
+            logEvent({
+              phase: 'build',
+              level: 'warn',
+              title: 'Генерация',
+              detail: 'empty',
+              attempt: { current: attempt, max },
+            });
+          },
+          onError: (attempt, max, message) => {
+            attemptNotes.push(`попытка ${attempt}: ошибка ${message}`);
+            logEvent({
+              phase: 'build',
+              level: 'error',
+              title: 'Генерация',
+              detail: message,
+              attempt: { current: attempt, max },
+              error: { code: 'build_error', message },
+            });
+          },
+          onJsonStatus: (attempt, status, reason) => {
+            attemptNotes.push(`json status: ${status}${reason ? ` (${reason})` : ''}`);
+          },
+          onTypeMismatch: (attempt, expected, received) => {
+            attemptNotes.push(`type mismatch: ${expected} vs ${received}`);
+          },
+          onAutoFixAttempt: (attempt, max, errorLine) => {
+            logEvent({
+              phase: 'fix',
+              level: 'info',
+              title: 'Auto-fix',
+              detail: `attempt ${attempt}/${max}`,
+              attempt: { current: attempt, max },
+            });
+            if (errorLine) {
+              logEvent({
+                phase: 'fix',
+                level: 'warn',
+                title: 'Auto-fix error',
+                detail: errorLine,
+                attempt: { current: attempt, max },
+                error: { code: 'validation', message: errorLine },
+              });
             }
-            if (!parsed.mermaid?.trim()) {
-              attemptNotes.push('json: нет mermaid');
-              return null;
-            }
-            if (ctx.appState.diagramType !== 'auto' && parsed.diagramType && parsed.diagramType !== ctx.appState.diagramType) {
-              attemptNotes.push(`json: несоответствие diagram_type ${parsed.diagramType}`);
-              return null;
-            }
-            return parsed.mermaid;
-          }
-
-          const cleanCode = extractMermaidCode(rawCode);
-          return cleanCode.trim() ? cleanCode : null;
+          },
+          onAutoFixIteration: (code, nextValidation) => {
+            ctx.applyCompiledResult(code, nextValidation);
+          },
+          onValidation: (isValid, autoFixAttempts) => {
+            logEvent({
+              phase: 'validate',
+              level: isValid ? 'info' : 'warn',
+              title: 'Валидация',
+              detail: isValid ? 'валидна' : 'невалидна',
+              metrics: autoFixAttempts ? { autoFix: autoFixAttempts } : undefined,
+            });
+          },
+          onValidationError: (errorLine) => {
+            logEvent({
+              phase: 'validate',
+              level: 'error',
+              title: 'Ошибка',
+              detail: errorLine || 'validation error',
+              error: { code: 'validation', message: errorLine || 'validation error' },
+            });
+          },
         },
       });
 
@@ -301,37 +232,33 @@ export const createBuildHandler = (ctx: StudioContext) => {
         pushStatus(['Сборка', '- попытки', ...attemptNotes.map((note) => `- ${note}`)].join('\n'));
       }
 
-      const fallbackCode = getFallbackMermaid(ctx.appState.diagramType);
-      const resolvedCode = attemptResult.value?.trim() || fallbackCode?.trim() || '';
-      const usedFallback = !attemptResult.value?.trim() && !!fallbackCode;
-
-      if (!resolvedCode) {
-        const reason = attemptResult.lastError ? 'build_attempts_failed' : 'no_mermaid_code';
+      if (buildResult.status !== 'ok' || !buildResult.code) {
+        const reason = buildResult.lastError ? 'build_attempts_failed' : 'no_mermaid_code';
         pushStatus(`Сборка\n- не удалось: ${reason}`);
         logEvent({
           phase: 'build',
           level: 'error',
           title: 'Сборка',
           detail: reason,
-          error: { code: reason, message: attemptResult.lastError ?? reason },
+          error: { code: reason, message: buildResult.lastError ?? reason },
         });
         await ctx.trackAnalyticsWithContext('diagram_build_failed', 'build', {
           error: reason,
-          attempts: attemptResult.attempts,
-          emptyResponses: attemptResult.emptyResponses,
+          attempts: buildResult.attempts,
+          emptyResponses: buildResult.emptyResponses,
           durationMs: Date.now() - startedAt,
         });
         stepMessages.push(ctx.addMessage('assistant', 'Итог: сборка завершилась с ошибкой. Проверьте лог.', 'build'));
         await finalizeStep('error', {
           reason,
-          attempts: attemptResult.attempts,
-          emptyResponses: attemptResult.emptyResponses,
-          error: attemptResult.lastError ?? undefined,
+          attempts: buildResult.attempts,
+          emptyResponses: buildResult.emptyResponses,
+          error: buildResult.lastError ?? undefined,
         });
         return;
       }
 
-      if (usedFallback) {
+      if (buildResult.usedFallback) {
         pushStatus('Сборка\n- fallback: использован шаблон');
         logEvent({
           phase: 'build',
@@ -341,35 +268,10 @@ export const createBuildHandler = (ctx: StudioContext) => {
         });
       }
 
-      const cleanCode = resolvedCode;
-      const initialValidation = await validateMermaid(cleanCode, { logError: false });
-      const { code: currentCode, validation, attempts: autoFixAttempts } = await runAutoFixLoop({
-        initialCode: cleanCode,
-        initialValidation,
-        maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
-        validate: (code) => validateMermaid(code, { logError: false }),
-              fix: async (code, errorMessage) => {
-                const fixedRaw = await runLLMRequest({
-                  task: 'auto-fix',
-                  run: () => fixDiagram(
-                    code,
-                    errorMessage,
-                    ctx.aiConfig,
-                    docs,
-                    language,
-                    ctx.modelParams
-                  ),
-                  retries: LLM_TIMEOUT_RETRIES,
-                  onTimeout: (notice) => {
-                    pushStatus(formatTimeoutRetryMessage('Auto-fix', notice.attempt, notice.maxAttempts));
-                  },
-                });
-                return extractMermaidCode(fixedRaw);
-              },
-        onIteration: (code, nextValidation) => {
-          ctx.applyCompiledResult(code, nextValidation);
-        },
-      });
+      const currentCode = buildResult.code;
+      const validation = buildResult.validation;
+      const autoFixAttempts = buildResult.autoFixAttempts;
+
       pushStatus(
         [
           'Сборка',
@@ -377,58 +279,36 @@ export const createBuildHandler = (ctx: StudioContext) => {
           autoFixAttempts ? `- auto-fix: ${autoFixAttempts}` : '',
         ].filter(Boolean).join('\n')
       );
-      logEvent({
-        phase: 'validate',
-        level: validation.isValid ? 'info' : 'warn',
-        title: 'Валидация',
-        detail: validation.isValid ? 'валидна' : 'невалидна',
-        metrics: autoFixAttempts ? { autoFix: autoFixAttempts } : undefined,
-      });
 
-      const autoFixNote =
-        autoFixAttempts === 0
-          ? ''
-          : validation.isValid
-            ? ` Auto-fixed (${autoFixAttempts}).`
-            : ` Auto-fix attempted (${autoFixAttempts}), still invalid.`;
-
-      const afterSummary = await tryAnalyzeAfterBuild(ctx, {
-        code: currentCode,
-        docs,
-        language,
-      });
-      pushStatus(
-        [
-          'Сборка (итог)',
-          `- диаграмма: ${ctx.appState.diagramType}`,
-          `- ${validation.isValid ? 'валидна' : 'с ошибками'}`,
-          autoFixNote ? `- ${autoFixNote.trim().replace(/\.$/, '')}` : '',
-          afterSummary ? `- сводка: ${afterSummary}` : '',
-        ].filter(Boolean).join('\n')
-      );
       await ctx.trackAnalyticsWithContext('diagram_build_success', 'build', {
         isValid: !!validation.isValid,
         errorLine: validation.errorLine,
-        buildAttempts: attemptResult.attempts,
+        buildAttempts: buildResult.attempts,
         autoFixAttempts,
-        emptyResponses: attemptResult.emptyResponses,
+        emptyResponses: buildResult.emptyResponses,
         durationMs: Date.now() - startedAt,
         codeLength: currentCode.length,
       });
       const fallbackSummary = [
         `Итог: диаграмма ${validation.isValid ? 'готова' : 'с ошибками'}.`,
-        usedFallback ? 'Использован шаблон.' : '',
+        buildResult.usedFallback ? 'Использован шаблон.' : '',
         autoFixAttempts ? `Auto-fix: ${autoFixAttempts}.` : '',
       ].filter(Boolean).join(' ');
-      const summaryPrefix = language === 'Russian' ? 'Итог:' : 'Summary:';
-      let resolvedSummary = fallbackSummary;
+      let resolvedSummary = normalizeSummaryText(fallbackSummary);
       try {
+        logEvent({
+          phase: 'build',
+          level: 'info',
+          title: 'Итог',
+          detail: 'generating',
+        });
         const summaryInput = [
           `Тип: ${ctx.appState.diagramType}`,
           `Валидность: ${validation.isValid ? 'ok' : 'error'}`,
-          `Попытки сборки: ${attemptResult.attempts}/${BUILD_MAX_ATTEMPTS}`,
+          `Попытки сборки: ${buildResult.attempts}/${BUILD_MAX_ATTEMPTS}`,
           `Auto-fix: ${autoFixAttempts}`,
-          `Fallback: ${usedFallback ? 'yes' : 'no'}`,
+          `Fallback: ${buildResult.usedFallback ? 'yes' : 'no'}`,
+          `Intent length: ${normalizedIntent.length}`,
         ].join('\n');
         const summaryText = await runLLMRequest({
           task: 'build-summary',
@@ -445,12 +325,24 @@ export const createBuildHandler = (ctx: StudioContext) => {
           sanitizeSummaryText(stripMermaidCode(summaryText))
         );
         if (cleanedSummary) {
+          const summaryPrefix = language === 'Russian' ? 'Итог:' : 'Summary:';
           resolvedSummary = cleanedSummary.toLowerCase().startsWith(summaryPrefix.toLowerCase())
             ? cleanedSummary
             : `${summaryPrefix} ${cleanedSummary}`;
         }
+        logEvent({
+          phase: 'done',
+          level: 'info',
+          title: 'Итог',
+          detail: 'ready',
+        });
       } catch {
-        // fallback to deterministic summary
+        logEvent({
+          phase: 'error',
+          level: 'warn',
+          title: 'Итог',
+          detail: 'fallback',
+        });
       }
       stepMessages.push(ctx.addMessage('assistant', resolvedSummary, 'build'));
       await finalizeStep('done', {
@@ -459,9 +351,9 @@ export const createBuildHandler = (ctx: StudioContext) => {
           diagramType: ctx.appState.diagramType,
           isValid: !!validation.isValid,
           autoFixAttempts: autoFixAttempts,
-          buildAttempts: attemptResult.attempts,
-          emptyResponses: attemptResult.emptyResponses,
-          fallbackUsed: usedFallback,
+          buildAttempts: buildResult.attempts,
+          emptyResponses: buildResult.emptyResponses,
+          fallbackUsed: buildResult.usedFallback,
           intent: intent.content,
           intentSource: intent.source,
         },

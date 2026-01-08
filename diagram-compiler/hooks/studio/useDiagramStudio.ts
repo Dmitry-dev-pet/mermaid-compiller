@@ -27,8 +27,11 @@ import { createAnalyticsAdapter } from '../../services/analyticsAdapter';
 import { useNotebookBuild } from './useNotebookBuild';
 import { useFixFlow } from './useFixFlow';
 import { useNotebookContext } from './useNotebookContext';
+import { resolveChatContextId } from '../../utils/chatContext';
+import { setLLMRequestStartListener } from '../../services/llmRequestRunner';
 
 export const useDiagramStudio = () => {
+  const [llmRequestStartedAt, setLlmRequestStartedAt] = useState<number | null>(null);
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
   const { mermaidState, setMermaidState, handleMermaidChange } = useMermaid();
   const { appState, setAppState, startResize, setDiagramType, toggleTheme, setAnalyzeLanguage, togglePreviewFullScreen } = useLayout();
@@ -69,7 +72,7 @@ export const useDiagramStudio = () => {
   } = useHistory();
 
   const [isProcessing, setIsProcessing] = useState(false);
-  const [diagramIntent, setDiagramIntent] = useState<DiagramIntent | null>(null);
+  const [diagramIntentByContext, setDiagramIntentByContext] = useState<Record<string, DiagramIntent | null>>({});
   const [editorTab, setEditorTab] = useState<EditorTab>('code');
   const [previewMermaidState, setPreviewMermaidState] = useState<MermaidState | null>(null);
   const previewCacheRef = useRef<Record<string, MermaidState>>({});
@@ -80,7 +83,6 @@ export const useDiagramStudio = () => {
   const seededNotebookSessionIdsRef = useRef<Set<string>>(new Set());
   const lastManualRecordedCodeRef = useRef<string>('');
   const diagramTypeWaitRef = useRef<{ target: DiagramType; resolve: () => void } | null>(null);
-  const notebookChatStartedAtRef = useRef<number | null>(null);
   const clearProjectPreview = useCallback(() => {
     setPreviewMermaidState(null);
   }, []);
@@ -119,11 +121,34 @@ export const useDiagramStudio = () => {
     isNotebookChatEnabled,
   } = notebookContext;
 
+  const getNotebookChatIndex = useCallback(() => {
+    if (!isNotebookChatMode) return null;
+    const index = typeof markdownMermaidActiveIndex === 'number' ? markdownMermaidActiveIndex : 0;
+    return Math.max(0, Math.min(index, Math.max(0, markdownMermaidBlocks.length - 1)));
+  }, [isNotebookChatMode, markdownMermaidActiveIndex, markdownMermaidBlocks.length]);
+
+  const activeChatContextId = useMemo(() => {
+    return resolveChatContextId(isNotebookChatMode, getNotebookChatIndex());
+  }, [getNotebookChatIndex, isNotebookChatMode]);
+
+  useEffect(() => {
+    if (activeContextId !== activeChatContextId) {
+      setActiveContextId(activeChatContextId);
+    }
+  }, [activeChatContextId, activeContextId, setActiveContextId]);
+
   const safeAppendTimeStep = useCallback((args: Parameters<typeof appendTimeStep>[0]) => {
     const nextMeta = { ...(args.meta ?? {}) } as Record<string, unknown>;
     const isNotebookScope =
       isNotebookChatMode
       && (args.type === 'build' || args.type === 'chat' || args.type === 'analyze');
+    if (typeof nextMeta.contextId !== 'string') {
+      if (nextMeta.mode === 'notebook' && typeof nextMeta.blockIndex === 'number') {
+        nextMeta.contextId = `block:${nextMeta.blockIndex}`;
+      } else {
+        nextMeta.contextId = activeChatContextId;
+      }
+    }
     if (!('mode' in nextMeta)) {
       nextMeta.mode = isNotebookScope
         ? 'notebook'
@@ -143,6 +168,7 @@ export const useDiagramStudio = () => {
       console.error('Failed to record history step', e);
     });
   }, [
+    activeChatContextId,
     appendTimeStep,
     editorTab,
     markdownMermaidActiveIndex,
@@ -151,23 +177,10 @@ export const useDiagramStudio = () => {
     isNotebookChatMode,
   ]);
 
-  const getNotebookChatIndex = useCallback(() => {
-    if (!isNotebookChatMode) return null;
-    const index = typeof markdownMermaidActiveIndex === 'number' ? markdownMermaidActiveIndex : 0;
-    return Math.max(0, Math.min(index, Math.max(0, markdownMermaidBlocks.length - 1)));
-  }, [isNotebookChatMode, markdownMermaidActiveIndex, markdownMermaidBlocks.length]);
-
-  const activeChatContextId = useMemo(() => {
-    if (!isNotebookChatMode) return 'main';
-    const index = getNotebookChatIndex();
-    return typeof index === 'number' ? `block:${index}` : 'main';
-  }, [getNotebookChatIndex, isNotebookChatMode]);
-
-  useEffect(() => {
-    if (activeContextId !== activeChatContextId) {
-      setActiveContextId(activeChatContextId);
-    }
-  }, [activeChatContextId, activeContextId, setActiveContextId]);
+  const startOperationForContext = useCallback(
+    (title: string, contextId?: string) => startOperation(title, contextId ?? activeChatContextId),
+    [activeChatContextId, startOperation]
+  );
 
   const addMessageForActiveContext = useCallback(
     (role: Message['role'], content: string, mode?: Message['mode']) =>
@@ -184,6 +197,25 @@ export const useDiagramStudio = () => {
     activeContextId === activeChatContextId
       ? messages
       : getMessagesForContext(activeChatContextId);
+
+  const diagramIntent = useMemo(
+    () => diagramIntentByContext[activeChatContextId] ?? null,
+    [activeChatContextId, diagramIntentByContext]
+  );
+
+  const setDiagramIntentForActiveContext = useCallback(
+    (intent: DiagramIntent | null) => {
+      setDiagramIntentByContext((prev) => ({
+        ...prev,
+        [activeChatContextId]: intent,
+      }));
+    },
+    [activeChatContextId]
+  );
+
+  const resetDiagramIntents = useCallback(() => {
+    setDiagramIntentByContext({});
+  }, []);
 
   const safeRecordTimeStep = useCallback((args: Parameters<typeof appendTimeStep>[0]) => {
     if ((args.type === 'chat' || args.type === 'analyze' || args.type === 'build') && isNotebookChatMode) {
@@ -376,80 +408,12 @@ export const useDiagramStudio = () => {
 
   const chatMessagesForView = useNotebookChatView({ isNotebookChatMode, messages: activeMessages });
 
-  const operationLogMeta = useMemo(() => {
-    const map = new Map<string, { modes: Set<string>; blockIndices: Set<number> }>();
-    historySteps.forEach((step) => {
-      const meta = step.meta as Record<string, unknown> | undefined;
-      const opLog = meta?.operationLog as { id?: string } | undefined;
-      if (!opLog?.id) return;
-      const entry = map.get(opLog.id) ?? { modes: new Set<string>(), blockIndices: new Set<number>() };
-      if (typeof meta?.mode === 'string') entry.modes.add(meta.mode);
-      if (typeof meta?.blockIndex === 'number') entry.blockIndices.add(meta.blockIndex);
-      map.set(opLog.id, entry);
-    });
-    return map;
-  }, [historySteps]);
-
-  const operationLogBlockIndices = useMemo(() => {
-    const map = new Map<string, Set<number>>();
-    operationLogs.forEach((log) => {
-      const indices = new Set<number>();
-      log.events.forEach((event) => {
-        if (typeof event.blockIndex === 'number') {
-          indices.add(event.blockIndex);
-        }
-      });
-      if (indices.size) map.set(log.id, indices);
-    });
-    return map;
-  }, [operationLogs]);
-
   const filteredOperationLogs = useMemo(() => {
-    if (isNotebookChatMode) {
-      const blockIndex = getNotebookChatIndex();
-      if (blockIndex === null) return [];
-      const allowedIds = new Set<string>();
-      operationLogMeta.forEach((meta, id) => {
-        if (meta.blockIndices.has(blockIndex)) allowedIds.add(id);
-      });
-      operationLogBlockIndices.forEach((indices, id) => {
-        if (indices.has(blockIndex)) allowedIds.add(id);
-      });
-      const isNotebookBuildLog = (log: typeof operationLogs[number]) =>
-        (log.events[0]?.title ?? '') === 'Notebook build';
-      if (allowedIds.size) {
-        return operationLogs.filter((log) => allowedIds.has(log.id) && !isNotebookBuildLog(log));
-      }
-      return [];
-    }
-
     return operationLogs.filter((log) => {
-      const meta = operationLogMeta.get(log.id);
-      const eventIndices = operationLogBlockIndices.get(log.id);
-      const title = log.events[0]?.title ?? '';
-      const isNotebookBuild = title === 'Notebook build';
-      const isNotebookScoped =
-        !!meta?.modes.has('notebook') || (eventIndices?.size ?? 0) > 0;
-      if (isNotebookScoped && !isNotebookBuild) return false;
-      return true;
+      const contextId = log.contextId ?? 'main';
+      return contextId === activeChatContextId;
     });
-  }, [
-    getNotebookChatIndex,
-    isNotebookChatMode,
-    operationLogBlockIndices,
-    operationLogMeta,
-    operationLogs,
-  ]);
-
-  useEffect(() => {
-    if (isNotebookChatMode) {
-      if (!notebookChatStartedAtRef.current) {
-        notebookChatStartedAtRef.current = Date.now();
-      }
-      return;
-    }
-    notebookChatStartedAtRef.current = null;
-  }, [isNotebookChatMode]);
+  }, [activeChatContextId, operationLogs]);
 
   const filteredActiveOperationLog = useMemo(() => {
     for (let i = filteredOperationLogs.length - 1; i >= 0; i -= 1) {
@@ -484,7 +448,7 @@ export const useDiagramStudio = () => {
     getMessagesForContext,
     setMessagesForContext,
     diagramIntent,
-    setDiagramIntent,
+    setDiagramIntent: setDiagramIntentForActiveContext,
     systemPrompt: promptPreviewByMode.chat?.systemPrompt ?? '',
     systemPromptRedacted: promptPreviewByMode.chat?.systemPromptRedacted ?? '',
     isSystemPromptRaw: systemPromptRawByMode.chat,
@@ -612,7 +576,7 @@ export const useDiagramStudio = () => {
     loadSessionSnapshot,
     resetMessages,
     resetPromptPreview,
-    setDiagramIntent,
+    resetDiagramIntents,
     setEditorTab,
     setMermaidState,
     setOperationLogs,
@@ -756,7 +720,7 @@ export const useDiagramStudio = () => {
     setMermaidState,
     getDocsContext,
     loadBuildDocsEntries,
-    startOperation,
+    startOperation: (title) => startOperation(title, 'main'),
     addOperationEvent,
     finishOperation,
     getOperationLog,
@@ -807,7 +771,7 @@ export const useDiagramStudio = () => {
       modelParams,
       mermaidState,
       diagramIntent,
-      setDiagramIntent,
+      setDiagramIntent: setDiagramIntentForActiveContext,
       setMermaidState,
       addMessage: addMessageForActiveContext,
       getMessages: getMessagesForActiveContext,
@@ -820,7 +784,7 @@ export const useDiagramStudio = () => {
       getDocsContext,
       setIsProcessing,
       recordTimeStep: safeRecordTimeStep,
-      startOperation,
+      startOperation: startOperationForContext,
       addOperationEvent,
       finishOperation,
       getOperationLog,
@@ -863,6 +827,15 @@ export const useDiagramStudio = () => {
     resolveActiveMermaidContext,
     setDiagramTypeAndWait,
   ]);
+
+  useEffect(() => {
+    setLLMRequestStartListener((notice) => {
+      setLlmRequestStartedAt(notice.startedAt);
+    });
+    return () => {
+      setLLMRequestStartListener(null);
+    };
+  }, []);
 
   const handleChatMessage = useCallback(async (text: string) => {
     if (editorTab === 'code') {
@@ -967,7 +940,7 @@ export const useDiagramStudio = () => {
 
   const handleDiagramTypeChange = async (type: DiagramType) => {
     setDiagramType(type);
-    setDiagramIntent(null);
+    setDiagramIntentForActiveContext(null);
     resetPromptPreview();
     setEditorTab('build_docs');
     setNotebookBuildCount(type === 'auto' ? null : 1);
@@ -1049,5 +1022,6 @@ export const useDiagramStudio = () => {
     isNotebookChatMode,
     operationLogs: filteredOperationLogs,
     activeOperationLog: filteredActiveOperationLog,
+    llmRequestStartedAt,
   };
 };
