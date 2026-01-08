@@ -41,7 +41,7 @@ export const useOperationLog = () => {
   }, []);
 
   const addOperationEvent = useCallback(
-    (opId: string, args: { phase: OperationPhase; level: OperationLevel; title: string; detail?: string; tooltip?: string; tooltipMessages?: string; tooltipDocs?: string; blockIndex?: number; attempt?: OperationEvent['attempt']; metrics?: OperationEvent['metrics']; error?: OperationEvent['error'] }) => {
+    (opId: string, args: { phase: OperationPhase; level: OperationLevel; title: string; detail?: string; tooltip?: string; tooltipMessages?: string; tooltipDocs?: string; kind?: OperationEvent['kind']; contextScope?: OperationEvent['contextScope']; blockIndex?: number; attempt?: OperationEvent['attempt']; metrics?: OperationEvent['metrics']; error?: OperationEvent['error'] }) => {
       setOperationLogs((prev) =>
         prev.map((log) => {
           if (log.id !== opId) return log;
@@ -56,6 +56,8 @@ export const useOperationLog = () => {
             tooltip: args.tooltip,
             tooltipMessages: args.tooltipMessages,
             tooltipDocs: args.tooltipDocs,
+            kind: args.kind,
+            contextScope: args.contextScope,
             blockIndex: args.blockIndex,
             attempt: args.attempt,
             metrics: args.metrics,

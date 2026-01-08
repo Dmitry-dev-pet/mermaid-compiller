@@ -22,6 +22,7 @@
      - `useChat` — сообщения и генератор ID.
      - `useHistory` — загрузка и запись истории.
      - `useLayout` — размеры колонок, тема, язык, fullscreen.
+     - `useResizablePane` — ресайз панелей (например, области ввода чата).
    - `hooks/editor/*` — логика вкладок и Build Docs контента.
      - `useEditorTabs` — переключение вкладок и сохранение буфера.
      - `useBuildDocsContent` — сборка превью для Build Docs.
@@ -40,6 +41,10 @@
    - `mermaidService` — инициализация Mermaid и валидация.
    - `docsContextService` — загрузка локальных доков Mermaid.
    - `services/history/*` — IndexedDB-хранилище сессий/шагов/ревизий.
+
+4. **Утилиты UI (логи)**
+   - `components/chat/operationLogUtils` — формирование строк лога (sections, тайминг, статус блоков).
+   - `components/chat/ChatOperationLog` — рендер логов по view-model.
 
 ## Потоки управления
 
@@ -91,4 +96,4 @@
 
 ---
 
-Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts, typecheck, refactor hooks/services).
+Обновлено: 2026-01-08. Согласовано с текущей реализацией (operation log utils, resizable panes, notebook build).

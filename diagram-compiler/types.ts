@@ -101,6 +101,8 @@ export type OperationEvent = {
   tooltip?: string;
   tooltipMessages?: string;
   tooltipDocs?: string;
+  kind?: 'context' | 'planner' | 'block' | 'attempt' | 'status';
+  contextScope?: 'planner' | 'build' | 'block';
   blockIndex?: number;
   attempt?: { current: number; max: number };
   metrics?: { autoFix?: number; tokens?: number; durationMs?: number };

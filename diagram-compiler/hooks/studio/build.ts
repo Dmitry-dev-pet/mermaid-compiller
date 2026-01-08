@@ -191,6 +191,8 @@ export const createBuildHandler = (ctx: StudioContext) => {
         ].join('\n'),
         tooltipMessages: contextTooltip,
         tooltipDocs: docsTooltip,
+        kind: 'context',
+        contextScope: 'build',
       });
 
       ctx.setCurrentIntent({

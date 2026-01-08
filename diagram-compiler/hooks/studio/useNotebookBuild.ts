@@ -621,6 +621,8 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         ].join('\n'),
         tooltipMessages: plannerTooltip,
         tooltipDocs: plannerDocsTooltip,
+        kind: 'context',
+        contextScope: 'planner',
       });
       const plannerStartAt = Date.now();
       pushStatus('Планировщик\n- запрашиваю план');
@@ -767,6 +769,8 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               ].join('\n'),
               tooltipMessages: blockTooltip,
               tooltipDocs: blockDocsTooltip,
+              kind: 'context',
+              contextScope: 'block',
               blockIndex: i,
             });
             const buildResult = await runBuildPipeline({

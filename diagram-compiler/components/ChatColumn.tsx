@@ -8,6 +8,7 @@ import ChatMarkdownTabs from './chat/ChatMarkdownTabs';
 import ChatOperationLog from './chat/ChatOperationLog';
 import { parseNotebookBuildMessage } from './chat/chatMessageUtils';
 import type { OperationLog } from '../types';
+import { useResizablePane } from '../hooks/core/useResizablePane';
 
 interface ChatColumnProps {
   messages: Message[];
@@ -91,8 +92,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   activeOperationLog,
 }) => {
   const [input, setInput] = useState('');
-  const [composerHeight, setComposerHeight] = useState(200);
-  const [isResizingComposer, setIsResizingComposer] = useState(false);
   const columnRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -597,25 +596,12 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     updatePromptPreview,
   ]);
 
-  useEffect(() => {
-    if (!isResizingComposer) return;
-    const onMove = (event: MouseEvent) => {
-      const container = columnRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const nextHeight = rect.bottom - event.clientY;
-      const minHeight = 140;
-      const maxHeight = Math.max(minHeight, rect.height - 200);
-      setComposerHeight(Math.min(maxHeight, Math.max(minHeight, nextHeight)));
-    };
-    const onUp = () => setIsResizingComposer(false);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [isResizingComposer]);
+  const { size: composerHeight, onResizeStart } = useResizablePane({
+    initialSize: 200,
+    minSize: 140,
+    maxOffset: 200,
+    containerRef: columnRef,
+  });
 
   return (
     <div ref={columnRef} className="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50">
@@ -824,11 +810,12 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       </div>
 
       <div
-        className="h-3 cursor-row-resize flex items-center justify-center bg-transparent"
-        onMouseDown={() => setIsResizingComposer(true)}
+        className="group relative h-4 cursor-row-resize flex items-center justify-center bg-transparent"
+        onMouseDown={onResizeStart}
         title="Resize input"
       >
         <div className="h-px w-full bg-slate-200 dark:bg-slate-800" />
+        <div className="absolute h-1 w-12 rounded-full bg-slate-300/70 dark:bg-slate-600/70 group-hover:bg-slate-400/80 dark:group-hover:bg-slate-500/80" />
       </div>
 
       {/* Composer */}

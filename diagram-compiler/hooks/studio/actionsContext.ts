@@ -64,6 +64,8 @@ export type StudioActionsDeps = {
     tooltip?: string;
     tooltipMessages?: string;
     tooltipDocs?: string;
+    kind?: import('../../types').OperationEvent['kind'];
+    contextScope?: import('../../types').OperationEvent['contextScope'];
     blockIndex?: number;
     attempt?: import('../../types').OperationEvent['attempt'];
     metrics?: import('../../types').OperationEvent['metrics'];
