@@ -87,6 +87,10 @@ export const useLayout = () => {
     setAppState(prev => ({ ...prev, analyzeLanguage: lang }));
   }, []);
 
+  const setLLMTimeoutMs = useCallback((timeoutMs: number) => {
+    setAppState(prev => ({ ...prev, llmTimeoutMs: timeoutMs }));
+  }, []);
+
   const togglePreviewFullScreen = useCallback(() => {
     setAppState(prev => ({
       ...prev,
@@ -103,6 +107,7 @@ export const useLayout = () => {
     toggleTheme,
     setLanguage,
     setAnalyzeLanguage,
+    setLLMTimeoutMs,
     togglePreviewFullScreen,
   };
 };

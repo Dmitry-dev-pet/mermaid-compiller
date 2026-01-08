@@ -14,6 +14,36 @@ export const sanitizeMermaidByType = (diagramType: DiagramType, code: string) =>
   if (diagramType === 'flowchart') {
     return sanitizeFlowchartLabels(code);
   }
+  if (diagramType === 'er') {
+    const lines = code.split(/\r?\n/);
+    let inEntity = false;
+    const sanitized = lines.map((line) => {
+      const trimmed = line.trim();
+      if (trimmed.endsWith('{')) {
+        inEntity = true;
+        return line;
+      }
+      if (trimmed.startsWith('}')) {
+        inEntity = false;
+        return line;
+      }
+      if (!inEntity) return line;
+      const match = line.match(/^(\s*)([A-Za-zА-Яа-я0-9_]+)\s+"([^"]+)"\s*$/);
+      if (!match) return line;
+      const [, indent, type, rawValue] = match;
+      const normalized = rawValue
+        .replace(/[:]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/[\s-]+/g, '_')
+        .replace(/[^A-Za-zА-Яа-я0-9_]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      const attr = normalized || 'attr';
+      return `${indent}${type} ${attr}`;
+    });
+    return sanitized.join('\n');
+  }
   return code;
 };
 

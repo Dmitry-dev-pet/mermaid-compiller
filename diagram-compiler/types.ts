@@ -98,6 +98,9 @@ export type OperationEvent = {
   level: OperationLevel;
   title: string;
   detail?: string;
+  tooltip?: string;
+  tooltipMessages?: string;
+  tooltipDocs?: string;
   blockIndex?: number;
   attempt?: { current: number; max: number };
   metrics?: { autoFix?: number; tokens?: number; durationMs?: number };
@@ -110,6 +113,7 @@ export type OperationLog = {
   status: 'running' | 'done' | 'error';
   startedAt: number;
   finishedAt?: number;
+  lastLLMStartedAt?: number;
   events: OperationEvent[];
 };
 
@@ -205,4 +209,5 @@ export interface AppState {
   language: string;
   analyzeLanguage: string;
   notebookBuildCount: number | null;
+  llmTimeoutMs: number;
 }

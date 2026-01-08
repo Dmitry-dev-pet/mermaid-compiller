@@ -19,6 +19,19 @@ describe('mermaidSanitizer', () => {
     expect(result).toBe(input);
   });
 
+  it('sanitizes ER attribute values wrapped in quotes', () => {
+    const input = [
+      'erDiagram',
+      '  PERSON {',
+      '    string "Имя: Швейк"',
+      '    string "Состояние: Пьяный гений"',
+      '  }',
+    ].join('\n');
+    const result = sanitizeMermaidByType('er', input);
+    expect(result).toContain('string Имя_Швейк');
+    expect(result).toContain('string Состояние_Пьяный_гений');
+  });
+
   it('formats error lines to a single line', () => {
     const input = 'Parse error on line 2:\n... TD A[Bad (label)]';
     const result = formatMermaidErrorLine(input);

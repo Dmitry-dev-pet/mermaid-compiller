@@ -7,8 +7,9 @@ import { sanitizeMermaidByType } from '../../utils/mermaidSanitizer';
 import { NOTEBOOK_BUILD_RETRY_CONFIG } from './notebookBuildConfig';
 import { extractMermaidBlocksFromMarkdown, replaceMermaidBlockInMarkdown } from '../../services/mermaidService';
 import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
-import { fetchNotebookDocsContext } from '../../services/docsContextService';
+import { fetchNotebookDocsContext, fetchNotebookDocsEntries, fetchNotebookPlannerDocsContext, fetchNotebookPlannerDocsEntries } from '../../services/docsContextService';
 import { planNotebook, summarizeBuild } from '../../services/llmService';
+import { buildSystemPrompt } from '../../services/llm/prompts';
 import { normalizeNotebookPlan, parseNotebookPlan } from '../../services/notebookPlanService';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import { TimeoutError } from '../../services/llmTimeout';
@@ -19,6 +20,66 @@ import { runBuildPipeline } from './buildPipeline';
 const NOTEBOOK_STYLE_CONSTRAINT_EN = 'No styling directives or color instructions (no theme/look/init/colors).';
 const NOTEBOOK_STYLE_CONSTRAINT_RU = 'Без стилевых директив и цветовых инструкций (без theme/look/init/colors).';
 
+const summarizeDocsEntries = (entries: Array<{ path: string; text?: string }>) => {
+  const items = entries.map((entry) => ({
+    name: entry.path.split('/').pop() || entry.path,
+    size: entry.text?.length ?? 0,
+  }));
+  const total = items.reduce((sum, item) => sum + item.size, 0);
+  return { items, total };
+};
+
+const summarizeDocsSelection = (
+  entries: Array<{ path: string; text?: string }>,
+  selection: Record<string, boolean> | undefined
+) => {
+  const included = entries.filter((entry) => selection?.[entry.path] !== false);
+  return summarizeDocsEntries(included);
+};
+
+const summarizeDocsContext = (docsText: string) => {
+  return {
+    chars: docsText.length,
+  };
+};
+
+const formatSize = (value: number) => {
+  if (value < 1000) return `${value}`;
+  return `${(value / 1000).toFixed(1)}k`;
+};
+
+const formatDocsDetail = (items: Array<{ name: string; size: number }>, total: number) => {
+  if (!items.length) return 'docs (0 files)';
+  const label = items.length === 1 ? 'file' : 'files';
+  const list = items.map((item) => `${item.name} (${formatSize(item.size)})`).join(', ');
+  return `docs (${items.length} ${label}, ${formatSize(total)}): ${list}`;
+};
+
+const formatMessageBlock = (message: Message, index: number) => {
+  const label = `[${index + 1}] ${message.role}${message.id ? ` (${message.id})` : ''}`;
+  return `${label}\n${message.content}`;
+};
+
+const buildContextTooltip = (args: {
+  systemPrompt: string;
+  messages: Message[];
+  docsDetail: string;
+}) => {
+  const messageBlocks = args.messages.map(formatMessageBlock).join('\n\n');
+  return [
+    'System prompt:',
+    args.systemPrompt,
+    '',
+    'Messages:',
+    messageBlocks,
+  ].join('\n');
+};
+const buildDocsTooltip = (docsDetail: string) => `Docs:\n${docsDetail}`;
+
+const summarizeMessages = (items: Message[]) => {
+  const chars = items.reduce((total, msg) => total + (msg.content?.length ?? 0), 0);
+  return { count: items.length, chars };
+};
 
 type NotebookBuildDeps = {
   aiConfig: import('../../types').AIConfig;
@@ -42,6 +103,13 @@ type NotebookBuildDeps = {
   setDiagramTypeAndWait: (type: DiagramType) => Promise<void>;
   setMermaidState: (updater: (prev: import('../../types').MermaidState) => import('../../types').MermaidState) => void;
   getDocsContext: (mode: import('../../types').DocsMode) => Promise<string>;
+  getDocsSelectionSummary?: (mode: import('../../types').DocsMode) => Promise<{
+    total: number;
+    included: number;
+    excluded: number;
+    includedPaths: string[];
+    excludedPaths: string[];
+  }>;
   loadBuildDocsEntries: (type: DiagramType) => Promise<unknown>;
   startOperation: (title: string) => string;
   addOperationEvent: (opId: string, args: {
@@ -56,6 +124,7 @@ type NotebookBuildDeps = {
   }) => void;
   finishOperation: (opId: string, status: import('../../types').OperationLog['status']) => void;
   getOperationLog: (opId: string) => import('../../types').OperationLog | null;
+  onLLMRequestStart?: (notice: import('../../services/llmRequestRunner').LLMRequestStartNotice) => void;
 };
 
 export const parseNotebookCountFromText = (text: string): number | null => {
@@ -85,6 +154,39 @@ export const parseNotebookCountFromText = (text: string): number | null => {
   }
 
   return null;
+};
+
+export const parseNotebookCountFromIntent = (text: string): number | null => {
+  const lines = text.split(/\r?\n/);
+  let startIndex = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (/^#{0,3}\s*(diagrams|диаграммы)\b/i.test(line)) {
+      startIndex = i + 1;
+      break;
+    }
+  }
+  if (startIndex === -1) return null;
+  let count = 0;
+  for (let i = startIndex; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line) {
+      if (count > 0) break;
+      continue;
+    }
+    if (/^#{1,6}\s+/.test(line)) break;
+    if (/^\d+\.\s+/.test(line)) {
+      count += 1;
+      continue;
+    }
+    if (/^-\s+/.test(line)) {
+      count += 1;
+      continue;
+    }
+    if (count > 0) break;
+  }
+  return count > 0 ? count : null;
 };
 
 const formatNotebookRawIntent = (args: {
@@ -153,7 +255,7 @@ const resolveNotebookRequestedN = (args: {
   messages: Message[];
 }): number | null => {
   if (args.explicitCount && args.explicitCount > 0) return args.explicitCount;
-  const fromPrompt = parseNotebookCountFromText(args.promptText);
+  const fromPrompt = parseNotebookCountFromText(args.promptText) ?? parseNotebookCountFromIntent(args.promptText);
   if (fromPrompt) return fromPrompt;
   const lastUserText = args.messages
     .slice()
@@ -222,6 +324,8 @@ export const requestNotebookPlan = async (args: {
   docs: string;
   language: string;
   addMessage: NotebookBuildDeps['addMessage'];
+  onLLMRequestStart?: NotebookBuildDeps['onLLMRequestStart'];
+  timeoutMs?: number;
   forcedDiagramType?: DiagramType | null;
   allowedDiagramTypes?: string[] | null;
   runPlanner?: PlannerRunner;
@@ -253,6 +357,8 @@ export const requestNotebookPlan = async (args: {
       task: 'planner',
       run: () => runPlanner(plannerMessage),
       retries: NOTEBOOK_BUILD_RETRY_CONFIG.plannerTimeoutRetries,
+      timeoutMs: args.timeoutMs,
+      onStart: args.onLLMRequestStart,
       onTimeout: (notice) => {
         args.addMessage(
           'assistant',
@@ -372,6 +478,15 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
     const logEvent = (args: Parameters<typeof deps.addOperationEvent>[1]) => {
       deps.addOperationEvent(opId, args);
     };
+    const logLLMStart = (notice: import('../../services/llmRequestRunner').LLMRequestStartNotice) => {
+      deps.onLLMRequestStart?.(notice);
+      logEvent({
+        phase: 'build',
+        level: 'info',
+        title: 'LLM',
+        detail: `start ${notice.task}`,
+      });
+    };
     const finalizeOperation = async (
       status: 'done' | 'error',
       meta?: Record<string, unknown>,
@@ -455,7 +570,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           'Сборка ноутбука',
           '- старт',
           `- язык: ${language}`,
-          `- N: ${requestedN ?? 'auto'}`,
+          requestedN ? `- N: ${requestedN}` : '',
           forcedDiagramType ? `- тип: ${forcedDiagramType}` : '',
           allowedDiagramTypes ? `- main: ${allowedDiagramTypes.join(' / ')}` : '',
         ].filter(Boolean).join('\n')
@@ -464,9 +579,50 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         phase: 'build',
         level: 'info',
         title: 'Notebook build',
-        detail: `N=${requestedN ?? 'auto'}`,
+        detail: requestedN ? `N=${requestedN}` : undefined,
       });
-      const docs = await fetchNotebookDocsContext();
+      const docs = await fetchNotebookPlannerDocsContext();
+      const plannerDocsSummary = summarizeDocsContext(docs);
+      const plannerEntries = await fetchNotebookPlannerDocsEntries();
+      const plannerFiles = summarizeDocsEntries(plannerEntries);
+      const plannerDocsDetail = formatDocsDetail(plannerFiles.items, plannerFiles.total);
+      const plannerMessage: Message = {
+        id: 'notebook-plan-context',
+        role: 'user',
+        content: buildPlannerMessageContent({
+          prompt: prompt.content,
+          requestedN,
+          attempt: 1,
+          lastCount: null,
+          lastInvalidTypes: null,
+          forcedDiagramType,
+          allowedDiagramTypes,
+        }),
+        timestamp: Date.now(),
+      };
+      const plannerMessageSummary = summarizeMessages([plannerMessage]);
+      const plannerSystemPrompt = buildSystemPrompt('plan_notebook', {
+        docsContext: 'Documentation context redacted.',
+        language,
+      });
+      const plannerTooltip = buildContextTooltip({
+        systemPrompt: plannerSystemPrompt,
+        messages: [plannerMessage],
+        docsDetail: plannerDocsDetail,
+      });
+      const plannerDocsTooltip = buildDocsTooltip(plannerDocsDetail);
+      logEvent({
+        phase: 'planning',
+        level: 'info',
+        title: 'Контекст',
+        detail: [
+          `messages: ${plannerMessageSummary.count} (${plannerMessageSummary.chars} chars)`,
+          `planner ${plannerDocsDetail}`,
+        ].join('\n'),
+        tooltipMessages: plannerTooltip,
+        tooltipDocs: plannerDocsTooltip,
+      });
+      const plannerStartAt = Date.now();
       pushStatus('Планировщик\n- запрашиваю план');
       logEvent({ phase: 'planning', level: 'info', title: 'Planner', detail: 'request' });
       plan = await requestNotebookPlan({
@@ -477,6 +633,8 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         docs,
         language,
         addMessage: createEphemeralMessage,
+        onLLMRequestStart: logLLMStart,
+        timeoutMs: deps.appState.llmTimeoutMs,
         forcedDiagramType,
         allowedDiagramTypes,
       });
@@ -488,7 +646,13 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           `- диаграмм: ${plan.resolvedN}`,
         ].join('\n')
       );
-      logEvent({ phase: 'planning', level: 'info', title: 'Planner', detail: `ready (${plan.resolvedN})` });
+      logEvent({
+        phase: 'planning',
+        level: 'info',
+        title: 'Planner',
+        detail: `ready (${plan.resolvedN})`,
+        metrics: { durationMs: Date.now() - plannerStartAt },
+      });
       if (forcedDiagramType) {
         plan = {
           ...plan,
@@ -542,12 +706,20 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
 
         deps.setMarkdownMermaidActiveIndex(i);
         await deps.setDiagramTypeAndWait(targetDiagramType);
-        await deps.loadBuildDocsEntries(targetDiagramType);
+        const docsState = await deps.loadBuildDocsEntries(targetDiagramType);
         const blockDocs = await deps.getDocsContext('build');
+        const blockDocsSummary = summarizeDocsContext(blockDocs);
+        const docsEntries = (docsState as { entries?: Array<{ path: string }> }).entries ?? [];
+        const docsSelections = (docsState as { selections?: Record<string, Record<string, boolean>> }).selections ?? {};
+        const buildSelection = docsSelections.build ?? {};
+        const selectionFilesFromEntries = docsEntries.length
+          ? summarizeDocsSelection(docsEntries, buildSelection)
+          : null;
 
         updateBlockMessage(`Сборка: ${blockLabel} — старт.`);
         logEvent({ phase: 'build', level: 'info', title: 'Block', detail: blockLabel, blockIndex: i });
 
+        const blockStartAt = Date.now();
         let success = false;
         let attempts = 0;
         let lastError = '';
@@ -564,6 +736,39 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               content: `Intent:\n${intentText}`,
               timestamp: Date.now(),
             };
+            const msgSummary = summarizeMessages([intentMessage]);
+            const selectionSummary = await deps.getDocsSelectionSummary?.('build');
+            const selectionFiles = selectionFilesFromEntries
+              ?? (selectionSummary
+                ? summarizeDocsEntries(selectionSummary.includedPaths.map((path) => ({ path })))
+                : null);
+            const docsDetail = selectionFiles
+              ? formatDocsDetail(selectionFiles.items, selectionFiles.total)
+              : `docs (0 files, ${blockDocsSummary.chars} chars)`;
+            const blockSystemPrompt = buildSystemPrompt('generate', {
+              diagramType: targetDiagramType,
+              docsContext: 'Documentation context redacted.',
+              language,
+            });
+            const blockTooltip = buildContextTooltip({
+              systemPrompt: blockSystemPrompt,
+              messages: [intentMessage],
+              docsDetail,
+            });
+            const blockDocsTooltip = buildDocsTooltip(docsDetail);
+            logEvent({
+              phase: 'planning',
+              level: 'info',
+              title: 'Контекст',
+              detail: [
+                `${blockLabel}`,
+                `messages: ${msgSummary.count} (${msgSummary.chars} chars)`,
+                docsDetail,
+              ].join('\n'),
+              tooltipMessages: blockTooltip,
+              tooltipDocs: blockDocsTooltip,
+              blockIndex: i,
+            });
             const buildResult = await runBuildPipeline({
               aiConfig: deps.aiConfig,
               modelParams: deps.modelParams,
@@ -575,7 +780,9 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               autoFixMaxAttempts: NOTEBOOK_BUILD_RETRY_CONFIG.autoFixAttempts,
               buildRequestRetries: NOTEBOOK_BUILD_RETRY_CONFIG.buildRequestRetries,
               autoFixRequestRetries: NOTEBOOK_BUILD_RETRY_CONFIG.fixRequestRetries,
+              timeoutMs: deps.appState.llmTimeoutMs,
               allowFallback: false,
+              onLLMRequestStart: logLLMStart,
               callbacks: {
                 onAttempt: (attempt, max) => {
                   attempts = attempt;
@@ -743,6 +950,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           title: 'Block',
           detail: `${blockLabel} — ${success ? 'готов' : 'невалиден'}`,
           blockIndex: i,
+          metrics: { durationMs: Date.now() - blockStartAt },
         });
         const progressMessage = tracker.getMessage();
         if (progressMessage) {
@@ -811,6 +1019,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           uniqueTypes.length ? `Типы: ${uniqueTypes.join(', ')}.` : '',
         ].filter(Boolean);
         let resolvedSummary = normalizeSummaryText(fallbackSummaryParts.join(' '));
+        let summaryStartAt: number | null = null;
         try {
           logEvent({
             phase: 'build',
@@ -818,6 +1027,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             title: 'Итог',
             detail: 'generating',
           });
+          summaryStartAt = Date.now();
           const summaryInput = [
             `Блоки: ${total}`,
             `Успешно: ${successBlocks}`,
@@ -834,6 +1044,8 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               deps.modelParams
             ),
             retries: 1,
+            timeoutMs: deps.appState.llmTimeoutMs,
+            onStart: logLLMStart,
           });
           const cleanedSummary = normalizeSummaryText(
             sanitizeSummaryText(summaryText)
@@ -849,13 +1061,15 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             level: 'info',
             title: 'Итог',
             detail: 'ready',
+            metrics: summaryStartAt ? { durationMs: Date.now() - summaryStartAt } : undefined,
           });
-        } catch {
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
           logEvent({
             phase: 'error',
             level: 'warn',
             title: 'Итог',
-            detail: 'fallback',
+            detail: `fallback: ${message}`,
           });
         }
         const summaryMessage = deps.addMessage('assistant', resolvedSummary, 'build');

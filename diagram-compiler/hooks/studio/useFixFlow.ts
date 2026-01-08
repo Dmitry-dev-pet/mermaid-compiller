@@ -11,7 +11,7 @@ import {
 } from '../../services/mermaidService';
 import type { MermaidMarkdownBlock } from '../../services/mermaidService';
 import { fixDiagram } from '../../services/llmService';
-import { runLLMRequest } from '../../services/llmRequestRunner';
+import { runLLMRequest, type LLMRequestStartNotice } from '../../services/llmRequestRunner';
 import { runAutoFixLoop } from './autoFix';
 import { createProgressTracker } from './progressTracker';
 
@@ -40,6 +40,8 @@ type FixFlowDeps = {
   trackAnalyticsWithContext: (event: string, mode: 'fix', payload?: Record<string, unknown>) => Promise<void>;
   setIsProcessing: (value: boolean) => void;
   baseHandleFixSyntax: () => Promise<void>;
+  onLLMRequestStart?: (notice: LLMRequestStartNotice) => void;
+  llmTimeoutMs: number;
 };
 
 export const useFixFlow = (deps: FixFlowDeps) => {
@@ -186,6 +188,8 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           task: 'markdown-fix',
           run: () => fixDiagram(code, errorMessage, deps.aiConfig, docs, language, deps.modelParams),
           retries: LLM_TIMEOUT_RETRIES,
+          timeoutMs: deps.llmTimeoutMs,
+          onStart: deps.onLLMRequestStart,
         });
         return extractMermaidCode(fixedRaw);
       },

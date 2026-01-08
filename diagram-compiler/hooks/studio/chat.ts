@@ -109,6 +109,16 @@ export const createChatHandler = (ctx: StudioContext) => {
               : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
         ),
         retries: LLM_TIMEOUT_RETRIES,
+        timeoutMs: ctx.appState.llmTimeoutMs,
+        onStart: (notice) => {
+          ctx.onLLMRequestStart?.(notice);
+          logEvent({
+            phase: 'chat',
+            level: 'info',
+            title: 'LLM',
+            detail: `start ${notice.task}`,
+          });
+        },
         onTimeout: (notice) => {
           pushStatus(formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts));
         },
@@ -132,6 +142,7 @@ export const createChatHandler = (ctx: StudioContext) => {
           level: 'info',
           title: 'Чат',
           detail: `${useNotebookIntent ? 'intent' : 'reply'} ${replyText.length}`,
+          metrics: { durationMs: Date.now() - startedAt },
         });
         pushStatus(
           [
@@ -149,6 +160,7 @@ export const createChatHandler = (ctx: StudioContext) => {
           level: 'warn',
           title: 'Чат',
           detail: 'empty',
+          metrics: { durationMs: Date.now() - startedAt },
         });
         pushStatus('Чат\n- пустой ответ');
       }

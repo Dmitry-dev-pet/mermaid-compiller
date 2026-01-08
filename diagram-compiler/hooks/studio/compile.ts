@@ -85,6 +85,16 @@ export const createRecompileHandler = (ctx: StudioContext) => {
         task: 'recompile',
         run: () => generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams),
         retries: LLM_TIMEOUT_RETRIES,
+        timeoutMs: ctx.appState.llmTimeoutMs,
+        onStart: (notice) => {
+          ctx.onLLMRequestStart?.(notice);
+          logEvent({
+            phase: 'compile',
+            level: 'info',
+            title: 'LLM',
+            detail: `start ${notice.task}`,
+          });
+        },
         onTimeout: (notice) => {
           alert(formatTimeoutRetryMessage('Recompile', notice.attempt, notice.maxAttempts));
         },
@@ -240,6 +250,16 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
               ctx.modelParams
             ),
             retries: LLM_TIMEOUT_RETRIES,
+            timeoutMs: ctx.appState.llmTimeoutMs,
+            onStart: (notice) => {
+              ctx.onLLMRequestStart?.(notice);
+              logEvent({
+                phase: 'fix',
+                level: 'info',
+                title: 'LLM',
+                detail: `start ${notice.task}`,
+              });
+            },
             onTimeout: (notice) => {
               alert(formatTimeoutRetryMessage('Fix', notice.attempt, notice.maxAttempts));
             },
@@ -376,6 +396,16 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
         task: 'analyze',
         run: () => analyzeDiagram(diagramCode, ctx.aiConfig, docs, language, ctx.modelParams),
         retries: LLM_TIMEOUT_RETRIES,
+        timeoutMs: ctx.appState.llmTimeoutMs,
+        onStart: (notice) => {
+          ctx.onLLMRequestStart?.(notice);
+          logEvent({
+            phase: 'analyze',
+            level: 'info',
+            title: 'LLM',
+            detail: `start ${notice.task}`,
+          });
+        },
         onTimeout: (notice) => {
           alert(formatTimeoutRetryMessage('Analyze', notice.attempt, notice.maxAttempts));
         },

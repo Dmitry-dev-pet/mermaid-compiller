@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AIConfig, AppState } from '../types';
 import { buildAnalyticsContext } from './analyticsContext';
 import { DEFAULT_MODEL_PARAMS } from './llm/modelParams';
+import { LLM_TIMEOUT_MS } from '../constants';
 
 const baseAIConfig: AIConfig = {
   provider: 'openrouter',
@@ -33,6 +34,7 @@ const baseAppState: AppState = {
   language: 'auto',
   analyzeLanguage: 'auto',
   notebookBuildCount: null,
+  llmTimeoutMs: LLM_TIMEOUT_MS,
 };
 
 describe('buildAnalyticsContext', () => {

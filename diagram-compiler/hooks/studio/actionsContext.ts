@@ -14,6 +14,7 @@ import type { AnalyticsContext } from '../../services/analyticsService';
 import { detectLanguage } from '../../utils';
 import { normalizeIntentText } from '../../utils/intent';
 import type { StepMeta, TimeStepType } from '../../services/history/types';
+import type { LLMRequestStartNotice } from '../../services/llmRequestRunner';
 
 export type MermaidUpdateTarget =
   | { mode: 'markdown'; block: MermaidMarkdownBlock }
@@ -40,6 +41,13 @@ export type StudioActionsDeps = {
   getNotebookChatIndex?: () => number | null;
   setIsProcessing: (value: boolean) => void;
   getDocsContext: (mode: DocsMode) => Promise<string>;
+  getDocsSelectionSummary?: (mode: DocsMode) => Promise<{
+    total: number;
+    included: number;
+    excluded: number;
+    includedPaths: string[];
+    excludedPaths: string[];
+  }>;
   recordTimeStep: (args: {
     type: TimeStepType;
     messages: Message[];
@@ -53,6 +61,9 @@ export type StudioActionsDeps = {
     level: import('../../types').OperationLevel;
     title: string;
     detail?: string;
+    tooltip?: string;
+    tooltipMessages?: string;
+    tooltipDocs?: string;
     blockIndex?: number;
     attempt?: import('../../types').OperationEvent['attempt'];
     metrics?: import('../../types').OperationEvent['metrics'];
@@ -60,6 +71,7 @@ export type StudioActionsDeps = {
   }) => void;
   finishOperation: (opId: string, status: import('../../types').OperationLog['status']) => void;
   getOperationLog: (opId: string) => import('../../types').OperationLog | null;
+  onLLMRequestStart?: (notice: LLMRequestStartNotice) => void;
 };
 
 export type StudioContext = StudioActionsDeps & {
@@ -83,8 +95,10 @@ export type StudioContext = StudioActionsDeps & {
   trackAnalyticsWithContext: (event: string, mode: DocsMode, payload?: Record<string, unknown>) => Promise<void>;
   getCurrentModelName: () => string;
   getDocsContext: (mode: DocsMode) => Promise<string>;
+  getDocsSelectionSummary?: StudioActionsDeps['getDocsSelectionSummary'];
   getNotebookChatIndex?: () => number | null;
   safeRecordTimeStep: StudioActionsDeps['recordTimeStep'];
+  onLLMRequestStart?: StudioActionsDeps['onLLMRequestStart'];
 };
 
 export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {

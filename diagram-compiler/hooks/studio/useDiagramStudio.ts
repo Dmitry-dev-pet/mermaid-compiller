@@ -28,13 +28,13 @@ import { useNotebookBuild } from './useNotebookBuild';
 import { useFixFlow } from './useFixFlow';
 import { useNotebookContext } from './useNotebookContext';
 import { resolveChatContextId } from '../../utils/chatContext';
-import { setLLMRequestStartListener } from '../../services/llmRequestRunner';
+import type { LLMRequestStartNotice } from '../../services/llmRequestRunner';
 
 export const useDiagramStudio = () => {
-  const [llmRequestStartedAt, setLlmRequestStartedAt] = useState<number | null>(null);
+  const [activeLLMRequest, setActiveLLMRequest] = useState<LLMRequestStartNotice | null>(null);
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
   const { mermaidState, setMermaidState, handleMermaidChange } = useMermaid();
-  const { appState, setAppState, startResize, setDiagramType, toggleTheme, setAnalyzeLanguage, togglePreviewFullScreen } = useLayout();
+  const { appState, setAppState, startResize, setDiagramType, toggleTheme, setAnalyzeLanguage, setLLMTimeoutMs, togglePreviewFullScreen } = useLayout();
   const {
     messages,
     setMessages,
@@ -703,6 +703,10 @@ export const useDiagramStudio = () => {
     });
   }, [appState.diagramType, setDiagramType]);
 
+  const handleLLMRequestStart = useCallback((notice: LLMRequestStartNotice) => {
+    setActiveLLMRequest(notice);
+  }, []);
+
   const { handleNotebookBuild } = useNotebookBuild({
     aiConfig,
     modelParams,
@@ -719,11 +723,13 @@ export const useDiagramStudio = () => {
     setDiagramTypeAndWait,
     setMermaidState,
     getDocsContext,
+    getDocsSelectionSummary,
     loadBuildDocsEntries,
     startOperation: (title) => startOperation(title, 'main'),
     addOperationEvent,
     finishOperation,
     getOperationLog,
+    onLLMRequestStart: handleLLMRequestStart,
   });
 
   const analyticsAdapter = useMemo(() => {
@@ -782,12 +788,14 @@ export const useDiagramStudio = () => {
       trackAnalyticsEvent,
       trackAnalyticsWithContext,
       getDocsContext,
+      getDocsSelectionSummary,
       setIsProcessing,
       recordTimeStep: safeRecordTimeStep,
       startOperation: startOperationForContext,
       addOperationEvent,
       finishOperation,
       getOperationLog,
+      onLLMRequestStart: handleLLMRequestStart,
     });
 
   const { handleFixSyntax } = useFixFlow({
@@ -809,6 +817,8 @@ export const useDiagramStudio = () => {
     trackAnalyticsWithContext,
     setIsProcessing,
     baseHandleFixSyntax,
+    onLLMRequestStart: handleLLMRequestStart,
+    llmTimeoutMs: appState.llmTimeoutMs,
   });
 
   const runWithActiveDiagramContext = useCallback(async <T,>(action: () => Promise<T>) => {
@@ -829,13 +839,10 @@ export const useDiagramStudio = () => {
   ]);
 
   useEffect(() => {
-    setLLMRequestStartListener((notice) => {
-      setLlmRequestStartedAt(notice.startedAt);
-    });
-    return () => {
-      setLLMRequestStartListener(null);
-    };
-  }, []);
+    if (!isProcessing && activeLLMRequest) {
+      setActiveLLMRequest(null);
+    }
+  }, [activeLLMRequest, isProcessing]);
 
   const handleChatMessage = useCallback(async (text: string) => {
     if (editorTab === 'code') {
@@ -1008,6 +1015,7 @@ export const useDiagramStudio = () => {
     previewMermaidState,
     toggleTheme,
     setAnalyzeLanguage,
+    setLLMTimeoutMs,
     togglePreviewFullScreen,
     toggleScrollSync,
     setNotebookBuildCount,
@@ -1022,6 +1030,6 @@ export const useDiagramStudio = () => {
     isNotebookChatMode,
     operationLogs: filteredOperationLogs,
     activeOperationLog: filteredActiveOperationLog,
-    llmRequestStartedAt,
+    onLLMRequestStart: handleLLMRequestStart,
   };
 };

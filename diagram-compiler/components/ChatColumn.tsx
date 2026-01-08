@@ -3,7 +3,6 @@ import { ArrowLeft, ArrowUpRight, MessageSquare, Play, Plus, Trash2 } from 'luci
 import { LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
 import ChatProjects from './ChatProjects';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../utils/uiModes';
-import { LLM_TIMEOUT_MS } from '../constants';
 import './chat-markdown.css';
 import ChatMarkdownTabs from './chat/ChatMarkdownTabs';
 import ChatOperationLog from './chat/ChatOperationLog';
@@ -50,9 +49,10 @@ interface ChatColumnProps {
   deleteUndoMs: number;
   notebookBuildCount: number | null;
   onNotebookBuildCountChange: (count: number | null) => void;
+  llmTimeoutMs: number;
+  onLLMTimeoutMsChange: (timeoutMs: number) => void;
   operationLogs?: OperationLog[];
   activeOperationLog?: OperationLog | null;
-  llmRequestStartedAt?: number | null;
 }
 
 const ChatColumn: React.FC<ChatColumnProps> = ({
@@ -84,12 +84,16 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   deleteUndoMs,
   notebookBuildCount,
   onNotebookBuildCountChange,
+  llmTimeoutMs,
+  onLLMTimeoutMsChange,
   intentText,
   operationLogs,
   activeOperationLog,
-  llmRequestStartedAt,
 }) => {
   const [input, setInput] = useState('');
+  const [composerHeight, setComposerHeight] = useState(200);
+  const [isResizingComposer, setIsResizingComposer] = useState(false);
+  const columnRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -97,7 +101,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   const previewRequestRef = useRef(0);
   const previewTimerRef = useRef<number | null>(null);
   const lastMessageTimestamp = messages[messages.length - 1]?.timestamp ?? 0;
-  const [timeoutRemainingMs, setTimeoutRemainingMs] = useState(0);
   const estimateTokens = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return 0;
@@ -108,13 +111,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     const el = messagesContainerRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior });
-  };
-
-  const formatCountdown = (ms: number) => {
-    const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
   useEffect(() => {
@@ -134,21 +130,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
     if (isAtBottomRef.current) scrollToBottom('smooth');
   }, [messages.length]);
-
-  useEffect(() => {
-    if (!isProcessing) {
-      setTimeoutRemainingMs(0);
-      return;
-    }
-    const startedAt = llmRequestStartedAt ?? Date.now();
-    setTimeoutRemainingMs(LLM_TIMEOUT_MS);
-    const interval = window.setInterval(() => {
-      const elapsed = Date.now() - startedAt;
-      const remaining = Math.max(0, LLM_TIMEOUT_MS - elapsed);
-      setTimeoutRemainingMs(remaining);
-    }, 1000);
-    return () => window.clearInterval(interval);
-  }, [isProcessing, llmRequestStartedAt]);
 
   const onMessagesScroll = () => {
     const el = messagesContainerRef.current;
@@ -210,8 +191,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       baseMessages.filter((m) => {
         if (m.mode === 'system') return false;
         if (isStatusMessage(m)) return false;
-        if (isNotebookChatMode) return true;
-        return !shouldRenderMarkdown(m, isStatusMessage(m));
+        if (!isNotebookChatMode && shouldRenderMarkdown(m, isStatusMessage(m))) return false;
+        return true;
       }),
     [baseMessages, isNotebookChatMode, isStatusMessage, shouldRenderMarkdown]
   );
@@ -358,9 +339,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
   const chatSummaryMessage = useMemo(() => {
     if (isNotebookChatMode) return null;
-    if (!lastFinishedOperation) return null;
-    const title = lastFinishedOperation.events[0]?.title ?? '';
-    if (title !== 'Чат') return null;
     if (!lastMarkdownMessage) return null;
     const diagrams = parseDiagramsFromIntent(lastMarkdownMessage.content);
     if (diagrams.length) {
@@ -379,7 +357,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     explainDiagramType,
     formatDiagramCount,
     isNotebookChatMode,
-    lastFinishedOperation,
     lastMarkdownMessage,
     parseDiagramsFromIntent,
   ]);
@@ -620,8 +597,28 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     updatePromptPreview,
   ]);
 
+  useEffect(() => {
+    if (!isResizingComposer) return;
+    const onMove = (event: MouseEvent) => {
+      const container = columnRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const nextHeight = rect.bottom - event.clientY;
+      const minHeight = 140;
+      const maxHeight = Math.max(minHeight, rect.height - 200);
+      setComposerHeight(Math.min(maxHeight, Math.max(minHeight, nextHeight)));
+    };
+    const onUp = () => setIsResizingComposer(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isResizingComposer]);
+
   return (
-    <div className="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50">
+    <div ref={columnRef} className="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50">
         <ChatProjects
           projects={projects}
           activeProjectId={activeProjectId}
@@ -638,6 +635,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           detectedDiagramType={detectedDiagramType}
           notebookBuildCount={notebookBuildCount}
           onNotebookBuildCountChange={onNotebookBuildCountChange}
+          llmTimeoutMs={llmTimeoutMs}
+          onLLMTimeoutMsChange={onLLMTimeoutMsChange}
         />
 
       {isNotebookChatMode && onBackToNotebookMainChat && (
@@ -654,12 +653,12 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 p-3 flex flex-col gap-2">
-        <section className="rounded-md border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 flex flex-col min-h-0">
+      <div className="flex-1 min-h-0 px-3 pt-3 pb-0 flex flex-col gap-2">
+        <section className="rounded-md border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 flex flex-col flex-none">
           <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 border-b border-slate-200/60 dark:border-slate-800/60">
             Summary
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto p-2">
+          <div className="max-h-32 overflow-y-auto p-2">
             {summaryContent ? (
               <ChatMarkdownTabs rawText={summaryContent.content} isLatest />
             ) : (
@@ -668,17 +667,31 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           </div>
         </section>
 
-        <section className="rounded-md border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 flex flex-col min-h-0">
+        <section className="rounded-md border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 flex flex-col min-h-0 flex-1">
           <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 border-b border-slate-200/60 dark:border-slate-800/60">
             Chat
           </div>
           <div ref={messagesContainerRef} onScroll={onMessagesScroll} className="flex-1 min-h-0 overflow-y-auto p-2 space-y-2">
             {chatMessages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500 text-sm text-center px-4">
-                <MessageSquare size={24} className="mb-2 opacity-50" />
-                <p>Describe your system or process here.</p>
-                <p className="text-xs mt-1">"User logs in, then checks balance..."</p>
-              </div>
+              <>
+                {unanchoredLogs.map((log) => (
+                  <div key={log.id} className="flex flex-col items-start gap-2">
+                    <ChatOperationLog
+                      operationLog={log}
+                      showSummaryLine={log.status === 'running'}
+                      timeoutMs={llmTimeoutMs}
+                    />
+                  </div>
+                ))}
+                {isProcessing && null}
+                {!unanchoredLogs.length && !isProcessing && (
+                  <div className="flex flex-col items-start justify-start text-slate-400 dark:text-slate-500 text-sm text-left px-4 py-3">
+                    <MessageSquare size={24} className="mb-2 opacity-50" />
+                    <p>Describe your system or process here.</p>
+                    <p className="text-xs mt-1">"User logs in, then checks balance..."</p>
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 {chatMessages.map((msg) => {
@@ -719,6 +732,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                           key={log.id}
                           operationLog={log}
                           showSummaryLine={log.status === 'running'}
+                          timeoutMs={llmTimeoutMs}
                         />
                       ))}
                       {showBuildSummaryFallback && (
@@ -778,7 +792,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                       </span>
                       {!isBuildMessage ? logBlock : null}
                       {msg.role === 'user' && hasChatLog && chatSummaryMessage && (
-                        <div className="mt-1 bg-transparent border-0 shadow-none text-slate-900 dark:text-slate-100 rounded-none text-sm whitespace-pre-wrap break-words">
+                        <div className="mt-1 bg-transparent border-0 shadow-none text-slate-900 dark:text-slate-100 rounded-none text-xs whitespace-pre-wrap break-words">
                           {chatSummaryMessage}
                         </div>
                       )}
@@ -787,24 +801,21 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                 })}
                 {chatSummaryMessage && !inlineLogsByMessageId.size && (
                   <div className="flex flex-col items-start">
-                    <div className="bg-transparent border-0 shadow-none text-slate-900 dark:text-slate-100 rounded-none text-sm whitespace-pre-wrap break-words">
+                    <div className="bg-transparent border-0 shadow-none text-slate-900 dark:text-slate-100 rounded-none text-xs whitespace-pre-wrap break-words">
                       {chatSummaryMessage}
                     </div>
                   </div>
                 )}
                 {unanchoredLogs.map((log) => (
                   <div key={log.id} className="flex flex-col items-start gap-2">
-                    <ChatOperationLog operationLog={log} showSummaryLine={log.status === 'running'} />
+                    <ChatOperationLog
+                      operationLog={log}
+                      showSummaryLine={log.status === 'running'}
+                      timeoutMs={llmTimeoutMs}
+                    />
                   </div>
                 ))}
-                {isProcessing && (
-                  <div className="flex items-start">
-                    <div className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-3 py-2 rounded-lg rounded-bl-none text-xs flex gap-2 items-center">
-                      <span>Таймаут через</span>
-                      <span className="font-mono">{formatCountdown(timeoutRemainingMs)}</span>
-                    </div>
-                  </div>
-                )}
+                {isProcessing && null}
               </>
             )}
             <div ref={messagesEndRef} />
@@ -812,15 +823,26 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         </section>
       </div>
 
+      <div
+        className="h-3 cursor-row-resize flex items-center justify-center bg-transparent"
+        onMouseDown={() => setIsResizingComposer(true)}
+        title="Resize input"
+      >
+        <div className="h-px w-full bg-slate-200 dark:bg-slate-800" />
+      </div>
+
       {/* Composer */}
-      <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
-        <div className="relative">
+      <div
+        className="flex flex-col p-3 bg-white dark:bg-slate-900"
+        style={{ height: composerHeight }}
+      >
+        <div className="relative flex-1 min-h-0">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type specification..."
-            className="w-full resize-none rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 max-h-32 min-h-[80px]"
+            className="w-full h-full resize-none rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           />
         </div>
 

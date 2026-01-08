@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { parseNotebookCountFromText, requestNotebookPlan } from './useNotebookBuild';
+import { parseNotebookCountFromIntent, parseNotebookCountFromText, requestNotebookPlan } from './useNotebookBuild';
 import { NOTEBOOK_PLAN_SCHEMA_VERSION } from '../../services/notebookPlanSchema';
 
 const buildRawPlan = (count: number) => {
@@ -166,5 +166,37 @@ describe('parseNotebookCountFromText', () => {
 
   it('returns null when no count is present', () => {
     expect(parseNotebookCountFromText('build some diagrams')).toBeNull();
+  });
+});
+
+describe('parseNotebookCountFromIntent', () => {
+  it('extracts count from diagrams section', () => {
+    const sample = [
+      '## Summary',
+      '- text',
+      '',
+      '## Diagrams',
+      '1. One — flowchart — goal',
+      '2. Two — er — goal',
+      '3. Three — sequence — goal',
+      '',
+      '## Glossary',
+    ].join('\n');
+    expect(parseNotebookCountFromIntent(sample)).toBe(3);
+  });
+
+  it('extracts count from russian diagrams section', () => {
+    const sample = [
+      '## Диаграммы',
+      '- Первая — flowchart',
+      '- Вторая — er',
+      '',
+      '## Ограничения',
+    ].join('\n');
+    expect(parseNotebookCountFromIntent(sample)).toBe(2);
+  });
+
+  it('returns null when diagrams section missing', () => {
+    expect(parseNotebookCountFromIntent('No sections here')).toBeNull();
   });
 });

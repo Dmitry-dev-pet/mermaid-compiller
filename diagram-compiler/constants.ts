@@ -43,6 +43,7 @@ export const DEFAULT_APP_STATE: AppState = {
   language: 'auto',
   analyzeLanguage: 'auto',
   notebookBuildCount: null,
+  llmTimeoutMs: LLM_TIMEOUT_MS,
 };
 
 export const DEFAULT_MERMAID_STATE: MermaidState = {

@@ -71,6 +71,7 @@ function App() {
     previewMermaidState,
     toggleTheme,
     setAnalyzeLanguage,
+    setLLMTimeoutMs,
     togglePreviewFullScreen,
     toggleScrollSync,
     setNotebookBuildCount,
@@ -84,7 +85,6 @@ function App() {
     isNotebookChatMode,
     operationLogs,
     activeOperationLog,
-    llmRequestStartedAt,
   } = useDiagramStudio();
   const buildDocsSystemPrompts = {
     chat: {
@@ -215,13 +215,14 @@ function App() {
                 promptPreviewKey={promptPreviewKey}
                 notebookBuildCount={appState.notebookBuildCount}
                 onNotebookBuildCountChange={setNotebookBuildCount}
+                llmTimeoutMs={appState.llmTimeoutMs}
+                onLLMTimeoutMsChange={setLLMTimeoutMs}
                 intentText={buildDocsIntentText}
                 onOpenNotebookBlock={openNotebookBlock}
                 isNotebookChatMode={isNotebookChatMode}
                 onBackToNotebookMainChat={backToNotebookMainChat}
                 operationLogs={operationLogs}
                 activeOperationLog={activeOperationLog}
-                llmRequestStartedAt={llmRequestStartedAt}
               />
             </div>
 

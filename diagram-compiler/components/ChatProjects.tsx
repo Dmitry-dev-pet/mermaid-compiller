@@ -20,6 +20,8 @@ type ChatProjectsProps = {
   detectedDiagramType: DiagramType | null;
   notebookBuildCount: number | null;
   onNotebookBuildCountChange: (count: number | null) => void;
+  llmTimeoutMs: number;
+  onLLMTimeoutMsChange: (timeoutMs: number) => void;
 };
 
 const formatProjectTimestamp = (ts?: number) => {
@@ -49,6 +51,8 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   detectedDiagramType,
   notebookBuildCount,
   onNotebookBuildCountChange,
+  llmTimeoutMs,
+  onLLMTimeoutMsChange,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [sortKey, setSortKey] = useState<'updated' | 'created' | 'name'>('updated');
@@ -65,6 +69,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   const detectedLabel = detectedDiagramType ? DIAGRAM_TYPE_LABELS[detectedDiagramType] ?? detectedDiagramType : null;
   const selectedLabel = DIAGRAM_TYPE_LABELS[diagramType] ?? diagramType;
   const isDetectedMatch = !!detectedDiagramType && detectedDiagramType === diagramType;
+  const timeoutSeconds = Math.max(1, Math.round(llmTimeoutMs / 1000));
 
   const sortedProjects = useMemo(() => {
     const next = [...projects];
@@ -239,6 +244,22 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   }}
                 />
               </div>
+              <div className="flex items-center gap-2 mt-1">
+                <span>Timeout (s)</span>
+                <input
+                  type="number"
+                  min={5}
+                  max={300}
+                  value={timeoutSeconds}
+                  className="w-20 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                  onChange={(e) => {
+                    const next = e.target.value.trim();
+                    const parsed = Number(next);
+                    if (Number.isNaN(parsed) || parsed <= 0) return;
+                    onLLMTimeoutMsChange(Math.max(5, Math.min(300, Math.floor(parsed))) * 1000);
+                  }}
+                />
+              </div>
             </div>
             {diagramType === 'auto' && (
               <span className="block text-[10px] text-slate-400 dark:text-slate-500">
@@ -317,6 +338,22 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                         return;
                       }
                       onNotebookBuildCountChange(Math.floor(parsed));
+                    }}
+                  />
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span>Timeout (s)</span>
+                  <input
+                    type="number"
+                    min={5}
+                    max={300}
+                    value={timeoutSeconds}
+                    className="w-20 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                    onChange={(e) => {
+                      const next = e.target.value.trim();
+                      const parsed = Number(next);
+                      if (Number.isNaN(parsed) || parsed <= 0) return;
+                      onLLMTimeoutMsChange(Math.max(5, Math.min(300, Math.floor(parsed))) * 1000);
                     }}
                   />
                 </div>

@@ -36,9 +36,11 @@ type BuildPipelineOptions = {
   autoFixMaxAttempts: number;
   buildRequestRetries?: number;
   autoFixRequestRetries?: number;
+  timeoutMs?: number;
   fallbackCode?: string | null;
   allowFallback?: boolean;
   callbacks?: BuildAttemptCallbacks & BuildAutoFixCallbacks & BuildValidationCallbacks;
+  onLLMRequestStart?: (notice: import('../../services/llmRequestRunner').LLMRequestStartNotice) => void;
 };
 
 type BuildPipelineResult = {
@@ -104,9 +106,11 @@ export const runBuildPipeline = async (options: BuildPipelineOptions): Promise<B
     autoFixMaxAttempts,
     buildRequestRetries = 1,
     autoFixRequestRetries = LLM_TIMEOUT_RETRIES,
+    timeoutMs,
     fallbackCode,
     allowFallback = true,
     callbacks,
+    onLLMRequestStart,
   } = options;
   let currentAttempt = 0;
   let suppressEmpty = false;
@@ -132,6 +136,8 @@ export const runBuildPipeline = async (options: BuildPipelineOptions): Promise<B
         task: 'build',
         run: () => generateDiagram(llmMessages, aiConfig, diagramType, docs, language, modelParams),
         retries: buildRequestRetries,
+        timeoutMs,
+        onStart: onLLMRequestStart,
       });
       const parsed = parseMermaidJsonResponse(rawCode);
       if (parsed) {
@@ -200,6 +206,8 @@ export const runBuildPipeline = async (options: BuildPipelineOptions): Promise<B
         task: 'auto-fix',
         run: () => fixDiagram(code, errorMessage, aiConfig, docs, language, modelParams),
         retries: autoFixRequestRetries,
+        timeoutMs,
+        onStart: onLLMRequestStart,
       });
       return sanitizeMermaidByType(diagramType, extractMermaidCode(fixedRaw));
     },

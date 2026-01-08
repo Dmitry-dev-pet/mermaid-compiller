@@ -15,6 +15,13 @@ const optionalDocs = [
   'packages/mermaid/src/docs/config/theming.md',
 ];
 
+const plannerDocs = [
+  'packages/mermaid/src/docs/intro/syntax-reference.md',
+  'packages/mermaid/src/docs/config/configuration.md',
+  'intro/examples.md',
+  'intro/diagram-type-guide.md',
+];
+
 const diagramDocs: Record<DiagramType, string[]> = {
   auto: [],
   architecture: ['packages/mermaid/src/docs/syntax/architecture.md'],
@@ -98,6 +105,8 @@ export const formatDocsContext = (entries: DocsEntry[]): string => {
 
 let notebookDocsEntriesCache: DocsEntry[] | null = null;
 let notebookDocsContextCache: string | null = null;
+let notebookPlannerDocsEntriesCache: DocsEntry[] | null = null;
+let notebookPlannerDocsContextCache: string | null = null;
 
 export const getNotebookDocsPaths = (): Array<{ path: string; isOptional?: boolean }> => {
   return [
@@ -121,6 +130,22 @@ export const fetchNotebookDocsContext = async (): Promise<string> => {
   const entries = await fetchNotebookDocsEntries();
   notebookDocsContextCache = formatDocsContext(entries);
   return notebookDocsContextCache;
+};
+
+export const fetchNotebookPlannerDocsEntries = async (): Promise<DocsEntry[]> => {
+  if (notebookPlannerDocsEntriesCache) return notebookPlannerDocsEntriesCache;
+  const results = await Promise.all(
+    plannerDocs.map((path) => fetchLocalDoc(path))
+  );
+  notebookPlannerDocsEntriesCache = results;
+  return results;
+};
+
+export const fetchNotebookPlannerDocsContext = async (): Promise<string> => {
+  if (notebookPlannerDocsContextCache) return notebookPlannerDocsContextCache;
+  const entries = await fetchNotebookPlannerDocsEntries();
+  notebookPlannerDocsContextCache = formatDocsContext(entries);
+  return notebookPlannerDocsContextCache;
 };
 
 export const fetchDocsContext = async (diagramType: DiagramType): Promise<string> => {

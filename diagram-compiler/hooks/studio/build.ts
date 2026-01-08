@@ -7,6 +7,8 @@ import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS } from '../../constants';
 import { runBuildPipeline } from './buildPipeline';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import { normalizeSummaryText, sanitizeSummaryText } from '../../utils/buildSummary';
+import { fetchDocsEntries } from '../../services/docsContextService';
+import { buildSystemPrompt } from '../../services/llm/prompts';
 
 export const createBuildHandler = (ctx: StudioContext) => {
   return async (text?: string) => {
@@ -41,6 +43,47 @@ export const createBuildHandler = (ctx: StudioContext) => {
     const pushStatus = (content: string) => {
       stepMessages.push(ctx.addMessage('assistant', content, 'build'));
     };
+    const summarizeDocsEntries = (entries: Array<{ path: string; text?: string }>) => {
+      const items = entries.map((entry) => ({
+        name: entry.path.split('/').pop() || entry.path,
+        size: entry.text?.length ?? 0,
+      }));
+      const total = items.reduce((sum, item) => sum + item.size, 0);
+      return { items, total };
+    };
+    const formatSize = (value: number) => {
+      if (value < 1000) return `${value}`;
+      return `${(value / 1000).toFixed(1)}k`;
+    };
+    const formatDocsDetail = (items: Array<{ name: string; size: number }>, total: number) => {
+      if (!items.length) return 'docs (0 files)';
+      const label = items.length === 1 ? 'file' : 'files';
+      const list = items.map((item) => `${item.name} (${formatSize(item.size)})`).join(', ');
+      return `docs (${items.length} ${label}, ${formatSize(total)}): ${list}`;
+    };
+    const summarizeMessages = (items: Message[]) => {
+      const chars = items.reduce((total, msg) => total + (msg.content?.length ?? 0), 0);
+      return { count: items.length, chars };
+    };
+    const formatMessageBlock = (message: Message, index: number) => {
+      const label = `[${index + 1}] ${message.role}${message.id ? ` (${message.id})` : ''}`;
+      return `${label}\n${message.content}`;
+    };
+    const buildContextTooltip = (args: {
+      systemPrompt: string;
+      messages: Message[];
+      docsDetail: string;
+    }) => {
+      const messageBlocks = args.messages.map(formatMessageBlock).join('\n\n');
+      return [
+        'System prompt:',
+        args.systemPrompt,
+        '',
+        'Messages:',
+        messageBlocks,
+      ].join('\n');
+    };
+    const buildDocsTooltip = (docsDetail: string) => `Docs:\n${docsDetail}`;
     if (prompt) stepMessages.push(ctx.addMessage('user', prompt, 'build'));
 
     if (ctx.connectionState.status !== 'connected') {
@@ -60,6 +103,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
     }
 
     const language = ctx.resolveLanguage(prompt);
+    const timeoutMs = ctx.appState.llmTimeoutMs;
 
     ctx.setIsProcessing(true);
     try {
@@ -116,6 +160,39 @@ export const createBuildHandler = (ctx: StudioContext) => {
       const diagramContext = ctx.getDiagramContextMessage();
       const llmMessages = diagramContext ? [intentMessage, diagramContext] : [intentMessage];
 
+      const selectionSummary = await ctx.getDocsSelectionSummary?.('build');
+      const selectionFiles = selectionSummary?.includedPaths ?? [];
+      const entries = selectionFiles.map((path) => ({ path, text: '' }));
+      const docsEntries = entries.length
+        ? await fetchDocsEntries(ctx.appState.diagramType)
+        : [];
+      const includedEntries = docsEntries.filter((entry) => selectionFiles.includes(entry.path));
+      const docsSummary = summarizeDocsEntries(includedEntries);
+      const msgSummary = summarizeMessages(llmMessages);
+      const systemPrompt = buildSystemPrompt('generate', {
+        diagramType: ctx.appState.diagramType,
+        docsContext: 'Documentation context redacted.',
+        language,
+      });
+      const docsDetail = formatDocsDetail(docsSummary.items, docsSummary.total);
+      const contextTooltip = buildContextTooltip({
+        systemPrompt,
+        messages: llmMessages,
+        docsDetail,
+      });
+      const docsTooltip = buildDocsTooltip(docsDetail);
+      logEvent({
+        phase: 'planning',
+        level: 'info',
+        title: 'Контекст',
+        detail: [
+          `messages: ${msgSummary.count} (${msgSummary.chars} chars)`,
+          docsDetail,
+        ].join('\n'),
+        tooltipMessages: contextTooltip,
+        tooltipDocs: docsTooltip,
+      });
+
       ctx.setCurrentIntent({
         content: normalizedIntent,
         source: intent.source,
@@ -148,6 +225,16 @@ export const createBuildHandler = (ctx: StudioContext) => {
         language,
         maxAttempts: BUILD_MAX_ATTEMPTS,
         autoFixMaxAttempts: AUTO_FIX_MAX_ATTEMPTS,
+        timeoutMs,
+        onLLMRequestStart: (notice) => {
+          ctx.onLLMRequestStart?.(notice);
+          logEvent({
+            phase: 'build',
+            level: 'info',
+            title: 'LLM',
+            detail: `start ${notice.task}`,
+          });
+        },
         callbacks: {
           onAttempt: (attempt, max) => {
             attemptNotes.push(`попытка ${attempt}/${max}`);
@@ -213,7 +300,10 @@ export const createBuildHandler = (ctx: StudioContext) => {
               level: isValid ? 'info' : 'warn',
               title: 'Валидация',
               detail: isValid ? 'валидна' : 'невалидна',
-              metrics: autoFixAttempts ? { autoFix: autoFixAttempts } : undefined,
+              metrics: {
+                ...(autoFixAttempts ? { autoFix: autoFixAttempts } : {}),
+                durationMs: Date.now() - startedAt,
+              },
             });
           },
           onValidationError: (errorLine) => {
@@ -295,6 +385,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
         autoFixAttempts ? `Auto-fix: ${autoFixAttempts}.` : '',
       ].filter(Boolean).join(' ');
       let resolvedSummary = normalizeSummaryText(fallbackSummary);
+      let summaryStartAt: number | null = null;
       try {
         logEvent({
           phase: 'build',
@@ -302,6 +393,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
           title: 'Итог',
           detail: 'generating',
         });
+        summaryStartAt = Date.now();
         const summaryInput = [
           `Тип: ${ctx.appState.diagramType}`,
           `Валидность: ${validation.isValid ? 'ok' : 'error'}`,
@@ -320,6 +412,16 @@ export const createBuildHandler = (ctx: StudioContext) => {
             ctx.modelParams
           ),
           retries: 1,
+          timeoutMs,
+          onStart: (notice) => {
+            ctx.onLLMRequestStart?.(notice);
+            logEvent({
+              phase: 'build',
+              level: 'info',
+              title: 'LLM',
+              detail: `start ${notice.task}`,
+            });
+          },
         });
         const cleanedSummary = normalizeSummaryText(
           sanitizeSummaryText(stripMermaidCode(summaryText))
@@ -335,13 +437,15 @@ export const createBuildHandler = (ctx: StudioContext) => {
           level: 'info',
           title: 'Итог',
           detail: 'ready',
+          metrics: summaryStartAt ? { durationMs: Date.now() - summaryStartAt } : undefined,
         });
-      } catch {
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
         logEvent({
           phase: 'error',
           level: 'warn',
           title: 'Итог',
-          detail: 'fallback',
+          detail: `fallback: ${message}`,
         });
       }
       stepMessages.push(ctx.addMessage('assistant', resolvedSummary, 'build'));
