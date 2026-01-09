@@ -105,7 +105,22 @@ export type StudioContext = StudioActionsDeps & {
 
 export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {
   const normalizeText = (text: string) => text.replace(/\s+/g, ' ').trim();
-  const getRelevantMessages = () => deps.getMessages().filter((m) => m.id !== 'init');
+  const isStudioStatusMessage = (message: Message) => {
+    if (message.role !== 'assistant') return false;
+    const content = message.content.replace(/^\[notebook-block:\d+\]\s*/i, '').trim();
+    if (!content) return false;
+    const hasStatusHeader = /^(Build|Chat|Fix|Analyze|Recompile|Notebook|Planner|Notebook build|Notebook block|Сборка|Чат|Исправление|Анализ|Пересборка|Ноутбук|Планировщик)(:|\s|\n|—)/i.test(
+      content
+    );
+    if (!hasStatusHeader) return false;
+    if (/\n-\s/.test(content)) return true;
+    return /(попытк|attempt|auto-?fix|валид|невалид|готов|ready|request|start|failed|done|fallback)/i.test(content);
+  };
+
+  const getRelevantMessages = () =>
+    deps
+      .getMessages()
+      .filter((m) => m.id !== 'init' && m.mode !== 'system' && !isStudioStatusMessage(m));
   const isNotebookChatEnabled = deps.isNotebookChatEnabled ?? true;
   const isNotebookChatMode = deps.isNotebookChatMode ?? false;
 

@@ -43,9 +43,6 @@ export const createBuildHandler = (ctx: StudioContext) => {
         },
       });
     };
-    const pushStatus = (content: string) => {
-      stepMessages.push(ctx.addMessage('assistant', content, 'build'));
-    };
     const summarizeDocsEntries = (entries: Array<{ path: string; text?: string }>) => {
       const items = entries.map((entry) => ({
         name: entry.path.split('/').pop() || entry.path,
@@ -188,7 +185,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
     if (prompt) stepMessages.push(ctx.addMessage('user', prompt, 'build'));
 
     if (ctx.connectionState.status !== 'connected') {
-      pushStatus('Офлайн. Подключите AI для генерации диаграмм.');
+      stepMessages.push(ctx.addMessage('assistant', 'Офлайн. Подключите AI для генерации диаграмм.', 'build'));
       logEvent({
         phase: 'build',
         level: 'error',
@@ -199,7 +196,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
       await ctx.trackAnalyticsWithContext('diagram_build_failed', 'build', {
         error: 'offline',
       });
-      await finalizeStep('error', { error: 'offline' });
+      await finalizeStep('error', { meta: { error: 'offline' } });
       return;
     }
 
@@ -208,15 +205,6 @@ export const createBuildHandler = (ctx: StudioContext) => {
 
     ctx.setIsProcessing(true);
     try {
-      pushStatus(
-        [
-          'Сборка',
-          `- старт`,
-          `- тип: ${ctx.appState.diagramType}`,
-          `- язык: ${language}`,
-          `- модель: ${ctx.getCurrentModelName()}`,
-        ].join('\n')
-      );
       logEvent({
         phase: 'build',
         level: 'info',
@@ -235,7 +223,13 @@ export const createBuildHandler = (ctx: StudioContext) => {
         assistantMode: 'chat',
       });
       if (!intent) {
-        pushStatus('Нет intent для сборки. Используйте чат, чтобы описать задачу.');
+        stepMessages.push(
+          ctx.addMessage(
+            'assistant',
+            'Нет intent для сборки. Используйте чат, чтобы описать задачу.',
+            'build'
+          )
+        );
         logEvent({
           phase: 'planning',
           level: 'error',
@@ -246,7 +240,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
         await ctx.trackAnalyticsWithContext('diagram_build_failed', 'build', {
           error: 'no_intent',
         });
-        await finalizeStep('error', { error: 'no_intent' });
+        await finalizeStep('error', { meta: { error: 'no_intent' } });
         return;
       }
 
@@ -301,14 +295,6 @@ export const createBuildHandler = (ctx: StudioContext) => {
         source: intent.source,
         updatedAt: Date.now(),
       });
-      pushStatus(
-        [
-          'Сборка',
-          `- intent готов`,
-          `- источник: ${intent.source}`,
-          `- длина: ${normalizedIntent.length}`,
-        ].join('\n')
-      );
 
       // keep intent details in log only (no chat message)
       logEvent({
@@ -422,12 +408,16 @@ export const createBuildHandler = (ctx: StudioContext) => {
       });
 
       if (attemptNotes.length > 0) {
-        pushStatus(['Сборка', '- попытки', ...attemptNotes.map((note) => `- ${note}`)].join('\n'));
+        logEvent({
+          phase: 'build',
+          level: 'info',
+          title: 'Попытки',
+          detail: attemptNotes.join('; '),
+        });
       }
 
       if (buildResult.status !== 'ok' || !buildResult.code) {
         const reason = buildResult.lastError ? 'build_attempts_failed' : 'no_mermaid_code';
-        pushStatus(`Сборка\n- не удалось: ${reason}`);
         logEvent({
           phase: 'build',
           level: 'error',
@@ -442,17 +432,16 @@ export const createBuildHandler = (ctx: StudioContext) => {
           durationMs: Date.now() - startedAt,
         });
         stepMessages.push(ctx.addMessage('assistant', 'Итог: сборка завершилась с ошибкой. Проверьте лог.', 'build'));
-        await finalizeStep('error', {
+        await finalizeStep('error', { meta: {
           reason,
           attempts: buildResult.attempts,
           emptyResponses: buildResult.emptyResponses,
           error: buildResult.lastError ?? undefined,
-        });
+        } });
         return;
       }
 
       if (buildResult.usedFallback) {
-        pushStatus('Сборка\n- fallback: использован шаблон');
         logEvent({
           phase: 'build',
           level: 'warn',
@@ -465,13 +454,13 @@ export const createBuildHandler = (ctx: StudioContext) => {
       const validation = buildResult.validation;
       const autoFixAttempts = buildResult.autoFixAttempts;
 
-      pushStatus(
-        [
-          'Сборка',
-          `- валидация: ${validation.isValid ? 'валидна' : 'невалидна'}`,
-          autoFixAttempts ? `- auto-fix: ${autoFixAttempts}` : '',
-        ].filter(Boolean).join('\n')
-      );
+      logEvent({
+        phase: 'validate',
+        level: validation.isValid ? 'info' : 'warn',
+        title: 'Валидация',
+        detail: validation.isValid ? 'валидна' : 'невалидна',
+        metrics: autoFixAttempts ? { autoFix: autoFixAttempts } : undefined,
+      });
 
       await ctx.trackAnalyticsWithContext('diagram_build_success', 'build', {
         isValid: !!validation.isValid,
@@ -569,10 +558,9 @@ export const createBuildHandler = (ctx: StudioContext) => {
           intentSource: intent.source,
         },
       });
-      pushStatus('Сборка\n- история сохранена');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      pushStatus(`Сборка: ошибка (${ctx.getCurrentModelName()}): ${message}`);
+      stepMessages.push(ctx.addMessage('assistant', `Сборка: ошибка (${ctx.getCurrentModelName()}): ${message}`, 'build'));
       logEvent({
         phase: 'build',
         level: 'error',
@@ -584,7 +572,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
         error: 'exception',
       });
       stepMessages.push(ctx.addMessage('assistant', 'Итог: сборка завершилась с ошибкой. Проверьте лог.', 'build'));
-      await finalizeStep('error', { error: message });
+      await finalizeStep('error', { meta: { error: message } });
     } finally {
       ctx.setIsProcessing(false);
     }

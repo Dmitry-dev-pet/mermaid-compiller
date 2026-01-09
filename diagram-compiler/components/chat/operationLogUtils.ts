@@ -64,11 +64,6 @@ const resolveNotebookTypes = (events: OperationEvent[]) => {
 const formatEvent = (event: OperationEvent) => {
   const parts: string[] = [];
   const isBlockEvent = event.title.startsWith('Block');
-  const isBuildStart =
-    (event.title === 'Notebook build' || event.title === 'Сборка') && event.detail === 'start';
-  if (isBuildStart) {
-    return 'Build — нажата';
-  }
   const titleOverride =
     event.title === 'Notebook build'
       ? 'Сборка'
@@ -165,6 +160,9 @@ export const buildOperationLogViewModel = (
   const displayEvents: LogRow[] = [];
   for (let i = 0; i < operationLog.events.length; i += 1) {
     const event = operationLog.events[i];
+    if (event.detail === 'start') {
+      continue;
+    }
     if (event.title === 'LLM') {
       continue;
     }

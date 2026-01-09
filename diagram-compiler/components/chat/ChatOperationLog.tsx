@@ -9,8 +9,12 @@ type Props = {
   timeoutMs?: number;
 };
 
-const ChatOperationLog: React.FC<Props> = ({ operationLog, showSummaryLine = true, timeoutMs = LLM_TIMEOUT_MS }) => {
-  const [now, setNow] = useState(Date.now());
+const ChatOperationLog: React.FC<Props> = ({
+  operationLog,
+  showSummaryLine = true,
+  timeoutMs = LLM_TIMEOUT_MS,
+}) => {
+  const [now, setNow] = useState(() => Date.now());
   const [pinnedTooltip, setPinnedTooltip] = useState<string | null>(null);
   const isRunning = operationLog.status === 'running';
 
@@ -86,7 +90,9 @@ const ChatOperationLog: React.FC<Props> = ({ operationLog, showSummaryLine = tru
                                   setPinnedTooltip((prev) => (prev === tooltipId ? null : tooltipId));
                                 }}
                               >
-                                <span className="underline decoration-dotted" data-tooltip-id={tooltipId}>{messageText}</span>
+                                <span className="underline decoration-dotted" data-tooltip-id={tooltipId}>
+                                  {messageText}
+                                </span>
                                 <span className="text-[10px] text-slate-400 dark:text-slate-500">i</span>
                                 <span
                                   aria-hidden
@@ -94,14 +100,16 @@ const ChatOperationLog: React.FC<Props> = ({ operationLog, showSummaryLine = tru
                                 >
                                   Нажмите для подробностей
                                 </span>
-                                <span
-                                  id={tooltipId}
-                                  tabIndex={-1}
-                                  aria-hidden={!isPinned}
-                                  className={`absolute left-0 top-full z-50 mt-6 max-h-64 w-[28rem] overflow-auto rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg transition-opacity whitespace-pre-wrap ${isPinned ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none select-none group-hover:pointer-events-none'}`}
-                                >
-                                  {event.tooltipMessages}
-                                </span>
+                                {isPinned ? (
+                                  <span
+                                    id={tooltipId}
+                                    tabIndex={-1}
+                                    aria-hidden={!isPinned}
+                                    className="absolute left-0 top-full z-50 mt-6 max-h-64 w-[28rem] overflow-auto rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg whitespace-pre-wrap"
+                                  >
+                                    {event.tooltipMessages}
+                                  </span>
+                                ) : null}
                               </span>
                             </span>
                           );
@@ -113,6 +121,10 @@ const ChatOperationLog: React.FC<Props> = ({ operationLog, showSummaryLine = tru
                         const [_, prefix, files] = match;
                         const docsTooltipId = `${event.id}-docs-${index}`;
                         const isPinned = pinnedTooltip === docsTooltipId;
+                        const fileParts = files
+                          .split(',')
+                          .map((part) => part.trim())
+                          .filter(Boolean);
                         return (
                           <span key={`line-${index}`} className="inline-flex flex-wrap items-center gap-1">
                             <span>{prefix}</span>
@@ -123,7 +135,17 @@ const ChatOperationLog: React.FC<Props> = ({ operationLog, showSummaryLine = tru
                                 setPinnedTooltip((prev) => (prev === docsTooltipId ? null : docsTooltipId));
                               }}
                             >
-                              <span className="underline decoration-dotted" data-tooltip-id={docsTooltipId}>{files}</span>
+                              <span className="inline-flex flex-wrap items-center gap-1" data-tooltip-id={docsTooltipId}>
+                                {fileParts.length ? (
+                                  fileParts.map((part) => (
+                                    <span key={part} className="underline decoration-dotted">
+                                      {part}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="underline decoration-dotted">{files}</span>
+                                )}
+                              </span>
                               <span className="text-[10px] text-slate-400 dark:text-slate-500">i</span>
                               <span
                                 aria-hidden
@@ -131,14 +153,16 @@ const ChatOperationLog: React.FC<Props> = ({ operationLog, showSummaryLine = tru
                               >
                                 Нажмите для подробностей
                               </span>
-                              <span
-                                id={docsTooltipId}
-                                tabIndex={-1}
-                                aria-hidden={!isPinned}
-                                className={`absolute left-0 top-full z-50 mt-6 max-h-64 w-[28rem] overflow-auto rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg transition-opacity whitespace-pre-wrap ${isPinned ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none select-none group-hover:pointer-events-none'}`}
-                              >
-                                {event.tooltipDocs ?? ''}
-                              </span>
+                              {isPinned ? (
+                                <span
+                                  id={docsTooltipId}
+                                  tabIndex={-1}
+                                  aria-hidden={!isPinned}
+                                  className="absolute left-0 top-full z-50 mt-6 max-h-64 w-[28rem] overflow-auto rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg whitespace-pre-wrap"
+                                >
+                                  {event.tooltipDocs ?? ''}
+                                </span>
+                              ) : null}
                             </span>
                           </span>
                         );

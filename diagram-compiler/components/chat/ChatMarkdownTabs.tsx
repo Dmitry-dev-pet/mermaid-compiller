@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import MarkdownIt from 'markdown-it';
 import { DIAGRAM_TYPES } from '../../utils/diagramTypes';
 
@@ -82,19 +82,13 @@ const highlightDiagramTypes = (html: string) => {
     .replace(patternStart, '$1<span class="chat-diagram-type">$2</span>$3');
 };
 
-const ChatMarkdownTabs: React.FC<Props> = ({ rawText, isLatest }) => {
-  const markdownRenderer = useMemo(
-    () => new MarkdownIt({ html: false, linkify: true, typographer: false }),
-    []
-  );
+type InnerProps = Props & { markdownRenderer: MarkdownIt };
+
+const ChatMarkdownTabsInner: React.FC<InnerProps> = ({ rawText, isLatest, markdownRenderer }) => {
   const [openTitle, setOpenTitle] = useState<string | null>(null);
   const { preludeText, sections } = useMemo(() => parseMarkdownSections(rawText), [rawText]);
   const hasSections = sections.length > 0;
   const allEmpty = sections.every((section) => !section.body.trim());
-
-  useEffect(() => {
-    setOpenTitle(null);
-  }, [rawText]);
 
   const renderMarkdownHtml = (raw: string) => markdownRenderer.render(raw);
   const renderMarkdownInline = (raw: string) => markdownRenderer.renderInline(raw);
@@ -191,6 +185,23 @@ const ChatMarkdownTabs: React.FC<Props> = ({ rawText, isLatest }) => {
         </div>
       )}
     </div>
+  );
+};
+
+const ChatMarkdownTabs: React.FC<Props> = ({ rawText, isLatest }) => {
+  const markdownRenderer = useMemo(
+    () => new MarkdownIt({ html: false, linkify: true, typographer: false }),
+    []
+  );
+  // Remount tabs on content changes so open state doesn't need an effect reset.
+  const contentKey = useMemo(() => `${rawText.length}:${rawText.slice(0, 64)}`, [rawText]);
+  return (
+    <ChatMarkdownTabsInner
+      key={contentKey}
+      rawText={rawText}
+      isLatest={isLatest}
+      markdownRenderer={markdownRenderer}
+    />
   );
 };
 

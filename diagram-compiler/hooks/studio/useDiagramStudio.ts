@@ -903,7 +903,10 @@ export const useDiagramStudio = () => {
 
   const goToDiagramStep = async (marker: DiagramMarker | Pick<DiagramMarker, 'stepId'> | string) => {
     const stepId = typeof marker === 'string' ? marker : marker.stepId;
-    const markerMeta = typeof marker === 'string' ? null : (marker.meta ?? null);
+    const markerMeta =
+      typeof marker === 'string'
+        ? null
+        : ('meta' in marker ? (marker.meta ?? null) : null);
     const revision = await selectDiagramStep(stepId);
     if (!revision) return;
 

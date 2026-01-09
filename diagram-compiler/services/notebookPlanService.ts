@@ -50,7 +50,7 @@ const coerceDiagramType = (value: string | undefined): DiagramType | 'other' => 
   return DIAGRAM_TYPE_ALIASES[normalized] ?? 'other';
 };
 
-const normalizeTypeMentions = (text: string, diagramType: DiagramType): string => {
+const normalizeTypeMentions = (text: string, diagramType: DiagramType | 'other'): string => {
   if (!text.trim()) return text;
   if (diagramType === 'other') return text;
   const target = diagramType;

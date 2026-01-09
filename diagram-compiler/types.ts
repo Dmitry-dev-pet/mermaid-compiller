@@ -80,6 +80,7 @@ export interface Message {
 
 export type OperationPhase =
   | 'chat'
+  | 'analyze'
   | 'planning'
   | 'build'
   | 'validate'

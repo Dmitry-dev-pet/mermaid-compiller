@@ -15,7 +15,7 @@ export const buildAnalyticsContext = (args: {
     provider: args.aiConfig.provider,
     model: args.aiConfig.selectedModelId || null,
     modelParams,
-    modelFilters: args.aiConfig.filtersByProvider[args.aiConfig.provider] ?? null,
+    modelFilters: (args.aiConfig.filtersByProvider[args.aiConfig.provider] as unknown as Record<string, unknown>) ?? null,
     diagramType: args.diagramType,
     language: args.appState.language ?? null,
     analyzeLanguage: args.appState.analyzeLanguage ?? null,

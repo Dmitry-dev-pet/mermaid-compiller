@@ -213,12 +213,26 @@ export const useNotebookChat = ({
     );
     const shouldPreserveLiveMessages = latestMessageTimestamp > latestStepTimestamp;
 
-    if (
-      !hasRealMessages
-      && !areMessagesEqual(currentMessages, nextMessages)
-      && !shouldPreserveLiveMessages
-    ) {
-      setMessagesForContext(contextId, nextMessages);
+    if (!shouldPreserveLiveMessages) {
+      const currentIds = new Set(currentMessages.map((m) => m.id));
+      const nextIds = new Set(nextMessages.map((m) => m.id));
+      const missingFromCurrent = nextMessages.some((m) => !currentIds.has(m.id));
+
+      if (missingFromCurrent) {
+        const extras = currentMessages.filter(
+          (m) =>
+            m.id !== 'init' &&
+            m.id !== 'notebook-chat-md' &&
+            m.id !== 'notebook-raw-intent' &&
+            !nextIds.has(m.id)
+        );
+        const merged = extras.length ? [...nextMessages, ...extras] : nextMessages;
+        if (!areMessagesEqual(currentMessages, merged)) {
+          setMessagesForContext(contextId, merged);
+        }
+      } else if (!hasRealMessages && !areMessagesEqual(currentMessages, nextMessages)) {
+        setMessagesForContext(contextId, nextMessages);
+      }
     }
     const nextIntent = resolveNotebookBlockIntent(historySteps, index);
     if (

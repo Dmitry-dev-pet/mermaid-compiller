@@ -90,7 +90,7 @@ export const useProjects = ({
   const startNewProject = useCallback(async () => {
     if (isProcessing) return;
     clearProjectPreview();
-    const nextAppState = { ...appState, diagramType: 'auto', notebookBuildCount: null };
+    const nextAppState: AppState = { ...appState, diagramType: 'auto', notebookBuildCount: null };
     await startNewSession({ settings: buildSessionSettings(nextAppState, aiConfig, modelParams ?? undefined) });
     setAppState(nextAppState);
     resetMessages();

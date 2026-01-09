@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 
 type Args = {
   initialSize: number;
   minSize: number;
   maxOffset: number;
-  containerRef: React.RefObject<HTMLElement>;
+  containerRef: RefObject<HTMLElement>;
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));

@@ -159,9 +159,14 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     if (message.role !== 'assistant') return false;
     if (!message.content) return false;
     const content = message.content.replace(/^\[notebook-block:\d+\]\s*/i, '').trim();
-    if (!/\n-\s/.test(content)) return false;
-    return /^(Build|Chat|Fix|Analyze|Recompile|Notebook|Planner|Notebook block|Сборка|Чат|Исправление|Анализ|Пересборка|Ноутбук|Планировщик)(:|\s|\n)/i
-      .test(content);
+    const hasStatusHeader = /^(Build|Chat|Fix|Analyze|Recompile|Notebook|Planner|Notebook build|Notebook block|Сборка|Чат|Исправление|Анализ|Пересборка|Ноутбук|Планировщик)(:|\s|\n|—)/i.test(
+      content
+    );
+    if (!hasStatusHeader) return false;
+
+    if (/\n-\s/.test(content)) return true;
+    // Older snapshots sometimes store status as a single line (no "\n-"), keep hiding them.
+    return /(попытк|attempt|auto-?fix|валид|невалид|готов|ready|request|start|failed|done|fallback)/i.test(content);
   }, []);
 
   const baseMessages = useMemo(() => {

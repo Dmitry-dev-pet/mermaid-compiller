@@ -117,6 +117,11 @@ type NotebookBuildDeps = {
     level: import('../../types').OperationLevel;
     title: string;
     detail?: string;
+    tooltip?: string;
+    tooltipMessages?: string;
+    tooltipDocs?: string;
+    kind?: import('../../types').OperationEvent['kind'];
+    contextScope?: import('../../types').OperationEvent['contextScope'];
     blockIndex?: number;
     attempt?: import('../../types').OperationEvent['attempt'];
     metrics?: import('../../types').OperationEvent['metrics'];
@@ -288,7 +293,7 @@ const buildPlannerMessageContent = (args: {
   lastCount: number | null;
   lastInvalidTypes: number | null;
   forcedDiagramType: DiagramType | null;
-  allowedDiagramTypes: string[] | null;
+  allowedDiagramTypes: DiagramType[] | null;
 }) => {
   const supportedTypes =
     'architecture, block, c4, class, er, flowchart, gantt, gitGraph, kanban, mindmap, packet, pie, quadrantChart, radar, requirementDiagram, sankey, sequence, state, timeline, treemap, userJourney, xychart, zenuml';
@@ -327,7 +332,7 @@ export const requestNotebookPlan = async (args: {
   onLLMRequestStart?: NotebookBuildDeps['onLLMRequestStart'];
   timeoutMs?: number;
   forcedDiagramType?: DiagramType | null;
-  allowedDiagramTypes?: string[] | null;
+  allowedDiagramTypes?: DiagramType[] | null;
   runPlanner?: PlannerRunner;
 }): Promise<NotebookPlan> => {
   const runPlanner: PlannerRunner = args.runPlanner ?? ((message) => (
@@ -400,11 +405,13 @@ export const requestNotebookPlan = async (args: {
         continue;
       }
       if (allowedTypes) {
-        const fallbackType = args.allowedDiagramTypes?.[0] ?? 'flowchart';
+        const fallbackType: DiagramType = args.allowedDiagramTypes?.[0] ?? 'flowchart';
         normalized = {
           ...normalized,
           diagrams: normalized.diagrams.map((diagram) =>
-            allowedTypes.has(diagram.diagramType) ? diagram : { ...diagram, diagramType: fallbackType }
+            diagram.diagramType !== 'other' && allowedTypes.has(diagram.diagramType)
+              ? diagram
+              : { ...diagram, diagramType: fallbackType }
           ),
         };
       } else {

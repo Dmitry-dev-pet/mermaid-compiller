@@ -41,10 +41,6 @@ export const createChatHandler = (ctx: StudioContext) => {
         },
       });
     };
-    const pushStatus = (content: string) => {
-      stepMessages.push(ctx.addMessage('assistant', content, 'chat'));
-    };
-    pushStatus('Чат\n- нажата');
     logEvent({
       phase: 'chat',
       level: 'info',
@@ -52,15 +48,9 @@ export const createChatHandler = (ctx: StudioContext) => {
       detail: isRefinementRequestForLog ? 'refine' : 'intent',
       kind: 'status',
     });
-    logEvent({
-      phase: 'chat',
-      level: 'info',
-      title: 'Чат',
-      detail: 'нажата',
-    });
     stepMessages.push(ctx.addMessage('user', text, 'chat'));
     if (ctx.connectionState.status !== 'connected') {
-      pushStatus('Офлайн. Подключите AI для генерации.');
+      stepMessages.push(ctx.addMessage('assistant', 'Офлайн. Подключите AI для генерации.', 'chat'));
       logEvent({
         phase: 'chat',
         level: 'error',
@@ -79,15 +69,6 @@ export const createChatHandler = (ctx: StudioContext) => {
     const startedAt = Date.now();
     ctx.setIsProcessing(true);
     try {
-      pushStatus(
-        [
-          'Чат',
-          `- старт`,
-          `- язык: ${language}`,
-          `- ${ctx.getCurrentModelName()}`,
-          ctx.isNotebookChatEnabled ? '- режим: notebook' : '',
-        ].filter(Boolean).join('\n')
-      );
       logEvent({
         phase: 'chat',
         level: 'info',
@@ -162,24 +143,51 @@ export const createChatHandler = (ctx: StudioContext) => {
           });
         },
         onTimeout: (notice) => {
-          pushStatus(formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts));
+          logEvent({
+            phase: 'chat',
+            level: 'warn',
+            title: 'Timeout',
+            detail: formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts),
+          });
         },
       });
       const rawReply = stripMermaidCode(responseText).trim();
       const stripIntentScaffold = (text: string) => {
+        const stripHeadings = (value: string) =>
+          value
+            .replace(/^#{1,6}\s+/gm, '')
+            .replace(/^\s*Intent:\s*/gim, '')
+            .trim();
+        const stripPromptEcho = (value: string) => {
+          const promptLine = /^(Role|Goal|Rules|Docs Context|Context|System prompt|Messages|Docs)\b/i;
+          const promptLineRu = /^(Роль|Цель|Правила|Контекст документации|Контекст|Системный промпт|Сообщения|Документация)\b/i;
+          const redacted = /^Documentation context redacted\./i;
+          const next = value
+            .split(/\r?\n/)
+            .filter((line) => {
+              const trimmed = line.trim();
+              if (!trimmed) return true;
+              if (redacted.test(trimmed)) return false;
+              if (promptLine.test(trimmed)) return false;
+              if (promptLineRu.test(trimmed)) return false;
+              return true;
+            })
+            .join('\n');
+          return next;
+        };
         if (!/(^|\n)(Intent:|##\s+Summary|##\s+Diagrams|##\s+Glossary|##\s+Constraints|##\s+Open questions|Предложено\s+\d+|Почему так:)/i.test(text)) {
-          return text.replace(/[\u3400-\u9fff]/g, '');
+          return stripHeadings(stripPromptEcho(text)).replace(/[\u3400-\u9fff]/g, '');
         }
         const suggestionMatch = text.match(/\n(Для|Предлагаю|Можно|Добавьте|Добавить|Уточните|Сделайте|Чтобы)[\s\S]*/);
         if (suggestionMatch) {
-          return suggestionMatch[0].trim().replace(/[\u3400-\u9fff]/g, '');
+          return stripHeadings(stripPromptEcho(suggestionMatch[0].trim())).replace(/[\u3400-\u9fff]/g, '');
         }
         const cleaned = text
           .split(/\r?\n/)
           .filter((line) => !/^(Intent:|##\s+|-\s|Предложено\s+\d+|Почему так:)/i.test(line.trim()))
           .join('\n')
           .trim();
-        return (cleaned || text).replace(/[\u3400-\u9fff]/g, '');
+        return stripHeadings(stripPromptEcho(cleaned || text)).replace(/[\u3400-\u9fff]/g, '');
       };
       let intentText = normalizeIntentText(rawReply);
       if (useNotebookIntent) {
@@ -209,13 +217,6 @@ export const createChatHandler = (ctx: StudioContext) => {
           detail: `${useNotebookIntent ? 'intent' : 'reply'} ${replyText.length}`,
           metrics: { durationMs: Date.now() - startedAt },
         });
-        pushStatus(
-          [
-            'Чат',
-            `- ответ получен`,
-            `- длина ${useNotebookIntent ? 'intent' : 'ответа'}: ${replyText.length}`,
-          ].join('\n')
-        );
       } else {
         const fallbackReply = 'Ответ пустой. Уточните запрос.';
         replyMessage = ctx.addMessage('assistant', fallbackReply, 'chat');
@@ -227,7 +228,6 @@ export const createChatHandler = (ctx: StudioContext) => {
           detail: 'empty',
           metrics: { durationMs: Date.now() - startedAt },
         });
-        pushStatus('Чат\n- пустой ответ');
       }
       if (useNotebookIntent && intentText) {
         ctx.setCurrentIntent({
@@ -256,14 +256,19 @@ export const createChatHandler = (ctx: StudioContext) => {
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof TimeoutError) {
-        pushStatus(formatTimeoutFinalMessage('Chat', LLM_TIMEOUT_RETRIES));
+        logEvent({
+          phase: 'chat',
+          level: 'error',
+          title: 'Timeout',
+          detail: formatTimeoutFinalMessage('Chat', LLM_TIMEOUT_RETRIES),
+        });
       }
       const failedPayload: ChatAnalyticsPayload = {
         error: 'exception',
         durationMs: Date.now() - startedAt,
       };
       await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatFailed, 'chat', failedPayload);
-      pushStatus(`Чат: ошибка (${ctx.getCurrentModelName()}): ${message}`);
+      stepMessages.push(ctx.addMessage('assistant', `Чат: ошибка (${ctx.getCurrentModelName()}): ${message}`, 'chat'));
       logEvent({
         phase: 'chat',
         level: 'error',

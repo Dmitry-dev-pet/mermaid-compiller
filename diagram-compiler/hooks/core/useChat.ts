@@ -91,7 +91,7 @@ export const useChat = () => {
     setActiveContextIdState(contextId);
   }, []);
 
-  const messages = getMessagesForContext(activeContextId);
+  const messages = messagesByContext[activeContextId] ?? (activeContextId === MAIN_CHAT_CONTEXT ? INITIAL_MESSAGES : []);
 
   return {
     messages,
