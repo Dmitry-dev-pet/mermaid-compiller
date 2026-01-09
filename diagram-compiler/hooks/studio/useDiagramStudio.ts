@@ -14,7 +14,7 @@ import { useNotebookChat, useNotebookChatView } from './useNotebookChat';
 import { useProjects } from './useProjects';
 import type { DiagramMarker } from '../core/useHistory';
 import { DEFAULT_MERMAID_STATE } from '../../constants';
-import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState, ModelParams, Message, OperationLog } from '../../types';
+import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState, ModelParams, Message } from '../../types';
 import {
   appendEmptyMermaidBlockToMarkdown,
   createMermaidNotebookMarkdown,
@@ -27,7 +27,7 @@ import { createAnalyticsAdapter } from '../../services/analyticsAdapter';
 import { useNotebookBuild } from './useNotebookBuild';
 import { useFixFlow } from './useFixFlow';
 import { useNotebookContext } from './useNotebookContext';
-import { resolveChatContextId } from '../../utils/chatContext';
+import { resolveChatContextId, resolveOperationLogContextId } from '../../utils/contextIds';
 import type { LLMRequestStartNotice } from '../../services/llmRequestRunner';
 
 export const useDiagramStudio = () => {
@@ -409,15 +409,7 @@ export const useDiagramStudio = () => {
   const chatMessagesForView = useNotebookChatView({ isNotebookChatMode, messages: activeMessages });
 
   const filteredOperationLogs = useMemo(() => {
-    const resolveLogContextId = (log: OperationLog) => {
-      if (log.contextId) return log.contextId;
-      const blockEvent = log.events.find((event) => typeof event.blockIndex === 'number');
-      if (blockEvent && typeof blockEvent.blockIndex === 'number') {
-        return `block:${blockEvent.blockIndex}`;
-      }
-      return 'main';
-    };
-    return operationLogs.filter((log) => resolveLogContextId(log) === activeChatContextId);
+    return operationLogs.filter((log) => resolveOperationLogContextId(log) === activeChatContextId);
   }, [activeChatContextId, operationLogs]);
 
   const filteredActiveOperationLog = useMemo(() => {

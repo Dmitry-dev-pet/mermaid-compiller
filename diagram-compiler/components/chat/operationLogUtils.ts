@@ -392,7 +392,9 @@ export const buildOperationLogViewModel = (
     }
   }
   const plannerIndex = rows.findIndex((row) =>
-    row.contextScope === 'planner' || row.text.startsWith('Building plan')
+    row.eventKind === 'planner'
+    || row.contextScope === 'planner'
+    || row.text.startsWith('Building plan')
   );
   if (plannerIndex >= 0) {
     rows.splice(plannerIndex, 0, {

@@ -8,9 +8,9 @@ describe('mermaidSanitizer', () => {
       'A[Alpha (one) "note"] -->|Edge (two) "label"| B{Beta (three)}',
     ].join('\n');
     const result = sanitizeMermaidByType('flowchart', input);
-    expect(result).toContain("A[Alpha  —  one 'note']");
-    expect(result).toContain("|Edge  —  two 'label'|");
-    expect(result).toContain('B{Beta  —  three}');
+    expect(result).toContain("A[Alpha — one 'note']");
+    expect(result).toContain("|Edge — two 'label'|");
+    expect(result).toContain('B{Beta — three}');
   });
 
   it('keeps other diagram types intact', () => {

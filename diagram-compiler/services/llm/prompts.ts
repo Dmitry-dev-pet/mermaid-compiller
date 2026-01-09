@@ -71,6 +71,16 @@ const getDiagramTypeRule = (
   mode: 'generate' | 'chat' | 'chat_diagram' | 'chat_notebook',
   promptLanguage: PromptLanguage
 ) => {
+  if (mode === 'chat_notebook') {
+    if (diagramType === 'auto') {
+      const mainList = MAIN_DIAGRAM_TYPES.join(', ');
+      return promptLanguage === 'Russian'
+        ? `Режим Main: в разделе Diagrams выбирай только из ${mainList} (не обязательно все три).`
+        : `Main mode: in the Diagrams list choose only from ${mainList} (not necessarily all three).`;
+    }
+    return '';
+  }
+
   const sanitizeTypeRuleForGenerate = (rule: string) => {
     const patterns = promptLanguage === 'Russian'
       ? [
@@ -516,13 +526,6 @@ const getDiagramTypeRule = (
       return diagramType === 'block' ? `${base}\n${blockGenerateHint}` : base;
     }
     return `Preferred Diagram Type: ${diagramType}.`;
-  }
-
-  if (mode === 'chat_notebook') {
-    const mainList = MAIN_DIAGRAM_TYPES.join(', ');
-    return promptLanguage === 'Russian'
-      ? `Режим Main: в разделе Diagrams выбирай только из ${mainList} (не обязательно все три).`
-      : `Main mode: in the Diagrams list choose only from ${mainList} (not necessarily all three).`;
   }
 
   return promptLanguage === 'Russian'

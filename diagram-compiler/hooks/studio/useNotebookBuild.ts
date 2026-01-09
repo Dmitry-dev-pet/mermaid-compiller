@@ -162,7 +162,7 @@ export const parseNotebookCountFromIntent = (text: string): number | null => {
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i].trim();
     if (!line) continue;
-    if (/^#{0,3}\s*(diagrams|диаграммы)\b/i.test(line)) {
+    if (/^#{0,3}\s*(diagrams|диаграммы)(?:\s|$)/i.test(line)) {
       startIndex = i + 1;
       break;
     }
@@ -580,6 +580,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         level: 'info',
         title: 'Notebook build',
         detail: requestedN ? `N=${requestedN}` : undefined,
+        kind: 'status',
       });
       const docs = await fetchNotebookPlannerDocsContext();
       const plannerDocsSummary = summarizeDocsContext(docs);
@@ -626,7 +627,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
       });
       const plannerStartAt = Date.now();
       pushStatus('Планировщик\n- запрашиваю план');
-      logEvent({ phase: 'planning', level: 'info', title: 'Planner', detail: 'request' });
+      logEvent({ phase: 'planning', level: 'info', title: 'Planner', detail: 'request', kind: 'planner' });
       plan = await requestNotebookPlan({
         aiConfig: deps.aiConfig,
         modelParams: deps.modelParams,
@@ -654,6 +655,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         title: 'Planner',
         detail: `ready (${plan.resolvedN})`,
         metrics: { durationMs: Date.now() - plannerStartAt },
+        kind: 'planner',
       });
       if (forcedDiagramType) {
         plan = {
@@ -719,7 +721,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           : null;
 
         updateBlockMessage(`Сборка: ${blockLabel} — старт.`);
-        logEvent({ phase: 'build', level: 'info', title: 'Block', detail: blockLabel, blockIndex: i });
+        logEvent({ phase: 'build', level: 'info', title: 'Block', detail: blockLabel, blockIndex: i, kind: 'block' });
 
         const blockStartAt = Date.now();
         let success = false;
@@ -798,6 +800,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     detail: blockLabel,
                     blockIndex: i,
                     attempt: { current: attempt, max },
+                    kind: 'attempt',
                   });
                 },
                 onEmpty: (attempt, max) => {
@@ -808,6 +811,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Block',
                     detail: 'no mermaid code',
                     blockIndex: i,
+                    kind: 'block',
                   });
                 },
                 onError: (attempt, max, message) => {
@@ -822,6 +826,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     detail: message,
                     blockIndex: i,
                     error: { code: 'block_error', message },
+                    kind: 'block',
                   });
                 },
                 onJsonStatus: (attempt, status, reason) => {
@@ -833,6 +838,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Block',
                     detail: `json ${status}`,
                     blockIndex: i,
+                    kind: 'block',
                   });
                 },
                 onTypeMismatch: (attempt, expected, received) => {
@@ -846,6 +852,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Block',
                     detail: `type mismatch ${received}`,
                     blockIndex: i,
+                    kind: 'block',
                   });
                 },
                 onAutoFixAttempt: (attempt, max, errorLine) => {
@@ -856,6 +863,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     detail: `attempt ${attempt}/${max}`,
                     blockIndex: i,
                     attempt: { current: attempt, max },
+                    kind: 'attempt',
                   });
                   if (errorLine) {
                     logEvent({
@@ -866,6 +874,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                       blockIndex: i,
                       attempt: { current: attempt, max },
                       error: { code: 'validation', message: errorLine },
+                      kind: 'attempt',
                     });
                   }
                 },
@@ -882,6 +891,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     detail: isValid ? 'valid' : 'invalid',
                     blockIndex: i,
                     metrics: lastAutoFix ? { autoFix: lastAutoFix } : undefined,
+                    kind: 'block',
                   });
                 },
                 onValidationError: (errorLine) => {
@@ -892,6 +902,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     detail: errorLine || 'validation error',
                     blockIndex: i,
                     error: { code: 'validation', message: errorLine || 'validation error' },
+                    kind: 'block',
                   });
                 },
               },
@@ -930,6 +941,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               detail: lastError,
               blockIndex: i,
               error: { code: 'block_error', message: lastError },
+              kind: 'block',
             });
           }
         }
@@ -1040,6 +1052,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             level: 'info',
             title: 'Итог',
             detail: 'generating',
+            kind: 'status',
           });
           summaryStartAt = Date.now();
           const summaryInput = [
@@ -1076,6 +1089,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             title: 'Итог',
             detail: 'ready',
             metrics: summaryStartAt ? { durationMs: Date.now() - summaryStartAt } : undefined,
+            kind: 'status',
           });
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
@@ -1084,6 +1098,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             level: 'warn',
             title: 'Итог',
             detail: `fallback: ${message}`,
+            kind: 'status',
           });
         }
         if (selectionNote && !resolvedSummary.includes(selectionNote)) {

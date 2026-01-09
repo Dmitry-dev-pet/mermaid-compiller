@@ -2,7 +2,18 @@ import type { DiagramType } from '../types';
 
 const sanitizeFlowchartLabels = (code: string) => {
   if (!code.trim().startsWith('flowchart')) return code;
-  const replaceParens = (value: string) => value.replace(/[()]/g, ' — ').replace(/"/g, "'");
+  const replaceParens = (value: string) => {
+    const withQuotes = value.replace(/"/g, "'");
+    const withGroups = withQuotes.replace(/\(([^)]*)\)/g, (_match, inner) => {
+      const trimmed = String(inner ?? '').trim();
+      return trimmed ? ` — ${trimmed}` : '';
+    });
+    const withoutLoose = withGroups.replace(/[()]/g, '');
+    return withoutLoose
+      .replace(/\s*—\s*/g, ' — ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
   let next = code;
   next = next.replace(/\|([^|\n]*)\|/g, (match, label) => `|${replaceParens(label)}|`);
   next = next.replace(/\[([^\]\n]*)\]/g, (match, label) => `[${replaceParens(label)}]`);

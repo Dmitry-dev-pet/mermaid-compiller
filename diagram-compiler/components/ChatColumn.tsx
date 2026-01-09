@@ -693,6 +693,9 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                   const paddingClass = msg.role === 'user' ? 'px-0 py-0' : 'px-0 py-0';
                   const attachedLogs = inlineLogsByMessageId.get(msg.id) ?? [];
                   const hasChatLog = attachedLogs.some((log) => (log.events[0]?.title ?? '') === 'Чат');
+                  const isRefinementChatLog = attachedLogs.some((log) =>
+                    log.events.some((event) => event.title === 'Чат' && event.detail === 'refine')
+                  );
                   const isBuildMessage = msg.role === 'assistant' && msg.mode === 'build';
                   const buildLog = attachedLogs.find((log) => {
                     const title = log.events[0]?.title ?? '';
@@ -777,7 +780,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                         {msg.role === 'user' ? 'You' : 'Assistant'}
                       </span>
                       {!isBuildMessage ? logBlock : null}
-                      {msg.role === 'user' && hasChatLog && chatSummaryMessage && (
+                      {msg.role === 'user' && hasChatLog && !isRefinementChatLog && chatSummaryMessage && (
                         <div className="mt-1 bg-transparent border-0 shadow-none text-slate-900 dark:text-slate-100 rounded-none text-xs whitespace-pre-wrap break-words">
                           {chatSummaryMessage}
                         </div>
