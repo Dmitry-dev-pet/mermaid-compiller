@@ -1,5 +1,7 @@
 import type { OperationEvent, OperationLog } from '../../types';
 import { LLM_TIMEOUT_MS } from '../../constants';
+import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
+import { normalizeDiagramType } from '../../utils/diagramTypes';
 
 export type LogRow = {
   id: string;
@@ -31,6 +33,32 @@ const parseBlockDetail = (detail: string) => {
     label: match[1],
     rest: match[2],
   };
+};
+
+const resolveNotebookTypes = (events: OperationEvent[]) => {
+  const blockTypes = new Map<number, string>();
+  for (const event of events) {
+    if (typeof event.blockIndex !== 'number') continue;
+    if (!event.detail) continue;
+    if (event.title !== 'Block' && event.title !== 'Block attempt' && event.title !== 'Block validation') {
+      continue;
+    }
+    if (blockTypes.has(event.blockIndex)) continue;
+    const parsed = parseBlockDetail(event.detail);
+    if (!parsed) continue;
+    const [rawType] = parsed.rest.split(' - ');
+    const normalized = normalizeDiagramType(rawType?.trim() ?? '') ?? rawType?.trim() ?? '';
+    if (!normalized) continue;
+    blockTypes.set(event.blockIndex, normalized);
+  }
+  const counts = new Map<string, number>();
+  for (const type of blockTypes.values()) {
+    const label = getDiagramTypeShortLabel(type as never);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return Array.from(counts.entries()).map(([label, count]) =>
+    count > 1 ? `${label}×${count}` : label
+  );
 };
 
 const formatEvent = (event: OperationEvent) => {
@@ -140,6 +168,12 @@ export const buildOperationLogViewModel = (
     if (event.title === 'LLM') {
       continue;
     }
+    if (
+      (event.title === 'Notebook build' || event.title === 'Сборка')
+      && event.detail === 'start'
+    ) {
+      continue;
+    }
     if (event.title === 'Чат' && event.detail?.includes('язык')) {
       continue;
     }
@@ -207,10 +241,51 @@ export const buildOperationLogViewModel = (
     if (event.title === 'Planner' && event.detail?.startsWith('ready')) {
       continue;
     }
-    if (event.title === 'Итог' && event.detail === 'generating') {
+    if (event.title === 'Итог' && event.detail) {
+      const key = 'summary';
+      const existingIndex = displayEvents.findIndex((entry) => entry.key === key);
+      const detail = event.detail;
+      if (detail === 'generating') {
+        if (existingIndex === -1) {
+          displayEvents.push({
+            id: event.id,
+            text: 'Итог — generating',
+            key,
+            kind: 'attempt',
+          });
+        }
+        continue;
+      }
+      const nextText = detail.startsWith('ready')
+        ? 'Итог — ready'
+        : detail.startsWith('fallback')
+          ? `Итог — ${detail}`
+          : `Итог — ${detail}`;
+      const nextEntry: LogRow = {
+        id: event.id,
+        text: nextText,
+        key,
+        kind: 'attempt',
+        timeMs: event.metrics?.durationMs,
+      };
+      if (existingIndex >= 0) {
+        displayEvents[existingIndex] = { ...displayEvents[existingIndex], ...nextEntry };
+      } else {
+        displayEvents.push(nextEntry);
+      }
       continue;
     }
 
+    if (event.title === 'Notebook build' && event.detail?.startsWith('N=')) {
+      const types = resolveNotebookTypes(operationLog.events);
+      const suffix = types.length ? ` (${types.join('/')})` : '';
+      displayEvents.push({
+        id: event.id,
+        text: `Сборка — ${event.detail}${suffix}`,
+        kind: 'attempt',
+      });
+      continue;
+    }
     if (event.title === 'Block' && event.detail && typeof event.blockIndex === 'number') {
       const isErrorLevel = event.level === 'warn' || event.level === 'error';
       if (isErrorLevel) {
@@ -340,7 +415,13 @@ export const buildOperationLogViewModel = (
     const remainingMs = Math.max(0, timeoutMs - (now - lastLlmStartAt));
     if (remainingMs > 0) {
       const countdown = formatCountdown(remainingMs);
-      if (rows.length > 0) {
+      const summaryIndex = rows.findIndex((row) => row.key === 'summary');
+      if (summaryIndex >= 0) {
+        rows[summaryIndex] = {
+          ...rows[summaryIndex],
+          timeLabel: countdown,
+        };
+      } else if (rows.length > 0) {
         rows[rows.length - 1] = {
           ...rows[rows.length - 1],
           timeLabel: countdown,

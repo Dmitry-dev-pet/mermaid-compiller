@@ -13,8 +13,10 @@ import type { StudioContext } from './actionsContext';
 export const createChatHandler = (ctx: StudioContext) => {
   return async (text: string) => {
     const stepMessages: Message[] = [];
-    const opId = ctx.startOperation('Чат');
     const notebookBlockIndex = ctx.isNotebookChatMode ? ctx.getNotebookChatIndex?.() : null;
+    const opContextId =
+      typeof notebookBlockIndex === 'number' ? `block:${notebookBlockIndex}` : undefined;
+    const opId = ctx.startOperation('Чат', opContextId);
     const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
       ctx.addOperationEvent(opId, {
         ...args,
@@ -132,7 +134,13 @@ export const createChatHandler = (ctx: StudioContext) => {
           intentText = enforceAllowedDiagramTypesInIntent(intentText, [ctx.appState.diagramType], ctx.appState.diagramType);
         }
       }
-      const replyText = useNotebookIntent ? intentText : rawReply;
+      let replyText = useNotebookIntent ? intentText : rawReply;
+      const buildHint = language === 'Russian'
+        ? 'Если не хотите продолжать чат, нажмите Build.'
+        : 'If you do not want to continue the chat, click Build.';
+      if (replyText && !replyText.includes(buildHint)) {
+        replyText = `${replyText}\n\n${buildHint}`;
+      }
       let replyMessage: Message | null = null;
       if (replyText || useNotebookIntent) {
         replyMessage = ctx.addMessage('assistant', replyText || 'Ответ пустой. Уточните запрос.', 'chat');

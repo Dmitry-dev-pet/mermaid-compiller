@@ -1016,11 +1016,21 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         const total = plan?.diagrams?.length ?? resolvedPlanCount ?? 0;
         const typeList = plan?.diagrams?.map((diagram) => diagram.diagramType).filter(Boolean) ?? [];
         const uniqueTypes = Array.from(new Set(typeList));
+        const selectionItems = plan?.diagrams?.map((diagram) => {
+          const title = diagram.title?.trim() ?? '';
+          const type = diagram.diagramType?.trim() ?? '';
+          if (title && type) return `${title} — ${type}`;
+          return type || title;
+        }).filter(Boolean) ?? [];
+        const selectionNote = selectionItems.length
+          ? `Выбрано: ${selectionItems.join('; ')}.`
+          : '';
         const fallbackSummaryParts = [
           'Итог: сборка ноутбука завершена.',
           total ? `Успешно ${successBlocks} из ${total}.` : `Успешно ${successBlocks}.`,
           failedBlocks ? `Ошибок: ${failedBlocks}.` : '',
           uniqueTypes.length ? `Типы: ${uniqueTypes.join(', ')}.` : '',
+          selectionNote,
         ].filter(Boolean);
         let resolvedSummary = normalizeSummaryText(fallbackSummaryParts.join(' '));
         let summaryStartAt: number | null = null;
@@ -1075,6 +1085,9 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             title: 'Итог',
             detail: `fallback: ${message}`,
           });
+        }
+        if (selectionNote && !resolvedSummary.includes(selectionNote)) {
+          resolvedSummary = `${resolvedSummary} ${selectionNote}`.trim();
         }
         const summaryMessage = deps.addMessage('assistant', resolvedSummary, 'build');
         await finalizeOperation(

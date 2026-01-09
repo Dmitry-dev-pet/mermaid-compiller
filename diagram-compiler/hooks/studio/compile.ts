@@ -11,7 +11,10 @@ import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMess
 export const createRecompileHandler = (ctx: StudioContext) => {
   return async () => {
     const stepMessages: Message[] = [];
-    const opId = ctx.startOperation('Пересборка');
+    const notebookBlockIndex = ctx.isNotebookChatMode ? ctx.getNotebookChatIndex?.() : null;
+    const opContextId =
+      typeof notebookBlockIndex === 'number' ? `block:${notebookBlockIndex}` : undefined;
+    const opId = ctx.startOperation('Пересборка', opContextId);
     const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
       ctx.addOperationEvent(opId, args);
     };
@@ -166,7 +169,10 @@ export const createRecompileHandler = (ctx: StudioContext) => {
 export const createFixSyntaxHandler = (ctx: StudioContext) => {
   return async () => {
     const stepMessages: Message[] = [];
-    const opId = ctx.startOperation('Исправление');
+    const notebookBlockIndex = ctx.isNotebookChatMode ? ctx.getNotebookChatIndex?.() : null;
+    const opContextId =
+      typeof notebookBlockIndex === 'number' ? `block:${notebookBlockIndex}` : undefined;
+    const opId = ctx.startOperation('Исправление', opContextId);
     const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
       ctx.addOperationEvent(opId, args);
     };
@@ -341,7 +347,10 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
 export const createAnalyzeHandler = (ctx: StudioContext) => {
   return async () => {
     const stepMessages: Message[] = [];
-    const opId = ctx.startOperation('Анализ');
+    const notebookBlockIndex = ctx.isNotebookChatMode ? ctx.getNotebookChatIndex?.() : null;
+    const opContextId =
+      typeof notebookBlockIndex === 'number' ? `block:${notebookBlockIndex}` : undefined;
+    const opId = ctx.startOperation('Анализ', opContextId);
     const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
       ctx.addOperationEvent(opId, args);
     };

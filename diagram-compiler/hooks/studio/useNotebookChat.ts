@@ -115,18 +115,12 @@ const buildNotebookChatMessages = (
   const init = buildInitMessage();
   const base = info ? stripNotebookSyntheticMessages(info.messages) : [];
   const resolvedPrompt = systemPromptRedacted || systemPrompt || 'No system prompt available.';
-  const systemPromptMessage: Message = {
-    id: 'notebook-chat-md',
-    role: 'assistant',
-    content: `chat.md\n\n${resolvedPrompt}`,
-    timestamp: 0,
-    mode: 'system',
-  };
   const raw = info?.rawIntent
     ? [{ ...info.rawIntent, id: 'notebook-raw-intent' }]
     : [];
-  const promptMessages = includeRaw ? raw : [...raw, systemPromptMessage];
-  return [init, ...promptMessages, ...base];
+  void includeRaw;
+  void raw;
+  return [init, ...base];
 };
 
 const areMessagesEqual = (a: Message[], b: Message[]) => {
