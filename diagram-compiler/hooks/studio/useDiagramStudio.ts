@@ -816,6 +816,10 @@ export const useDiagramStudio = () => {
     baseHandleFixSyntax,
     onLLMRequestStart: handleLLMRequestStart,
     llmTimeoutMs: appState.llmTimeoutMs,
+    startOperation: startOperationForContext,
+    addOperationEvent,
+    finishOperation,
+    getOperationLog,
   });
 
   const runWithActiveDiagramContext = useCallback(async <T,>(action: () => Promise<T>) => {

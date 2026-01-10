@@ -13,7 +13,6 @@ import type { MermaidMarkdownBlock } from '../../services/mermaidService';
 import { fixDiagram } from '../../services/llmService';
 import { runLLMRequest, type LLMRequestStartNotice } from '../../services/llmRequestRunner';
 import { runAutoFixLoop } from './autoFix';
-import { createProgressTracker } from './progressTracker';
 
 type FixFlowDeps = {
   aiConfig: AIConfig;
@@ -42,13 +41,27 @@ type FixFlowDeps = {
   baseHandleFixSyntax: () => Promise<void>;
   onLLMRequestStart?: (notice: LLMRequestStartNotice) => void;
   llmTimeoutMs: number;
+  startOperation: (title: string, contextId?: string) => string;
+  addOperationEvent: (opId: string, args: {
+    phase: import('../../types').OperationPhase;
+    level: import('../../types').OperationLevel;
+    title: string;
+    detail?: string;
+    tooltip?: string;
+    tooltipMessages?: string;
+    tooltipDocs?: string;
+    kind?: import('../../types').OperationEvent['kind'];
+    contextScope?: import('../../types').OperationEvent['contextScope'];
+    blockIndex?: number;
+    attempt?: import('../../types').OperationEvent['attempt'];
+    metrics?: import('../../types').OperationEvent['metrics'];
+    error?: import('../../types').OperationEvent['error'];
+  }) => void;
+  finishOperation: (opId: string, status: import('../../types').OperationLog['status']) => void;
+  getOperationLog: (opId: string) => import('../../types').OperationLog | null;
 };
 
 export const useFixFlow = (deps: FixFlowDeps) => {
-  const pushStatus = useCallback((content: string) => {
-    deps.addMessage('assistant', content, 'fix');
-  }, [deps]);
-
   const resolveFixLanguage = useCallback(() => {
     const basis = deps.messages
       .slice()
@@ -175,22 +188,30 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     language: string;
     initialValidation: Awaited<ReturnType<typeof validateMermaidDiagramCode>>;
     onAttempt?: (attempt: number, validation: Awaited<ReturnType<typeof validateMermaidDiagramCode>>) => void;
+    onLLMStart?: (notice: LLMRequestStartNotice) => void;
+    onLLMFinish?: (durationMs: number) => void;
   }) => {
-    const { block, markdown, docs, language, initialValidation, onAttempt } = args;
+    const { block, markdown, docs, language, initialValidation, onAttempt, onLLMStart, onLLMFinish } = args;
     let iteration = 0;
+    let lastRequestStartedAt = 0;
     const { code: currentCode, validation, attempts } = await runAutoFixLoop({
       initialCode: block.code,
       initialValidation,
       maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
       validate: (code) => validateMermaidDiagramCode(code, { logError: false }),
       fix: async (code, errorMessage) => {
+        lastRequestStartedAt = Date.now();
         const fixedRaw = await runLLMRequest({
           task: 'markdown-fix',
           run: () => fixDiagram(code, errorMessage, deps.aiConfig, docs, language, deps.modelParams),
           retries: LLM_TIMEOUT_RETRIES,
           timeoutMs: deps.llmTimeoutMs,
-          onStart: deps.onLLMRequestStart,
+          onStart: (notice) => {
+            deps.onLLMRequestStart?.(notice);
+            onLLMStart?.(notice);
+          },
         });
+        onLLMFinish?.(Date.now() - lastRequestStartedAt);
         return extractMermaidCode(fixedRaw);
       },
       onIteration: (_code, nextValidation) => {
@@ -229,7 +250,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
 
   const handleFixAllMarkdownBlocks = useCallback(async () => {
     if (deps.connectionStatus !== 'connected') {
-      pushStatus('Исправление (все блоки)\n- офлайн: подключите AI');
+      deps.addMessage('assistant', 'Не могу запустить Fix: подключите AI.', 'fix');
       await deps.safeAppendTimeStep({
         type: 'fix',
         messages: [],
@@ -239,6 +260,10 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     }
 
     const startedAt = Date.now();
+    const opId = deps.startOperation('Fix');
+    const logEvent = (args: Parameters<typeof deps.addOperationEvent>[1]) => {
+      deps.addOperationEvent(opId, args);
+    };
     deps.setIsProcessing(true);
     try {
       const docs = await deps.getDocsContext('fix');
@@ -246,14 +271,12 @@ export const useFixFlow = (deps: FixFlowDeps) => {
 
       let markdown = deps.mermaidState.code;
       let blocks = extractMermaidBlocksFromMarkdown(markdown);
-      pushStatus(
-        [
-          'Исправление (все блоки)',
-          '- старт',
-          `- блоков: ${blocks.length}`,
-          `- язык: ${language}`,
-        ].join('\n')
-      );
+      logEvent({
+        phase: 'fix',
+        level: 'info',
+        title: 'Fix',
+        detail: `all blocks: ${blocks.length}, язык: ${language}`,
+      });
       for (let i = 0; i < blocks.length; i += 1) {
         const block = blocks[i];
         const initialValidation = await validateMermaidDiagramCode(block.code, { logError: false });
@@ -262,20 +285,23 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         deps.setMarkdownMermaidActiveIndex(i);
 
         const diagramType = block.diagramType ?? deps.appDiagramType;
-        const label = `блок ${i + 1} из ${blocks.length} (${diagramType ?? 'unknown'})`;
-        const tracker = createProgressTracker({
-          setMessages: deps.setMessages,
-          prefix: `[fix-block:${i}] `,
-          mode: 'fix',
+        const label = `${i + 1}/${blocks.length} - ${diagramType ?? 'unknown'} - Fix block`;
+        logEvent({
+          phase: 'fix',
+          level: 'info',
+          title: 'Block',
+          detail: label,
+          blockIndex: i,
+          kind: 'block',
+          contextScope: 'block',
         });
-        tracker.update(`Fix: ${label} — start.`);
-        pushStatus(`Исправление: ${label}\n- старт`);
         await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
           diagramType,
           mode: 'fix',
           codeLength: block.code.length,
         });
 
+        let lastDurationMs: number | null = null;
         const {
           currentCode,
           validation,
@@ -291,11 +317,73 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           language,
           initialValidation,
           onAttempt: (attempt, nextValidation) => {
-            tracker.update(
-              `Fix: ${label} — попытка ${attempt}/${AUTO_FIX_MAX_ATTEMPTS}.${nextValidation.isValid ? ' Валиден.' : ''}`
-            );
+            logEvent({
+              phase: 'fix',
+              level: 'info',
+              title: 'Auto-fix',
+              detail: `attempt ${attempt}/${AUTO_FIX_MAX_ATTEMPTS}`,
+              blockIndex: i,
+              attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
+              metrics: lastDurationMs ? { durationMs: lastDurationMs } : undefined,
+              kind: 'attempt',
+              contextScope: 'block',
+            });
+            if (nextValidation.errorMessage) {
+              const line = nextValidation.errorMessage.split(/\r?\n/)[0]?.slice(0, 200) ?? '';
+              if (line) {
+                logEvent({
+                  phase: 'fix',
+                  level: 'warn',
+                  title: 'Auto-fix error',
+                  detail: line,
+                  blockIndex: i,
+                  attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
+                  error: { code: 'validation', message: line },
+                  kind: 'attempt',
+                  contextScope: 'block',
+                });
+              }
+            }
+          },
+          onLLMStart: (notice) => {
+            logEvent({
+              phase: 'fix',
+              level: 'info',
+              title: 'LLM',
+              detail: `start ${notice.task}`,
+              blockIndex: i,
+              kind: 'attempt',
+              contextScope: 'block',
+            });
+          },
+          onLLMFinish: (durationMs) => {
+            lastDurationMs = durationMs;
           },
         });
+
+        logEvent({
+          phase: 'validate',
+          level: validation.isValid ? 'info' : 'warn',
+          title: 'Block validation',
+          detail: validation.isValid ? 'valid' : 'invalid',
+          blockIndex: i,
+          metrics: attempts ? { autoFix: attempts } : undefined,
+          kind: 'block',
+          contextScope: 'block',
+        });
+        if (!validation.isValid) {
+          const line = validation.errorMessage?.split(/\r?\n/)[0]?.slice(0, 200) ?? 'validation error';
+          logEvent({
+            phase: 'validate',
+            level: 'error',
+            title: 'Ошибка',
+            detail: line,
+            blockIndex: i,
+            error: { code: 'validation', message: line },
+            kind: 'block',
+            contextScope: 'block',
+          });
+        }
 
         if (changed || cleared) {
           deps.handleMermaidChange(nextMarkdown);
@@ -324,10 +412,9 @@ export const useFixFlow = (deps: FixFlowDeps) => {
             `Fix остановлен после блока ${i + 1}: исправление не удалось.`,
             'fix'
           );
-          const progressMessage = tracker.getMessage();
           await deps.safeAppendTimeStep({
             type: 'fix',
-            messages: [progressMessage, resultMessage, stopMessage].filter(Boolean) as Message[],
+            messages: [resultMessage, stopMessage].filter(Boolean) as Message[],
             nextMermaid,
             setCurrentRevisionId: cleared ? null : undefined,
             meta: {
@@ -341,9 +428,10 @@ export const useFixFlow = (deps: FixFlowDeps) => {
               blockIndex: i,
               totalBlocks: blocks.length,
               stopped: true,
+              operationLog: deps.getOperationLog(opId),
             },
           });
-          pushStatus(`Исправление: ${label}\n- не удалось после ${attempts} попыток`);
+          deps.finishOperation(opId, 'error');
           return;
         }
 
@@ -362,10 +450,9 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           }),
           'fix'
         );
-        const progressMessage = tracker.getMessage();
         await deps.safeAppendTimeStep({
           type: 'fix',
-          messages: [progressMessage, resultMessage].filter(Boolean) as Message[],
+          messages: [resultMessage].filter(Boolean) as Message[],
           nextMermaid,
           setCurrentRevisionId: cleared ? null : undefined,
           meta: {
@@ -378,11 +465,9 @@ export const useFixFlow = (deps: FixFlowDeps) => {
             fixMode: 'markdown_all',
             blockIndex: i,
             totalBlocks: blocks.length,
+            operationLog: deps.getOperationLog(opId),
           },
         });
-        pushStatus(
-          `Исправление: ${label}\n- итог: ${validation.isValid ? 'валиден' : 'невалиден'}`
-        );
 
         await deps.trackAnalyticsWithContext('diagram_fix_success', 'fix', {
           diagramType,
@@ -396,9 +481,11 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           errorLine: validation.errorLine,
         });
       }
+      deps.finishOperation(opId, 'done');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      pushStatus(`Исправление (все блоки)\n- ошибка: ${message}`);
+      deps.addMessage('assistant', `Fix failed: ${message}`, 'fix');
+      deps.finishOperation(opId, 'error');
       await deps.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         mode: 'fix',
         error: 'exception',
@@ -415,7 +502,6 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     }
   }, [
     deps,
-    pushStatus,
     resolveFixLanguage,
     runMarkdownFix,
     summarizeFixOutcome,
@@ -451,7 +537,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     }
 
     if (deps.connectionStatus !== 'connected') {
-      pushStatus('Исправление\n- офлайн: подключите AI');
+      deps.addMessage('assistant', 'Не могу запустить Fix: подключите AI.', 'fix');
       await deps.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         mode: 'fix',
         error: 'offline',
@@ -466,25 +552,32 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     }
 
     const startedAt = Date.now();
+    const opId = deps.startOperation('Fix');
+    const logEvent = (args: Parameters<typeof deps.addOperationEvent>[1]) => {
+      deps.addOperationEvent(opId, args);
+    };
     deps.setIsProcessing(true);
     try {
       const diagramType = targetBlock.diagramType ?? deps.appDiagramType;
-      const label = `блок ${targetIndex + 1} (${diagramType ?? 'unknown'})`;
-      const tracker = createProgressTracker({
-        setMessages: deps.setMessages,
-        prefix: `[fix-block:${targetIndex}] `,
-        mode: 'fix',
+      const totalBlocks = deps.markdownMermaidBlocks.length;
+      const label = `${targetIndex + 1}/${totalBlocks} - ${diagramType ?? 'unknown'} - Fix block`;
+      logEvent({
+        phase: 'fix',
+        level: 'info',
+        title: 'Block',
+        detail: label,
+        blockIndex: targetIndex,
+        kind: 'block',
+        contextScope: 'block',
       });
-      tracker.update(`Fix: ${label} — start.`);
       const docs = await deps.getDocsContext('fix');
       const language = resolveFixLanguage();
-      pushStatus(
-        [
-          `Исправление: ${label}`,
-          '- старт',
-          `- язык: ${language}`,
-        ].join('\n')
-      );
+      logEvent({
+        phase: 'fix',
+        level: 'info',
+        title: 'Fix',
+        detail: `язык: ${language}`,
+      });
       await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
         diagramType,
         mode: 'fix',
@@ -507,15 +600,73 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         docs,
         language,
         initialValidation,
+        onLLMStart: (notice) => {
+          logEvent({
+            phase: 'fix',
+            level: 'info',
+            title: 'LLM',
+            detail: `start ${notice.task}`,
+            blockIndex: targetIndex,
+            kind: 'attempt',
+            contextScope: 'block',
+          });
+        },
         onAttempt: (attempt, nextValidation) => {
-          tracker.update(
-            `Fix: ${label} — попытка ${attempt}/${AUTO_FIX_MAX_ATTEMPTS}.${nextValidation.isValid ? ' Валиден.' : ''}`
-          );
+          logEvent({
+            phase: 'fix',
+            level: 'info',
+            title: 'Auto-fix',
+            detail: `attempt ${attempt}/${AUTO_FIX_MAX_ATTEMPTS}`,
+            blockIndex: targetIndex,
+            attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
+            kind: 'attempt',
+            contextScope: 'block',
+          });
+          if (nextValidation.errorMessage) {
+            const line = nextValidation.errorMessage.split(/\r?\n/)[0]?.slice(0, 200) ?? '';
+            if (line) {
+              logEvent({
+                phase: 'fix',
+                level: 'warn',
+                title: 'Auto-fix error',
+                detail: line,
+                blockIndex: targetIndex,
+                attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
+                error: { code: 'validation', message: line },
+                kind: 'attempt',
+                contextScope: 'block',
+              });
+            }
+          }
         },
       });
 
       if (changed || cleared) {
         deps.handleMermaidChange(nextMarkdown);
+      }
+
+      logEvent({
+        phase: 'validate',
+        level: validation.isValid ? 'info' : 'warn',
+        title: 'Block validation',
+        detail: validation.isValid ? 'valid' : 'invalid',
+        blockIndex: targetIndex,
+        metrics: attempts ? { autoFix: attempts } : undefined,
+        kind: 'block',
+        contextScope: 'block',
+      });
+      if (!validation.isValid) {
+        const line = validation.errorMessage?.split(/\r?\n/)[0]?.slice(0, 200) ?? 'validation error';
+        logEvent({
+          phase: 'validate',
+          level: 'error',
+          title: 'Ошибка',
+          detail: line,
+          blockIndex: targetIndex,
+          error: { code: 'validation', message: line },
+          kind: 'block',
+          contextScope: 'block',
+        });
       }
 
       const resultMessage = deps.addMessage(
@@ -533,10 +684,9 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         }),
         'fix'
       );
-      const progressMessage = tracker.getMessage();
       await deps.safeAppendTimeStep({
         type: 'fix',
-        messages: [progressMessage, resultMessage].filter(Boolean) as Message[],
+        messages: [resultMessage].filter(Boolean) as Message[],
         nextMermaid,
         setCurrentRevisionId: cleared ? null : undefined,
         meta: {
@@ -549,11 +699,10 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           fixMode: 'block',
           blockIndex: targetIndex,
           totalBlocks: deps.markdownMermaidBlocks.length,
+          operationLog: deps.getOperationLog(opId),
         },
       });
-      pushStatus(
-        `Исправление: ${label}\n- итог: ${validation.isValid ? 'валиден' : 'невалиден'}`
-      );
+      deps.finishOperation(opId, validation.isValid ? 'done' : 'error');
 
       await deps.trackAnalyticsWithContext('diagram_fix_success', 'fix', {
         diagramType,
@@ -568,7 +717,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
       });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      pushStatus(`Исправление: ошибка ${message}`);
+      deps.addMessage('assistant', `Fix failed: ${message}`, 'fix');
       await deps.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         mode: 'fix',
         error: 'exception',
@@ -576,13 +725,13 @@ export const useFixFlow = (deps: FixFlowDeps) => {
       });
       alert(`Fix failed (${deps.aiConfig.selectedModelId ? `model=${deps.aiConfig.selectedModelId}` : 'model=unknown'}): ${message}`);
       await deps.safeAppendTimeStep({ type: 'fix', messages: [], meta: { error: message } });
+      deps.finishOperation(opId, 'error');
     } finally {
       deps.setIsProcessing(false);
     }
   }, [
     deps,
     handleFixAllMarkdownBlocks,
-    pushStatus,
     resolveFixLanguage,
     runMarkdownFix,
     summarizeFixOutcome,

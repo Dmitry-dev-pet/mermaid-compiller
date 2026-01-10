@@ -195,11 +195,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
         },
       });
     };
-    const pushStatus = (content: string) => {
-      stepMessages.push(ctx.addMessage('assistant', content, 'fix'));
-    };
     if (ctx.connectionState.status !== 'connected') {
-      pushStatus('Исправление\n- офлайн: подключите AI');
       logEvent({
         phase: 'fix',
         level: 'error',
@@ -207,6 +203,9 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
         detail: 'offline',
         error: { code: 'offline', message: 'AI offline' },
       });
+      stepMessages.push(
+        ctx.addMessage('assistant', 'Не могу запустить Fix: подключите AI.', 'fix')
+      );
       await ctx.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         error: 'offline',
       });
@@ -219,19 +218,19 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
     try {
       const docs = await ctx.getDocsContext('fix');
       const language = ctx.resolveLanguage();
-      pushStatus(
-        [
-          'Исправление',
-          '- старт',
-          `- язык: ${language}`,
-          `- модель: ${ctx.getCurrentModelName()}`,
-        ].join('\n')
-      );
       logEvent({
         phase: 'fix',
         level: 'info',
         title: 'Исправление',
         detail: `язык: ${language}`,
+      });
+      logEvent({
+        phase: 'fix',
+        level: 'info',
+        title: 'Контекст',
+        detail: `code: ${ctx.mermaidState.code.length} chars\ndocs: ${(docs.length / 1000).toFixed(1)}k`,
+        kind: 'context',
+        contextScope: 'build',
       });
       await ctx.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
         codeLength: ctx.mermaidState.code.length,
@@ -239,12 +238,34 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
 
       const startCode = ctx.mermaidState.code;
       const initialValidation = await validateMermaid(startCode, { logError: false });
+      let fixAttempt = 0;
       const { code: currentCode, validation, attempts } = await runAutoFixLoop({
         initialCode: startCode,
         initialValidation,
         maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
         validate: (code) => validateMermaid(code, { logError: false }),
         fix: async (code, errorMessage) => {
+          fixAttempt += 1;
+          logEvent({
+            phase: 'fix',
+            level: 'info',
+            title: 'Auto-fix',
+            detail: `attempt ${fixAttempt}/${AUTO_FIX_MAX_ATTEMPTS}`,
+            attempt: { current: fixAttempt, max: AUTO_FIX_MAX_ATTEMPTS },
+            kind: 'attempt',
+          });
+          const errLine = (errorMessage || ctx.mermaidState.errorMessage || '').split(/\r?\n/)[0]?.slice(0, 200);
+          if (errLine) {
+            logEvent({
+              phase: 'fix',
+              level: 'warn',
+              title: 'Auto-fix error',
+              detail: errLine,
+              attempt: { current: fixAttempt, max: AUTO_FIX_MAX_ATTEMPTS },
+              error: { code: 'validation', message: errLine },
+              kind: 'attempt',
+            });
+          }
           const fixedRaw = await runLLMRequest({
             task: 'fix',
             run: () => fixDiagram(
@@ -276,20 +297,25 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
           ctx.applyValidationPreservingSource(code, nextValidation);
         },
       });
-      pushStatus(
-        [
-          'Исправление',
-          `- валидация: ${validation.isValid ? 'валидна' : 'невалидна'}`,
-          `- попытки: ${attempts}`,
-        ].join('\n')
-      );
       logEvent({
         phase: 'validate',
         level: validation.isValid ? 'info' : 'warn',
-        title: 'Валидация',
-        detail: validation.isValid ? 'валидна' : 'невалидна',
+        title: 'Block validation',
+        detail: validation.isValid ? 'valid' : 'invalid',
         metrics: attempts ? { autoFix: attempts } : undefined,
+        kind: 'block',
       });
+      if (!validation.isValid) {
+        const line = validation.errorMessage?.split(/\r?\n/)[0]?.slice(0, 200) ?? 'validation error';
+        logEvent({
+          phase: 'validate',
+          level: 'error',
+          title: 'Ошибка',
+          detail: line,
+          error: { code: 'validation', message: line },
+          kind: 'block',
+        });
+      }
 
       const changed = currentCode !== startCode;
       const cleared = !currentCode.trim();
@@ -319,14 +345,12 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
         durationMs: Date.now() - startedAt,
         codeLength: currentCode.length,
       });
-      pushStatus('Исправление\n- история сохранена');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof TimeoutError) {
         alert(formatTimeoutFinalMessage('Fix', LLM_TIMEOUT_RETRIES));
       }
       alert(`Fix failed (${ctx.getCurrentModelName()}): ${message}`);
-      pushStatus(`Исправление: ошибка (${ctx.getCurrentModelName()}): ${message}`);
       logEvent({
         phase: 'fix',
         level: 'error',
@@ -334,6 +358,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
         detail: message,
         error: { code: 'exception', message },
       });
+      stepMessages.push(ctx.addMessage('assistant', `Fix failed: ${message}`, 'fix'));
       await ctx.trackAnalyticsWithContext('diagram_fix_failed', 'fix', {
         error: 'exception',
       });
@@ -365,13 +390,9 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
         },
       });
     };
-    const pushStatus = (content: string) => {
-      stepMessages.push(ctx.addMessage('assistant', content, 'analyze'));
-    };
     const diagramCode = ctx.getDiagramContextCode ? ctx.getDiagramContextCode().trim() : ctx.mermaidState.code.trim();
     if (ctx.connectionState.status !== 'connected' || !diagramCode) {
       alert('Connect AI and provide Mermaid code first!');
-      pushStatus('Анализ\n- офлайн или нет кода');
       logEvent({
         phase: 'analyze',
         level: 'error',
@@ -379,6 +400,15 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
         detail: ctx.connectionState.status !== 'connected' ? 'offline' : 'no_code',
         error: { code: ctx.connectionState.status !== 'connected' ? 'offline' : 'no_code', message: 'Unavailable' },
       });
+      stepMessages.push(
+        ctx.addMessage(
+          'assistant',
+          ctx.connectionState.status !== 'connected'
+            ? 'Не могу запустить анализ: подключите AI.'
+            : 'Не могу запустить анализ: нет Mermaid-кода.',
+          'analyze'
+        )
+      );
       await finalizeStep('error', { error: ctx.connectionState.status !== 'connected' ? 'offline' : 'no_code' });
       return;
     }
@@ -387,19 +417,19 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
     try {
       const docs = await ctx.getDocsContext('analyze');
       const language = ctx.resolveAnalyzeLanguage();
-      pushStatus(
-        [
-          'Анализ',
-          '- старт',
-          `- язык: ${language}`,
-          `- модель: ${ctx.getCurrentModelName()}`,
-        ].join('\n')
-      );
       logEvent({
         phase: 'analyze',
         level: 'info',
         title: 'Анализ',
         detail: `язык: ${language}`,
+      });
+      logEvent({
+        phase: 'analyze',
+        level: 'info',
+        title: 'Контекст',
+        detail: `code: ${diagramCode.length} chars\ndocs: ${(docs.length / 1000).toFixed(1)}k`,
+        kind: 'context',
+        contextScope: 'build',
       });
       const explanation = await runLLMRequest({
         task: 'analyze',
@@ -420,13 +450,12 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
         },
       });
       stepMessages.push(ctx.addMessage('assistant', explanation, 'analyze'));
-      pushStatus(
-        [
-          'Анализ',
-          '- завершён',
-          `- символов: ${explanation.length}`,
-        ].join('\n')
-      );
+      logEvent({
+        phase: 'analyze',
+        level: 'info',
+        title: 'Ответ',
+        detail: `reply: ${explanation.length} chars`,
+      });
       await finalizeStep('done', { diagramType: ctx.appState.diagramType });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
@@ -434,7 +463,6 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
         alert(formatTimeoutFinalMessage('Analyze', LLM_TIMEOUT_RETRIES));
       }
       alert(`Analysis failed (${ctx.getCurrentModelName()}): ${message}`);
-      pushStatus(`Анализ: ошибка (${ctx.getCurrentModelName()}): ${message}`);
       logEvent({
         phase: 'analyze',
         level: 'error',
@@ -442,6 +470,7 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
         detail: message,
         error: { code: 'exception', message },
       });
+      stepMessages.push(ctx.addMessage('assistant', `Analysis failed: ${message}`, 'analyze'));
       await finalizeStep('error', { error: message });
     } finally {
       ctx.setIsProcessing(false);
