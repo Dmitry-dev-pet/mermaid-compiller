@@ -1,4 +1,4 @@
-import { validateMermaid, extractMermaidCode, parseMermaidJsonResponse } from '../../services/mermaidService';
+import { validateMermaid, extractMermaidBlocksFromMarkdown, extractMermaidCode, parseMermaidJsonResponse } from '../../services/mermaidService';
 import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmService';
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
@@ -390,8 +390,23 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
         },
       });
     };
-    const diagramCode = ctx.getDiagramContextCode ? ctx.getDiagramContextCode().trim() : ctx.mermaidState.code.trim();
-    if (ctx.connectionState.status !== 'connected' || !diagramCode) {
+    const notebookMarkdown = ctx.mermaidState.code.trim();
+    const notebookBlocks = extractMermaidBlocksFromMarkdown(notebookMarkdown);
+    const isNotebookAnalysis = notebookBlocks.length > 1;
+    const diagramCode = ctx.getDiagramContextCode ? ctx.getDiagramContextCode().trim() : notebookMarkdown;
+    const intent = ctx.getCurrentIntent?.() ?? null;
+    const analysisInput = isNotebookAnalysis
+      ? [
+          intent?.content ? `Notebook intent:\n${intent.content.trim()}\n` : '',
+          'Notebook content:',
+          notebookMarkdown,
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+          .trim()
+      : diagramCode;
+
+    if (ctx.connectionState.status !== 'connected' || !analysisInput) {
       alert('Connect AI and provide Mermaid code first!');
       logEvent({
         phase: 'analyze',
@@ -421,19 +436,23 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
         phase: 'analyze',
         level: 'info',
         title: 'Анализ',
-        detail: `язык: ${language}`,
+        detail: isNotebookAnalysis
+          ? `notebook (${notebookBlocks.length} diagrams), язык: ${language}`
+          : `язык: ${language}`,
       });
       logEvent({
         phase: 'analyze',
         level: 'info',
         title: 'Контекст',
-        detail: `code: ${diagramCode.length} chars\ndocs: ${(docs.length / 1000).toFixed(1)}k`,
+        detail: isNotebookAnalysis
+          ? `notebook: ${notebookBlocks.length} diagrams (${analysisInput.length} chars)\ndocs: ${(docs.length / 1000).toFixed(1)}k`
+          : `code: ${analysisInput.length} chars\ndocs: ${(docs.length / 1000).toFixed(1)}k`,
         kind: 'context',
         contextScope: 'build',
       });
       const explanation = await runLLMRequest({
         task: 'analyze',
-        run: () => analyzeDiagram(diagramCode, ctx.aiConfig, docs, language, ctx.modelParams),
+        run: () => analyzeDiagram(analysisInput, ctx.aiConfig, docs, language, ctx.modelParams),
         retries: LLM_TIMEOUT_RETRIES,
         timeoutMs: ctx.appState.llmTimeoutMs,
         onStart: (notice) => {
