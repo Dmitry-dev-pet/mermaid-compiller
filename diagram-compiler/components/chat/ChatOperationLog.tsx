@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { OperationLog } from '../../types';
 import { LLM_TIMEOUT_MS } from '../../constants';
+import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
 import { DIAGRAM_TYPES, normalizeDiagramType } from '../../utils/diagramTypes';
 import { buildOperationLogViewModel } from './operationLogUtils';
 
@@ -20,6 +21,12 @@ const resolveDiagramType = (text: string) => {
   if (!normalized) return null;
   if (!DIAGRAM_TYPE_SET.has(normalized)) return null;
   return { raw, normalized };
+};
+
+const resolveDiagramTypeShortLabel = (text: string) => {
+  const type = resolveDiagramType(text);
+  if (!type) return null;
+  return getDiagramTypeShortLabel(type.normalized as never);
 };
 
 const stripDiagramTypeFromText = (text: string) => {
@@ -144,25 +151,35 @@ const ChatOperationLog: React.FC<Props> = ({
         </summary>
         <div className="mt-1 rounded border border-slate-200/40 dark:border-slate-800/60 bg-white/40 dark:bg-slate-950/20">
           <div className="px-2 py-1 space-y-0.5">
-          {rows.map((event) => (
-            <div
-              key={event.id}
-              className="grid grid-cols-[4.25rem_1fr] items-start gap-x-2 text-[11px] leading-snug"
-            >
-              {event.isSection ? (
-                <div className="col-span-2 mt-1 first:mt-0">
-                  <div className="flex items-center gap-2">
+            {rows.map((event, index) => {
+              const prev = rows[index - 1];
+              const isNewBlock =
+                typeof event.blockIndex === 'number'
+                && typeof prev?.blockIndex === 'number'
+                && event.blockIndex !== prev.blockIndex;
+              return (
+              <div
+                key={event.id}
+                className={`grid grid-cols-[4.25rem_1fr] items-start gap-x-2 text-[11px] leading-snug ${isNewBlock ? 'mt-1 pt-1 border-t border-slate-200/60 dark:border-slate-800/70' : ''}`}
+              >
+                {event.isSection ? (
+                  <div className="col-span-2 mt-1 first:mt-0">
+                    <div className="flex items-center gap-2">
                     <div className="h-px flex-1 bg-slate-200/60 dark:bg-slate-800/70" />
                     <div className="uppercase tracking-wide text-[10px] text-slate-400 dark:text-slate-500">
                       {event.text}
                     </div>
                     <div className="h-px flex-1 bg-slate-200/60 dark:bg-slate-800/70" />
                   </div>
-                </div>
+                  </div>
                 ) : (
                   <>
                     <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                      {event.timeLabel ?? ''}
+                      {(() => {
+                        const typeLabel = resolveDiagramTypeShortLabel(event.text);
+                        if (typeLabel && event.text.includes('Контекст')) return typeLabel;
+                        return event.timeLabel ?? '';
+                      })()}
                     </span>
                     <div className="min-w-0 break-words">
                       {(() => {
@@ -277,7 +294,8 @@ const ChatOperationLog: React.FC<Props> = ({
                 </>
               )}
             </div>
-          ))}
+              );
+            })}
           </div>
         </div>
       </details>
