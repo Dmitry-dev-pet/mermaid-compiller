@@ -145,13 +145,24 @@ export const buildOperationLogViewModel = (
   );
   const isRunning = operationLog.status === 'running' && !hasFinishedEvent;
   const firstTitle = operationLog.events[0]?.title ?? '';
-  const summaryLabel = isRunning
-    ? firstTitle === 'Чат'
-      ? 'Thinking'
-      : 'Building'
-    : firstTitle === 'Чат'
-      ? 'Finished thinking'
-      : 'Finished building';
+  const resolveSummaryLabel = (title: string) => {
+    const normalized = title.trim().toLowerCase();
+    if (normalized.startsWith('чат') || normalized === 'chat') {
+      return { active: 'Thinking', done: 'Finished thinking' };
+    }
+    if (normalized.startsWith('анализ') || normalized.startsWith('analy')) {
+      return { active: 'Analyzing', done: 'Finished analyzing' };
+    }
+    if (normalized.startsWith('исправ') || normalized === 'fix') {
+      return { active: 'Fixing', done: 'Finished fixing' };
+    }
+    if (normalized.startsWith('пересбор') || normalized.startsWith('recomp')) {
+      return { active: 'Recompiling', done: 'Finished recompiling' };
+    }
+    return { active: 'Building', done: 'Finished building' };
+  };
+  const labels = resolveSummaryLabel(firstTitle);
+  const summaryLabel = isRunning ? labels.active : labels.done;
   const summaryLine = !isRunning && showSummaryLine ? buildSummary(operationLog) : null;
   const lastLlmStartAt = resolveLastLlmStartAt(operationLog);
 
@@ -179,6 +190,9 @@ export const buildOperationLogViewModel = (
       continue;
     }
     if (event.title === 'Чат' && event.detail === 'start') {
+      continue;
+    }
+    if (event.title === 'Build' && (event.detail === 'нажата' || event.detail === 'pressed')) {
       continue;
     }
     if (typeof event.blockIndex === 'number') {

@@ -811,6 +811,7 @@ export const useDiagramStudio = () => {
     setMessages,
     safeAppendTimeStep,
     getDocsContext,
+    getDocsSelectionSummary,
     trackAnalyticsWithContext,
     setIsProcessing,
     baseHandleFixSyntax,

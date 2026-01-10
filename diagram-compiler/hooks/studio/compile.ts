@@ -1,4 +1,10 @@
-import { validateMermaid, extractMermaidBlocksFromMarkdown, extractMermaidCode, parseMermaidJsonResponse } from '../../services/mermaidService';
+import {
+  validateMermaid,
+  extractMermaidBlocksFromMarkdown,
+  extractMermaidCode,
+  parseMermaidJsonResponse,
+  detectMermaidDiagramType,
+} from '../../services/mermaidService';
 import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmService';
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
@@ -7,6 +13,14 @@ import type { Message } from '../../types';
 import { TimeoutError } from '../../services/llmTimeout';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMessageUtils';
+import { buildSystemPrompt } from '../../services/llm/prompts';
+import {
+  buildContextTooltipForLog,
+  buildDocsTooltipForLog,
+  formatDocsDetailForLog,
+  summarizeMessagesForLog,
+} from './logContextUtils';
+import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
 
 export const createRecompileHandler = (ctx: StudioContext) => {
   return async () => {
@@ -216,19 +230,60 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
     const startedAt = Date.now();
     ctx.setIsProcessing(true);
     try {
-      const docs = await ctx.getDocsContext('fix');
       const language = ctx.resolveLanguage();
+      const detectedDiagramType =
+        detectMermaidDiagramType(ctx.mermaidState.code) ?? ctx.appState.diagramType;
+      const syntaxDoc = await fetchDiagramSyntaxDoc(detectedDiagramType);
+      const docsEntries = syntaxDoc.path ? [{ path: syntaxDoc.path, text: syntaxDoc.text }] : [];
+      const docs = docsEntries.length ? formatDocsContext(docsEntries) : await ctx.getDocsContext('fix');
       logEvent({
         phase: 'fix',
         level: 'info',
         title: 'Исправление',
         detail: `язык: ${language}`,
       });
+      const selectionSummary = await ctx.getDocsSelectionSummary?.('fix');
+      const effectiveSelectionSummary =
+        docsEntries.length
+          ? { includedPaths: docsEntries.map((entry) => entry.path) }
+          : (selectionSummary ? { includedPaths: selectionSummary.includedPaths } : null);
+      const fixMessage: Message = {
+        id: 'fix-input',
+        role: 'user',
+        content: [
+          'Code:',
+          '```mermaid',
+          ctx.mermaidState.code,
+          '```',
+          '',
+          'Error:',
+          (ctx.mermaidState.errorMessage ?? '').trim() || 'Unknown error',
+        ].join('\n'),
+        timestamp: Date.now(),
+      };
+      const msgSummary = summarizeMessagesForLog([fixMessage]);
+      const docsDetail = formatDocsDetailForLog({
+        docsContext: docs,
+        selectionSummary: effectiveSelectionSummary,
+      });
+      const systemPrompt = buildSystemPrompt('fix', {
+        diagramType: detectedDiagramType,
+        docsContext: 'Documentation context redacted.',
+        language,
+      });
+      const tooltipMessages = buildContextTooltipForLog({
+        systemPrompt,
+        messages: [fixMessage],
+        docsDetail,
+      });
+      const tooltipDocs = buildDocsTooltipForLog(docsDetail);
       logEvent({
         phase: 'fix',
         level: 'info',
         title: 'Контекст',
-        detail: `code: ${ctx.mermaidState.code.length} chars\ndocs: ${(docs.length / 1000).toFixed(1)}k`,
+        detail: [`messages: ${msgSummary.count} (${msgSummary.chars} chars)`, docsDetail].join('\n'),
+        tooltipMessages,
+        tooltipDocs,
         kind: 'context',
         contextScope: 'build',
       });
@@ -430,8 +485,34 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
 
     ctx.setIsProcessing(true);
     try {
-      const docs = await ctx.getDocsContext('analyze');
       const language = ctx.resolveAnalyzeLanguage();
+      const detectedTypes = isNotebookAnalysis
+        ? Array.from(
+            new Set(
+              notebookBlocks
+                .map((block) => detectMermaidDiagramType(block.code) ?? null)
+                .filter(Boolean) as string[]
+            )
+          )
+        : [];
+      const notebookSyntaxDocs = isNotebookAnalysis
+        ? await Promise.all(detectedTypes.map((type) => fetchDiagramSyntaxDoc(type as never)))
+        : [];
+      const notebookDocsEntries = notebookSyntaxDocs
+        .filter((doc) => doc.path && doc.text)
+        .map((doc) => ({ path: doc.path as string, text: doc.text }));
+      const detectedDiagramType = isNotebookAnalysis
+        ? ctx.appState.diagramType
+        : (detectMermaidDiagramType(analysisInput) ?? ctx.appState.diagramType);
+      const singleSyntaxDoc = !isNotebookAnalysis
+        ? await fetchDiagramSyntaxDoc(detectedDiagramType)
+        : { text: '', path: null };
+      const singleDocsEntries =
+        !isNotebookAnalysis && singleSyntaxDoc.path && singleSyntaxDoc.text
+          ? [{ path: singleSyntaxDoc.path, text: singleSyntaxDoc.text }]
+          : [];
+      const docsEntries = isNotebookAnalysis ? notebookDocsEntries : singleDocsEntries;
+      const docs = docsEntries.length ? formatDocsContext(docsEntries) : await ctx.getDocsContext('analyze');
       logEvent({
         phase: 'analyze',
         level: 'info',
@@ -440,13 +521,43 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
           ? `notebook (${notebookBlocks.length} diagrams), язык: ${language}`
           : `язык: ${language}`,
       });
+      const selectionSummary = await ctx.getDocsSelectionSummary?.('analyze');
+      const effectiveSelectionSummary =
+        docsEntries.length
+          ? { includedPaths: docsEntries.map((entry) => entry.path) }
+          : (selectionSummary ? { includedPaths: selectionSummary.includedPaths } : null);
+      const analyzeMessage: Message = {
+        id: 'analyze-input',
+        role: 'user',
+        content: analysisInput,
+        timestamp: Date.now(),
+      };
+      const msgSummary = summarizeMessagesForLog([analyzeMessage]);
+      const docsDetail = formatDocsDetailForLog({
+        docsContext: docs,
+        selectionSummary: effectiveSelectionSummary,
+      });
+      const systemPrompt = buildSystemPrompt('analyze', {
+        diagramType: detectedDiagramType,
+        docsContext: 'Documentation context redacted.',
+        language,
+      });
+      const tooltipMessages = buildContextTooltipForLog({
+        systemPrompt,
+        messages: [analyzeMessage],
+        docsDetail,
+      });
+      const tooltipDocs = buildDocsTooltipForLog(docsDetail);
       logEvent({
         phase: 'analyze',
         level: 'info',
         title: 'Контекст',
-        detail: isNotebookAnalysis
-          ? `notebook: ${notebookBlocks.length} diagrams (${analysisInput.length} chars)\ndocs: ${(docs.length / 1000).toFixed(1)}k`
-          : `code: ${analysisInput.length} chars\ndocs: ${(docs.length / 1000).toFixed(1)}k`,
+        detail: [
+          `messages: ${msgSummary.count} (${msgSummary.chars} chars)`,
+          docsDetail,
+        ].join('\n'),
+        tooltipMessages,
+        tooltipDocs,
         kind: 'context',
         contextScope: 'build',
       });

@@ -1,7 +1,7 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { detectLanguage } from '../../utils';
-import type { AIConfig, MermaidState, ModelParams, Message } from '../../types';
+import type { AIConfig, MermaidState, ModelParams, Message, DiagramType } from '../../types';
 import {
   detectMermaidDiagramType,
   extractMermaidBlocksFromMarkdown,
@@ -13,6 +13,15 @@ import type { MermaidMarkdownBlock } from '../../services/mermaidService';
 import { fixDiagram } from '../../services/llmService';
 import { runLLMRequest, type LLMRequestStartNotice } from '../../services/llmRequestRunner';
 import { runAutoFixLoop } from './autoFix';
+import { buildSystemPrompt } from '../../services/llm/prompts';
+import {
+  buildContextTooltipForLog,
+  buildDocsTooltipForLog,
+  formatDocsDetailForLog,
+  summarizeMessagesForLog,
+} from './logContextUtils';
+import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
+import { DIAGRAM_TYPES, normalizeDiagramType } from '../../utils/diagramTypes';
 
 type FixFlowDeps = {
   aiConfig: AIConfig;
@@ -36,6 +45,13 @@ type FixFlowDeps = {
     meta?: Record<string, unknown>;
   }) => Promise<void>;
   getDocsContext: (mode: 'fix') => Promise<string>;
+  getDocsSelectionSummary?: (mode: 'fix') => Promise<{
+    total: number;
+    included: number;
+    excluded: number;
+    includedPaths: string[];
+    excludedPaths: string[];
+  }>;
   trackAnalyticsWithContext: (event: string, mode: 'fix', payload?: Record<string, unknown>) => Promise<void>;
   setIsProcessing: (value: boolean) => void;
   baseHandleFixSyntax: () => Promise<void>;
@@ -62,6 +78,12 @@ type FixFlowDeps = {
 };
 
 export const useFixFlow = (deps: FixFlowDeps) => {
+  const coerceToDiagramType = useCallback((value: string | null | undefined): DiagramType | null => {
+    const normalized = normalizeDiagramType(value ?? '') ?? null;
+    if (!normalized) return null;
+    const known = (DIAGRAM_TYPES as readonly string[]).includes(normalized);
+    return known ? (normalized as DiagramType) : null;
+  }, []);
   const resolveFixLanguage = useCallback(() => {
     const basis = deps.messages
       .slice()
@@ -266,7 +288,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     };
     deps.setIsProcessing(true);
     try {
-      const docs = await deps.getDocsContext('fix');
+      const docsSelection = await deps.getDocsSelectionSummary?.('fix');
       const language = resolveFixLanguage();
 
       let markdown = deps.mermaidState.code;
@@ -284,7 +306,11 @@ export const useFixFlow = (deps: FixFlowDeps) => {
 
         deps.setMarkdownMermaidActiveIndex(i);
 
-        const diagramType = block.diagramType ?? deps.appDiagramType;
+        const diagramType = block.diagramType ?? (normalizeDiagramType(deps.appDiagramType ?? '') ?? null);
+        const diagramTypeForDocs = coerceToDiagramType(diagramType);
+        const syntaxDoc = diagramTypeForDocs ? await fetchDiagramSyntaxDoc(diagramTypeForDocs) : { text: '', path: null };
+        const docsEntries = syntaxDoc.path ? [{ path: syntaxDoc.path, text: syntaxDoc.text }] : [];
+        const docs = docsEntries.length ? formatDocsContext(docsEntries) : await deps.getDocsContext('fix');
         const label = `${i + 1}/${blocks.length} - ${diagramType ?? 'unknown'} - Fix block`;
         logEvent({
           phase: 'fix',
@@ -294,6 +320,49 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           blockIndex: i,
           kind: 'block',
           contextScope: 'block',
+        });
+        const docsDetail = formatDocsDetailForLog({
+          docsContext: docs,
+          selectionSummary: docsEntries.length
+            ? { includedPaths: docsEntries.map((entry) => entry.path) }
+            : (docsSelection ? { includedPaths: docsSelection.includedPaths } : null),
+        });
+        const fixMessage: Message = {
+          id: `fix-input-${i + 1}`,
+          role: 'user',
+          content: [
+            'Code:',
+            '```mermaid',
+            block.code,
+            '```',
+            '',
+            'Error:',
+            (initialValidation.errorMessage ?? '').trim() || 'Unknown error',
+          ].join('\n'),
+          timestamp: Date.now(),
+        };
+        const msgSummary = summarizeMessagesForLog([fixMessage]);
+        const systemPrompt = buildSystemPrompt('fix', {
+          diagramType: (diagramType ?? deps.appDiagramType ?? 'auto') as DiagramType,
+          docsContext: 'Documentation context redacted.',
+          language,
+        });
+        const tooltipMessages = buildContextTooltipForLog({
+          systemPrompt,
+          messages: [fixMessage],
+          docsDetail,
+        });
+        const tooltipDocs = buildDocsTooltipForLog(docsDetail);
+        logEvent({
+          phase: 'fix',
+          level: 'info',
+          title: 'Контекст',
+          detail: [`messages: ${msgSummary.count} (${msgSummary.chars} chars)`, docsDetail].join('\n'),
+          tooltipMessages,
+          tooltipDocs,
+          kind: 'context',
+          contextScope: 'block',
+          blockIndex: i,
         });
         await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
           diagramType,
@@ -558,7 +627,8 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     };
     deps.setIsProcessing(true);
     try {
-      const diagramType = targetBlock.diagramType ?? deps.appDiagramType;
+      const diagramType =
+        targetBlock.diagramType ?? (normalizeDiagramType(deps.appDiagramType ?? '') ?? null);
       const totalBlocks = deps.markdownMermaidBlocks.length;
       const label = `${targetIndex + 1}/${totalBlocks} - ${diagramType ?? 'unknown'} - Fix block`;
       logEvent({
@@ -570,13 +640,60 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         kind: 'block',
         contextScope: 'block',
       });
-      const docs = await deps.getDocsContext('fix');
+      const docsSelection = await deps.getDocsSelectionSummary?.('fix');
+      const diagramTypeForDocs = coerceToDiagramType(diagramType);
+      const syntaxDoc = diagramTypeForDocs ? await fetchDiagramSyntaxDoc(diagramTypeForDocs) : { text: '', path: null };
+      const docsEntries = syntaxDoc.path ? [{ path: syntaxDoc.path, text: syntaxDoc.text }] : [];
+      const docs = docsEntries.length ? formatDocsContext(docsEntries) : await deps.getDocsContext('fix');
       const language = resolveFixLanguage();
       logEvent({
         phase: 'fix',
         level: 'info',
         title: 'Fix',
         detail: `язык: ${language}`,
+      });
+      const docsDetail = formatDocsDetailForLog({
+        docsContext: docs,
+        selectionSummary: docsEntries.length
+          ? { includedPaths: docsEntries.map((entry) => entry.path) }
+          : (docsSelection ? { includedPaths: docsSelection.includedPaths } : null),
+      });
+      const fixMessage: Message = {
+        id: `fix-input-${targetIndex + 1}`,
+        role: 'user',
+        content: [
+          'Code:',
+          '```mermaid',
+          targetBlock.code,
+          '```',
+          '',
+          'Error:',
+          (targetDiagnostics?.errorMessage ?? '').trim() || (targetDiagnostics?.isValid === false ? 'Validation error' : 'Unknown error'),
+        ].join('\n'),
+        timestamp: Date.now(),
+      };
+      const msgSummary = summarizeMessagesForLog([fixMessage]);
+      const systemPrompt = buildSystemPrompt('fix', {
+        diagramType: (diagramType ?? normalizeDiagramType(deps.appDiagramType ?? '') ?? 'auto') as DiagramType,
+        docsContext: 'Documentation context redacted.',
+        language,
+      });
+      const tooltipMessages = buildContextTooltipForLog({
+        systemPrompt,
+        messages: [fixMessage],
+        docsDetail,
+      });
+      const tooltipDocs = buildDocsTooltipForLog(docsDetail);
+      logEvent({
+        phase: 'fix',
+        level: 'info',
+        title: 'Контекст',
+        detail: [`messages: ${msgSummary.count} (${msgSummary.chars} chars)`, docsDetail].join('\n'),
+        tooltipMessages,
+        tooltipDocs,
+        kind: 'context',
+        contextScope: 'block',
+        blockIndex: targetIndex,
       });
       await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
         diagramType,

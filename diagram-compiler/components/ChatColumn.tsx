@@ -150,6 +150,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
   const shouldRenderMarkdown = (message: Message, isStatus: boolean) => {
     if (message.role !== 'assistant' || isStatus) return false;
+    // Analyze/Fix responses must stay in chat (even if model returns Markdown).
+    if (message.mode === 'analyze' || message.mode === 'fix') return false;
     const text = message.content.trim();
     if (!text) return false;
     return /(^|\n)#{1,6}\s+/.test(text) || /^Intent:\s*/i.test(text);
@@ -312,11 +314,29 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           anchor = userMessages[userMessages.length - 1] ?? null;
         }
       } else {
-        anchor = assistantMessages.find(
-          (msg) => (msg.timestamp ?? 0) >= log.startedAt && msg.mode === 'build'
-        ) ?? null;
+        const normalizedTitle = title.trim().toLowerCase();
+        const expectedMode: Message['mode'] | null =
+          normalizedTitle.startsWith('анализ')
+            ? 'analyze'
+            : normalizedTitle.startsWith('исправ') || normalizedTitle === 'fix'
+              ? 'fix'
+              : normalizedTitle === 'notebook build' || normalizedTitle === 'сборка'
+                ? 'build'
+                : null;
+        if (expectedMode) {
+          // Prefer anchoring to the assistant response of the same mode,
+          // so logs are shown right above the final message (and never before it).
+          for (const candidate of assistantMessages) {
+            const ts = candidate.timestamp ?? 0;
+            if (candidate.mode !== expectedMode) continue;
+            if (ts < log.startedAt) continue;
+            anchor = candidate;
+            break;
+          }
+        }
         if (!anchor) {
-          anchor = assistantMessages.find((msg) => (msg.timestamp ?? 0) >= log.startedAt) ?? null;
+          // While the response message doesn't exist yet, keep the log unanchored (it will render at the bottom).
+          continue;
         }
       }
 
@@ -698,10 +718,13 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                   const paddingClass = msg.role === 'user' ? 'px-0 py-0' : 'px-0 py-0';
                   const attachedLogs = inlineLogsByMessageId.get(msg.id) ?? [];
                   const hasChatLog = attachedLogs.some((log) => (log.events[0]?.title ?? '') === 'Чат');
+                  const attachedChatLogs = attachedLogs.filter((log) => (log.events[0]?.title ?? '') === 'Чат');
+                  const attachedNonChatLogs = attachedLogs.filter((log) => (log.events[0]?.title ?? '') !== 'Чат');
                   const isRefinementChatLog = attachedLogs.some((log) =>
                     log.events.some((event) => event.title === 'Чат' && event.detail === 'refine')
                   );
-                  const isBuildMessage = msg.role === 'assistant' && msg.mode === 'build';
+                  const isOperationMessage =
+                    msg.role === 'assistant' && (msg.mode === 'build' || msg.mode === 'analyze' || msg.mode === 'fix');
                   const buildLog = attachedLogs.find((log) => {
                     const title = log.events[0]?.title ?? '';
                     return title === 'Notebook build' || title === 'Сборка';
@@ -736,6 +759,37 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                       )}
                     </div>
                   ) : null;
+                  const chatLogBlock =
+                    attachedChatLogs.length > 0 ? (
+                      <div className="mt-1 flex flex-col gap-2">
+                        {attachedChatLogs.map((log) => (
+                          <ChatOperationLog
+                            key={log.id}
+                            operationLog={log}
+                            showSummaryLine={log.status === 'running'}
+                            timeoutMs={llmTimeoutMs}
+                          />
+                        ))}
+                      </div>
+                    ) : null;
+                  const nonChatLogBlock =
+                    attachedNonChatLogs.length > 0 ? (
+                      <div className="mt-1 flex flex-col gap-2">
+                        {attachedNonChatLogs.map((log) => (
+                          <ChatOperationLog
+                            key={log.id}
+                            operationLog={log}
+                            showSummaryLine={log.status === 'running'}
+                            timeoutMs={llmTimeoutMs}
+                          />
+                        ))}
+                        {showBuildSummaryFallback && buildLog ? (
+                          <div className="bg-transparent border-0 shadow-none text-slate-900 dark:text-slate-100 rounded-none text-sm whitespace-pre-wrap break-words">
+                            {summarizeBuildLog(buildLog)}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null;
                   const analyzeLabel =
                     msg.role === 'assistant' && msg.mode === 'analyze' && !isStatus
                       ? 'Анализ'
@@ -779,16 +833,25 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                       key={msg.id}
                       className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                     >
-                      {isBuildMessage ? logBlock : null}
+                      {isOperationMessage ? logBlock : null}
                       {messageBlock}
                       <span className="sr-only">
                         {msg.role === 'user' ? 'You' : 'Assistant'}
                       </span>
-                      {!isBuildMessage ? logBlock : null}
-                      {msg.role === 'user' && hasChatLog && !isRefinementChatLog && chatSummaryMessage && (
-                        <div className="mt-1 bg-transparent border-0 shadow-none text-slate-900 dark:text-slate-100 rounded-none text-xs whitespace-pre-wrap break-words">
-                          {chatSummaryMessage}
-                        </div>
+                      {msg.role === 'user' ? (
+                        <>
+                          {chatLogBlock}
+                          {hasChatLog && !isRefinementChatLog && chatSummaryMessage ? (
+                            <div className="mt-1 bg-transparent border-0 shadow-none text-slate-900 dark:text-slate-100 rounded-none text-xs whitespace-pre-wrap break-words">
+                              {chatSummaryMessage}
+                            </div>
+                          ) : null}
+                          {nonChatLogBlock}
+                        </>
+                      ) : (
+                        <>
+                          {!isOperationMessage ? logBlock : null}
+                        </>
                       )}
                     </div>
                   );
