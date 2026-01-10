@@ -23,6 +23,26 @@ const resolveDiagramTypeShortLabel = (text: string) => {
   return getDiagramTypeShortLabel(normalized as never);
 };
 
+const stripDiagramTypeFromText = (text: string) => {
+  // Common patterns we generate:
+  // - "1/3 — flowchart - Title"
+  // - "2 — Контекст — 2/3 - flowchart - Title"
+  const match = text.match(/(?:—|-)\\s*([a-zA-Z]+)\\s*-\\s*/);
+  const raw = match?.[1]?.trim();
+  const normalized = normalizeDiagramType(raw ?? '') ?? raw ?? '';
+  if (!normalized || !DIAGRAM_TYPE_SET.has(normalized)) return text;
+
+  // Prefer "— <type> - " -> "— "
+  const emDashPattern = new RegExp(`—\\s*${raw}\\s*-\\s*`, 'i');
+  if (emDashPattern.test(text)) {
+    return text.replace(emDashPattern, '— ');
+  }
+
+  // Fallback: " - <type> - " -> " - "
+  const dashPattern = new RegExp(`-\\s*${raw}\\s*-\\s*`, 'i');
+  return text.replace(dashPattern, '- ');
+};
+
 const ChatOperationLog: React.FC<Props> = ({
   operationLog,
   showSummaryLine = true,
@@ -132,24 +152,28 @@ const ChatOperationLog: React.FC<Props> = ({
                     <div className="h-px flex-1 bg-slate-200/60 dark:bg-slate-800/70" />
                   </div>
                 </div>
-              ) : (
+                ) : (
                   <>
-                  <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                    {(() => {
-                      const typeLabel = resolveDiagramTypeShortLabel(event.text);
+                    <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                      {(() => {
                       const timeLabel = event.timeLabel ?? '';
+                      if (!timeLabel) return '';
+                      const typeLabel = resolveDiagramTypeShortLabel(event.text);
                       return [typeLabel, timeLabel].filter(Boolean).join(' ');
-                    })()}
-                  </span>
-                  <div className="min-w-0 break-words">
-                    {(() => {
-                      const hasTooltip = Boolean(event.tooltipMessages || event.tooltipDocs || event.tooltip);
-                      if (!hasTooltip) return <div className="whitespace-pre-wrap">{event.text}</div>;
-                      const lines = event.text.split('\n');
-                      const renderLine = (line: string, index: number) => {
-                        const messageMatch = event.tooltipMessages
-                          ? line.match(/^(.*?)(messages:\s.*)$/i)
-                          : null;
+                      })()}
+                    </span>
+                    <div className="min-w-0 break-words">
+                      {(() => {
+                        const hasTooltip = Boolean(event.tooltipMessages || event.tooltipDocs || event.tooltip);
+                        const typeLabel = resolveDiagramTypeShortLabel(event.text);
+                        const displayText =
+                          typeLabel && event.timeLabel ? stripDiagramTypeFromText(event.text) : event.text;
+                        if (!hasTooltip) return <div className="whitespace-pre-wrap">{displayText}</div>;
+                        const lines = event.text.split('\n');
+                        const renderLine = (line: string, index: number) => {
+                          const messageMatch = event.tooltipMessages
+                            ? line.match(/^(.*?)(messages:\s.*)$/i)
+                            : null;
                         if (messageMatch && event.tooltipMessages) {
                           const [, prefix, messageText] = messageMatch;
                           const tooltipId = `${event.id}-messages`;
@@ -240,7 +264,7 @@ const ChatOperationLog: React.FC<Props> = ({
                             </span>
                           </span>
                         );
-                      };
+                        };
                       return lines.map((line, index) => (
                         <div key={`line-${index}`} className="whitespace-pre-wrap">
                           {renderLine(line, index)}
