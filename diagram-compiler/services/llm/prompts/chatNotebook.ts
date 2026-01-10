@@ -50,6 +50,11 @@ Intent:
 - Provide 2–4 possible follow-up questions for later discussion (do NOT ask them in the assistant reply).
 - Write in a natural, readable tone. Use short sentences and keep each bullet to 1–2 lines. Avoid dense paragraph blocks.
 - Do not add extra sections or change headings; keep the exact heading titles above.
+- Diagram type selection (guidance):
+  - Use \`er\` for entity/person relationships, roles, responsibilities, data models (entities + relations).
+  - Use \`sequence\` for dialogues, interactions, message flows over time.
+  - Use \`flowchart\` for processes, decision trees, step-by-step flows, org/reporting hierarchy.
+  - Avoid \`flowchart\` as a substitute for relationship graphs when \`er\` fits better.
 - If Main mode is active, you MUST use only flowchart, er, sequence and MUST NOT use any other diagram types.
 - If this is the first user message and the request is ambiguous, do NOT ask follow-up questions. Make reasonable assumptions and proceed.
 - If the user continues the chat and ambiguity still remains, you MAY ask up to 3 focused questions.
@@ -114,6 +119,11 @@ Intent:
 - Приведи 2–4 возможных вопроса для дальнейшего обсуждения (НЕ задавай их прямо в ответе).
 - Пиши читаемо и по‑человечески. Короткие фразы, 1–2 строки на пункт, без длинных абзацев.
 - Не добавляй других разделов и не меняй названия заголовков.
+- Выбор типа диаграммы (подсказки):
+  - \`er\` — связи персонажей/сущностей, роли/ответственности, модели данных (сущности + отношения).
+  - \`sequence\` — диалоги, взаимодействия, обмен сообщениями во времени.
+  - \`flowchart\` — процессы, ветвления решений, пошаговые сценарии, иерархия/подчинение.
+  - Не используй \`flowchart\` вместо схемы отношений, если по смыслу лучше подходит \`er\`.
 - Если активен режим Main, используй ТОЛЬКО flowchart, er, sequence и НЕ используй другие типы.
 - Если это первое сообщение пользователя и запрос неоднозначен, НЕ задавай уточняющих вопросов. Вместо этого сделай разумные допущения и продолжай.
 - Если пользователь продолжает диалог и неоднозначность сохраняется, можно задать до 3 уточняющих вопросов.
