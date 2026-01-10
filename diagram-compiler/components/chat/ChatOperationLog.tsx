@@ -157,19 +157,18 @@ const ChatOperationLog: React.FC<Props> = ({
                     <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
                       {(() => {
                       const timeLabel = event.timeLabel ?? '';
-                      if (!timeLabel) return '';
                       const typeLabel = resolveDiagramTypeShortLabel(event.text);
-                      return [typeLabel, timeLabel].filter(Boolean).join(' ');
+                      if (typeLabel) return [typeLabel, timeLabel].filter(Boolean).join(' ');
+                      return timeLabel;
                       })()}
                     </span>
                     <div className="min-w-0 break-words">
                       {(() => {
                         const hasTooltip = Boolean(event.tooltipMessages || event.tooltipDocs || event.tooltip);
                         const typeLabel = resolveDiagramTypeShortLabel(event.text);
-                        const displayText =
-                          typeLabel && event.timeLabel ? stripDiagramTypeFromText(event.text) : event.text;
+                        const displayText = typeLabel ? stripDiagramTypeFromText(event.text) : event.text;
                         if (!hasTooltip) return <div className="whitespace-pre-wrap">{displayText}</div>;
-                        const lines = event.text.split('\n');
+                        const lines = displayText.split('\n');
                         const renderLine = (line: string, index: number) => {
                           const messageMatch = event.tooltipMessages
                             ? line.match(/^(.*?)(messages:\s.*)$/i)
