@@ -2,12 +2,25 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { OperationLog } from '../../types';
 import { LLM_TIMEOUT_MS } from '../../constants';
+import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
+import { DIAGRAM_TYPES, normalizeDiagramType } from '../../utils/diagramTypes';
 import { buildOperationLogViewModel } from './operationLogUtils';
 
 type Props = {
   operationLog: OperationLog;
   showSummaryLine?: boolean;
   timeoutMs?: number;
+};
+
+const DIAGRAM_TYPE_SET = new Set<string>([...DIAGRAM_TYPES, 'auto']);
+
+const resolveDiagramTypeShortLabel = (text: string) => {
+  const match = text.match(/(?:—|-)\s*([a-zA-Z]+)\s*-\s*/);
+  const raw = match?.[1]?.trim();
+  const normalized = normalizeDiagramType(raw ?? '') ?? raw ?? '';
+  if (!normalized) return null;
+  if (!DIAGRAM_TYPE_SET.has(normalized)) return null;
+  return getDiagramTypeShortLabel(normalized as never);
 };
 
 const ChatOperationLog: React.FC<Props> = ({
@@ -120,9 +133,13 @@ const ChatOperationLog: React.FC<Props> = ({
                   </div>
                 </div>
               ) : (
-                <>
-                  <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500">
-                    {event.timeLabel ?? ''}
+                  <>
+                  <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                    {(() => {
+                      const typeLabel = resolveDiagramTypeShortLabel(event.text);
+                      const timeLabel = event.timeLabel ?? '';
+                      return [typeLabel, timeLabel].filter(Boolean).join(' ');
+                    })()}
                   </span>
                   <div className="min-w-0 break-words">
                     {(() => {
