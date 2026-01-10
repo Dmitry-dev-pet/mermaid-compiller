@@ -2,59 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { OperationLog } from '../../types';
 import { LLM_TIMEOUT_MS } from '../../constants';
-import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
-import { DIAGRAM_TYPES, normalizeDiagramType } from '../../utils/diagramTypes';
 import { buildOperationLogViewModel } from './operationLogUtils';
 
 type Props = {
   operationLog: OperationLog;
   showSummaryLine?: boolean;
   timeoutMs?: number;
-};
-
-const DIAGRAM_TYPE_SET = new Set<string>([...DIAGRAM_TYPES, 'auto']);
-
-const resolveDiagramType = (text: string) => {
-  const match = text.match(/(?:—|-)\s*([a-zA-Z]+)\s*-\s*/);
-  const raw = match?.[1]?.trim();
-  const normalized = normalizeDiagramType(raw ?? '') ?? raw ?? '';
-  if (!normalized) return null;
-  if (!DIAGRAM_TYPE_SET.has(normalized)) return null;
-  return { raw, normalized };
-};
-
-const resolveDiagramTypeShortLabel = (text: string) => {
-  const type = resolveDiagramType(text);
-  if (!type) return null;
-  return getDiagramTypeShortLabel(type.normalized as never);
-};
-
-const stripDiagramTypeFromText = (text: string) => {
-  // Common patterns we generate:
-  // - "1/3 — flowchart - Title"
-  // - "2 — Контекст — 2/3 - flowchart - Title"
-  const match = text.match(/(?:—|-)\\s*([a-zA-Z]+)\\s*-\\s*/);
-  const raw = match?.[1]?.trim();
-  const normalized = normalizeDiagramType(raw ?? '') ?? raw ?? '';
-  if (!normalized || !DIAGRAM_TYPE_SET.has(normalized)) return text;
-
-  // Prefer "— <type> - " -> "— "
-  const emDashPattern = new RegExp(`—\\s*${raw}\\s*-\\s*`, 'i');
-  if (emDashPattern.test(text)) {
-    return text.replace(emDashPattern, '— ');
-  }
-
-  // Fallback: " - <type> - " -> " - "
-  const dashPattern = new RegExp(`-\\s*${raw}\\s*-\\s*`, 'i');
-  return text.replace(dashPattern, '- ');
-};
-
-const stripInnerBlockLabelFromContextText = (text: string) => {
-  if (!text.includes('Контекст')) return text;
-  // Example: "1 — Контекст — 1/3 - flowchart - Title"
-  // After stripping type: "1 — Контекст — 1/3 - Title"
-  const withBoth = text.replace(/—\s*\d+\/\d+\s*-\s*[a-zA-Z]+\s*-\s*/g, '— ');
-  return withBoth.replace(/—\s*\d+\/\d+\s*-\s*/g, '— ');
 };
 
 const ChatOperationLog: React.FC<Props> = ({
@@ -175,19 +128,13 @@ const ChatOperationLog: React.FC<Props> = ({
                 ) : (
                   <>
                     <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                      {(() => {
-                        const typeLabel = resolveDiagramTypeShortLabel(event.text);
-                        if (typeLabel && event.text.includes('Контекст')) return typeLabel;
-                        return event.timeLabel ?? '';
-                      })()}
+                      {event.timeLabel ?? ''}
                     </span>
                     <div className="min-w-0 break-words">
                       {(() => {
                         const hasTooltip = Boolean(event.tooltipMessages || event.tooltipDocs || event.tooltip);
-                        let displayText = stripDiagramTypeFromText(event.text);
-                        displayText = stripInnerBlockLabelFromContextText(displayText);
-                        if (!hasTooltip) return <div className="whitespace-pre-wrap">{displayText}</div>;
-                        const lines = displayText.split('\n');
+                        if (!hasTooltip) return <div className="whitespace-pre-wrap">{event.text}</div>;
+                        const lines = event.text.split('\n');
                         const renderLine = (line: string, index: number) => {
                           const messageMatch = event.tooltipMessages
                             ? line.match(/^(.*?)(messages:\s.*)$/i)

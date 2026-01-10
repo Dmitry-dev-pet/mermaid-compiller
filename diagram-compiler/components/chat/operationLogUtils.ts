@@ -2,6 +2,11 @@ import type { OperationEvent, OperationLog } from '../../types';
 import { LLM_TIMEOUT_MS } from '../../constants';
 import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
 import { normalizeDiagramType } from '../../utils/diagramTypes';
+import {
+  resolveDiagramTypeShortLabelFromText,
+  stripDiagramTypeFromText,
+  stripInnerBlockLabelFromContextText,
+} from './operationLogTextUtils';
 
 export type LogRow = {
   id: string;
@@ -60,6 +65,8 @@ const resolveNotebookTypes = (events: OperationEvent[]) => {
     count > 1 ? `${label}×${count}` : label
   );
 };
+
+const isContextRowText = (text: string) => text.includes('Контекст') || text.toLowerCase().includes('context');
 
 const formatEvent = (event: OperationEvent) => {
   const parts: string[] = [];
@@ -460,6 +467,23 @@ export const buildOperationLogViewModel = (
   for (const row of rows) {
     if (row.timeMs && !isRunning) {
       row.timeLabel = formatDuration(row.timeMs);
+    }
+  }
+
+  // Final pass: strip diagram type from all visible rows, and show diagram type only in the left column
+  // on context rows (so it appears above the timed result row).
+  for (const row of rows) {
+    const typeLabel = resolveDiagramTypeShortLabelFromText(row.text);
+    const stripped = stripInnerBlockLabelFromContextText(stripDiagramTypeFromText(row.text));
+    row.text = stripped;
+
+    if (typeLabel && isContextRowText(stripped)) {
+      // Preserve countdown timers (mm:ss) if they were injected while running.
+      const isCountdown = typeof row.timeLabel === 'string' && /^\d+:\d\d$/.test(row.timeLabel);
+      if (!row.timeLabel || (!isCountdown && row.timeLabel.endsWith('s'))) {
+        row.timeLabel = typeLabel;
+      }
+      if (!row.timeLabel) row.timeLabel = typeLabel;
     }
   }
 
