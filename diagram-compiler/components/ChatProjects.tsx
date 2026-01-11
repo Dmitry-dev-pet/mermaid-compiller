@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Folder, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, Plus, Trash2, X } from 'lucide-react';
 import type { DiagramType } from '../types';
 import type { HistorySession } from '../services/history/types';
 import { DIAGRAM_TYPE_LABELS } from '../utils/diagramTypeMeta';
@@ -298,19 +298,15 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                         cancelEditingProject();
                       }
                     }}
+                    onBlur={() => void commitProjectRename(activeProject)}
                     className="w-44 text-xs px-2 py-1 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200"
                     autoFocus
                   />
                   <button
                     type="button"
-                    onClick={() => void commitProjectRename(activeProject)}
-                    className="p-1 rounded text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
-                    title="Save name"
-                  >
-                    <Check size={12} />
-                  </button>
-                  <button
-                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                    }}
                     onClick={cancelEditingProject}
                     className="p-1 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                     title="Cancel"
@@ -327,14 +323,6 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                     title="Rename project"
                   >
                     {activeProject.title ?? 'Project'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => startEditingProject(activeProject)}
-                    className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                    title="Rename"
-                  >
-                    <Pencil size={12} />
                   </button>
                 </>
               )}
@@ -499,13 +487,14 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                                   cancelEditingProject();
                                 }
                               }}
+                              onBlur={() => void commitProjectRename(project)}
                               className="w-full text-xs px-2 py-1 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200"
                               autoFocus
                             />
                           ) : (
                             <button
                               type="button"
-                              onClick={() => void handleOpenProject(project.id)}
+                              onClick={() => startEditingProject(project)}
                               className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate hover:text-blue-600 dark:hover:text-blue-400"
                               title={project.title}
                             >
@@ -518,24 +507,17 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                         </div>
                         <div className="flex items-center gap-1">
                           {isEditing ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => void commitProjectRename(project)}
-                                className="p-1 rounded text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
-                                title="Save name"
-                              >
-                                <Check size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={cancelEditingProject}
-                                className="p-1 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                title="Cancel"
-                              >
-                                <X size={12} />
-                              </button>
-                            </>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                              }}
+                              onClick={cancelEditingProject}
+                              className="p-1 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Cancel"
+                            >
+                              <X size={12} />
+                            </button>
                           ) : (
                             <>
                               {isActive ? (
@@ -551,14 +533,6 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                                   Continue
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => startEditingProject(project)}
-                                className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                title="Rename"
-                              >
-                                <Pencil size={12} />
-                              </button>
                               <button
                                 type="button"
                                 onClick={() => void handleDelete(project)}
