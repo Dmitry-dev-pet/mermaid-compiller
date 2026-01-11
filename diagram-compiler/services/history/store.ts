@@ -148,7 +148,7 @@ export const recordStep = async (
     const session = (await requestToPromise(sessions.get(args.sessionId))) as HistorySession | undefined;
     if (!session) throw new Error('History session not found');
 
-    if (args.type === 'chat' && session.nextStepIndex === 0 && isDefaultSessionTitle(session)) {
+    if (args.type === 'chat' && isDefaultSessionTitle(session)) {
       const nextTitle = deriveAutoSessionTitle(args.messages);
       if (nextTitle) {
         session.title = nextTitle;
