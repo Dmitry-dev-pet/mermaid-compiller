@@ -15,6 +15,7 @@ type RunLLMRequestArgs<T> = {
   retries?: number;
   onTimeout?: (notice: TimeoutNotice) => void;
   onStart?: (notice: LLMRequestStartNotice) => void;
+  onFinish?: (notice: LLMRequestFinishNotice) => void;
 };
 
 export type LLMRequestStartNotice = {
@@ -24,22 +25,54 @@ export type LLMRequestStartNotice = {
   startedAt: number;
 };
 
+export type LLMRequestFinishNotice = {
+  task: string;
+  attempt: number;
+  maxAttempts: number;
+  startedAt: number;
+  finishedAt: number;
+  durationMs: number;
+  status: 'success' | 'timeout' | 'error';
+};
+
 export const runLLMRequest = async <T>(args: RunLLMRequestArgs<T>): Promise<T> => {
   const maxAttempts = args.retries ?? LLM_TIMEOUT_RETRIES;
   const timeoutMs = args.timeoutMs ?? LLM_TIMEOUT_MS;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const startedAt = Date.now();
     args.onStart?.({
       task: args.task,
       attempt,
       maxAttempts,
-      startedAt: Date.now(),
+      startedAt,
     });
     try {
-      return await withTimeout(args.run(), timeoutMs);
+      const result = await withTimeout(args.run(), timeoutMs);
+      const finishedAt = Date.now();
+      args.onFinish?.({
+        task: args.task,
+        attempt,
+        maxAttempts,
+        startedAt,
+        finishedAt,
+        durationMs: finishedAt - startedAt,
+        status: 'success',
+      });
+      return result;
     } catch (error) {
       lastError = error;
+      const finishedAt = Date.now();
+      args.onFinish?.({
+        task: args.task,
+        attempt,
+        maxAttempts,
+        startedAt,
+        finishedAt,
+        durationMs: finishedAt - startedAt,
+        status: error instanceof TimeoutError ? 'timeout' : 'error',
+      });
       if (error instanceof TimeoutError) {
         if (attempt < maxAttempts) {
           args.onTimeout?.({

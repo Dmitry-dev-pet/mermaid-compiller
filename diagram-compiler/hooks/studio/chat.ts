@@ -138,6 +138,15 @@ export const createChatHandler = (ctx: StudioContext) => {
                 detail: formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts),
               });
             },
+            onFinish: (notice) => {
+              logEvent({
+                phase: 'chat',
+                level: notice.status === 'success' ? 'info' : 'warn',
+                title: 'LLM',
+                detail: notice.status,
+                metrics: { durationMs: notice.durationMs },
+              });
+            },
           });
           const rawReply = stripMermaidCode(responseText).trim();
       const stripIntentScaffold = (text: string) => {
