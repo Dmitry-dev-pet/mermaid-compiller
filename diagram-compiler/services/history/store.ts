@@ -1,6 +1,7 @@
 import type { MermaidState, Message } from '../../types';
 import { requestToPromise, STORE_REVISIONS, STORE_SESSIONS, STORE_STEPS, withTx } from './db';
 import type { DiagramRevision, HistorySession, SessionPreview, SessionSettings, SessionSnapshot, StepMeta, TimeStep, TimeStepType } from './types';
+import { deriveAutoSessionTitle, formatDefaultSessionTitle, isDefaultSessionTitle } from './sessionTitle';
 
 export const ACTIVE_SESSION_KEY = 'dc_active_session_id';
 
@@ -36,14 +37,9 @@ export const clearActiveSessionId = () => {
   }
 };
 
-const formatSessionTitle = (createdAt: number) => {
-  const iso = new Date(createdAt).toISOString().slice(0, 19).replace('T', ' ');
-  return `Project ${iso}`;
-};
-
 const normalizeSession = (session: HistorySession): HistorySession => ({
   ...session,
-  title: session.title ?? formatSessionTitle(session.createdAt),
+  title: session.title ?? formatDefaultSessionTitle(session.createdAt),
   updatedAt: session.updatedAt ?? session.createdAt,
 });
 
@@ -58,7 +54,7 @@ export const createSession = async (args: CreateSessionArgs = {}): Promise<Histo
     id: newId(),
     createdAt,
     updatedAt: createdAt,
-    title: args.title ?? formatSessionTitle(createdAt),
+    title: args.title ?? formatDefaultSessionTitle(createdAt),
     nextStepIndex: 0,
     currentRevisionId: null,
     settings: args.settings,
@@ -151,6 +147,13 @@ export const recordStep = async (
 
     const session = (await requestToPromise(sessions.get(args.sessionId))) as HistorySession | undefined;
     if (!session) throw new Error('History session not found');
+
+    if (args.type === 'chat' && session.nextStepIndex === 0 && isDefaultSessionTitle(session)) {
+      const nextTitle = deriveAutoSessionTitle(args.messages);
+      if (nextTitle) {
+        session.title = nextTitle;
+      }
+    }
 
     const stepId = newId();
     const createdAt = now();
