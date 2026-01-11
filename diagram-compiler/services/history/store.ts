@@ -1,7 +1,7 @@
 import type { MermaidState, Message } from '../../types';
 import { requestToPromise, STORE_REVISIONS, STORE_SESSIONS, STORE_STEPS, withTx } from './db';
 import type { DiagramRevision, HistorySession, SessionPreview, SessionSettings, SessionSnapshot, StepMeta, TimeStep, TimeStepType } from './types';
-import { deriveAutoSessionTitle, formatDefaultSessionTitle, isDefaultSessionTitle } from './sessionTitle';
+import { formatDefaultSessionTitle, isDefaultSessionTitle } from './sessionTitle';
 
 export const ACTIVE_SESSION_KEY = 'dc_active_session_id';
 
@@ -148,11 +148,9 @@ export const recordStep = async (
     const session = (await requestToPromise(sessions.get(args.sessionId))) as HistorySession | undefined;
     if (!session) throw new Error('History session not found');
 
-    if (args.type === 'chat' && isDefaultSessionTitle(session)) {
-      const nextTitle = deriveAutoSessionTitle(args.messages);
-      if (nextTitle) {
-        session.title = nextTitle;
-      }
+    const autoTitle = (args.meta as { autoTitle?: string } | undefined)?.autoTitle?.trim();
+    if (args.type === 'chat' && autoTitle && isDefaultSessionTitle(session)) {
+      session.title = autoTitle;
     }
 
     const stepId = newId();

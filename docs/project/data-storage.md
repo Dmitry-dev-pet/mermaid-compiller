@@ -17,6 +17,9 @@
 - `updatedAt` для сортировки списка;
 - настройки сессии (UI + LLM, опциональные параметры модели).
   - `appState` включает флаги notebook-режима (`isNotebookBuildEnabled`, `notebookBuildCount`).
+  - `appState` включает таймаут LLM (`llmTimeoutMs`).
+
+Шаги истории (`TimeStep`) могут хранить UI-метаданные в `step.meta`, например `operationLog` (для операционных логов) и `autoTitle` (для авто-названия проекта после первого Chat).
 
 ## Что НЕ хранится
 
@@ -25,4 +28,4 @@
 
 ---
 
-Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build settings).
+Обновлено: 2026-01-11. Согласовано с текущей реализацией (llmTimeoutMs, operationLog meta, notebook build settings).

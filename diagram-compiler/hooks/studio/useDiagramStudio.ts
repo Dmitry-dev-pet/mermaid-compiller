@@ -792,6 +792,7 @@ export const useDiagramStudio = () => {
       addOperationEvent,
       finishOperation,
       getOperationLog,
+      historySession,
       onLLMRequestStart: handleLLMRequestStart,
     });
 

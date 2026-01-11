@@ -1109,7 +1109,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           });
         }
         if (selectionNote && !resolvedSummary.includes(selectionNote)) {
-          resolvedSummary = `${resolvedSummary} ${selectionNote}`.trim();
+          resolvedSummary = `${resolvedSummary}\n${selectionNote}`.trim();
         }
         const summaryMessage = deps.addMessage('assistant', resolvedSummary, 'build');
         await finalizeOperation(

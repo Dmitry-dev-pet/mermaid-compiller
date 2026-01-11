@@ -37,4 +37,3 @@ describe('sessionTitle', () => {
     expect(deriveAutoSessionTitle(messages)).toBe('Маршрут Швейка');
   });
 });
-

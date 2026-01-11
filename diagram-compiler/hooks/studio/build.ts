@@ -520,7 +520,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
         });
       }
       if (selectionNote && !resolvedSummary.includes(selectionNote)) {
-        resolvedSummary = `${resolvedSummary} ${selectionNote}`.trim();
+        resolvedSummary = `${resolvedSummary}\n${selectionNote}`.trim();
       }
       stepMessages.push(ctx.addMessage('assistant', resolvedSummary, 'build'));
       await finalizeStep('done', {

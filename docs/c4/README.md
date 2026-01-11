@@ -19,4 +19,4 @@
 
 ---
 
-Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts, refactors).
+Обновлено: 2026-01-11. Согласовано с текущей реализацией (operation logs, проекты/авто-имя, notebook build, timeout UI).

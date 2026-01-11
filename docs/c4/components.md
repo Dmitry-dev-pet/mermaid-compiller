@@ -6,11 +6,14 @@
 - `ChatColumn` — история сообщений + выбор типа диаграммы + действия Chat/Build.
 - `EditorColumn` — редактор Mermaid-кода + Analyze/Fix/Run.
 - `PreviewColumn` — рендер диаграммы и управление превью.
+- `components/chat/ChatOperationLog` — операционные логи (Plan/Diagrams), тайминги и подсказки контекста.
 
 ## Основные хуки/слои
 
 - `hooks/studio/useDiagramStudio` — «оркестратор» состояния приложения.
 - `hooks/studio/useNotebookBuild` — сборка Markdown notebook (planner + последовательные build).
+- `hooks/studio/useOperationLog` — сбор/гидрация и работа с operation logs.
+- `hooks/studio/runStudioOperation` — обертка для операций (Chat/Build/Fix/Analyze) с логированием, таймаутами и итогами.
 - `hooks/core/useAI` — конфигурация провайдера, подключение, список моделей.
 - `hooks/core/useMermaid` — код, статус валидности, асинхронная валидация.
 - `hooks/core/useHistory` + `services/history/*` — IndexedDB: Session/TimeStep/DiagramRevision.
@@ -40,4 +43,4 @@ flowchart TD
 
 ---
 
-Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts, refactors).
+Обновлено: 2026-01-11. Согласовано с текущей реализацией (operation logs, notebook build, timeout UI).

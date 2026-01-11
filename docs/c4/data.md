@@ -32,6 +32,8 @@ erDiagram
   HistorySession {
     string id
     number createdAt
+    number updatedAt
+    string title
     number nextStepIndex
     string currentRevisionId
   }
@@ -43,6 +45,7 @@ erDiagram
     string type
     number createdAt
     string currentRevisionId
+    object meta
   }
 
   DiagramRevision {
@@ -55,6 +58,13 @@ erDiagram
   }
 ```
 
+## meta (TimeStep)
+
+`TimeStep.meta` хранит UI/операционные данные шага (не влияющие на Mermaid-код), например:
+- `operationLog` — события операции, тайминги, контекст (messages/docs/system prompt) для тултипов.
+- `autoTitle` — авто-имя проекта, извлеченное из первого Chat и примененное к `HistorySession.title`.
+- notebook-build поля: `blockIndex`, `diagramType`, `success`.
+
 ---
 
-Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build meta).
+Обновлено: 2026-01-11. Согласовано с текущей реализацией (meta: operationLog/autoTitle, notebook build meta).

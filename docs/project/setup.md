@@ -83,4 +83,4 @@ node server.js
 
 ---
 
-Обновлено: 2025-12-27. Согласовано с текущей реализацией (notebook build, LLM timeouts, typecheck).
+Обновлено: 2026-01-11. Согласовано с текущей реализацией (timeout UI, notebook build, typecheck).

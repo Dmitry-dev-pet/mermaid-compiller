@@ -15,6 +15,7 @@ import { detectLanguage } from '../../utils';
 import { normalizeIntentText } from '../../utils/intent';
 import type { StepMeta, TimeStepType } from '../../services/history/types';
 import type { LLMRequestStartNotice } from '../../services/llmRequestRunner';
+import type { HistorySession } from '../../services/history/types';
 
 export type MermaidUpdateTarget =
   | { mode: 'markdown'; block: MermaidMarkdownBlock }
@@ -48,6 +49,7 @@ export type StudioActionsDeps = {
     includedPaths: string[];
     excludedPaths: string[];
   }>;
+  historySession?: HistorySession | null;
   recordTimeStep: (args: {
     type: TimeStepType;
     messages: Message[];
@@ -101,6 +103,7 @@ export type StudioContext = StudioActionsDeps & {
   getNotebookChatIndex?: () => number | null;
   safeRecordTimeStep: StudioActionsDeps['recordTimeStep'];
   onLLMRequestStart?: StudioActionsDeps['onLLMRequestStart'];
+  historySession?: StudioActionsDeps['historySession'];
 };
 
 export const createStudioContext = (deps: StudioActionsDeps): StudioContext => {
