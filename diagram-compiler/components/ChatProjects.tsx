@@ -282,7 +282,63 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
       {!isExpanded && activeProject && (
         <div className="mx-3 mb-2 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 px-2 py-2">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{activeProject.title}</div>
+            <div className="flex items-center gap-1 min-w-0">
+              {editingProjectId === activeProject.id ? (
+                <>
+                  <input
+                    value={editingProjectTitle}
+                    onChange={(e) => setEditingProjectTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void commitProjectRename(activeProject);
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelEditingProject();
+                      }
+                    }}
+                    className="w-44 text-xs px-2 py-1 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void commitProjectRename(activeProject)}
+                    className="p-1 rounded text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                    title="Save name"
+                  >
+                    <Check size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEditingProject}
+                    className="p-1 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    title="Cancel"
+                  >
+                    <X size={12} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => startEditingProject(activeProject)}
+                    className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate hover:text-blue-600 dark:hover:text-blue-400"
+                    title="Rename project"
+                  >
+                    {activeProject.title ?? 'Project'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startEditingProject(activeProject)}
+                    className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    title="Rename"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                </>
+              )}
+            </div>
             <div className="flex flex-col text-[11px] text-slate-500 dark:text-slate-400">
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
