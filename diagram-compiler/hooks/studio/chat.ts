@@ -9,10 +9,10 @@ import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
 import type { Message } from '../../types';
 import { ANALYTICS_EVENTS, type ChatAnalyticsPayload } from '../../services/analyticsEvents';
 import type { StudioContext } from './actionsContext';
+import { runStudioOperation } from './runStudioOperation';
 
 export const createChatHandler = (ctx: StudioContext) => {
   return async (text: string) => {
-    const stepMessages: Message[] = [];
     const trimmedInput = text.trim();
     const isRefinementRequestForLog = (() => {
       const lowered = trimmedInput.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -21,137 +21,125 @@ export const createChatHandler = (ctx: StudioContext) => {
       return /(усложни|упрости|подробнее|подробно|развей|разверни|раскрой|расширь|детализируй|добавь|сократи|еще|ещё|более подробно|increase|expand|elaborate|simplify|detail)/.test(lowered);
     })();
     const notebookBlockIndex = ctx.isNotebookChatMode ? ctx.getNotebookChatIndex?.() : null;
-    const opContextId =
-      typeof notebookBlockIndex === 'number' ? `block:${notebookBlockIndex}` : undefined;
-    const opId = ctx.startOperation('Чат', opContextId);
-    const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
-      ctx.addOperationEvent(opId, {
-        ...args,
-        blockIndex: typeof notebookBlockIndex === 'number' ? notebookBlockIndex : args.blockIndex,
-      });
-    };
-    const finalizeStep = async (status: 'done' | 'error', meta?: Record<string, unknown>) => {
-      ctx.finishOperation(opId, status);
-      await ctx.safeRecordTimeStep({
-        type: 'chat',
-        messages: stepMessages,
-        meta: {
-          ...(meta ?? {}),
-          operationLog: ctx.getOperationLog(opId),
-        },
-      });
-    };
-    logEvent({
-      phase: 'chat',
-      level: 'info',
+    return runStudioOperation(ctx, {
       title: 'Чат',
-      detail: isRefinementRequestForLog ? 'refine' : 'intent',
-      kind: 'status',
-    });
-    stepMessages.push(ctx.addMessage('user', text, 'chat'));
-    if (ctx.connectionState.status !== 'connected') {
-      stepMessages.push(ctx.addMessage('assistant', 'Офлайн. Подключите AI для генерации.', 'chat'));
-      logEvent({
-        phase: 'chat',
-        level: 'error',
-        title: 'Чат',
-        detail: 'offline',
-        error: { code: 'offline', message: 'AI offline' },
-      });
-      const payload: ChatAnalyticsPayload = { error: 'offline' };
-      await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatFailed, 'chat', payload);
-      await finalizeStep('error', { error: 'offline' });
-      return;
-    }
+      stepType: 'chat',
+      notebookBlockIndex,
+      run: async ({ stepMessages, logEvent, finalizeStep }) => {
+        const finalize = async (status: 'done' | 'error', meta?: Record<string, unknown>) => {
+          await finalizeStep(status, { meta });
+        };
 
-    const language = ctx.resolveLanguage(text);
+        logEvent({
+          phase: 'chat',
+          level: 'info',
+          title: 'Чат',
+          detail: isRefinementRequestForLog ? 'refine' : 'intent',
+          kind: 'status',
+        });
+        stepMessages.push(ctx.addMessage('user', text, 'chat'));
+        if (ctx.connectionState.status !== 'connected') {
+          stepMessages.push(ctx.addMessage('assistant', 'Офлайн. Подключите AI для генерации.', 'chat'));
+          logEvent({
+            phase: 'chat',
+            level: 'error',
+            title: 'Чат',
+            detail: 'offline',
+            error: { code: 'offline', message: 'AI offline' },
+          });
+          const payload: ChatAnalyticsPayload = { error: 'offline' };
+          await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatFailed, 'chat', payload);
+          await finalize('error', { error: 'offline' });
+          return;
+        }
 
-    const startedAt = Date.now();
-    ctx.setIsProcessing(true);
-    try {
-      logEvent({
-        phase: 'chat',
-        level: 'info',
-        title: 'Чат',
-        detail: `язык: ${language}`,
-      });
-      const startedPayload: ChatAnalyticsPayload = {
-        hasPrompt: text.trim().length > 0,
-      };
-      await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatStarted, 'chat', startedPayload);
-      const trimmedText = trimmedInput;
-      const isRefinementRequest = (() => {
-        return isRefinementRequestForLog;
-      })();
-      const relevantMessages = ctx.getRelevantMessages();
-      const lastUserMessage = relevantMessages
-        .slice()
-        .reverse()
-        .find((m) => m.role === 'user' && m.content.trim().length > 0) ?? null;
-      const llmBaseMessages = isRefinementRequest && !ctx.isNotebookChatMode
-        ? (lastUserMessage ? [lastUserMessage] : relevantMessages)
-        : relevantMessages;
-      const llmMessagesBase = ctx.buildLLMMessages(llmBaseMessages);
-      const useNotebookIntent =
-        ctx.isNotebookChatEnabled && !ctx.isNotebookChatMode && !isRefinementRequest;
-      const notebookCount = useNotebookIntent ? ctx.appState.notebookBuildCount : null;
-      const notebookCountMessage = notebookCount
-        ? {
-            id: 'notebook-count',
-            role: 'user' as const,
-            content: language === 'Russian'
-              ? `Количество диаграмм: ${notebookCount}.`
-              : `Diagram count: ${notebookCount}.`,
-            timestamp: Date.now(),
-          }
-        : null;
-      const refinementHint = isRefinementRequest && !ctx.isNotebookChatMode
-        ? {
-            id: 'refinement-hint',
-            role: 'user' as const,
-            content: language === 'Russian'
-              ? 'Ответь конкретными правками к диаграмме. Не используй формат Summary/Diagrams и не перечисляй типы диаграмм.'
-              : 'Reply with concrete edits to the diagram. Do not use Summary/Diagrams format or list diagram types.',
-            timestamp: Date.now(),
-          }
-        : null;
-      const llmMessages = [
-        ...llmMessagesBase,
-        ...(notebookCountMessage ? [notebookCountMessage] : []),
-        ...(refinementHint ? [refinementHint] : []),
-      ];
+        const language = ctx.resolveLanguage(text);
 
-      const docs = await ctx.getDocsContext('chat');
-      const responseText = await runLLMRequest({
-        task: 'chat',
-        run: () => (
-          useNotebookIntent
-            ? chatNotebook(llmMessages, ctx.aiConfig, docs, language, ctx.modelParams)
-            : (ctx.isNotebookChatMode || isRefinementRequest)
-              ? chatDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
-              : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
-        ),
-        retries: LLM_TIMEOUT_RETRIES,
-        timeoutMs: ctx.appState.llmTimeoutMs,
-        onStart: (notice) => {
-          ctx.onLLMRequestStart?.(notice);
+        const startedAt = Date.now();
+        ctx.setIsProcessing(true);
+        try {
           logEvent({
             phase: 'chat',
             level: 'info',
-            title: 'LLM',
-            detail: `start ${notice.task}`,
+            title: 'Чат',
+            detail: `язык: ${language}`,
           });
-        },
-        onTimeout: (notice) => {
-          logEvent({
-            phase: 'chat',
-            level: 'warn',
-            title: 'Timeout',
-            detail: formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts),
+          const startedPayload: ChatAnalyticsPayload = {
+            hasPrompt: text.trim().length > 0,
+          };
+          await ctx.trackAnalyticsWithContext(ANALYTICS_EVENTS.chatStarted, 'chat', startedPayload);
+          const isRefinementRequest = (() => {
+            return isRefinementRequestForLog;
+          })();
+          const relevantMessages = ctx.getRelevantMessages();
+          const lastUserMessage = relevantMessages
+            .slice()
+            .reverse()
+            .find((m) => m.role === 'user' && m.content.trim().length > 0) ?? null;
+          const llmBaseMessages = isRefinementRequest && !ctx.isNotebookChatMode
+            ? (lastUserMessage ? [lastUserMessage] : relevantMessages)
+            : relevantMessages;
+          const llmMessagesBase = ctx.buildLLMMessages(llmBaseMessages);
+          const useNotebookIntent =
+            ctx.isNotebookChatEnabled && !ctx.isNotebookChatMode && !isRefinementRequest;
+          const notebookCount = useNotebookIntent ? ctx.appState.notebookBuildCount : null;
+          const notebookCountMessage = notebookCount
+            ? {
+                id: 'notebook-count',
+                role: 'user' as const,
+                content: language === 'Russian'
+                  ? `Количество диаграмм: ${notebookCount}.`
+                  : `Diagram count: ${notebookCount}.`,
+                timestamp: Date.now(),
+              }
+            : null;
+          const refinementHint = isRefinementRequest && !ctx.isNotebookChatMode
+            ? {
+                id: 'refinement-hint',
+                role: 'user' as const,
+                content: language === 'Russian'
+                  ? 'Ответь конкретными правками к диаграмме. Не используй формат Summary/Diagrams и не перечисляй типы диаграмм.'
+                  : 'Reply with concrete edits to the diagram. Do not use Summary/Diagrams format or list diagram types.',
+                timestamp: Date.now(),
+              }
+            : null;
+          const llmMessages = [
+            ...llmMessagesBase,
+            ...(notebookCountMessage ? [notebookCountMessage] : []),
+            ...(refinementHint ? [refinementHint] : []),
+          ];
+
+          const docs = await ctx.getDocsContext('chat');
+          const responseText = await runLLMRequest({
+            task: 'chat',
+            run: () => (
+              useNotebookIntent
+                ? chatNotebook(llmMessages, ctx.aiConfig, docs, language, ctx.modelParams)
+                : (ctx.isNotebookChatMode || isRefinementRequest)
+                  ? chatDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
+                  : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
+            ),
+            retries: LLM_TIMEOUT_RETRIES,
+            timeoutMs: ctx.appState.llmTimeoutMs,
+            onStart: (notice) => {
+              ctx.onLLMRequestStart?.(notice);
+              logEvent({
+                phase: 'chat',
+                level: 'info',
+                title: 'LLM',
+                detail: `start ${notice.task}`,
+              });
+            },
+            onTimeout: (notice) => {
+              logEvent({
+                phase: 'chat',
+                level: 'warn',
+                title: 'Timeout',
+                detail: formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts),
+              });
+            },
           });
-        },
-      });
-      const rawReply = stripMermaidCode(responseText).trim();
+          const rawReply = stripMermaidCode(responseText).trim();
       const stripIntentScaffold = (text: string) => {
         const stripHeadings = (value: string) =>
           value
@@ -252,7 +240,7 @@ export const createChatHandler = (ctx: StudioContext) => {
         : ctx.isNotebookChatMode
           ? rawReply || null
           : null;
-      await finalizeStep('done', { intent: resolvedIntent });
+      await finalize('done', { intent: resolvedIntent });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof TimeoutError) {
@@ -276,9 +264,11 @@ export const createChatHandler = (ctx: StudioContext) => {
         detail: message,
         error: { code: 'exception', message },
       });
-      await finalizeStep('error', { error: message });
+      await finalize('error', { error: message });
     } finally {
       ctx.setIsProcessing(false);
     }
+      },
+    });
   };
 };

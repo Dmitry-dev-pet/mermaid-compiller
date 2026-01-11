@@ -10,47 +10,25 @@ import { runLLMRequest } from '../../services/llmRequestRunner';
 import { normalizeSummaryText, sanitizeSummaryText } from '../../utils/buildSummary';
 import { fetchDocsEntries } from '../../services/docsContextService';
 import { buildSystemPrompt } from '../../services/llm/prompts';
+import { runStudioOperation } from './runStudioOperation';
 
 export const createBuildHandler = (ctx: StudioContext) => {
   return async (text?: string) => {
     const prompt = text?.trim() ?? '';
-    const stepMessages: Message[] = [];
     const notebookBlockIndex = ctx.isNotebookChatMode ? ctx.getNotebookChatIndex?.() : null;
-    const opContextId =
-      typeof notebookBlockIndex === 'number' ? `block:${notebookBlockIndex}` : undefined;
-    const opId = ctx.startOperation('Сборка', opContextId);
-    const logEvent = (args: Parameters<typeof ctx.addOperationEvent>[1]) => {
-      ctx.addOperationEvent(opId, {
-        ...args,
-        blockIndex: typeof notebookBlockIndex === 'number' ? notebookBlockIndex : args.blockIndex,
-      });
-    };
-    const finalizeStep = async (
-      status: 'done' | 'error',
-      args?: {
-        meta?: Record<string, unknown>;
-        nextMermaid?: Pick<import('../../types').MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'> | null;
-      }
-    ) => {
-      ctx.finishOperation(opId, status);
-      await ctx.safeRecordTimeStep({
-        type: 'build',
-        messages: stepMessages,
-        nextMermaid: args?.nextMermaid ?? null,
-        meta: {
-          ...(args?.meta ?? {}),
-          operationLog: ctx.getOperationLog(opId),
-        },
-      });
-    };
-    const summarizeDocsEntries = (entries: Array<{ path: string; text?: string }>) => {
-      const items = entries.map((entry) => ({
-        name: entry.path.split('/').pop() || entry.path,
-        size: entry.text?.length ?? 0,
-      }));
-      const total = items.reduce((sum, item) => sum + item.size, 0);
-      return { items, total };
-    };
+    return runStudioOperation(ctx, {
+      title: 'Сборка',
+      stepType: 'build',
+      notebookBlockIndex,
+      run: async ({ stepMessages, logEvent, finalizeStep }) => {
+        const summarizeDocsEntries = (entries: Array<{ path: string; text?: string }>) => {
+          const items = entries.map((entry) => ({
+            name: entry.path.split('/').pop() || entry.path,
+            size: entry.text?.length ?? 0,
+          }));
+          const total = items.reduce((sum, item) => sum + item.size, 0);
+          return { items, total };
+        };
     const formatSize = (value: number) => {
       if (value < 1000) return `${value}`;
       return `${(value / 1000).toFixed(1)}k`;
@@ -61,10 +39,10 @@ export const createBuildHandler = (ctx: StudioContext) => {
       const list = items.map((item) => `${item.name} (${formatSize(item.size)})`).join(', ');
       return `docs (${items.length} ${label}, ${formatSize(total)}): ${list}`;
     };
-    const summarizeMessages = (items: Message[]) => {
-      const chars = items.reduce((total, msg) => total + (msg.content?.length ?? 0), 0);
-      return { count: items.length, chars };
-    };
+        const summarizeMessages = (items: Message[]) => {
+          const chars = items.reduce((total, msg) => total + (msg.content?.length ?? 0), 0);
+          return { count: items.length, chars };
+        };
     const formatMessageBlock = (message: Message, index: number) => {
       const label = `[${index + 1}] ${message.role}${message.id ? ` (${message.id})` : ''}`;
       return `${label}\n${message.content}`;
@@ -182,23 +160,23 @@ export const createBuildHandler = (ctx: StudioContext) => {
       ].join('\n');
     };
     const buildDocsTooltip = (docsDetail: string) => `Docs:\n${docsDetail}`;
-    if (prompt) stepMessages.push(ctx.addMessage('user', prompt, 'build'));
+        if (prompt) stepMessages.push(ctx.addMessage('user', prompt, 'build'));
 
-    if (ctx.connectionState.status !== 'connected') {
-      stepMessages.push(ctx.addMessage('assistant', 'Офлайн. Подключите AI для генерации диаграмм.', 'build'));
-      logEvent({
-        phase: 'build',
-        level: 'error',
-        title: 'Сборка',
-        detail: 'offline',
-        error: { code: 'offline', message: 'AI offline' },
-      });
-      await ctx.trackAnalyticsWithContext('diagram_build_failed', 'build', {
-        error: 'offline',
-      });
-      await finalizeStep('error', { meta: { error: 'offline' } });
-      return;
-    }
+        if (ctx.connectionState.status !== 'connected') {
+          stepMessages.push(ctx.addMessage('assistant', 'Офлайн. Подключите AI для генерации диаграмм.', 'build'));
+          logEvent({
+            phase: 'build',
+            level: 'error',
+            title: 'Сборка',
+            detail: 'offline',
+            error: { code: 'offline', message: 'AI offline' },
+          });
+          await ctx.trackAnalyticsWithContext('diagram_build_failed', 'build', {
+            error: 'offline',
+          });
+          await finalizeStep('error', { meta: { error: 'offline' } });
+          return;
+        }
 
     const language = ctx.resolveLanguage(prompt);
     const timeoutMs = ctx.appState.llmTimeoutMs;
@@ -576,5 +554,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
     } finally {
       ctx.setIsProcessing(false);
     }
+      },
+    });
   };
 };
