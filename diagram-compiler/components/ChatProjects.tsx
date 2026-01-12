@@ -189,6 +189,27 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
     }
   };
 
+  const renderDiagramTypeSelectionBadge = () => {
+    const types = diagramType === 'auto' ? mainTypeList : [diagramType];
+    const title =
+      diagramType === 'auto'
+        ? `Main (${types.join(', ')})`
+        : (DIAGRAM_TYPE_LABELS[diagramType] ?? diagramType);
+    return (
+      <span className="inline-flex items-center gap-1" title={title}>
+        {types.map((type) => (
+          <span
+            key={type}
+            className="inline-flex items-center justify-center w-5 h-5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400"
+            aria-label={DIAGRAM_TYPE_LABELS[type] ?? type}
+          >
+            {getDiagramTypeIcon(type)}
+          </span>
+        ))}
+      </span>
+    );
+  };
+
   const renderDiagramTypePicker = (placement: 'expanded' | 'active') => {
     if (!isDiagramTypePickerOpen || diagramTypePickerPlacement !== placement) return null;
     return (
@@ -374,9 +395,12 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   <button
                     type="button"
                     onClick={() => openDiagramTypePicker('expanded')}
-                    className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                    className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40"
                   >
-                    {selectedLabel}
+                    <span className="flex items-center justify-between gap-2">
+                      {renderDiagramTypeSelectionBadge()}
+                      <ChevronDown size={12} className="opacity-60" />
+                    </span>
                   </button>
                   {renderDiagramTypePicker('expanded')}
                 </div>
@@ -493,9 +517,12 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   <button
                     type="button"
                     onClick={() => openDiagramTypePicker('active')}
-                    className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                    className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40"
                   >
-                    {selectedLabel}
+                    <span className="flex items-center justify-between gap-2">
+                      {renderDiagramTypeSelectionBadge()}
+                      <ChevronDown size={12} className="opacity-60" />
+                    </span>
                   </button>
                   {renderDiagramTypePicker('active')}
                 </div>
