@@ -6,7 +6,6 @@ import { normalizeSummaryText, sanitizeSummaryText } from '../../utils/buildSumm
 import { sanitizeMermaidByType } from '../../utils/mermaidSanitizer';
 import { NOTEBOOK_BUILD_RETRY_CONFIG } from './notebookBuildConfig';
 import { extractMermaidBlocksFromMarkdown, replaceMermaidBlockInMarkdown } from '../../services/mermaidService';
-import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
 import { formatDocsContext, getNotebookPlannerDocsPaths } from '../../services/docsContextService';
 import { planNotebook, summarizeBuild } from '../../services/llmService';
 import { buildSystemPrompt } from '../../services/llm/prompts';
@@ -512,8 +511,8 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
     });
     const language = deps.appState.language !== 'auto' ? deps.appState.language : detectLanguage(prompt.content);
     const forcedDiagramType = deps.appState.diagramType !== 'auto' ? deps.appState.diagramType : null;
-    const allowedDiagramTypes =
-      deps.appState.diagramType === 'auto' ? [...MAIN_DIAGRAM_TYPES] : null;
+    const allowedDiagramTypes: DiagramType[] | null =
+      deps.appState.diagramType === 'auto' ? [...deps.appState.mainDiagramTypes] : null;
 
     deps.setIsProcessing(true);
     try {

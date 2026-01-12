@@ -204,6 +204,7 @@ export interface MermaidState {
 
 export interface AppState {
   diagramType: DiagramType;
+  mainDiagramTypes: DiagramType[];
   columnWidths: [number, number, number]; // percentages
   isResizing: number | null;
   isPreviewFullScreen: boolean;

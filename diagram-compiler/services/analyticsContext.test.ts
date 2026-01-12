@@ -26,6 +26,7 @@ const baseAIConfig: AIConfig = {
 
 const baseAppState: AppState = {
   diagramType: 'flowchart',
+  mainDiagramTypes: ['flowchart', 'er', 'sequence'],
   columnWidths: [33, 34, 33],
   isResizing: null,
   isPreviewFullScreen: false,

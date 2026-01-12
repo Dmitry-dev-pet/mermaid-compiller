@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { ArrowLeft, ArrowUpRight, MessageSquare, Play, Plus, Trash2, Loader2 } from 'lucide-react';
 import { LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
+import type { DiagramType } from '../types';
 import ChatProjects from './ChatProjects';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../utils/uiModes';
 import './chat-markdown.css';
@@ -30,9 +31,11 @@ interface ChatColumnProps {
     intentText?: string
   ) => void;
   intentText?: string;
-  diagramType: import('../types').DiagramType;
-  onDiagramTypeChange: (type: import('../types').DiagramType) => void;
-  detectedDiagramType: import('../types').DiagramType | null;
+  diagramType: DiagramType;
+  onDiagramTypeChange: (type: DiagramType) => void;
+  mainDiagramTypes: DiagramType[];
+  onMainDiagramTypesChange: (types: DiagramType[]) => void;
+  detectedDiagramType: DiagramType | null;
   onPreviewPrompt: (mode: PromptPreviewMode, input: string) => Promise<LLMRequestPreview>;
   buildDocsSelectionKey: string;
   promptPreviewKey: string;
@@ -69,6 +72,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onSetPromptPreview,
   diagramType,
   onDiagramTypeChange,
+  mainDiagramTypes,
+  onMainDiagramTypesChange,
   detectedDiagramType,
   onPreviewPrompt,
   buildDocsSelectionKey,
@@ -647,6 +652,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           deleteUndoMs={deleteUndoMs}
           diagramType={diagramType}
           onDiagramTypeChange={onDiagramTypeChange}
+          mainDiagramTypes={mainDiagramTypes}
+          onMainDiagramTypesChange={onMainDiagramTypesChange}
           detectedDiagramType={detectedDiagramType}
           notebookBuildCount={notebookBuildCount}
           onNotebookBuildCountChange={onNotebookBuildCountChange}

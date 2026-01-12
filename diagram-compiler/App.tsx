@@ -63,6 +63,7 @@ function App() {
     goToDiagramStep,
     startResize,
     setDiagramType,
+    setMainDiagramTypes,
     clearMessages,
     startNewProject,
     openProject,
@@ -257,6 +258,8 @@ function App() {
                 onSetPromptPreview={setPromptPreview}
                 diagramType={appState.diagramType}
                 onDiagramTypeChange={setDiagramType}
+                mainDiagramTypes={appState.mainDiagramTypes}
+                onMainDiagramTypesChange={setMainDiagramTypes}
                 detectedDiagramType={detectedDiagramType}
                 onPreviewPrompt={buildPromptPreview}
                 projects={projects}

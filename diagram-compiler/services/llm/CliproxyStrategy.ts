@@ -219,11 +219,18 @@ Fix it.`,
   async chatNotebook(
     messages: Message[],
     config: AIConfig,
+    diagramType: DiagramType,
     docsContext: string,
     language: string,
+    allowedDiagramTypes: DiagramType[] | null,
     modelParams?: ModelParams | null
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('chat_notebook', { docsContext, language });
+    const systemPrompt = buildSystemPrompt('chat_notebook', {
+      diagramType,
+      allowedDiagramTypes,
+      docsContext,
+      language,
+    });
     return this.fetchCompletion(messages, config, systemPrompt, modelParams);
   }
 

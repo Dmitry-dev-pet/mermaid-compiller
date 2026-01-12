@@ -3,9 +3,17 @@ import { AppState, DiagramType } from '../../types';
 import { DEFAULT_APP_STATE } from '../../constants';
 import { initializeMermaid } from '../../services/mermaidService';
 import { safeParse } from '../../utils';
+import { DIAGRAM_TYPES, MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
 
 export const useLayout = () => {
-  const [appState, setAppState] = useState<AppState>(() => safeParse('dc_app_state', DEFAULT_APP_STATE));
+  const [appState, setAppState] = useState<AppState>(() => {
+    const parsed = safeParse('dc_app_state', DEFAULT_APP_STATE);
+    const nextTypes = Array.isArray(parsed.mainDiagramTypes) ? parsed.mainDiagramTypes : [...MAIN_DIAGRAM_TYPES];
+    const sanitized = nextTypes
+      .map((t) => (typeof t === 'string' ? (t as DiagramType) : null))
+      .filter((t): t is DiagramType => !!t && t !== 'auto' && (DIAGRAM_TYPES as readonly string[]).includes(t));
+    return { ...parsed, mainDiagramTypes: sanitized.length ? sanitized : [...MAIN_DIAGRAM_TYPES] };
+  });
 
   // --- Persistence ---
   useEffect(() => {
@@ -75,6 +83,16 @@ export const useLayout = () => {
     setAppState(prev => ({ ...prev, diagramType: type }));
   }, []);
 
+  const setMainDiagramTypes = useCallback((types: DiagramType[]) => {
+    const sanitized = types
+      .filter((t): t is DiagramType => t !== 'auto')
+      .filter((t) => (DIAGRAM_TYPES as readonly string[]).includes(t));
+    setAppState(prev => ({
+      ...prev,
+      mainDiagramTypes: sanitized.length ? sanitized : [...MAIN_DIAGRAM_TYPES],
+    }));
+  }, []);
+
   const toggleTheme = useCallback(() => {
     setAppState(prev => ({ ...prev, theme: prev.theme === 'light' ? 'dark' : 'light' }));
   }, []);
@@ -104,6 +122,7 @@ export const useLayout = () => {
     setAppState, // Exposed if needed for other direct updates
     startResize,
     setDiagramType,
+    setMainDiagramTypes,
     toggleTheme,
     setLanguage,
     setAnalyzeLanguage,

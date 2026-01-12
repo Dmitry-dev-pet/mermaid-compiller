@@ -5,7 +5,6 @@ import { runLLMRequest } from '../../services/llmRequestRunner';
 import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMessageUtils';
 import { stripMermaidCode } from '../../utils';
 import { enforceAllowedDiagramTypesInIntent, normalizeIntentText } from '../../utils/intent';
-import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
 import type { Message } from '../../types';
 import { ANALYTICS_EVENTS, type ChatAnalyticsPayload } from '../../services/analyticsEvents';
 import type { StudioContext } from './actionsContext';
@@ -124,11 +123,21 @@ export const createChatHandler = (ctx: StudioContext) => {
           ];
 
           const docs = await ctx.getDocsContext('chat');
+          const allowedNotebookTypes =
+            ctx.appState.diagramType === 'auto' ? ctx.appState.mainDiagramTypes : null;
           const responseText = await runLLMRequest({
             task: 'chat',
             run: () => (
               useNotebookIntent
-                ? chatNotebook(llmMessages, ctx.aiConfig, docs, language, ctx.modelParams)
+                ? chatNotebook(
+                    llmMessages,
+                    ctx.aiConfig,
+                    ctx.appState.diagramType,
+                    docs,
+                    language,
+                    allowedNotebookTypes,
+                    ctx.modelParams
+                  )
                 : (ctx.isNotebookChatMode || isRefinementRequest)
                   ? chatDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
                   : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
@@ -221,7 +230,9 @@ export const createChatHandler = (ctx: StudioContext) => {
           let intentText = normalizeIntentText(replyWithoutTitle);
           if (useNotebookIntent) {
             if (ctx.appState.diagramType === 'auto') {
-              intentText = enforceAllowedDiagramTypesInIntent(intentText, MAIN_DIAGRAM_TYPES);
+              if (allowedNotebookTypes?.length) {
+                intentText = enforceAllowedDiagramTypesInIntent(intentText, allowedNotebookTypes);
+              }
             } else {
               intentText = enforceAllowedDiagramTypesInIntent(intentText, [ctx.appState.diagramType], ctx.appState.diagramType);
             }

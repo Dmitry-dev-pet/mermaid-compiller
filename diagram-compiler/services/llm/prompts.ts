@@ -14,6 +14,7 @@ export type PromptMode = 'generate' | 'fix' | 'chat' | 'chat_diagram' | 'chat_no
 
 type PromptArgs = {
   diagramType?: DiagramType;
+  allowedDiagramTypes?: DiagramType[] | null;
   docsContext: string;
   language: string;
 };
@@ -68,15 +69,16 @@ const getLanguageInstruction = (language: string, promptLanguage: PromptLanguage
 
 const getDiagramTypeRule = (
   diagramType: DiagramType | undefined,
+  allowedDiagramTypes: DiagramType[] | null | undefined,
   mode: 'generate' | 'chat' | 'chat_diagram' | 'chat_notebook',
   promptLanguage: PromptLanguage
 ) => {
   if (mode === 'chat_notebook') {
     if (diagramType === 'auto') {
-      const mainList = MAIN_DIAGRAM_TYPES.join(', ');
+      const mainList = (allowedDiagramTypes?.length ? allowedDiagramTypes : MAIN_DIAGRAM_TYPES).join(', ');
       return promptLanguage === 'Russian'
-        ? `Режим Main: в разделе Diagrams выбирай только из ${mainList} (не обязательно все три).`
-        : `Main mode: in the Diagrams list choose only from ${mainList} (not necessarily all three).`;
+        ? `- Режим Main: в разделе Diagrams выбирай только из ${mainList} (не обязательно все типы).`
+        : `- Main mode: in the Diagrams list choose only from ${mainList} (not necessarily all types).`;
     }
     return '';
   }
@@ -538,7 +540,7 @@ export const buildSystemPrompt = (mode: PromptMode, args: PromptArgs): string =>
   const template = PROMPT_TEMPLATES[promptLanguage][mode];
 
   const typeRule = mode === 'generate' || mode === 'chat' || mode === 'chat_diagram' || mode === 'chat_notebook'
-    ? getDiagramTypeRule(args.diagramType, mode, promptLanguage)
+    ? getDiagramTypeRule(args.diagramType, args.allowedDiagramTypes, mode, promptLanguage)
     : '';
 
   const languageInstruction = getLanguageInstruction(args.language, promptLanguage);

@@ -113,10 +113,20 @@ export const summarizeBuild = async (
 export const chatNotebook = async (
   messages: Message[],
   config: AIConfig,
+  diagramType: DiagramType,
   docsContext: string,
   language: string,
+  allowedDiagramTypes: DiagramType[] | null,
   modelParams?: ModelParams | null
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.chatNotebook(messages, config, docsContext, language, modelParams);
+  return strategy.chatNotebook(
+    messages,
+    config,
+    diagramType,
+    docsContext,
+    language,
+    allowedDiagramTypes,
+    modelParams
+  );
 };

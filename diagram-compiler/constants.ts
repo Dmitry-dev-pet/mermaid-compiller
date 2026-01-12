@@ -1,4 +1,5 @@
 import { AIConfig, AppState, MermaidState } from './types';
+import { MAIN_DIAGRAM_TYPES } from './utils/diagramTypes';
 
 export const MERMAID_VERSION = "v11.12.2";
 
@@ -35,6 +36,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
 
 export const DEFAULT_APP_STATE: AppState = {
   diagramType: 'auto',
+  mainDiagramTypes: [...MAIN_DIAGRAM_TYPES],
   columnWidths: [25, 40, 35],
   isResizing: null,
   isPreviewFullScreen: false,
