@@ -54,8 +54,6 @@ interface EditorColumnProps {
   onDocsModeChange: (mode: DocsMode) => void;
   activeTab: EditorTab;
   buildDocsEntries: DocsEntry[];
-  buildDocsSelection: Record<string, boolean>;
-  onToggleBuildDoc: (path: string, isIncluded: boolean) => void;
   buildDocsSelectionsByMode: Record<DocsMode, Record<string, boolean>>;
   onToggleBuildDocForMode: (mode: DocsMode, path: string, isIncluded: boolean) => void;
   buildDocsActivePath: string;
@@ -95,8 +93,6 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   onDocsModeChange,
   activeTab,
   buildDocsEntries,
-  buildDocsSelection,
-  onToggleBuildDoc,
   buildDocsSelectionsByMode,
   onToggleBuildDocForMode,
   buildDocsActivePath,
@@ -121,7 +117,6 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const editorValueRef = useRef<string>('');
   const [copied, setCopied] = React.useState(false);
-  const [docsPanel, setDocsPanel] = React.useState<'mode' | 'all'>('mode');
   const { showTooltip: showTabTooltip, hideTooltip: hideTabTooltip, portal: tooltipPortal } = useFloatingTooltip();
   const isBuildDocsTab = activeTab === 'build_docs';
   const {
@@ -130,7 +125,6 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     activeDocEntry,
     activeBuildDocName,
   } = useBuildDocsState({
-    docsPanel,
     docsMode,
     analyzeLanguage,
     appLanguage,
@@ -403,8 +397,6 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
         {tooltipPortal}
         {isBuildDocsTab ? (
           <BuildDocsPanel
-            docsPanel={docsPanel}
-            onDocsPanelChange={setDocsPanel}
             docsMode={docsMode}
             onDocsModeChange={onDocsModeChange}
             promptPreviewByMode={promptPreviewByMode}
@@ -414,10 +406,8 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
             buildDocsEntries={buildDocsEntries}
             buildDocsActivePath={buildDocsActivePath}
             onBuildDocsActivePathChange={onBuildDocsActivePathChange}
-            buildDocsSelection={buildDocsSelection}
             buildDocsSelectionsByMode={buildDocsSelectionsByMode}
             onToggleBuildDocForMode={onToggleBuildDocForMode}
-            onToggleBuildDoc={onToggleBuildDoc}
             systemPromptEntry={systemPromptEntry}
             isSystemPromptRaw={isSystemPromptRaw}
             onSystemPromptRawChange={onSystemPromptRawChange}

@@ -269,8 +269,6 @@ function App() {
                 intentText={buildDocsIntentText}
                 activeTab={editorTabForView}
                 buildDocsEntries={buildDocsEntries}
-                buildDocsSelection={buildDocsSelection}
-                onToggleBuildDoc={toggleBuildDocSelection}
                 buildDocsSelectionsByMode={buildDocsSelectionsByMode}
                 onToggleBuildDocForMode={setBuildDocSelectionForMode}
                 buildDocsActivePath={buildDocsActivePath}

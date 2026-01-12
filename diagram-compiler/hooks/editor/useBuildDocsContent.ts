@@ -1,25 +1,21 @@
-import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
+import { DocsMode } from '../../types';
 import type { DocsEntry } from '../../services/docsContextService';
 
 type UseBuildDocsContentArgs = {
   docsMode: DocsMode;
-  promptPreviewByMode: Record<PromptPreviewMode, PromptPreviewTab | null>;
   intentText?: string;
   analyzeCode?: string;
   fixDetailsText?: string;
   activeDocEntry?: DocsEntry;
-  isSystemPromptRaw: boolean;
   activeBuildDocName: string;
 };
 
 export const useBuildDocsContent = ({
   docsMode,
-  promptPreviewByMode,
   intentText,
   analyzeCode,
   fixDetailsText,
   activeDocEntry,
-  isSystemPromptRaw,
   activeBuildDocName,
 }: UseBuildDocsContentArgs) => {
   const analyzePreview = analyzeCode?.trim() ?? '';
@@ -30,13 +26,8 @@ export const useBuildDocsContent = ({
       ? fixPreview
       : (intentText || '');
   const docsPreview = activeDocEntry?.text || '';
-  const rawPromptPreview = promptPreviewByMode[docsMode]?.rawContent || '';
-  const topPanelTitle = isSystemPromptRaw
-    ? `LLM request (${docsMode})`
-    : activeBuildDocName;
-  const topPanelText = isSystemPromptRaw
-    ? rawPromptPreview
-    : docsPreview;
+  const topPanelTitle = activeBuildDocName;
+  const topPanelText = docsPreview;
 
   return {
     intentPreview,

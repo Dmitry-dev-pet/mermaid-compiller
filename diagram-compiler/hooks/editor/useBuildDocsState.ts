@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { DocsEntry } from '../../services/docsContextService';
 import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
 import { getSystemPromptPath, isSystemPromptPath } from '../../utils/systemPrompts';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 
 type BuildDocsPanelState = {
-  docsPanel: 'mode' | 'all';
   docsMode: DocsMode;
   analyzeLanguage: string;
   appLanguage: string;
@@ -34,7 +33,6 @@ const resolveSelectedLanguage = (analyzeLanguage: string, appLanguage: string, p
 };
 
 export const useBuildDocsState = ({
-  docsPanel,
   docsMode,
   analyzeLanguage,
   appLanguage,
@@ -44,7 +42,6 @@ export const useBuildDocsState = ({
   buildDocsActivePath,
   onBuildDocsActivePathChange,
 }: BuildDocsPanelState) => {
-  const prevDocsModeRef = useRef<DocsMode | null>(null);
   const activePrompt = useMemo(() => {
     if (docsMode === 'chat') return promptPreviewByMode.chat;
     if (docsMode === 'build') return promptPreviewByMode.build;
@@ -85,33 +82,21 @@ export const useBuildDocsState = ({
     : activeDocEntry?.path.split('/').pop() || activeDocEntry?.path || 'Docs';
 
   useEffect(() => {
-    if (docsPanel !== 'all') return;
-    if (!buildDocsEntries.length) return;
-    if (isSystemPromptPath(buildDocsActivePath)) {
-      onBuildDocsActivePathChange(buildDocsEntries[0]?.path ?? '');
-    }
-  }, [buildDocsActivePath, buildDocsEntries, docsPanel, onBuildDocsActivePathChange]);
-
-  useEffect(() => {
     if (!buildDocsEntries.length) {
-      onBuildDocsActivePathChange(systemPromptPath);
-      return;
-    }
-    if (isSystemPromptPath(buildDocsActivePath)) {
       if (buildDocsActivePath !== systemPromptPath) {
         onBuildDocsActivePathChange(systemPromptPath);
       }
       return;
     }
-    if (buildDocsActivePath && buildDocsEntries.some((entry) => entry.path === buildDocsActivePath)) return;
-    onBuildDocsActivePathChange(systemPromptPath);
-  }, [buildDocsActivePath, buildDocsEntries, onBuildDocsActivePathChange, systemPromptPath]);
 
-  useEffect(() => {
-    if (prevDocsModeRef.current === docsMode) return;
-    prevDocsModeRef.current = docsMode;
-    onBuildDocsActivePathChange(systemPromptPath);
-  }, [docsMode, onBuildDocsActivePathChange, systemPromptPath]);
+    if (!buildDocsActivePath) {
+      onBuildDocsActivePathChange(buildDocsEntries[0]?.path ?? '');
+      return;
+    }
+
+    if (buildDocsEntries.some((entry) => entry.path === buildDocsActivePath)) return;
+    onBuildDocsActivePathChange(buildDocsEntries[0]?.path ?? '');
+  }, [buildDocsActivePath, buildDocsEntries, onBuildDocsActivePathChange, systemPromptPath]);
 
   return {
     systemPromptEntry,
