@@ -227,22 +227,6 @@ const Header: React.FC<HeaderProps> = ({
                     <span className="text-sm">My Proxy</span>
                   </label>
                 </div>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <label className="text-xs text-slate-500 dark:text-slate-400">Timeout (s)</label>
-                  <input
-                    type="number"
-                    min={5}
-                    max={300}
-                    value={timeoutSeconds}
-                    onChange={(e) => {
-                      const parsed = Number(e.target.value);
-                      if (Number.isNaN(parsed)) return;
-                      const clamped = Math.max(5, Math.min(300, Math.floor(parsed)));
-                      onLLMTimeoutMsChange(clamped * 1000);
-                    }}
-                    className="w-24 px-2 py-1.5 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
               </div>
 
               {/* Connection Settings */}
@@ -438,6 +422,23 @@ const Header: React.FC<HeaderProps> = ({
                   </select>
                 </div>
               )}
+
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <label className="text-xs text-slate-500 dark:text-slate-400">Timeout (s)</label>
+                <input
+                  type="number"
+                  min={5}
+                  max={300}
+                  value={timeoutSeconds}
+                  onChange={(e) => {
+                    const parsed = Number(e.target.value);
+                    if (Number.isNaN(parsed)) return;
+                    const clamped = Math.max(5, Math.min(300, Math.floor(parsed)));
+                    onLLMTimeoutMsChange(clamped * 1000);
+                  }}
+                  className="w-24 px-2 py-1.5 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+              </div>
 
               <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700 text-[10px] text-slate-400 text-center">
                 Your API key is stored locally in your browser. Requests go directly to your provider.
