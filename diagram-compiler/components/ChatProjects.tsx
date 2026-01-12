@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Folder, Plus, Trash2, X } from 'lucide-react';
 import type { DiagramType } from '../types';
 import type { HistorySession } from '../services/history/types';
@@ -68,6 +68,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   const [isDiagramTypePickerOpen, setIsDiagramTypePickerOpen] = useState(false);
   const [diagramTypePickerPlacement, setDiagramTypePickerPlacement] = useState<'expanded' | 'active'>('expanded');
   const undoTimerRef = React.useRef<number | null>(null);
+  const diagramTypePickerRootRef = useRef<HTMLDivElement | null>(null);
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? null,
@@ -113,20 +114,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   const renderDiagramTypePicker = (placement: 'expanded' | 'active') => {
     if (!isDiagramTypePickerOpen || diagramTypePickerPlacement !== placement) return null;
     return (
-      <div className="mt-2 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm">
-        <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-200 dark:border-slate-800">
-          <div className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            Diagram types
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsDiagramTypePickerOpen(false)}
-            className="p-1 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-            aria-label="Close"
-          >
-            <X size={12} />
-          </button>
-        </div>
+      <div className="absolute left-0 top-full z-50 mt-1 w-[min(22rem,90vw)] rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-lg">
         <div className="px-2 py-2">
           <div className="text-[10px] text-slate-500 dark:text-slate-400 mb-2">
             Кликните, чтобы включать/выключать. 1 тип = одна диаграмма, 2+ = Main.
@@ -236,6 +224,27 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!isDiagramTypePickerOpen) return;
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (diagramTypePickerRootRef.current?.contains(target)) return;
+      setIsDiagramTypePickerOpen(false);
+    };
+    window.document.addEventListener('mousedown', onPointerDown, true);
+    window.document.addEventListener('touchstart', onPointerDown, true);
+    return () => {
+      window.document.removeEventListener('mousedown', onPointerDown, true);
+      window.document.removeEventListener('touchstart', onPointerDown, true);
+    };
+  }, [isDiagramTypePickerOpen]);
+
+  const registerDiagramTypePickerRoot = (placement: 'expanded' | 'active') => (node: HTMLDivElement | null) => {
+    if (diagramTypePickerPlacement !== placement) return;
+    diagramTypePickerRootRef.current = node;
+  };
+
   return (
     <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
       <div className="px-3 pt-3 pb-2 flex items-center justify-between gap-3">
@@ -274,7 +283,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
         {isExpanded && (
           <div className="flex flex-col text-[11px] text-slate-500 dark:text-slate-400">
               <div className="flex flex-col">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 relative" ref={registerDiagramTypePickerRoot('expanded')}>
                   <span>Diagram type</span>
                   <button
                     type="button"
@@ -283,8 +292,8 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   >
                     {selectedLabel}
                   </button>
+                  {renderDiagramTypePicker('expanded')}
                 </div>
-                {renderDiagramTypePicker('expanded')}
               <div className="flex items-center gap-2 mt-1">
                 <span>Count</span>
                 <input
@@ -393,7 +402,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
             </div>
             <div className="flex flex-col text-[11px] text-slate-500 dark:text-slate-400">
               <div className="flex flex-col">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 relative" ref={registerDiagramTypePickerRoot('active')}>
                   <span>Diagram type</span>
                   <button
                     type="button"
@@ -402,8 +411,8 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   >
                     {selectedLabel}
                   </button>
+                  {renderDiagramTypePicker('active')}
                 </div>
-                {renderDiagramTypePicker('active')}
                 <div className="flex items-center gap-2 mt-1">
                   <span>Count</span>
                 <input
