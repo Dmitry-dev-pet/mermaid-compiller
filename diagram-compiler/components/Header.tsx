@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Sun, Eye, EyeOff } from 'lucide-react';
+import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Sun, Eye, EyeOff, Timer } from 'lucide-react';
 import { AIConfig, CliproxyFilters, ConnectionState, OpenRouterFilters } from '../types';
 import { MERMAID_VERSION } from '../constants';
 
@@ -68,14 +68,14 @@ const Header: React.FC<HeaderProps> = ({
     if (connectionState.status === 'disconnected') return 'AI: Not connected';
     if (connectionState.status === 'connecting') return 'AI: Connecting...';
     if (connectionState.status === 'failed') return 'AI: Connection Failed';
-    if (!aiConfig.selectedModelId) return `AI: ${timeoutSeconds}s · Connected · Select model`;
+    if (!aiConfig.selectedModelId) return 'AI: Connected · Select model';
     
     // Find model name
     const model = connectionState.availableModels.find(m => m.id === aiConfig.selectedModelId);
     const modelName = model ? model.name : aiConfig.selectedModelId;
     const contextLabel = model?.contextLength ? ` (${formatContextLength(model.contextLength)})` : '';
     const providerName = aiConfig.provider === 'openrouter' ? 'OpenRouter' : 'Proxy';
-    return `AI: ${timeoutSeconds}s · ${providerName} · ${modelName}${contextLabel}`;
+    return `AI: ${providerName} · ${modelName}${contextLabel}`;
   };
 
   const getStatusColor = () => {
@@ -195,6 +195,10 @@ const Header: React.FC<HeaderProps> = ({
           >
             {connectionState.status === 'connected' ? <Wifi size={14} /> : <WifiOff size={14} />}
             <span className="truncate max-w-[320px]">{getStatusText()}</span>
+            <span className="ml-1 inline-flex items-center gap-1 text-[11px] font-mono tabular-nums text-slate-400 dark:text-slate-400">
+              <Timer size={12} className="opacity-80" />
+              {timeoutSeconds}s
+            </span>
             <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
           </button>
 
