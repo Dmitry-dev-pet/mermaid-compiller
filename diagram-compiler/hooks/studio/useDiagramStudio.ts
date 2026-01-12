@@ -969,7 +969,6 @@ export const useDiagramStudio = () => {
     setDiagramType(type);
     setDiagramIntentForActiveContext(null);
     resetPromptPreview();
-    setEditorTab('build_docs');
     setNotebookBuildCount(type === 'auto' ? null : 1);
     void loadBuildDocsEntries(type);
   };
