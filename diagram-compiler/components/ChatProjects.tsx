@@ -141,7 +141,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   }
                 >
                   <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 text-white text-[10px] px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {type} — {fullLabel}
+                    {fullLabel}
                   </span>
                   {label}
                 </button>
