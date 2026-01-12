@@ -54,7 +54,6 @@ interface ChatColumnProps {
   notebookBuildCount: number | null;
   onNotebookBuildCountChange: (count: number | null) => void;
   llmTimeoutMs: number;
-  onLLMTimeoutMsChange: (timeoutMs: number) => void;
   operationLogs?: OperationLog[];
   activeOperationLog?: OperationLog | null;
   activeOperationKind?: 'chat' | 'build' | 'analyze' | 'fix' | 'compile' | null;
@@ -93,7 +92,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   notebookBuildCount,
   onNotebookBuildCountChange,
   llmTimeoutMs,
-  onLLMTimeoutMsChange,
   intentText,
   operationLogs,
   activeOperationLog,
@@ -657,8 +655,6 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           detectedDiagramType={detectedDiagramType}
           notebookBuildCount={notebookBuildCount}
           onNotebookBuildCountChange={onNotebookBuildCountChange}
-          llmTimeoutMs={llmTimeoutMs}
-          onLLMTimeoutMsChange={onLLMTimeoutMsChange}
         />
 
       {isNotebookChatMode && onBackToNotebookMainChat && (

@@ -237,6 +237,8 @@ function App() {
         onDisconnect={disconnectAI}
         theme={appState.theme}
         onToggleTheme={toggleTheme}
+        llmTimeoutMs={appState.llmTimeoutMs}
+        onLLMTimeoutMsChange={setLLMTimeoutMs}
       />
 
       <div
@@ -276,7 +278,6 @@ function App() {
                 notebookBuildCount={appState.notebookBuildCount}
                 onNotebookBuildCountChange={setNotebookBuildCount}
                 llmTimeoutMs={appState.llmTimeoutMs}
-                onLLMTimeoutMsChange={setLLMTimeoutMs}
                 intentText={buildDocsIntentText}
                 onOpenNotebookBlock={openNotebookBlock}
                 isNotebookChatMode={isNotebookChatMode}

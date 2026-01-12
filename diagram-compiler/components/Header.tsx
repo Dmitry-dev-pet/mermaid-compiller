@@ -11,6 +11,8 @@ interface HeaderProps {
   onDisconnect: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
+  llmTimeoutMs: number;
+  onLLMTimeoutMsChange: (timeoutMs: number) => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -21,6 +23,8 @@ const Header: React.FC<HeaderProps> = ({
   onDisconnect,
   theme,
   onToggleTheme,
+  llmTimeoutMs,
+  onLLMTimeoutMsChange,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
@@ -109,6 +113,7 @@ const Header: React.FC<HeaderProps> = ({
   const activeFilters = isOpenRouter
     ? aiConfig.filtersByProvider.openrouter
     : aiConfig.filtersByProvider.cliproxy;
+  const timeoutSeconds = Math.max(5, Math.min(300, Math.round(llmTimeoutMs / 1000)));
 
   const updateFilters = (updates: Partial<OpenRouterFilters & CliproxyFilters>) => {
     onConfigChange((prev) => {
@@ -221,6 +226,22 @@ const Header: React.FC<HeaderProps> = ({
                     />
                     <span className="text-sm">My Proxy</span>
                   </label>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Timeout (s)</label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={300}
+                    value={timeoutSeconds}
+                    onChange={(e) => {
+                      const parsed = Number(e.target.value);
+                      if (Number.isNaN(parsed)) return;
+                      const clamped = Math.max(5, Math.min(300, Math.floor(parsed)));
+                      onLLMTimeoutMsChange(clamped * 1000);
+                    }}
+                    className="w-24 px-2 py-1.5 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
                 </div>
               </div>
 
