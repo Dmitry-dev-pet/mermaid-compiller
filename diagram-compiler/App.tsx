@@ -8,6 +8,9 @@ import { ScrollSyncMeasure, ScrollSyncPayload } from './hooks/studio/useScrollSy
 import { MermaidThemeName, setInlineThemeCommand } from './utils/inlineThemeCommand';
 import { MermaidDirection, setInlineDirectionCommand } from './utils/inlineDirectionCommand';
 import { MermaidLook, setInlineLookCommand } from './utils/inlineLookCommand';
+import { DIAGRAM_TYPES } from './utils/diagramTypes';
+import { getDiagramSyntaxPath, getDocsPaths } from './services/docsContextService';
+import type { DiagramType } from './types';
 import {
   isMarkdownLike,
   replaceMermaidBlockInMarkdown,
@@ -80,6 +83,7 @@ function App() {
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
+    loadBuildDocsEntries,
     appendMarkdownMermaidBlock,
     openNotebookBlock,
     backToNotebookMainChat,
@@ -110,18 +114,52 @@ function App() {
     },
   };
 
+  const resolveBuildDocsTypeForFileName = useCallback((fileName: string): DiagramType | null => {
+    for (const type of DIAGRAM_TYPES) {
+      const syntaxPath = getDiagramSyntaxPath(type);
+      const syntaxName = syntaxPath?.split('/').pop();
+      if (syntaxName && syntaxName === fileName) return type;
+    }
+
+    for (const type of DIAGRAM_TYPES) {
+      const paths = getDocsPaths(type);
+      for (const { path } of paths) {
+        const name = path.split('/').pop();
+        if (name && name === fileName) return type;
+      }
+    }
+
+    return null;
+  }, []);
+
   const handleOpenBuildDocsFile = useCallback((fileLabel: string, mode: import('./types').DocsMode) => {
     const cleaned = fileLabel.trim().replace(/\s*\([^)]*\)\s*$/, '').trim();
     const fileName = cleaned.split('/').pop() || cleaned;
-    const match =
+    const matchInCurrent =
       buildDocsEntries.find((entry) => (entry.path.split('/').pop() || entry.path) === fileName)
       ?? buildDocsEntries.find((entry) => entry.path.endsWith(`/${fileName}`))
       ?? null;
-    if (!match) return;
-    setEditorTab('build_docs');
-    setDocsMode(mode);
-    setBuildDocsActivePathForMode(mode, match.path);
-  }, [buildDocsEntries, setBuildDocsActivePathForMode, setDocsMode, setEditorTab]);
+    const open = async () => {
+      setEditorTab('build_docs');
+      setDocsMode(mode);
+
+      if (matchInCurrent) {
+        setBuildDocsActivePathForMode(mode, matchInCurrent.path);
+        return;
+      }
+
+      const targetType = resolveBuildDocsTypeForFileName(fileName);
+      if (!targetType) return;
+      const loaded = await loadBuildDocsEntries(targetType);
+      const matchInLoaded =
+        loaded.entries.find((entry) => (entry.path.split('/').pop() || entry.path) === fileName)
+        ?? loaded.entries.find((entry) => entry.path.endsWith(`/${fileName}`))
+        ?? null;
+      if (!matchInLoaded) return;
+      setBuildDocsActivePathForMode(mode, matchInLoaded.path);
+    };
+    void open();
+  }, [buildDocsEntries, loadBuildDocsEntries, resolveBuildDocsTypeForFileName, setBuildDocsActivePathForMode, setDocsMode, setEditorTab]);
   const scrollSyncSourceRef = useRef<ScrollSyncPayload['source'] | null>(null);
   const [scrollSyncPayload, setScrollSyncPayload] = useState<ScrollSyncPayload | null>(null);
   const [hoveredMarkdownIndex, setHoveredMarkdownIndex] = useState<number | null>(null);

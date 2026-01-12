@@ -996,6 +996,7 @@ export const useDiagramStudio = () => {
     buildDocsActivePath,
     setBuildDocsActivePath,
     setBuildDocsActivePathForMode,
+    loadBuildDocsEntries,
     docsMode,
     setDocsMode,
     systemPromptRawByMode,
