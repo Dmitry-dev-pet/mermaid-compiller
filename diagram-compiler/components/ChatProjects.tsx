@@ -66,7 +66,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   const [undoProjectId, setUndoProjectId] = useState<string | null>(null);
   const [undoProjectTitle, setUndoProjectTitle] = useState('');
   const [isDiagramTypePickerOpen, setIsDiagramTypePickerOpen] = useState(false);
-  const [diagramTypeDraft, setDiagramTypeDraft] = useState<DiagramType[]>([]);
+  const [diagramTypePickerPlacement, setDiagramTypePickerPlacement] = useState<'expanded' | 'active'>('expanded');
   const undoTimerRef = React.useRef<number | null>(null);
 
   const activeProject = useMemo(
@@ -82,26 +82,79 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   const isDetectedMatch = !!detectedDiagramType && detectedDiagramType === diagramType;
   const timeoutSeconds = Math.max(1, Math.round(llmTimeoutMs / 1000));
 
-  const openDiagramTypePicker = () => {
-    const baseSelection =
+  const currentDiagramTypeSelection = useMemo(() => {
+    const base =
       diagramType === 'auto'
         ? [...mainTypeList]
         : [diagramType];
-    setDiagramTypeDraft(baseSelection.length ? baseSelection : [...MAIN_DIAGRAM_TYPES]);
-    setIsDiagramTypePickerOpen(true);
+    const sanitized = base.filter((t) => t !== 'auto');
+    return sanitized.length ? sanitized : [...MAIN_DIAGRAM_TYPES];
+  }, [diagramType, mainTypeList]);
+
+  const openDiagramTypePicker = (placement: 'expanded' | 'active') => {
+    setDiagramTypePickerPlacement(placement);
+    setIsDiagramTypePickerOpen((prev) => (placement === diagramTypePickerPlacement ? !prev : true));
   };
 
-  const applyDiagramTypeSelection = () => {
-    const next = Array.from(new Set(diagramTypeDraft)).filter((t) => t !== 'auto');
+  const toggleDiagramTypeInPicker = (type: DiagramType) => {
+    const has = currentDiagramTypeSelection.includes(type);
+    const next = has
+      ? currentDiagramTypeSelection.filter((t) => t !== type)
+      : [...currentDiagramTypeSelection, type];
     if (!next.length) return;
     if (next.length === 1) {
       onDiagramTypeChange(next[0]);
-      setIsDiagramTypePickerOpen(false);
       return;
     }
     onMainDiagramTypesChange(next);
     onDiagramTypeChange('auto');
-    setIsDiagramTypePickerOpen(false);
+  };
+
+  const renderDiagramTypePicker = (placement: 'expanded' | 'active') => {
+    if (!isDiagramTypePickerOpen || diagramTypePickerPlacement !== placement) return null;
+    return (
+      <div className="mt-2 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm">
+        <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-200 dark:border-slate-800">
+          <div className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            Diagram types
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsDiagramTypePickerOpen(false)}
+            className="p-1 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+            aria-label="Close"
+          >
+            <X size={12} />
+          </button>
+        </div>
+        <div className="px-2 py-2">
+          <div className="text-[10px] text-slate-500 dark:text-slate-400 mb-2">
+            Кликните, чтобы включать/выключать. 1 тип = одна диаграмма, 2+ = Main.
+          </div>
+          <div className="grid grid-cols-6 gap-1.5">
+            {DIAGRAM_TYPES.map((type) => {
+              const isSelected = currentDiagramTypeSelection.includes(type);
+              const label = getDiagramTypeShortLabel(type);
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => toggleDiagramTypeInPicker(type)}
+                  className={`rounded border px-2 py-1 text-[11px] font-mono tabular-nums transition-colors ${
+                    isSelected
+                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900/40'
+                  }`}
+                  title={DIAGRAM_TYPE_LABELS[type]}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const sortedProjects = useMemo(() => {
@@ -185,81 +238,6 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
 
   return (
     <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-      {isDiagramTypePickerOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 py-10"
-          onMouseDown={() => setIsDiagramTypePickerOpen(false)}
-        >
-          <div
-            className="w-full max-w-xl rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xl"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-800">
-              <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                Diagram types
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDiagramTypePickerOpen(false)}
-                className="p-1 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                aria-label="Close"
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <div className="px-3 py-3">
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                Нажимайте, чтобы включать/выключать типы. Если выбран 1 тип — режим одной диаграммы, если 2+ — это Main.
-              </div>
-              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                {DIAGRAM_TYPES.map((type) => {
-                  const isSelected = diagramTypeDraft.includes(type);
-                  const label = getDiagramTypeShortLabel(type);
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => {
-                        setDiagramTypeDraft((prev) => {
-                          const has = prev.includes(type);
-                          if (has) return prev.filter((t) => t !== type);
-                          return [...prev, type];
-                        });
-                      }}
-                      className={`rounded border px-2 py-1 text-[11px] font-mono tabular-nums transition-colors ${
-                        isSelected
-                          ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900/40'
-                      }`}
-                      title={DIAGRAM_TYPE_LABELS[type]}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-slate-200 dark:border-slate-800">
-              <button
-                type="button"
-                className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900/40"
-                onClick={() => setIsDiagramTypePickerOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={applyDiagramTypeSelection}
-                disabled={diagramTypeDraft.filter((t) => t !== 'auto').length === 0}
-              >
-                Apply
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="px-3 pt-3 pb-2 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <button
@@ -300,12 +278,13 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   <span>Diagram type</span>
                   <button
                     type="button"
-                    onClick={openDiagramTypePicker}
+                    onClick={() => openDiagramTypePicker('expanded')}
                     className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40"
                   >
                     {selectedLabel}
                   </button>
                 </div>
+                {renderDiagramTypePicker('expanded')}
               <div className="flex items-center gap-2 mt-1">
                 <span>Count</span>
                 <input
@@ -418,12 +397,13 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   <span>Diagram type</span>
                   <button
                     type="button"
-                    onClick={openDiagramTypePicker}
+                    onClick={() => openDiagramTypePicker('active')}
                     className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40"
                   >
                     {selectedLabel}
                   </button>
                 </div>
+                {renderDiagramTypePicker('active')}
                 <div className="flex items-center gap-2 mt-1">
                   <span>Count</span>
                 <input
