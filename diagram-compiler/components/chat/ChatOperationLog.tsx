@@ -141,67 +141,86 @@ const ChatOperationLog: React.FC<Props> = ({
                     <div className="min-w-0 break-words">
                       {(() => {
                         const hasTooltip = Boolean(event.tooltipMessages || event.tooltipDocs || event.tooltip);
-                        if (!hasTooltip) return <div className="whitespace-pre-wrap">{event.text}</div>;
-                        const lines = event.text.split('\n');
-                        const renderLine = (line: string, index: number) => {
-                          const messageMatch = event.tooltipMessages
-                            ? line.match(/^(.*?)(messages:\s.*)$/i)
-                            : null;
-                        if (messageMatch && event.tooltipMessages) {
-                          const [, prefix, messageText] = messageMatch;
-                          const tooltipId = `${event.id}-messages`;
-                          const isPinned = pinnedTooltip === tooltipId;
-                          return (
-                            <span key={`line-${index}`} className="inline-flex items-center gap-1">
-                              {prefix ? <span>{prefix}</span> : null}
-                              <span
-                                className="group relative inline-flex items-center gap-1 cursor-help"
-                                onClick={(clickEvent) => {
-                                  clickEvent.stopPropagation();
-                                  setPinnedTooltip((prev) => (prev === tooltipId ? null : tooltipId));
-                                }}
-                              >
-                                <span className="underline decoration-dotted" data-tooltip-id={tooltipId}>
-                                  {messageText}
-                                </span>
-                                <span className="text-[10px] text-slate-400 dark:text-slate-500">i</span>
-                                <span
-                                  aria-hidden
-                                  className={`pointer-events-none absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg select-none ${isPinned ? 'hidden' : 'hidden group-hover:block'}`}
-                                >
-                                  Нажмите для подробностей
-                                </span>
-                                {isPinned ? (
-                                  <span
-                                    id={tooltipId}
-                                    tabIndex={-1}
-                                    aria-hidden={!isPinned}
-                                    className="absolute left-0 top-full z-50 mt-6 max-h-64 w-[28rem] overflow-auto rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg whitespace-pre-wrap"
-                                  >
-                                    {event.tooltipMessages}
-                                  </span>
-                                ) : null}
-                              </span>
-                            </span>
-                          );
-                        }
-                        const match = line.match(/^(.*?\bdocs\b.*?:\s*)(.+)$/i);
-                        if (!match) {
-                          return <span key={`line-${index}`}>{line}</span>;
-                        }
-                        const [_, prefix, files] = match;
-                        const docsTooltipId = `${event.id}-docs-${index}`;
-                        const isPinned = pinnedTooltip === docsTooltipId;
-                        const docsMode: DocsMode =
-                          event.contextScope === 'planner'
-                            ? 'plan'
-                            : event.contextScope === 'build' || event.contextScope === 'block'
-                              ? 'build'
-                              : 'build';
-                        const fileParts = files
-                          .split(',')
-                          .map((part) => part.trim())
-                          .filter(Boolean);
+	                        if (!hasTooltip) return <div className="whitespace-pre-wrap">{event.text}</div>;
+	                        const lines = event.text.split('\n');
+	                        const renderLine = (line: string, index: number) => {
+	                          const docsMode: DocsMode =
+	                            event.contextScope === 'planner'
+	                              ? 'plan'
+	                              : event.contextScope === 'build' || event.contextScope === 'block'
+	                                ? 'build'
+	                                : 'build';
+	                          const renderFileButton = (label: string) => (
+	                            <button
+	                              type="button"
+	                              className="underline decoration-dotted hover:text-slate-900 dark:hover:text-slate-100"
+	                              onClick={(eventClick) => {
+	                                if (!onOpenBuildDocsFile) return;
+	                                eventClick.preventDefault();
+	                                eventClick.stopPropagation();
+	                                onOpenBuildDocsFile(normalizeFileLabel(label), docsMode);
+	                              }}
+	                              title="Открыть в Build Docs"
+	                            >
+	                              {label}
+	                            </button>
+	                          );
+	                          const messageMatch = event.tooltipMessages
+	                            ? line.match(/^(.*?)(messages:\s.*)$/i)
+	                            : null;
+	                          if (messageMatch && event.tooltipMessages) {
+	                            const [, prefix, messageText] = messageMatch;
+	                            const tooltipId = `${event.id}-messages`;
+	                            const isPinned = pinnedTooltip === tooltipId;
+	                            return (
+	                              <span key={`line-${index}`} className="inline-flex items-center gap-1">
+	                                {prefix ? <span>{prefix}</span> : null}
+	                                <span
+	                                  className="group relative inline-flex items-center gap-1 cursor-help"
+	                                  onClick={(clickEvent) => {
+	                                    clickEvent.stopPropagation();
+	                                    setPinnedTooltip((prev) => (prev === tooltipId ? null : tooltipId));
+	                                  }}
+	                                >
+	                                  <span className="underline decoration-dotted" data-tooltip-id={tooltipId}>
+	                                    {messageText}
+	                                  </span>
+	                                  <span className="text-[10px] text-slate-400 dark:text-slate-500">i</span>
+	                                  <span
+	                                    aria-hidden
+	                                    className={`pointer-events-none absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg select-none ${isPinned ? 'hidden' : 'hidden group-hover:block'}`}
+	                                  >
+	                                    Нажмите для подробностей
+	                                  </span>
+	                                  {isPinned ? (
+	                                    <span
+	                                      id={tooltipId}
+	                                      tabIndex={-1}
+	                                      aria-hidden={!isPinned}
+	                                      className="absolute left-0 top-full z-50 mt-6 max-h-64 w-[28rem] overflow-auto rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg whitespace-pre-wrap"
+	                                    >
+	                                      {event.tooltipMessages}
+	                                    </span>
+	                                  ) : null}
+	                                </span>
+	                              </span>
+	                            );
+	                          }
+	                        const match = line.match(/^(.*?\bdocs\b.*?:\s*)(.+)$/i);
+	                        if (!match) {
+	                          const trimmed = line.trim();
+	                          if (/^[A-Za-z0-9_.-]+\.(?:md|mdx)\s*\([^)]*\)\s*$/i.test(trimmed)) {
+	                            return renderFileButton(trimmed);
+	                          }
+	                          return <span key={`line-${index}`}>{line}</span>;
+	                        }
+	                        const [_, prefix, files] = match;
+	                        const docsTooltipId = `${event.id}-docs-${index}`;
+	                        const isPinned = pinnedTooltip === docsTooltipId;
+	                        const fileParts = files
+	                          .split(',')
+	                          .map((part) => part.trim())
+	                          .filter(Boolean);
                         return (
                           <span key={`line-${index}`} className="inline-flex flex-wrap items-center gap-1">
                             <span>{prefix}</span>
@@ -212,43 +231,17 @@ const ChatOperationLog: React.FC<Props> = ({
                                 setPinnedTooltip((prev) => (prev === docsTooltipId ? null : docsTooltipId));
                               }}
                             >
-                              <span className="inline-flex flex-wrap items-center gap-1" data-tooltip-id={docsTooltipId}>
-                                {fileParts.length ? (
-                                  fileParts.map((part) => {
-                                    const normalized = normalizeFileLabel(part);
-                                    return (
-                                      <button
-                                        key={part}
-                                        type="button"
-                                        className="underline decoration-dotted hover:text-slate-900 dark:hover:text-slate-100"
-                                        onClick={(eventClick) => {
-                                          if (!onOpenBuildDocsFile) return;
-                                          eventClick.preventDefault();
-                                          eventClick.stopPropagation();
-                                          onOpenBuildDocsFile(normalized, docsMode);
-                                        }}
-                                        title="Открыть в Build Docs"
-                                      >
-                                        {part}
-                                      </button>
-                                    );
-                                  })
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="underline decoration-dotted hover:text-slate-900 dark:hover:text-slate-100"
-                                    onClick={(eventClick) => {
-                                      if (!onOpenBuildDocsFile) return;
-                                      eventClick.preventDefault();
-                                      eventClick.stopPropagation();
-                                      onOpenBuildDocsFile(normalizeFileLabel(files), docsMode);
-                                    }}
-                                    title="Открыть в Build Docs"
-                                  >
-                                    {files}
-                                  </button>
-                                )}
-                              </span>
+	                              <span className="inline-flex flex-wrap items-center gap-1" data-tooltip-id={docsTooltipId}>
+	                                {fileParts.length ? (
+	                                  fileParts.map((part) => {
+	                                    return (
+	                                      <span key={part}>{renderFileButton(part)}</span>
+	                                    );
+	                                  })
+	                                ) : (
+	                                  renderFileButton(files)
+	                                )}
+	                              </span>
                               <span className="text-[10px] text-slate-400 dark:text-slate-500">i</span>
                               <span
                                 aria-hidden
