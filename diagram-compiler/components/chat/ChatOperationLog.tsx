@@ -4,6 +4,7 @@ import type { OperationLog } from '../../types';
 import { LLM_TIMEOUT_MS } from '../../constants';
 import { buildOperationLogViewModel } from './operationLogUtils';
 import type { DocsMode } from '../../types';
+import OperationLogRowText from './OperationLogRowText';
 
 type Props = {
   operationLog: OperationLog;
@@ -41,7 +42,7 @@ const ChatOperationLog: React.FC<Props> = ({
         setPinnedTooltip(null);
         return;
       }
-      const wrapper = target.closest('[data-tooltip-id]');
+      const wrapper = target.closest('[data-tooltip-root]');
       if (!wrapper) setPinnedTooltip(null);
     };
     window.addEventListener('keydown', onKeyDown);
@@ -61,11 +62,6 @@ const ChatOperationLog: React.FC<Props> = ({
     const selection = window.getSelection();
     if (!selection) return false;
     return selection.toString().trim().length > 0;
-  };
-  const normalizeFileLabel = (value: string) => {
-    const trimmed = value.trim();
-    const withoutSize = trimmed.replace(/\s*\([^)]*\)\s*$/, '').trim();
-    return withoutSize || trimmed;
   };
   return (
     <div className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -135,140 +131,12 @@ const ChatOperationLog: React.FC<Props> = ({
                       {event.timeLabel ?? ''}
                     </span>
                     <div className="min-w-0 break-words">
-                      {(() => {
-                        const hasTooltip = Boolean(event.tooltipMessages || event.tooltipDocs || event.tooltip);
-	                        if (!hasTooltip) return <div className="whitespace-pre-wrap">{event.text}</div>;
-	                        const lines = event.text.split('\n');
-	                        const renderLine = (line: string, index: number) => {
-	                          const docsMode: DocsMode =
-	                            event.contextScope === 'planner'
-	                              ? 'plan'
-	                              : event.contextScope === 'chat'
-	                                ? 'chat'
-	                                : event.contextScope === 'analyze'
-	                                  ? 'analyze'
-	                                  : event.contextScope === 'fix'
-	                                    ? 'fix'
-	                                    : 'build';
-	                          const renderFileButton = (label: string) => (
-	                            <button
-	                              type="button"
-	                              className="underline decoration-dotted hover:text-slate-900 dark:hover:text-slate-100"
-	                              onClick={(eventClick) => {
-	                                if (!onOpenBuildDocsFile) return;
-	                                eventClick.preventDefault();
-	                                eventClick.stopPropagation();
-	                                onOpenBuildDocsFile(normalizeFileLabel(label), docsMode);
-	                              }}
-	                              title="Открыть в Build Docs"
-	                            >
-	                              {label}
-	                            </button>
-	                          );
-	                          const messageMatch = event.tooltipMessages
-	                            ? line.match(/^(.*?)(messages:\s.*)$/i)
-	                            : null;
-	                          if (messageMatch && event.tooltipMessages) {
-	                            const [, prefix, messageText] = messageMatch;
-	                            const tooltipId = `${event.id}-messages`;
-	                            const isPinned = pinnedTooltip === tooltipId;
-	                            return (
-	                              <span key={`line-${index}`} className="inline-flex items-center gap-1">
-	                                {prefix ? <span>{prefix}</span> : null}
-	                                <span
-	                                  className="group relative inline-flex items-center gap-1 cursor-help"
-	                                  onClick={(clickEvent) => {
-	                                    clickEvent.stopPropagation();
-	                                    setPinnedTooltip((prev) => (prev === tooltipId ? null : tooltipId));
-	                                  }}
-	                                >
-	                                  <span className="underline decoration-dotted" data-tooltip-id={tooltipId}>
-	                                    {messageText}
-	                                  </span>
-	                                  <span className="text-[10px] text-slate-400 dark:text-slate-500">i</span>
-	                                  <span
-	                                    aria-hidden
-	                                    className={`pointer-events-none absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg select-none ${isPinned ? 'hidden' : 'hidden group-hover:block'}`}
-	                                  >
-	                                    Нажмите для подробностей
-	                                  </span>
-	                                  {isPinned ? (
-	                                    <span
-	                                      id={tooltipId}
-	                                      tabIndex={-1}
-	                                      aria-hidden={!isPinned}
-	                                      className="absolute left-0 top-full z-50 mt-6 max-h-64 w-[28rem] overflow-auto rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg whitespace-pre-wrap"
-	                                    >
-	                                      {event.tooltipMessages}
-	                                    </span>
-	                                  ) : null}
-	                                </span>
-	                              </span>
-	                            );
-	                          }
-	                        const match = line.match(/^(.*?\bdocs\b.*?:\s*)(.+)$/i);
-	                        if (!match) {
-	                          const trimmed = line.trim();
-	                          if (/^[A-Za-z0-9_.-]+\.(?:md|mdx)\s*\([^)]*\)\s*$/i.test(trimmed)) {
-	                            return renderFileButton(trimmed);
-	                          }
-	                          return <span key={`line-${index}`}>{line}</span>;
-	                        }
-	                        const [_, prefix, files] = match;
-	                        const docsTooltipId = `${event.id}-docs-${index}`;
-	                        const isPinned = pinnedTooltip === docsTooltipId;
-	                        const fileParts = files
-	                          .split(',')
-	                          .map((part) => part.trim())
-	                          .filter(Boolean);
-                        return (
-                          <span key={`line-${index}`} className="inline-flex flex-wrap items-center gap-1">
-                            <span>{prefix}</span>
-                            <span
-                              className="group relative inline-flex items-center gap-1 cursor-help"
-                              onClick={(clickEvent) => {
-                                clickEvent.stopPropagation();
-                                setPinnedTooltip((prev) => (prev === docsTooltipId ? null : docsTooltipId));
-                              }}
-                            >
-	                              <span className="inline-flex flex-wrap items-center gap-1" data-tooltip-id={docsTooltipId}>
-	                                {fileParts.length ? (
-	                                  fileParts.map((part) => {
-	                                    return (
-	                                      <span key={part}>{renderFileButton(part)}</span>
-	                                    );
-	                                  })
-	                                ) : (
-	                                  renderFileButton(files)
-	                                )}
-	                              </span>
-                              <span className="text-[10px] text-slate-400 dark:text-slate-500">i</span>
-                              <span
-                                aria-hidden
-                                className={`pointer-events-none absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg select-none ${isPinned ? 'hidden' : 'hidden group-hover:block'}`}
-                              >
-                                Нажмите для подробностей
-                              </span>
-                              {isPinned ? (
-                                <span
-                                  id={docsTooltipId}
-                                  tabIndex={-1}
-                                  aria-hidden={!isPinned}
-                                  className="absolute left-0 top-full z-50 mt-6 max-h-64 w-[28rem] overflow-auto rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-100 shadow-lg whitespace-pre-wrap"
-                                >
-                                  {event.tooltipDocs ?? ''}
-                                </span>
-                              ) : null}
-                            </span>
-                          </span>
-                        );
-                        };
-                      return lines.map((line, index) => (
-                        <div key={`line-${index}`} className="whitespace-pre-wrap">
-                          {renderLine(line, index)}
-                        </div>
-                      ));
-                    })()}
+                      <OperationLogRowText
+                        row={event}
+                        pinnedTooltip={pinnedTooltip}
+                        setPinnedTooltip={setPinnedTooltip}
+                        onOpenBuildDocsFile={onOpenBuildDocsFile}
+                      />
                   </div>
                 </>
               )}

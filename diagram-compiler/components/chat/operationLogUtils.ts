@@ -68,6 +68,23 @@ const resolveNotebookTypes = (events: OperationEvent[]) => {
 
 const isContextRowText = (text: string) => text.includes('Контекст') || text.toLowerCase().includes('context');
 
+const stripDiagramTypeFromRows = (rows: LogRow[], isRunning: boolean) => {
+  for (const row of rows) {
+    const typeLabel = resolveDiagramTypeShortLabelFromText(row.text);
+    const stripped = stripInnerBlockLabelFromContextText(stripDiagramTypeFromText(row.text));
+    row.text = stripped;
+
+    if (typeLabel && isContextRowText(stripped)) {
+      // Preserve countdown timers (mm:ss) if they were injected while running.
+      const isCountdown = typeof row.timeLabel === 'string' && /^\d+:\d\d$/.test(row.timeLabel);
+      if (!row.timeLabel || (!isCountdown && row.timeLabel.endsWith('s'))) {
+        row.timeLabel = typeLabel;
+      }
+      if (!row.timeLabel) row.timeLabel = typeLabel;
+    }
+  }
+};
+
 const formatEvent = (event: OperationEvent) => {
   const parts: string[] = [];
   const isBlockEvent = event.title.startsWith('Block');
@@ -140,6 +157,41 @@ const resolveLastLlmStartAt = (log: OperationLog) => {
   return null;
 };
 
+const resolveSummaryLabel = (firstTitle: string) => {
+  const normalized = firstTitle.trim().toLowerCase();
+  if (normalized.startsWith('чат') || normalized === 'chat') {
+    return { active: 'Thinking', done: 'Finished thinking' };
+  }
+  if (normalized.startsWith('анализ') || normalized.startsWith('analy')) {
+    return { active: 'Analyzing', done: 'Finished analyzing' };
+  }
+  if (normalized.startsWith('исправ') || normalized === 'fix') {
+    return { active: 'Fixing', done: 'Finished fixing' };
+  }
+  if (normalized.startsWith('пересбор') || normalized.startsWith('recomp')) {
+    return { active: 'Recompiling', done: 'Finished recompiling' };
+  }
+  return { active: 'Building', done: 'Finished building' };
+};
+
+const isHiddenOperationEvent = (event: OperationEvent) => {
+  if (event.detail === 'start') return true;
+  if (event.title === 'LLM') return true;
+  if (
+    (event.title === 'Notebook build' || event.title === 'Сборка')
+    && event.detail === 'start'
+  ) {
+    return true;
+  }
+  if (event.title === 'Чат' && event.detail?.includes('язык')) return true;
+  if (event.title === 'Чат' && event.detail === 'нажата') return true;
+  if (event.title === 'Чат' && event.detail === 'start') return true;
+  if (event.title === 'Build' && (event.detail === 'нажата' || event.detail === 'pressed')) {
+    return true;
+  }
+  return false;
+};
+
 export const buildOperationLogViewModel = (
   operationLog: OperationLog,
   args?: { showSummaryLine?: boolean; timeoutMs?: number; now?: number }
@@ -152,22 +204,6 @@ export const buildOperationLogViewModel = (
   );
   const isRunning = operationLog.status === 'running' && !hasFinishedEvent;
   const firstTitle = operationLog.events[0]?.title ?? '';
-  const resolveSummaryLabel = (title: string) => {
-    const normalized = title.trim().toLowerCase();
-    if (normalized.startsWith('чат') || normalized === 'chat') {
-      return { active: 'Thinking', done: 'Finished thinking' };
-    }
-    if (normalized.startsWith('анализ') || normalized.startsWith('analy')) {
-      return { active: 'Analyzing', done: 'Finished analyzing' };
-    }
-    if (normalized.startsWith('исправ') || normalized === 'fix') {
-      return { active: 'Fixing', done: 'Finished fixing' };
-    }
-    if (normalized.startsWith('пересбор') || normalized.startsWith('recomp')) {
-      return { active: 'Recompiling', done: 'Finished recompiling' };
-    }
-    return { active: 'Building', done: 'Finished building' };
-  };
   const labels = resolveSummaryLabel(firstTitle);
   const summaryLabel = isRunning ? labels.active : labels.done;
   const summaryLine = !isRunning && showSummaryLine ? buildSummary(operationLog) : null;
@@ -178,30 +214,7 @@ export const buildOperationLogViewModel = (
   const displayEvents: LogRow[] = [];
   for (let i = 0; i < operationLog.events.length; i += 1) {
     const event = operationLog.events[i];
-    if (event.detail === 'start') {
-      continue;
-    }
-    if (event.title === 'LLM') {
-      continue;
-    }
-    if (
-      (event.title === 'Notebook build' || event.title === 'Сборка')
-      && event.detail === 'start'
-    ) {
-      continue;
-    }
-    if (event.title === 'Чат' && event.detail?.includes('язык')) {
-      continue;
-    }
-    if (event.title === 'Чат' && event.detail === 'нажата') {
-      continue;
-    }
-    if (event.title === 'Чат' && event.detail === 'start') {
-      continue;
-    }
-    if (event.title === 'Build' && (event.detail === 'нажата' || event.detail === 'pressed')) {
-      continue;
-    }
+    if (isHiddenOperationEvent(event)) continue;
     if (typeof event.blockIndex === 'number') {
       if (event.title === 'Block validation') {
         statusByBlock.set(event.blockIndex, event.detail === 'valid' ? 'ok' : 'err');
@@ -478,22 +491,9 @@ export const buildOperationLogViewModel = (
     }
   }
 
-  // Final pass: strip diagram type from all visible rows, and show diagram type only in the left column
+  // Final pass: strip diagram type from row text and show diagram type in the left column
   // on context rows (so it appears above the timed result row).
-  for (const row of rows) {
-    const typeLabel = resolveDiagramTypeShortLabelFromText(row.text);
-    const stripped = stripInnerBlockLabelFromContextText(stripDiagramTypeFromText(row.text));
-    row.text = stripped;
-
-    if (typeLabel && isContextRowText(stripped)) {
-      // Preserve countdown timers (mm:ss) if they were injected while running.
-      const isCountdown = typeof row.timeLabel === 'string' && /^\d+:\d\d$/.test(row.timeLabel);
-      if (!row.timeLabel || (!isCountdown && row.timeLabel.endsWith('s'))) {
-        row.timeLabel = typeLabel;
-      }
-      if (!row.timeLabel) row.timeLabel = typeLabel;
-    }
-  }
+  stripDiagramTypeFromRows(rows, isRunning);
 
   return { summaryLabel, summaryLine, rows };
 };
