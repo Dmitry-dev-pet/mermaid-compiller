@@ -22,6 +22,7 @@ import {
 } from './logContextUtils';
 import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
 import { DIAGRAM_TYPES, normalizeDiagramType } from '../../utils/diagramTypes';
+import { augmentMermaidErrorForAutoFix } from '../../utils/mermaidAutoFixHints';
 
 type FixFlowDeps = {
   aiConfig: AIConfig;
@@ -183,24 +184,20 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         })()
         : '';
 
-    return [
-      '## Итог',
-      `- Блок: ${statusLine}`,
-      `- Результат: ${resultLabel}`,
-      `- Попыток: ${args.attempts}`,
-      `- Код изменен: ${changedLabel}`,
-      changesSummary || exampleLine ? '\n## Изменения' : '',
-      changesSummary ? `- ${changesSummary}` : '',
-      exampleLine ? exampleLine : '',
-      combinedDiagnosis ? '\n## Диаграмма' : '',
-      combinedDiagnosis ? `- ${combinedDiagnosis.replace(/^тип:\s*/i, 'Тип: ')}` : '',
-      explanation ? '\n## Пояснение' : '',
-      explanation ? `- ${explanation}` : '',
-      errorText ? '\n## Ошибка' : '',
-      errorText ? `- ${errorText}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
+    const base = [
+      `Итог: ${statusLine} — ${resultLabel}; попыток: ${args.attempts}; код изменён: ${changedLabel}.`,
+    ];
+
+    if (combinedDiagnosis) base.push(combinedDiagnosis.replace(/^тип:\s*/i, 'Тип: '));
+    if (changesSummary) base.push(changesSummary);
+    if (!changesSummary && exampleLine) {
+      // Drop markdown bullets/backticks; keep as plain text.
+      base.push(exampleLine.replace(/^- /, '').replace(/`/g, ''));
+    }
+    if (explanation) base.push(explanation);
+    if (errorText) base.push(`Ошибка: ${errorText.replace(/`/g, '')}`);
+
+    return base.filter(Boolean).join('\n');
   }, []);
 
   const runMarkdownFix = useCallback(async (args: {
@@ -223,9 +220,13 @@ export const useFixFlow = (deps: FixFlowDeps) => {
       validate: (code) => validateMermaidDiagramCode(code, { logError: false }),
       fix: async (code, errorMessage) => {
         lastRequestStartedAt = Date.now();
+        const enrichedErrorMessage = augmentMermaidErrorForAutoFix(
+          (block.diagramType ?? deps.appDiagramType ?? 'auto') as DiagramType,
+          errorMessage
+        );
         const fixedRaw = await runLLMRequest({
           task: 'markdown-fix',
-          run: () => fixDiagram(code, errorMessage, deps.aiConfig, docs, language, deps.modelParams),
+          run: () => fixDiagram(code, enrichedErrorMessage, deps.aiConfig, docs, language, deps.modelParams),
           retries: LLM_TIMEOUT_RETRIES,
           timeoutMs: deps.llmTimeoutMs,
           onStart: (notice) => {

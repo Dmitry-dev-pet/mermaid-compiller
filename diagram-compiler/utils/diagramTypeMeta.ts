@@ -5,7 +5,7 @@ export const DIAGRAM_TYPE_LABELS: Record<DiagramType, string> = {
   auto: 'Auto',
   architecture: 'Architecture',
   block: 'Block',
-  c4: 'C4 (experimental)',
+  c4: 'C4',
   class: 'Class Diagram',
   er: 'Entity Relationship',
   flowchart: 'Flowchart',

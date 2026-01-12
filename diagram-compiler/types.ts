@@ -212,6 +212,6 @@ export interface AppState {
   theme: 'light' | 'dark';
   language: string;
   analyzeLanguage: string;
-  notebookBuildCount: number | null;
+  notebookBuildCount: number | string | null;
   llmTimeoutMs: number;
 }

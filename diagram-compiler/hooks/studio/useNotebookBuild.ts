@@ -199,11 +199,12 @@ const resolveNotebookPrompt = (messages: Message[], diagramIntent: DiagramIntent
 };
 
 const resolveNotebookRequestedN = (args: {
-  explicitCount: number | null;
+  explicitCount: number | string | null;
   promptText: string;
   messages: Message[];
 }): number | null => {
-  if (args.explicitCount && args.explicitCount > 0) return args.explicitCount;
+  if (typeof args.explicitCount === 'number' && args.explicitCount > 0) return args.explicitCount;
+  if (typeof args.explicitCount === 'string' && args.explicitCount.trim()) return null;
   const fromPrompt = parseNotebookCountFromText(args.promptText) ?? parseNotebookCountFromIntent(args.promptText);
   if (fromPrompt) return fromPrompt;
   const lastUserText = args.messages
@@ -212,6 +213,16 @@ const resolveNotebookRequestedN = (args: {
     .find((m) => m.id !== 'init' && m.role === 'user' && m.content.trim().length > 0)?.content;
   if (!lastUserText) return null;
   return parseNotebookCountFromText(lastUserText);
+};
+
+const parseNotebookRange = (range: string | null) => {
+  if (!range) return null;
+  const match = range.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (!match) return null;
+  const min = Number(match[1]);
+  const max = Number(match[2]);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0 || min > max) return null;
+  return { min, max };
 };
 
 const buildNotebookMarkdown = (plan: NotebookPlan) => {
@@ -233,6 +244,7 @@ const replaceNotebookBlock = (markdown: string, index: number, code: string) => 
 const buildPlannerMessageContent = (args: {
   prompt: string;
   requestedN: number | null;
+  requestedNRange?: string | null;
   attempt: number;
   lastCount: number | null;
   lastInvalidTypes: number | null;
@@ -244,17 +256,25 @@ const buildPlannerMessageContent = (args: {
   const lines = [
     `userRequest: """${args.prompt}"""`,
     `requestedN: ${args.requestedN ?? 'null'}`,
+    `requestedNRange: ${args.requestedNRange ? `"${args.requestedNRange}"` : 'null'}`,
     `forcedDiagramType: ${args.forcedDiagramType ?? 'null'}`,
     `supportedDiagramTypes: ${supportedTypes}`,
   ];
   if (args.allowedDiagramTypes?.length) {
     lines.push(`allowedDiagramTypes: ${args.allowedDiagramTypes.join(', ')}`);
   }
-  if (args.requestedN && args.attempt > 1) {
-    const mismatchNote = args.lastCount ? `Previous response had ${args.lastCount} diagrams.` : '';
-    lines.push(
-      `IMPORTANT: Return exactly ${args.requestedN} diagrams.${mismatchNote ? ` ${mismatchNote}` : ''}`
-    );
+  if (args.attempt > 1) {
+    if (args.requestedN) {
+      const mismatchNote = args.lastCount ? `Previous response had ${args.lastCount} diagrams.` : '';
+      lines.push(
+        `IMPORTANT: Return exactly ${args.requestedN} diagrams.${mismatchNote ? ` ${mismatchNote}` : ''}`
+      );
+    } else if (args.requestedNRange) {
+      const mismatchNote = args.lastCount ? `Previous response had ${args.lastCount} diagrams.` : '';
+      lines.push(
+        `IMPORTANT: Choose resolvedN within ${args.requestedNRange}.${mismatchNote ? ` ${mismatchNote}` : ''}`
+      );
+    }
   }
   if (args.lastInvalidTypes && args.attempt > 1) {
     const invalidNote = `Previous response had ${args.lastInvalidTypes} unsupported diagram type(s).`;
@@ -270,6 +290,7 @@ export const requestNotebookPlan = async (args: {
   modelParams: ModelParams | null;
   prompt: string;
   requestedN: number | null;
+  requestedNRange?: string | null;
   docs: string;
   language: string;
   addMessage: NotebookBuildDeps['addMessage'];
@@ -294,6 +315,7 @@ export const requestNotebookPlan = async (args: {
       content: buildPlannerMessageContent({
         prompt: args.prompt,
         requestedN: args.requestedN,
+        requestedNRange: args.requestedNRange,
         attempt,
         lastCount,
         lastInvalidTypes,
@@ -332,6 +354,21 @@ export const requestNotebookPlan = async (args: {
       throw new Error(lastParseError || 'Planner returned invalid JSON.');
     }
     let normalized = normalizeNotebookPlan(parsedPlan, args.requestedN);
+    const range = parseNotebookRange(args.requestedNRange ?? null);
+    if (range) {
+      const resolved = Number(normalized.resolvedN ?? normalized.diagrams.length);
+      if (resolved < range.min || resolved > range.max) {
+        lastCount = resolved;
+        if (attempt < maxAttempts) {
+          args.addMessage(
+            'assistant',
+            `Planner returned ${resolved} diagrams. Expected ${range.min}-${range.max}. Retrying...`,
+            'build'
+          );
+          continue;
+        }
+      }
+    }
     const allowedTypes = args.allowedDiagramTypes?.length ? new Set(args.allowedDiagramTypes) : null;
     const invalidTypes = normalized.diagrams.filter((diagram) => {
       if (diagram.diagramType === 'other') return true;
@@ -504,11 +541,14 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
 
     const originalDiagramType = deps.appState.diagramType;
     const fallbackDiagramType = originalDiagramType === 'auto' ? 'flowchart' : originalDiagramType;
+    const requestedNRange =
+      typeof deps.appState.notebookBuildCount === 'string' ? deps.appState.notebookBuildCount : null;
     const requestedN = resolveNotebookRequestedN({
       explicitCount: deps.appState.notebookBuildCount ?? null,
       promptText: prompt.content,
       messages: deps.messages,
     });
+    const requestedNLabel = requestedN ? String(requestedN) : null;
     const language = deps.appState.language !== 'auto' ? deps.appState.language : detectLanguage(prompt.content);
     const forcedDiagramType = deps.appState.diagramType !== 'auto' ? deps.appState.diagramType : null;
     const allowedDiagramTypes: DiagramType[] | null =
@@ -521,7 +561,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           'Сборка ноутбука',
           '- старт',
           `- язык: ${language}`,
-          requestedN ? `- N: ${requestedN}` : '',
+          requestedNLabel ? `- N: ${requestedNLabel}` : '',
           forcedDiagramType ? `- тип: ${forcedDiagramType}` : '',
           allowedDiagramTypes ? `- main: ${allowedDiagramTypes.join(' / ')}` : '',
         ].filter(Boolean).join('\n')
@@ -530,7 +570,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         phase: 'build',
         level: 'info',
         title: 'Notebook build',
-        detail: requestedN ? `N=${requestedN}` : undefined,
+        detail: requestedNLabel ? `N=${requestedNLabel}` : undefined,
         kind: 'status',
       });
       const docs = await deps.getDocsContext('plan');
@@ -550,6 +590,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         content: buildPlannerMessageContent({
           prompt: prompt.content,
           requestedN,
+          requestedNRange,
           attempt: 1,
           lastCount: null,
           lastInvalidTypes: null,
@@ -590,6 +631,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         modelParams: deps.modelParams,
         prompt: prompt.content,
         requestedN,
+        requestedNRange,
         docs,
         language,
         addMessage: createEphemeralMessage,
@@ -606,6 +648,13 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           `- диаграмм: ${plan.resolvedN}`,
         ].join('\n')
       );
+      logEvent({
+        phase: 'build',
+        level: 'info',
+        title: 'Notebook build',
+        detail: `N=${plan.resolvedN}`,
+        kind: 'status',
+      });
       logEvent({
         phase: 'planning',
         level: 'info',

@@ -1,5 +1,14 @@
 import type { DiagramType } from '../types';
 
+const sanitizeArrowSyntax = (code: string) => {
+  // Mermaid flowchart/state diagrams use `-->` / `<--`. LLMs sometimes emit `->` / `<-`.
+  // Convert only the "single dash" variants, avoiding valid arrows like `-->`, `-.->`, `==>`,
+  // and sequence arrows like `->>`.
+  return code
+    .replace(/(?<![-.=])<-(?!-)/g, '<--')
+    .replace(/(?<![-.=])->(?!>)/g, '-->');
+};
+
 const sanitizeFlowchartLabels = (code: string) => {
   if (!code.trim().startsWith('flowchart')) return code;
   const replaceParens = (value: string) => {
@@ -14,7 +23,7 @@ const sanitizeFlowchartLabels = (code: string) => {
       .replace(/\s+/g, ' ')
       .trim();
   };
-  let next = code;
+  let next = sanitizeArrowSyntax(code);
   next = next.replace(/\|([^|\n]*)\|/g, (match, label) => `|${replaceParens(label)}|`);
   next = next.replace(/\[([^\]\n]*)\]/g, (match, label) => `[${replaceParens(label)}]`);
   next = next.replace(/\{([^}\n]*)\}/g, (match, label) => `{${replaceParens(label)}}`);
@@ -22,8 +31,18 @@ const sanitizeFlowchartLabels = (code: string) => {
 };
 
 export const sanitizeMermaidByType = (diagramType: DiagramType, code: string) => {
+  if (diagramType === 'auto') {
+    const trimmed = code.trimStart();
+    if (trimmed.startsWith('flowchart')) return sanitizeFlowchartLabels(code);
+    if (/^stateDiagram/i.test(trimmed)) return sanitizeArrowSyntax(code);
+    if (trimmed.startsWith('erDiagram')) return sanitizeMermaidByType('er', code);
+    return code;
+  }
   if (diagramType === 'flowchart') {
     return sanitizeFlowchartLabels(code);
+  }
+  if (diagramType === 'state') {
+    return sanitizeArrowSyntax(code);
   }
   if (diagramType === 'er') {
     const lines = code.split(/\r?\n/);

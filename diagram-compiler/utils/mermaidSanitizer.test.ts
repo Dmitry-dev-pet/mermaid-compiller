@@ -19,6 +19,39 @@ describe('mermaidSanitizer', () => {
     expect(result).toBe(input);
   });
 
+  it('normalizes single-dash arrows in flowcharts', () => {
+    const input = [
+      'flowchart TD',
+      'A->B',
+      'B<-C',
+      'D-->E',
+      'F<--G',
+      'A->>B',
+      'H-.->I',
+    ].join('\n');
+    const result = sanitizeMermaidByType('flowchart', input);
+    expect(result).toContain('A-->B');
+    expect(result).toContain('B<--C');
+    expect(result).toContain('D-->E');
+    expect(result).toContain('F<--G');
+    expect(result).toContain('A->>B');
+    expect(result).toContain('H-.->I');
+  });
+
+  it('normalizes single-dash arrows in state diagrams', () => {
+    const input = ['stateDiagram-v2', 'A->B', 'B<-A', 'A-->C'].join('\n');
+    const result = sanitizeMermaidByType('state', input);
+    expect(result).toContain('A-->B');
+    expect(result).toContain('B<--A');
+    expect(result).toContain('A-->C');
+  });
+
+  it('sanitizes by detected type when diagramType=auto', () => {
+    const input = ['flowchart TD', 'A->B'].join('\n');
+    const result = sanitizeMermaidByType('auto', input);
+    expect(result).toContain('A-->B');
+  });
+
   it('sanitizes ER attribute values wrapped in quotes', () => {
     const input = [
       'erDiagram',

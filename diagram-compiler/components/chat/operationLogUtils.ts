@@ -296,13 +296,21 @@ export const buildOperationLogViewModel = (
     }
 
     if (event.title === 'Notebook build' && event.detail?.startsWith('N=')) {
+      const key = 'notebook-build';
       const types = resolveNotebookTypes(operationLog.events);
       const suffix = types.length ? ` (${types.join('/')})` : '';
-      displayEvents.push({
+      const entry: LogRow = {
         id: event.id,
         text: `Сборка — ${event.detail}${suffix}`,
         kind: 'attempt',
-      });
+        key,
+      };
+      const existingIndex = displayEvents.findIndex((row) => row.key === key);
+      if (existingIndex >= 0) {
+        displayEvents[existingIndex] = { ...displayEvents[existingIndex], ...entry };
+      } else {
+        displayEvents.push(entry);
+      }
       continue;
     }
     if (event.title === 'Block' && event.detail && typeof event.blockIndex === 'number') {

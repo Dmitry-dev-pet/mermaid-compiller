@@ -5,6 +5,7 @@ import { runAutoFixLoop } from './autoFix';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import { LLM_TIMEOUT_RETRIES } from '../../constants';
 import { formatMermaidErrorLine, sanitizeMermaidByType } from '../../utils/mermaidSanitizer';
+import { augmentMermaidErrorForAutoFix } from '../../utils/mermaidAutoFixHints';
 import type { AIConfig, DiagramType, Message, ModelParams } from '../../types';
 
 type BuildAttemptCallbacks = {
@@ -200,11 +201,12 @@ export const runBuildPipeline = async (options: BuildPipelineOptions): Promise<B
     fix: async (code, errorMessage) => {
       autoFixAttempt += 1;
       const currentAttempt = Math.min(autoFixAttempt, autoFixMaxAttempts);
-      const errorLine = formatMermaidErrorLine(errorMessage, 200);
+      const enrichedErrorMessage = augmentMermaidErrorForAutoFix(diagramType, errorMessage);
+      const errorLine = formatMermaidErrorLine(enrichedErrorMessage, 200);
       callbacks?.onAutoFixAttempt?.(currentAttempt, autoFixMaxAttempts, errorLine || undefined);
       const fixedRaw = await runLLMRequest({
         task: 'auto-fix',
-        run: () => fixDiagram(code, errorMessage, aiConfig, docs, language, modelParams),
+        run: () => fixDiagram(code, enrichedErrorMessage, aiConfig, docs, language, modelParams),
         retries: autoFixRequestRetries,
         timeoutMs,
         onStart: onLLMRequestStart,

@@ -272,7 +272,7 @@ export const useDiagramStudio = () => {
     setAppState((prev) => ({ ...prev, isScrollSyncEnabled: !prev.isScrollSyncEnabled }));
   }, [setAppState]);
 
-  const setNotebookBuildCount = useCallback((count: number | null) => {
+  const setNotebookBuildCount = useCallback((count: number | string | null) => {
     setAppState((prev) => ({ ...prev, notebookBuildCount: count }));
   }, [setAppState]);
 

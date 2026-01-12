@@ -48,8 +48,8 @@ type ChatProjectsProps = {
   mainDiagramTypes: DiagramType[];
   onMainDiagramTypesChange: (types: DiagramType[]) => void;
   detectedDiagramType: DiagramType | null;
-  notebookBuildCount: number | null;
-  onNotebookBuildCountChange: (count: number | null) => void;
+  notebookBuildCount: number | string | null;
+  onNotebookBuildCountChange: (count: number | string | null) => void;
 };
 
 const formatProjectTimestamp = (ts?: number) => {
@@ -90,8 +90,97 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   const [undoProjectTitle, setUndoProjectTitle] = useState('');
   const [isDiagramTypePickerOpen, setIsDiagramTypePickerOpen] = useState(false);
   const [diagramTypePickerPlacement, setDiagramTypePickerPlacement] = useState<'expanded' | 'active'>('expanded');
+  const [isMoreDiagramTypeSetsOpen, setIsMoreDiagramTypeSetsOpen] = useState(false);
+  const [diagramTypePickerStatusText, setDiagramTypePickerStatusText] = useState('');
   const undoTimerRef = React.useRef<number | null>(null);
   const diagramTypePickerRootRef = useRef<HTMLDivElement | null>(null);
+  const NOTEBOOK_COUNT_OPTIONS: Array<{ label: string; value: string }> = [
+    { label: 'auto', value: 'auto' },
+    { label: '1', value: '1' },
+    { label: '2', value: '2' },
+    { label: '3', value: '3' },
+    { label: '4', value: '4' },
+    { label: '5', value: '5' },
+    { label: '2-3', value: '2-3' },
+    { label: '4-6', value: '4-6' },
+    { label: '7-10', value: '7-10' },
+    { label: '12-16', value: '12-16' },
+  ];
+
+  const DIAGRAM_TYPE_SETS: Array<{
+    id: string;
+    label: string;
+    types: DiagramType[];
+    group: 'main' | 'more';
+    description?: string;
+    tooltip?: string;
+  }> = [
+    {
+      id: 'set-main',
+      label: 'Main',
+      types: ['flowchart', 'er', 'sequence'],
+      group: 'main',
+      description: 'Flowchart + ER + Sequence.',
+      tooltip: 'The default trio: process/structure (Flowchart), data model (ER), and interactions over time (Sequence).',
+    },
+    {
+      id: 'set-fc-sd',
+      label: 'FC+SD',
+      types: ['flowchart', 'sequence'],
+      group: 'main',
+      description: 'Flowchart + Sequence.',
+      tooltip: 'Best for workflows + conversations: Flowchart for the process, Sequence for who talks to whom and when.',
+    },
+    {
+      id: 'set-fc-er',
+      label: 'FC+ER',
+      types: ['flowchart', 'er'],
+      group: 'main',
+      description: 'Flowchart + ER.',
+      tooltip: 'Best for systems/data: Flowchart for the flow, ER for entities + relationships.',
+    },
+
+    {
+      id: 'set-main-plus',
+      label: 'Main+',
+      types: ['flowchart', 'er', 'sequence', 'state'],
+      group: 'more',
+      description: 'Default + State (behavior).',
+      tooltip: 'Main + State: add a state machine to describe behavior/transitions alongside flow, data, and interactions.',
+    },
+    {
+      id: 'set-behavior',
+      label: 'Behavior',
+      types: ['state', 'sequence', 'flowchart'],
+      group: 'more',
+      description: 'State machine + interactions + branches.',
+      tooltip: 'When behavior matters: state transitions, sequences of messages, and a flowchart for branching paths.',
+    },
+    {
+      id: 'set-arch',
+      label: 'Architecture',
+      types: ['c4', 'sequence'],
+      group: 'more',
+      description: 'High-level structure + key interactions.',
+      tooltip: 'Architecture view: C4 for structure/containers + Sequence for the critical request/response paths.',
+    },
+    {
+      id: 'set-user-flow',
+      label: 'User Flow',
+      types: ['flowchart', 'userJourney'],
+      group: 'more',
+      description: 'Process + user journey stages.',
+      tooltip: 'Product UX: flowchart for the process + user journey for the experience across stages.',
+    },
+    {
+      id: 'set-ops',
+      label: 'Ops',
+      types: ['flowchart', 'gantt'],
+      group: 'more',
+      description: 'Process + timeline/schedule.',
+      tooltip: 'Execution view: flowchart for the flow + gantt for timeline/dependencies.',
+    },
+  ];
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? null,
@@ -104,6 +193,12 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
     ? `Main (${mainTypeList.map((t) => getDiagramTypeShortLabel(t)).join('/')})`
     : (DIAGRAM_TYPE_LABELS[diagramType] ?? diagramType);
   const isDetectedMatch = !!detectedDiagramType && detectedDiagramType === diagramType;
+  const isSingleMode = diagramType !== 'auto';
+  const selectedNotebookCountValue = notebookBuildCount === null
+    ? 'auto'
+    : typeof notebookBuildCount === 'number'
+      ? String(notebookBuildCount)
+      : notebookBuildCount;
 
   const currentDiagramTypeSelection = useMemo(() => {
     const base =
@@ -117,6 +212,8 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   const openDiagramTypePicker = (placement: 'expanded' | 'active') => {
     setDiagramTypePickerPlacement(placement);
     setIsDiagramTypePickerOpen((prev) => (placement === diagramTypePickerPlacement ? !prev : true));
+    setIsMoreDiagramTypeSetsOpen(false);
+    setDiagramTypePickerStatusText('');
   };
 
   const toggleDiagramTypeInPicker = (type: DiagramType) => {
@@ -131,6 +228,17 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
     }
     onMainDiagramTypesChange(next);
     onDiagramTypeChange('auto');
+  };
+
+  const applyDiagramTypeSet = (types: DiagramType[]) => {
+    const sanitized = types.filter((t) => t !== 'auto');
+    if (!sanitized.length) return;
+    onMainDiagramTypesChange(sanitized);
+    if (sanitized.length === 1) {
+      onDiagramTypeChange(sanitized[0]);
+    } else {
+      onDiagramTypeChange('auto');
+    }
   };
 
   const getDiagramTypeIcon = (type: DiagramType) => {
@@ -221,27 +329,14 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
       >
         <div className="flex items-center gap-1 min-w-0">
           {visibleTypes.map((type) => (
-            <button
+            <span
               key={type}
-              type="button"
-              onClick={() => {
-                const has = currentDiagramTypeSelection.includes(type);
-                if (!has) return;
-                const next = currentDiagramTypeSelection.filter((t) => t !== type);
-                if (!next.length) return;
-                if (next.length === 1) {
-                  onDiagramTypeChange(next[0]);
-                  return;
-                }
-                onMainDiagramTypesChange(next);
-                onDiagramTypeChange('auto');
-              }}
               className="inline-flex items-center justify-center w-6 h-6 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40"
               title={DIAGRAM_TYPE_LABELS[type] ?? type}
               aria-label={DIAGRAM_TYPE_LABELS[type] ?? type}
             >
               {getDiagramTypeIcon(type)}
-            </button>
+            </span>
           ))}
           {overflowCount > 0 && (
             <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400 px-1.5">
@@ -263,9 +358,111 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
 
   const renderDiagramTypePicker = (placement: 'expanded' | 'active') => {
     if (!isDiagramTypePickerOpen || diagramTypePickerPlacement !== placement) return null;
+    const mainSets = DIAGRAM_TYPE_SETS.filter((set) => set.group === 'main');
+    const moreSets = DIAGRAM_TYPE_SETS.filter((set) => set.group === 'more');
+    const pickerPositionClass = placement === 'active' ? 'right-0' : 'left-0';
+    const allSets = [...mainSets, ...moreSets];
     return (
-      <div className="absolute left-0 top-full z-50 mt-1 w-[min(22rem,90vw)] rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-lg">
-        <div className="px-2 py-2">
+      <div
+        className={`absolute ${pickerPositionClass} top-full z-50 mt-1 w-[min(22rem,90vw)] rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-lg`}
+      >
+        <div className="overflow-x-hidden px-2 py-2">
+          <div className="mb-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500">Sets</span>
+              <button
+                type="button"
+                onClick={() => setIsMoreDiagramTypeSetsOpen((prev) => !prev)}
+                aria-pressed={isMoreDiagramTypeSetsOpen}
+                className={`inline-flex items-center gap-1 text-[10px] ${
+                  isMoreDiagramTypeSetsOpen
+                    ? 'text-slate-800 dark:text-slate-100'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                {isMoreDiagramTypeSetsOpen ? 'Less…' : 'More…'}
+                <ChevronDown
+                  size={10}
+                  className={`opacity-70 transition-transform ${isMoreDiagramTypeSetsOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+            </div>
+            <div
+              className="mt-1 h-7 text-[10px] text-slate-600 dark:text-slate-300 leading-snug break-words overflow-hidden"
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+              }}
+            >
+              {diagramTypePickerStatusText}
+            </div>
+            {!isMoreDiagramTypeSetsOpen ? (
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {mainSets.map((set) => (
+                  <button
+                    key={set.id}
+                    type="button"
+                    onClick={() => applyDiagramTypeSet(set.types)}
+                    className="relative group inline-flex items-center gap-1.5 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-2 py-1 text-[11px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-900"
+                    onMouseEnter={() =>
+                      setDiagramTypePickerStatusText(
+                        set.tooltip ?? set.description ?? set.types.map((t) => DIAGRAM_TYPE_LABELS[t] ?? t).join(' / ')
+                      )}
+                    onMouseLeave={() => setDiagramTypePickerStatusText('')}
+                  >
+                    <span className="font-medium">{set.label}</span>
+                    <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
+                      {set.types.map((type) => (
+                        <span
+                          key={type}
+                          className="inline-flex items-center justify-center w-5 h-5 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950"
+                          aria-label={DIAGRAM_TYPE_LABELS[type] ?? type}
+                        >
+                          {getDiagramTypeIcon(type)}
+                        </span>
+                      ))}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-2 space-y-1.5">
+                {allSets.map((set) => (
+                  <button
+                    key={set.id}
+                    type="button"
+                    onClick={() => applyDiagramTypeSet(set.types)}
+                    className="relative group w-full flex items-center justify-between gap-2 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-2 py-1.5 text-left text-[11px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-900"
+                    onMouseEnter={() =>
+                      setDiagramTypePickerStatusText(
+                        set.tooltip ?? set.description ?? set.types.map((t) => DIAGRAM_TYPE_LABELS[t] ?? t).join(' / ')
+                      )}
+                    onMouseLeave={() => setDiagramTypePickerStatusText('')}
+                  >
+                    <span className="min-w-0">
+                      <span className="font-medium">{set.label}</span>
+                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                        {set.description ?? ''}
+                      </span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 shrink-0">
+                      {set.types.map((type) => (
+                        <span
+                          key={type}
+                          className="inline-flex items-center justify-center w-5 h-5 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950"
+                          aria-label={DIAGRAM_TYPE_LABELS[type] ?? type}
+                        >
+                          {getDiagramTypeIcon(type)}
+                        </span>
+                      ))}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="my-2 border-t border-slate-200 dark:border-slate-800" />
           <div className="grid grid-cols-6 gap-1.5">
             {DIAGRAM_TYPES.map((type) => {
               const isSelected = currentDiagramTypeSelection.includes(type);
@@ -276,20 +473,14 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   key={type}
                   type="button"
                   onClick={() => toggleDiagramTypeInPicker(type)}
+                  onMouseEnter={() => setDiagramTypePickerStatusText(`${type} — ${fullLabel}`)}
+                  onMouseLeave={() => setDiagramTypePickerStatusText('')}
                   className={`relative group rounded border px-2 py-1 text-[11px] font-mono tabular-nums transition-colors ${
                     isSelected
                       ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
                       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900/40'
                   }`}
-                  title={
-                    DIAGRAM_TYPE_LABELS[type]
-                      ? `${type} — ${DIAGRAM_TYPE_LABELS[type]}`
-                      : type
-                  }
                 >
-                  <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 text-white text-[10px] px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {fullLabel}
-                  </span>
                   <span className="flex items-center justify-center gap-1">
                     <span className="text-slate-500 dark:text-slate-400">{getDiagramTypeIcon(type)}</span>
                     <span>{label}</span>
@@ -389,6 +580,8 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
       if (!target) return;
       if (diagramTypePickerRootRef.current?.contains(target)) return;
       setIsDiagramTypePickerOpen(false);
+      setIsMoreDiagramTypeSetsOpen(false);
+      setDiagramTypePickerStatusText('');
     };
     window.document.addEventListener('mousedown', onPointerDown, true);
     window.document.addEventListener('touchstart', onPointerDown, true);
@@ -441,35 +634,42 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
         {isExpanded && (
           <div className="flex flex-col text-[11px] text-slate-500 dark:text-slate-400">
               <div className="flex flex-col">
-                <div className="flex items-center gap-2 relative" ref={registerDiagramTypePickerRoot('expanded')}>
+                {!isSingleMode && (
+                  <div className="flex items-center gap-2">
+                    <span>Count</span>
+                    <select
+                      value={selectedNotebookCountValue}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        if (next === 'auto') {
+                          onNotebookBuildCountChange(null);
+                          return;
+                        }
+                        if (/^\d+$/.test(next)) {
+                          onNotebookBuildCountChange(Number(next));
+                          return;
+                        }
+                        onNotebookBuildCountChange(next);
+                      }}
+                      className="w-24 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                    >
+                      {NOTEBOOK_COUNT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div
+                  className={`flex items-center gap-2 relative ${isSingleMode ? '' : 'mt-1'}`}
+                  ref={registerDiagramTypePickerRoot('expanded')}
+                >
                   <span>Diagram type</span>
                   {renderDiagramTypeSelectorControl('expanded')}
                   {renderDiagramTypePicker('expanded')}
                 </div>
-              <div className="flex items-center gap-2 mt-1">
-                <span>Count</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={notebookBuildCount ?? ''}
-                  placeholder="auto"
-                  className="w-20 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
-                  onChange={(e) => {
-                    const next = e.target.value.trim();
-                    if (!next) {
-                      onNotebookBuildCountChange(null);
-                      return;
-                    }
-                    const parsed = Number(next);
-                    if (Number.isNaN(parsed) || parsed <= 0) {
-                      onNotebookBuildCountChange(null);
-                      return;
-                    }
-                    onNotebookBuildCountChange(Math.floor(parsed));
-                  }}
-                />
               </div>
-            </div>
             {diagramType === 'auto' && (
               <span className="block text-[10px] text-slate-400 dark:text-slate-500">
                 Main: {mainTypeList.map((t) => getDiagramTypeShortLabel(t)).join(' / ')}
@@ -490,10 +690,10 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
       </div>
       {!isExpanded && activeProject && (
         <div className="mx-3 mb-2 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 px-2 py-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1 min-w-0">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0 text-xs text-slate-400 dark:text-slate-500">
               {editingProjectId === activeProject.id ? (
-                <>
+                <div className="flex items-center gap-1 min-w-0 text-slate-700 dark:text-slate-200">
                   <input
                     value={editingProjectTitle}
                     onChange={(e) => setEditingProjectTitle(e.target.value)}
@@ -522,7 +722,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   >
                     <X size={12} />
                   </button>
-                </>
+                </div>
               ) : (
                 <>
                   <button
@@ -536,56 +736,60 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                 </>
               )}
             </div>
-            <div className="flex flex-col text-[11px] text-slate-500 dark:text-slate-400">
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2 relative" ref={registerDiagramTypePickerRoot('active')}>
-                  <span>Diagram type</span>
-                  {renderDiagramTypeSelectorControl('active')}
-                  {renderDiagramTypePicker('active')}
-                </div>
-                <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+              {!isSingleMode && (
+                <div className="flex items-center gap-2">
                   <span>Count</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={notebookBuildCount ?? ''}
-                  placeholder="auto"
-                  className="w-20 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
-                  onChange={(e) => {
-                    const next = e.target.value.trim();
-                    if (!next) {
-                      onNotebookBuildCountChange(null);
-                        return;
-                      }
-                      const parsed = Number(next);
-                      if (Number.isNaN(parsed) || parsed <= 0) {
+                  <select
+                    value={selectedNotebookCountValue}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      if (next === 'auto') {
                         onNotebookBuildCountChange(null);
                         return;
                       }
-                      onNotebookBuildCountChange(Math.floor(parsed));
+                      if (/^\d+$/.test(next)) {
+                        onNotebookBuildCountChange(Number(next));
+                        return;
+                      }
+                      onNotebookBuildCountChange(next);
                     }}
-                  />
+                    className="w-24 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                  >
+                    {NOTEBOOK_COUNT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+              )}
+              <div className="flex items-center gap-2 relative" ref={registerDiagramTypePickerRoot('active')}>
+                <span>Diagram type</span>
+                {renderDiagramTypeSelectorControl('active')}
+                {renderDiagramTypePicker('active')}
               </div>
+            </div>
+          </div>
+          <div className="mt-1 flex items-center justify-between gap-3 text-[10px] text-slate-400 dark:text-slate-500">
+            <span className="whitespace-nowrap">
+              Updated: {formatProjectTimestamp(activeProject.updatedAt ?? activeProject.createdAt)}
+            </span>
+            <div className="flex items-center justify-end gap-3">
               {diagramType === 'auto' && (
-                <span className="block text-[10px] text-slate-400 dark:text-slate-500">
+                <span className="whitespace-nowrap">
                   Main: {mainTypeList.map((t) => getDiagramTypeShortLabel(t)).join(' / ')}
                 </span>
               )}
               {detectedLabel && diagramType === 'auto' && (
-                <span className="block text-[10px] text-slate-400 dark:text-slate-500">
-                  Detected: {detectedLabel}
-                </span>
+                <span className="whitespace-nowrap">Detected: {detectedLabel}</span>
               )}
               {detectedLabel && diagramType !== 'auto' && !isDetectedMatch && (
-                <span className="block text-[10px] text-amber-500">
+                <span className="text-amber-500 whitespace-nowrap">
                   {detectedLabel} (selected: {selectedLabel})
                 </span>
               )}
             </div>
-          </div>
-          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-            Updated: {formatProjectTimestamp(activeProject.updatedAt ?? activeProject.createdAt)}
           </div>
         </div>
       )}

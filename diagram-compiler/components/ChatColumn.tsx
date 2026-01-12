@@ -51,8 +51,8 @@ interface ChatColumnProps {
   onPreviewProjectSnapshot: (sessionId: string) => Promise<void>;
   onClearProjectPreview: () => void;
   deleteUndoMs: number;
-  notebookBuildCount: number | null;
-  onNotebookBuildCountChange: (count: number | null) => void;
+  notebookBuildCount: number | string | null;
+  onNotebookBuildCountChange: (count: number | string | null) => void;
   llmTimeoutMs: number;
   operationLogs?: OperationLog[];
   activeOperationLog?: OperationLog | null;

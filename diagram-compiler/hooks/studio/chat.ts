@@ -88,8 +88,12 @@ export const createChatHandler = (ctx: StudioContext) => {
                 id: 'notebook-count',
                 role: 'user' as const,
                 content: language === 'Russian'
-                  ? `Количество диаграмм: ${notebookCount}.`
-                  : `Diagram count: ${notebookCount}.`,
+                  ? (typeof notebookCount === 'string'
+                    ? `Диапазон диаграмм: ${notebookCount}.`
+                    : `Количество диаграмм: ${notebookCount}.`)
+                  : (typeof notebookCount === 'string'
+                    ? `Diagram range: ${notebookCount}.`
+                    : `Diagram count: ${notebookCount}.`),
                 timestamp: Date.now(),
               }
             : null;
