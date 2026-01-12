@@ -1,5 +1,32 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, Plus, Trash2, X } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  Boxes,
+  CalendarRange,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  Code,
+  Columns3,
+  Database,
+  Folder,
+  GitBranch,
+  GitCommit,
+  Grid2X2,
+  LayoutGrid,
+  Layers,
+  LineChart,
+  Package,
+  PieChart,
+  Plus,
+  Route,
+  Share2,
+  Shuffle,
+  Target,
+  Trash2,
+  Workflow,
+  X,
+} from 'lucide-react';
 import type { DiagramType } from '../types';
 import type { HistorySession } from '../services/history/types';
 import { DIAGRAM_TYPE_LABELS, getDiagramTypeShortLabel } from '../utils/diagramTypeMeta';
@@ -111,6 +138,57 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
     onDiagramTypeChange('auto');
   };
 
+  const getDiagramTypeIcon = (type: DiagramType) => {
+    switch (type) {
+      case 'flowchart':
+        return <GitBranch size={12} />;
+      case 'sequence':
+        return <ArrowLeftRight size={12} />;
+      case 'er':
+        return <Database size={12} />;
+      case 'gantt':
+        return <CalendarRange size={12} />;
+      case 'gitGraph':
+        return <GitCommit size={12} />;
+      case 'class':
+        return <Boxes size={12} />;
+      case 'state':
+        return <Workflow size={12} />;
+      case 'block':
+        return <LayoutGrid size={12} />;
+      case 'c4':
+        return <Layers size={12} />;
+      case 'kanban':
+        return <Columns3 size={12} />;
+      case 'mindmap':
+        return <Share2 size={12} />;
+      case 'packet':
+        return <Package size={12} />;
+      case 'pie':
+        return <PieChart size={12} />;
+      case 'quadrantChart':
+        return <Grid2X2 size={12} />;
+      case 'radar':
+        return <Target size={12} />;
+      case 'requirementDiagram':
+        return <ClipboardList size={12} />;
+      case 'sankey':
+        return <Shuffle size={12} />;
+      case 'timeline':
+        return <CalendarRange size={12} />;
+      case 'treemap':
+        return <LayoutGrid size={12} />;
+      case 'userJourney':
+        return <Route size={12} />;
+      case 'xychart':
+        return <LineChart size={12} />;
+      case 'zenuml':
+        return <Code size={12} />;
+      default:
+        return <Boxes size={12} />;
+    }
+  };
+
   const renderDiagramTypePicker = (placement: 'expanded' | 'active') => {
     if (!isDiagramTypePickerOpen || diagramTypePickerPlacement !== placement) return null;
     return (
@@ -143,7 +221,10 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 text-white text-[10px] px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {fullLabel}
                   </span>
-                  {label}
+                  <span className="flex items-center justify-center gap-1">
+                    <span className="text-slate-500 dark:text-slate-400">{getDiagramTypeIcon(type)}</span>
+                    <span>{label}</span>
+                  </span>
                 </button>
               );
             })}
