@@ -123,26 +123,30 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
             {DIAGRAM_TYPES.map((type) => {
               const isSelected = currentDiagramTypeSelection.includes(type);
               const label = getDiagramTypeShortLabel(type);
+              const fullLabel = DIAGRAM_TYPE_LABELS[type] ?? type;
               return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => toggleDiagramTypeInPicker(type)}
-                    className={`rounded border px-2 py-1 text-[11px] font-mono tabular-nums transition-colors ${
-                      isSelected
-                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900/40'
-                    }`}
-                    title={
-                      DIAGRAM_TYPE_LABELS[type]
-                        ? `${type} — ${DIAGRAM_TYPE_LABELS[type]}`
-                        : type
-                    }
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => toggleDiagramTypeInPicker(type)}
+                  className={`relative group rounded border px-2 py-1 text-[11px] font-mono tabular-nums transition-colors ${
+                    isSelected
+                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900/40'
+                  }`}
+                  title={
+                    DIAGRAM_TYPE_LABELS[type]
+                      ? `${type} — ${DIAGRAM_TYPE_LABELS[type]}`
+                      : type
+                  }
+                >
+                  <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 text-white text-[10px] px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {type} — {fullLabel}
+                  </span>
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
