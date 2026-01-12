@@ -1,7 +1,6 @@
 import { chat, chatDiagram, chatNotebook } from '../../services/llmService';
 import { LLM_TIMEOUT_RETRIES } from '../../constants';
 import { TimeoutError } from '../../services/llmTimeout';
-import { runLLMRequest } from '../../services/llmRequestRunner';
 import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMessageUtils';
 import { stripMermaidCode } from '../../utils';
 import { enforceAllowedDiagramTypesInIntent, normalizeIntentText } from '../../utils/intent';
@@ -10,6 +9,7 @@ import { ANALYTICS_EVENTS, type ChatAnalyticsPayload } from '../../services/anal
 import type { StudioContext } from './actionsContext';
 import { runStudioOperation } from './runStudioOperation';
 import { isDefaultSessionTitle } from '../../services/history/sessionTitle';
+import { createStudioOperationRunner } from './operationRunner';
 
 export const createChatHandler = (ctx: StudioContext) => {
   return async (text: string) => {
@@ -26,6 +26,7 @@ export const createChatHandler = (ctx: StudioContext) => {
       stepType: 'chat',
       notebookBlockIndex,
       run: async ({ stepMessages, logEvent, finalizeStep }) => {
+        const runner = createStudioOperationRunner(ctx, { logEvent });
         const finalize = async (status: 'done' | 'error', meta?: Record<string, unknown>) => {
           await finalizeStep(status, { meta });
         };
@@ -129,8 +130,12 @@ export const createChatHandler = (ctx: StudioContext) => {
           const docs = await ctx.getDocsContext('chat');
           const allowedNotebookTypes =
             ctx.appState.diagramType === 'auto' ? ctx.appState.mainDiagramTypes : null;
-          const responseText = await runLLMRequest({
+          const responseText = await runner.runLLM({
             task: 'chat',
+            phase: 'chat',
+            retries: LLM_TIMEOUT_RETRIES,
+            timeoutMs: ctx.appState.llmTimeoutMs,
+            onTimeoutDetail: (notice) => formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts),
             run: () => (
               useNotebookIntent
                 ? chatNotebook(
@@ -146,34 +151,6 @@ export const createChatHandler = (ctx: StudioContext) => {
                   ? chatDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
                   : chat(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams)
             ),
-            retries: LLM_TIMEOUT_RETRIES,
-            timeoutMs: ctx.appState.llmTimeoutMs,
-            onStart: (notice) => {
-              ctx.onLLMRequestStart?.(notice);
-              logEvent({
-                phase: 'chat',
-                level: 'info',
-                title: 'LLM',
-                detail: `start ${notice.task}`,
-              });
-            },
-            onTimeout: (notice) => {
-              logEvent({
-                phase: 'chat',
-                level: 'warn',
-                title: 'Timeout',
-                detail: formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts),
-              });
-            },
-            onFinish: (notice) => {
-              logEvent({
-                phase: 'chat',
-                level: notice.status === 'success' ? 'info' : 'warn',
-                title: 'LLM',
-                detail: notice.status,
-                metrics: { durationMs: notice.durationMs },
-              });
-            },
           });
           const rawReply = stripMermaidCode(responseText).trim();
           const sanitizeProjectTitle = (value: string) => {

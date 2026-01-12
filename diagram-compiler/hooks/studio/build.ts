@@ -5,10 +5,10 @@ import { normalizeIntentText, resolveIntentFromInput } from '../../utils/intent'
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS } from '../../constants';
 import { runBuildPipeline } from './buildPipeline';
-import { runLLMRequest } from '../../services/llmRequestRunner';
 import { normalizeSummaryText, sanitizeSummaryText } from '../../utils/buildSummary';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import { runStudioOperation } from './runStudioOperation';
+import { createStudioOperationRunner } from './operationRunner';
 import {
   buildContextTooltipForLog,
   buildDocsTooltipForLog,
@@ -25,6 +25,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
       stepType: 'build',
       notebookBlockIndex,
       run: async ({ stepMessages, logEvent, finalizeStep }) => {
+        const runner = createStudioOperationRunner(ctx, { logEvent });
         const parseIntentDiagrams = (intentText: string) => {
           const lines = intentText.split(/\r?\n/);
           const startIndex = lines.findIndex((line) => /^##\s+Diagrams\b/i.test(line.trim()));
@@ -417,15 +418,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
       ].filter(Boolean).join(' ');
       let resolvedSummary = normalizeSummaryText(fallbackSummary);
       const selectionNote = formatSelectionNote(normalizedIntent, ctx.appState.diagramType, intent.source);
-      let summaryStartAt: number | null = null;
       try {
-        logEvent({
-          phase: 'build',
-          level: 'info',
-          title: 'Итог',
-          detail: 'generating',
-        });
-        summaryStartAt = Date.now();
         const summaryInput = [
           `Тип: ${ctx.appState.diagramType}`,
           `Валидность: ${validation.isValid ? 'ok' : 'error'}`,
@@ -434,8 +427,13 @@ export const createBuildHandler = (ctx: StudioContext) => {
           `Fallback: ${buildResult.usedFallback ? 'yes' : 'no'}`,
           `Intent length: ${normalizedIntent.length}`,
         ].join('\n');
-        const summaryText = await runLLMRequest({
+        const summaryText = await runner.runLLM({
           task: 'build-summary',
+          phase: 'build',
+          retries: 1,
+          timeoutMs,
+          stageTitle: 'Итог',
+          stageContextScope: 'build',
           run: () => summarizeBuild(
             [{ id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() }],
             ctx.aiConfig,
@@ -443,17 +441,6 @@ export const createBuildHandler = (ctx: StudioContext) => {
             language,
             ctx.modelParams
           ),
-          retries: 1,
-          timeoutMs,
-          onStart: (notice) => {
-            ctx.onLLMRequestStart?.(notice);
-            logEvent({
-              phase: 'build',
-              level: 'info',
-              title: 'LLM',
-              detail: `start ${notice.task}`,
-            });
-          },
         });
         const cleanedSummary = normalizeSummaryText(
           sanitizeSummaryText(stripMermaidCode(summaryText))
@@ -464,13 +451,6 @@ export const createBuildHandler = (ctx: StudioContext) => {
             ? cleanedSummary
             : `${summaryPrefix} ${cleanedSummary}`;
         }
-        logEvent({
-          phase: 'done',
-          level: 'info',
-          title: 'Итог',
-          detail: 'ready',
-          metrics: summaryStartAt ? { durationMs: Date.now() - summaryStartAt } : undefined,
-        });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         logEvent({

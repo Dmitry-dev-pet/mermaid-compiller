@@ -15,6 +15,7 @@ import { TimeoutError } from '../../services/llmTimeout';
 import { formatTimeoutRetryMessage } from './stepMessageUtils';
 import { createProgressTracker } from './progressTracker';
 import { runBuildPipeline } from './buildPipeline';
+import { createStudioOperationRunner } from './operationRunner';
 import {
   buildContextTooltipForLog,
   buildDocsTooltipForLog,
@@ -466,6 +467,10 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
     const logEvent = (args: Parameters<typeof deps.addOperationEvent>[1]) => {
       deps.addOperationEvent(opId, args);
     };
+    const runner = createStudioOperationRunner(
+      { onLLMRequestStart: deps.onLLMRequestStart },
+      { logEvent }
+    );
     const logLLMStart = (notice: import('../../services/llmRequestRunner').LLMRequestStartNotice) => {
       deps.onLLMRequestStart?.(notice);
       logEvent({
@@ -1048,24 +1053,20 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           selectionNote,
         ].filter(Boolean);
         let resolvedSummary = normalizeSummaryText(fallbackSummaryParts.join(' '));
-        let summaryStartAt: number | null = null;
         try {
-          logEvent({
-            phase: 'build',
-            level: 'info',
-            title: 'Итог',
-            detail: 'generating',
-            kind: 'status',
-          });
-          summaryStartAt = Date.now();
           const summaryInput = [
             `Блоки: ${total}`,
             `Успешно: ${successBlocks}`,
             `Ошибки: ${failedBlocks}`,
             uniqueTypes.length ? `Типы: ${uniqueTypes.join(', ')}` : '',
           ].filter(Boolean).join('\n');
-          const summaryText = await runLLMRequest({
+          const summaryText = await runner.runLLM({
             task: 'build-summary',
+            phase: 'build',
+            retries: 1,
+            timeoutMs: deps.appState.llmTimeoutMs,
+            stageTitle: 'Итог',
+            stageContextScope: 'build',
             run: () => summarizeBuild(
               [{ id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() }],
               deps.aiConfig,
@@ -1073,9 +1074,6 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               language,
               deps.modelParams
             ),
-            retries: 1,
-            timeoutMs: deps.appState.llmTimeoutMs,
-            onStart: logLLMStart,
           });
           const cleanedSummary = normalizeSummaryText(
             sanitizeSummaryText(summaryText)
@@ -1086,14 +1084,6 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               ? cleanedSummary
               : `${summaryPrefix} ${cleanedSummary}`;
           }
-          logEvent({
-            phase: 'done',
-            level: 'info',
-            title: 'Итог',
-            detail: 'ready',
-            metrics: summaryStartAt ? { durationMs: Date.now() - summaryStartAt } : undefined,
-            kind: 'status',
-          });
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
           logEvent({
