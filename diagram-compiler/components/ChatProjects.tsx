@@ -124,21 +124,25 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
               const isSelected = currentDiagramTypeSelection.includes(type);
               const label = getDiagramTypeShortLabel(type);
               return (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => toggleDiagramTypeInPicker(type)}
-                  className={`rounded border px-2 py-1 text-[11px] font-mono tabular-nums transition-colors ${
-                    isSelected
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900/40'
-                  }`}
-                  title={DIAGRAM_TYPE_LABELS[type]}
-                >
-                  {label}
-                </button>
-              );
-            })}
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => toggleDiagramTypeInPicker(type)}
+                    className={`rounded border px-2 py-1 text-[11px] font-mono tabular-nums transition-colors ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900/40'
+                    }`}
+                    title={
+                      DIAGRAM_TYPE_LABELS[type]
+                        ? `${type} — ${DIAGRAM_TYPE_LABELS[type]}`
+                        : type
+                    }
+                  >
+                    {label}
+                  </button>
+                );
+              })}
           </div>
         </div>
       </div>
