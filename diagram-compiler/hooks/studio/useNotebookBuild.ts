@@ -7,7 +7,7 @@ import { sanitizeMermaidByType } from '../../utils/mermaidSanitizer';
 import { NOTEBOOK_BUILD_RETRY_CONFIG } from './notebookBuildConfig';
 import { extractMermaidBlocksFromMarkdown, replaceMermaidBlockInMarkdown } from '../../services/mermaidService';
 import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
-import { fetchDocsEntriesByPaths, fetchNotebookDocsContext, fetchNotebookDocsEntries, getNotebookPlannerDocsPaths } from '../../services/docsContextService';
+import { getNotebookPlannerDocsPaths } from '../../services/docsContextService';
 import { planNotebook, summarizeBuild } from '../../services/llmService';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import { normalizeNotebookPlan, parseNotebookPlan } from '../../services/notebookPlanService';
@@ -16,70 +16,15 @@ import { TimeoutError } from '../../services/llmTimeout';
 import { formatTimeoutRetryMessage } from './stepMessageUtils';
 import { createProgressTracker } from './progressTracker';
 import { runBuildPipeline } from './buildPipeline';
+import {
+  buildContextTooltipForLog,
+  buildDocsTooltipForLog,
+  formatDocsDetailForLog,
+  summarizeMessagesForLog,
+} from './logContextUtils';
 
 const NOTEBOOK_STYLE_CONSTRAINT_EN = 'No styling directives or color instructions (no theme/look/init/colors).';
 const NOTEBOOK_STYLE_CONSTRAINT_RU = 'Без стилевых директив и цветовых инструкций (без theme/look/init/colors).';
-
-const summarizeDocsEntries = (entries: Array<{ path: string; text?: string }>) => {
-  const items = entries.map((entry) => ({
-    name: entry.path.split('/').pop() || entry.path,
-    size: entry.text?.length ?? 0,
-  }));
-  const total = items.reduce((sum, item) => sum + item.size, 0);
-  return { items, total };
-};
-
-const summarizeDocsSelection = (
-  entries: Array<{ path: string; text?: string }>,
-  selection: Record<string, boolean> | undefined
-) => {
-  const included = entries.filter((entry) => selection?.[entry.path] !== false);
-  return summarizeDocsEntries(included);
-};
-
-const summarizeDocsContext = (docsText: string) => {
-  return {
-    chars: docsText.length,
-  };
-};
-
-const formatSize = (value: number) => {
-  if (value < 1000) return `${value}`;
-  return `${(value / 1000).toFixed(1)}k`;
-};
-
-const formatDocsDetail = (items: Array<{ name: string; size: number }>, total: number) => {
-  if (!items.length) return 'docs (0 files)';
-  const label = items.length === 1 ? 'file' : 'files';
-  const list = items.map((item) => `${item.name} (${formatSize(item.size)})`).join(', ');
-  return `docs (${items.length} ${label}, ${formatSize(total)}): ${list}`;
-};
-
-const formatMessageBlock = (message: Message, index: number) => {
-  const label = `[${index + 1}] ${message.role}${message.id ? ` (${message.id})` : ''}`;
-  return `${label}\n${message.content}`;
-};
-
-const buildContextTooltip = (args: {
-  systemPrompt: string;
-  messages: Message[];
-  docsDetail: string;
-}) => {
-  const messageBlocks = args.messages.map(formatMessageBlock).join('\n\n');
-  return [
-    'System prompt:',
-    args.systemPrompt,
-    '',
-    'Messages:',
-    messageBlocks,
-  ].join('\n');
-};
-const buildDocsTooltip = (docsDetail: string) => `Docs:\n${docsDetail}`;
-
-const summarizeMessages = (items: Message[]) => {
-  const chars = items.reduce((total, msg) => total + (msg.content?.length ?? 0), 0);
-  return { count: items.length, chars };
-};
 
 type NotebookBuildDeps = {
   aiConfig: import('../../types').AIConfig;
@@ -590,15 +535,16 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         kind: 'status',
       });
       const docs = await deps.getDocsContext('plan');
-      const plannerDocsSummary = summarizeDocsContext(docs);
       const plannerSelection = await deps.getDocsSelectionSummary?.('plan');
       const plannerPaths =
         plannerSelection?.includedPaths?.length
           ? plannerSelection.includedPaths
           : getNotebookPlannerDocsPaths().map(({ path }) => path);
-      const plannerEntries = await fetchDocsEntriesByPaths(plannerPaths);
-      const plannerFiles = summarizeDocsEntries(plannerEntries);
-      const plannerDocsDetail = formatDocsDetail(plannerFiles.items, plannerFiles.total);
+      const plannerDocsDetail = formatDocsDetailForLog({
+        docsContext: docs,
+        selectionSummary: { includedPaths: plannerPaths },
+        prefix: 'planner docs',
+      });
       const plannerMessage: Message = {
         id: 'notebook-plan-context',
         role: 'user',
@@ -613,24 +559,24 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         }),
         timestamp: Date.now(),
       };
-      const plannerMessageSummary = summarizeMessages([plannerMessage]);
+      const plannerMessageSummary = summarizeMessagesForLog([plannerMessage]);
       const plannerSystemPrompt = buildSystemPrompt('plan_notebook', {
         docsContext: 'Documentation context redacted.',
         language,
       });
-      const plannerTooltip = buildContextTooltip({
+      const plannerTooltip = buildContextTooltipForLog({
         systemPrompt: plannerSystemPrompt,
         messages: [plannerMessage],
         docsDetail: plannerDocsDetail,
       });
-      const plannerDocsTooltip = buildDocsTooltip(plannerDocsDetail);
+      const plannerDocsTooltip = buildDocsTooltipForLog(plannerDocsDetail);
       logEvent({
         phase: 'planning',
         level: 'info',
         title: 'Контекст',
         detail: [
-          `messages: ${plannerMessageSummary.count} (${plannerMessageSummary.chars} chars)`,
-          `planner ${plannerDocsDetail}`,
+          `messages: ${plannerMessageSummary.count} (${plannerMessageSummary.tokens} tok)`,
+          plannerDocsDetail,
         ].join('\n'),
         tooltipMessages: plannerTooltip,
         tooltipDocs: plannerDocsTooltip,
@@ -724,13 +670,17 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         await deps.setDiagramTypeAndWait(targetDiagramType);
         const docsState = await deps.loadBuildDocsEntries(targetDiagramType);
         const blockDocs = await deps.getDocsContext('build');
-        const blockDocsSummary = summarizeDocsContext(blockDocs);
         const docsEntries = (docsState as { entries?: Array<{ path: string }> }).entries ?? [];
         const docsSelections = (docsState as { selections?: Record<string, Record<string, boolean>> }).selections ?? {};
         const buildSelection = docsSelections.build ?? {};
-        const selectionFilesFromEntries = docsEntries.length
-          ? summarizeDocsSelection(docsEntries, buildSelection)
-          : null;
+        const selectionSummary = await deps.getDocsSelectionSummary?.('build');
+        const includedPaths = docsEntries.length
+          ? docsEntries.filter((entry) => buildSelection[entry.path] !== false).map((entry) => entry.path)
+          : (selectionSummary?.includedPaths ?? []);
+        const docsDetail = formatDocsDetailForLog({
+          docsContext: blockDocs,
+          selectionSummary: includedPaths.length ? { includedPaths } : null,
+        });
 
         updateBlockMessage(`Сборка: ${blockLabel} — старт.`);
         logEvent({ phase: 'build', level: 'info', title: 'Block', detail: blockLabel, blockIndex: i, kind: 'block' });
@@ -752,33 +702,25 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               content: `Intent:\n${intentText}`,
               timestamp: Date.now(),
             };
-            const msgSummary = summarizeMessages([intentMessage]);
-            const selectionSummary = await deps.getDocsSelectionSummary?.('build');
-            const selectionFiles = selectionFilesFromEntries
-              ?? (selectionSummary
-                ? summarizeDocsEntries(selectionSummary.includedPaths.map((path) => ({ path })))
-                : null);
-            const docsDetail = selectionFiles
-              ? formatDocsDetail(selectionFiles.items, selectionFiles.total)
-              : `docs (0 files, ${blockDocsSummary.chars} chars)`;
+            const msgSummary = summarizeMessagesForLog([intentMessage]);
             const blockSystemPrompt = buildSystemPrompt('generate', {
               diagramType: targetDiagramType,
               docsContext: 'Documentation context redacted.',
               language,
             });
-            const blockTooltip = buildContextTooltip({
+            const blockTooltip = buildContextTooltipForLog({
               systemPrompt: blockSystemPrompt,
               messages: [intentMessage],
               docsDetail,
             });
-            const blockDocsTooltip = buildDocsTooltip(docsDetail);
+            const blockDocsTooltip = buildDocsTooltipForLog(docsDetail);
             logEvent({
               phase: 'planning',
               level: 'info',
               title: 'Контекст',
               detail: [
                 `${blockLabel}`,
-                `messages: ${msgSummary.count} (${msgSummary.chars} chars)`,
+                `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
                 docsDetail,
               ].join('\n'),
               tooltipMessages: blockTooltip,

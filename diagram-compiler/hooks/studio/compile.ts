@@ -250,7 +250,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
             phase: 'fix',
             level: 'info',
             title: 'Контекст',
-            detail: [`messages: ${msgSummary.count} (${msgSummary.chars} chars)`, docsDetail].join('\n'),
+            detail: [`messages: ${msgSummary.count} (${msgSummary.tokens} tok)`, docsDetail].join('\n'),
             tooltipMessages,
             tooltipDocs,
             kind: 'context',
@@ -511,7 +511,7 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             level: 'info',
             title: 'Контекст',
             detail: [
-              `messages: ${msgSummary.count} (${msgSummary.chars} chars)`,
+              `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
               docsDetail,
             ].join('\n'),
             tooltipMessages,
@@ -548,7 +548,7 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             phase: 'analyze',
             level: 'info',
             title: 'Ответ',
-            detail: `reply: ${explanation.length} chars`,
+            detail: `reply: ~${Math.max(1, Math.ceil(explanation.length / 4))} tok`,
             metrics: llmDurationMs ? { durationMs: llmDurationMs } : undefined,
           });
           await finalizeStep('done', { meta: { diagramType: ctx.appState.diagramType } });

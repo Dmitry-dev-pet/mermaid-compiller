@@ -1,8 +1,9 @@
 import { DocsMode } from '../types';
+import { DOCS_MODE_ORDER } from './docsModes';
 
 export const SYSTEM_PROMPT_DOC_PREFIX = 'system-prompts/';
 
-const SYSTEM_PROMPT_MODES: DocsMode[] = ['chat', 'build', 'analyze', 'fix', 'plan'];
+const SYSTEM_PROMPT_MODES: DocsMode[] = DOCS_MODE_ORDER;
 
 export const isSystemPromptPath = (path: string) => path.startsWith(SYSTEM_PROMPT_DOC_PREFIX);
 

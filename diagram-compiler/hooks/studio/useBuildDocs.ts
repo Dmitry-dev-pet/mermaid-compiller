@@ -4,6 +4,7 @@ import { fetchDocsEntries, formatDocsContext, getDocsPaths } from '../../service
 import type { DocsEntry } from '../../services/docsContextService';
 import { safeParse } from '../../utils';
 import { getNotebookPlannerDocsPaths } from '../../services/docsContextService';
+import { DOCS_MODE_ORDER } from '../../utils/docsModes';
 
 type DocsSelectionState = {
   mode: DocsMode;
@@ -12,7 +13,6 @@ type DocsSelectionState = {
   systemPromptRawByMode: Record<DocsMode, boolean>;
 };
 
-const DOCS_MODES: DocsMode[] = ['chat', 'build', 'analyze', 'fix'];
 const PLAN_DEFAULT_DOCS = new Set(getNotebookPlannerDocsPaths().map(({ path }) => path));
 const DEFAULT_DOCS_STATE: DocsSelectionState = {
   mode: 'build',
@@ -76,7 +76,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     const nextSelections: DocsSelectionState['selections'] = { ...docsState.selections };
     const nextActivePaths: DocsSelectionState['activePaths'] = { ...docsState.activePaths };
 
-    ([...DOCS_MODES, 'plan'] as DocsMode[]).forEach((mode) => {
+    DOCS_MODE_ORDER.forEach((mode) => {
       const modeSelection = { ...nextSelections[mode] };
       entries.forEach((entry) => {
         if (modeSelection[entry.path] === undefined) {
@@ -173,9 +173,9 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     setDocsState((prev) => ({ ...prev, mode }));
   }, []);
 
-  const buildDocsSelectionKey = useMemo(() => {
+    const buildDocsSelectionKey = useMemo(() => {
     if (!buildDocsEntries.length) return '';
-    return [...DOCS_MODES, 'plan']
+    return DOCS_MODE_ORDER
       .map((mode) => {
         const selection = docsState.selections[mode] ?? {};
         const key = buildDocsEntries

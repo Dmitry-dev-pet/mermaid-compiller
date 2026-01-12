@@ -4,6 +4,11 @@ type DocsSelectionSummary = {
   includedPaths: string[];
 };
 
+const estimateTokensFromChars = (chars: number) => {
+  if (!Number.isFinite(chars) || chars <= 0) return 0;
+  return Math.max(1, Math.ceil(chars / 4));
+};
+
 const formatSize = (value: number) => {
   if (value < 1000) return `${value}`;
   return `${(value / 1000).toFixed(1)}k`;
@@ -35,7 +40,7 @@ const parseDocsContextSections = (docsContext: string) => {
 
 export const summarizeMessagesForLog = (messages: Message[]) => {
   const chars = messages.reduce((total, msg) => total + (msg.content?.length ?? 0), 0);
-  return { count: messages.length, chars };
+  return { count: messages.length, chars, tokens: estimateTokensFromChars(chars) };
 };
 
 export const formatDocsDetailForLog = (args: {
@@ -50,18 +55,19 @@ export const formatDocsDetailForLog = (args: {
     : Array.from(sections.keys());
 
   if (selectionPaths.length === 0) {
-    return `${prefix} (0 files, ${formatSize(args.docsContext.length)}):`;
+    const tokens = estimateTokensFromChars(args.docsContext.length);
+    return `${prefix} (0 files, ${formatSize(tokens)} tok):`;
   }
 
   const items = selectionPaths.map((path) => {
     const name = path.split('/').pop() || path;
-    const size = sections.get(path) ?? 0;
-    return { name, size };
+    const chars = sections.get(path) ?? 0;
+    return { name, tokens: estimateTokensFromChars(chars) };
   });
-  const total = items.reduce((sum, item) => sum + item.size, 0);
+  const totalTokens = items.reduce((sum, item) => sum + item.tokens, 0);
   const label = selectionPaths.length === 1 ? 'file' : 'files';
-  const list = items.map((item) => `${item.name} (${formatSize(item.size)})`).join(', ');
-  return `${prefix} (${selectionPaths.length} ${label}, ${formatSize(total)}): ${list}`;
+  const list = items.map((item) => `${item.name} (${formatSize(item.tokens)})`).join(', ');
+  return `${prefix} (${selectionPaths.length} ${label}, ${formatSize(totalTokens)} tok): ${list}`;
 };
 
 export const formatMessageBlockForLog = (message: Message, index: number) => {
@@ -88,4 +94,3 @@ export const buildContextTooltipForLog = (args: {
 };
 
 export const buildDocsTooltipForLog = (docsDetail: string) => `Docs:\n${docsDetail}`;
-

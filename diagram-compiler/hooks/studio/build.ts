@@ -2,15 +2,19 @@ import { summarizeBuild } from '../../services/llmService';
 import { stripMermaidCode } from '../../utils';
 import { normalizeDiagramType } from '../../utils/diagramTypes';
 import { normalizeIntentText, resolveIntentFromInput } from '../../utils/intent';
-import type { Message } from '../../types';
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS } from '../../constants';
 import { runBuildPipeline } from './buildPipeline';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import { normalizeSummaryText, sanitizeSummaryText } from '../../utils/buildSummary';
-import { fetchDocsEntries } from '../../services/docsContextService';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import { runStudioOperation } from './runStudioOperation';
+import {
+  buildContextTooltipForLog,
+  buildDocsTooltipForLog,
+  formatDocsDetailForLog,
+  summarizeMessagesForLog,
+} from './logContextUtils';
 
 export const createBuildHandler = (ctx: StudioContext) => {
   return async (text?: string) => {
@@ -21,145 +25,109 @@ export const createBuildHandler = (ctx: StudioContext) => {
       stepType: 'build',
       notebookBlockIndex,
       run: async ({ stepMessages, logEvent, finalizeStep }) => {
-        const summarizeDocsEntries = (entries: Array<{ path: string; text?: string }>) => {
-          const items = entries.map((entry) => ({
-            name: entry.path.split('/').pop() || entry.path,
-            size: entry.text?.length ?? 0,
-          }));
-          const total = items.reduce((sum, item) => sum + item.size, 0);
-          return { items, total };
+        const parseIntentDiagrams = (intentText: string) => {
+          const lines = intentText.split(/\r?\n/);
+          const startIndex = lines.findIndex((line) => /^##\s+Diagrams\b/i.test(line.trim()));
+          if (startIndex === -1) return [];
+          const endIndex = lines.findIndex((line, idx) => idx > startIndex && /^##\s+/.test(line.trim()));
+          const stopIndex = endIndex === -1 ? lines.length : endIndex;
+          const items: Array<{ title: string; type: string; raw: string }> = [];
+          for (let i = startIndex + 1; i < stopIndex; i += 1) {
+            const line = lines[i].trim();
+            if (!/^\d+\.\s+/.test(line)) continue;
+            const parts = line.replace(/^\d+\.\s+/, '').split(/\s+[—-]\s+/);
+            if (parts.length < 2) continue;
+            const title = parts[0]?.trim() ?? '';
+            const type = normalizeDiagramType(parts[1]?.trim() ?? '') ?? parts[1]?.trim() ?? '';
+            if (!type) continue;
+            items.push({ title, type, raw: line.replace(/^\d+\.\s+/, '').trim() });
+          }
+          return items;
         };
-    const formatSize = (value: number) => {
-      if (value < 1000) return `${value}`;
-      return `${(value / 1000).toFixed(1)}k`;
-    };
-    const formatDocsDetail = (items: Array<{ name: string; size: number }>, total: number) => {
-      if (!items.length) return 'docs (0 files)';
-      const label = items.length === 1 ? 'file' : 'files';
-      const list = items.map((item) => `${item.name} (${formatSize(item.size)})`).join(', ');
-      return `docs (${items.length} ${label}, ${formatSize(total)}): ${list}`;
-    };
-        const summarizeMessages = (items: Message[]) => {
-          const chars = items.reduce((total, msg) => total + (msg.content?.length ?? 0), 0);
-          return { count: items.length, chars };
+
+        const parseIntentTitle = (intentText: string) => {
+          const lines = intentText.split(/\r?\n/).map((line) => line.trim());
+          const titledIndex = lines.findIndex((line) => /^##\s+(Название|Title|Name)\b/i.test(line));
+          if (titledIndex !== -1) {
+            for (let i = titledIndex + 1; i < lines.length; i += 1) {
+              const line = lines[i];
+              if (!line) continue;
+              if (/^##\s+/.test(line)) break;
+              return line.replace(/^[-*]\s+/, '');
+            }
+          }
+          for (const line of lines) {
+            if (!line) continue;
+            if (/^##\s+/.test(line)) continue;
+            const cleaned = line.replace(/^Intent:\s*/i, '').replace(/^[-*]\s+/, '');
+            if (cleaned) return cleaned;
+          }
+          return '';
         };
-    const formatMessageBlock = (message: Message, index: number) => {
-      const label = `[${index + 1}] ${message.role}${message.id ? ` (${message.id})` : ''}`;
-      return `${label}\n${message.content}`;
-    };
-    const parseIntentDiagrams = (intentText: string) => {
-      const lines = intentText.split(/\r?\n/);
-      const startIndex = lines.findIndex((line) => /^##\s+Diagrams\b/i.test(line.trim()));
-      if (startIndex === -1) return [];
-      const endIndex = lines.findIndex((line, idx) => idx > startIndex && /^##\s+/.test(line.trim()));
-      const stopIndex = endIndex === -1 ? lines.length : endIndex;
-      const items: Array<{ title: string; type: string; raw: string }> = [];
-      for (let i = startIndex + 1; i < stopIndex; i += 1) {
-        const line = lines[i].trim();
-        if (!/^\d+\.\s+/.test(line)) continue;
-        const parts = line.replace(/^\d+\.\s+/, '').split(/\s+[—-]\s+/);
-        if (parts.length < 2) continue;
-        const title = parts[0]?.trim() ?? '';
-        const type = normalizeDiagramType(parts[1]?.trim() ?? '') ?? parts[1]?.trim() ?? '';
-        if (!type) continue;
-        items.push({ title, type, raw: line.replace(/^\d+\.\s+/, '').trim() });
-      }
-      return items;
-    };
-    const parseIntentTitle = (intentText: string) => {
-      const lines = intentText.split(/\r?\n/).map((line) => line.trim());
-      const titledIndex = lines.findIndex((line) => /^##\s+(Название|Title|Name)\b/i.test(line));
-      if (titledIndex !== -1) {
-        for (let i = titledIndex + 1; i < lines.length; i += 1) {
-          const line = lines[i];
-          if (!line) continue;
-          if (/^##\s+/.test(line)) break;
-          return line.replace(/^[-*]\s+/, '');
-        }
-      }
-      for (const line of lines) {
-        if (!line) continue;
-        if (/^##\s+/.test(line)) continue;
-        const cleaned = line.replace(/^Intent:\s*/i, '').replace(/^[-*]\s+/, '');
-        if (cleaned) return cleaned;
-      }
-      return '';
-    };
-    const sanitizeSelectionText = (value: string) => {
-      return value
-        .replace(/\*\*([^*]+)\*\*/g, '$1')
-        .replace(/\*([^*]+)\*/g, '$1')
-        .replace(/`([^`]+)`/g, '$1')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
-    const parseIntentOptionsAndQuestions = (intentText: string) => {
-      const lines = intentText.split(/\r?\n/);
-      const options: string[] = [];
-      const questions: string[] = [];
-      let inQuestions = false;
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line) continue;
-        if (/^(##\s+)?(Open questions|Questions|Вопросы)/i.test(line)) {
-          inQuestions = true;
-          continue;
-        }
-        const numbered = line.match(/^\s*\d+\.\s+(.*)$/);
-        const bulleted = line.match(/^\s*[-*]\s+(.*)$/);
-        if (numbered) {
-          const value = sanitizeSelectionText(numbered[1] ?? '');
-          if (value) (inQuestions ? questions : options).push(value);
-          continue;
-        }
-        if (bulleted && inQuestions) {
-          const value = sanitizeSelectionText(bulleted[1] ?? '');
-          if (value) questions.push(value);
-        }
-      }
-      return { options, questions };
-    };
-    const formatSelectionNote = (intentText: string, diagramType: string, source: string) => {
-      const items = parseIntentDiagrams(intentText);
-      const normalizedType = normalizeDiagramType(diagramType) ?? diagramType;
-      const sourceLabel = source === 'chat' ? 'чат' : source === 'build' ? 'build' : 'fallback';
-      const matches = items.filter((item) => item.type === normalizedType);
-      if (matches.length) {
-        const picked = matches.map((item) => item.raw).join('; ');
-        return `Выбрано: ${picked} (источник: ${sourceLabel}).`;
-      }
-      const { options, questions } = parseIntentOptionsAndQuestions(intentText);
-      if (options.length || questions.length) {
-        const parts: string[] = [];
-        if (options.length) {
-          parts.push(`Выбрано из предложений (${options.length}): ${options.join('; ')}`);
-        }
-        if (questions.length) {
-          parts.push(`Вопросы из чата (${questions.length}): ${questions.join('; ')}`);
-        }
-        return `${parts.join('. ')} (источник: ${sourceLabel}).`;
-      }
-      const title = parseIntentTitle(intentText);
-      if (title) {
-        return `Выбрано: ${title} — ${normalizedType} (источник: ${sourceLabel}).`;
-      }
-      return `Выбрано: ${normalizedType} (источник: ${sourceLabel}).`;
-    };
-    const buildContextTooltip = (args: {
-      systemPrompt: string;
-      messages: Message[];
-      docsDetail: string;
-    }) => {
-      const messageBlocks = args.messages.map(formatMessageBlock).join('\n\n');
-      return [
-        'System prompt:',
-        args.systemPrompt,
-        '',
-        'Messages:',
-        messageBlocks,
-      ].join('\n');
-    };
-    const buildDocsTooltip = (docsDetail: string) => `Docs:\n${docsDetail}`;
+
+        const sanitizeSelectionText = (value: string) => {
+          return value
+            .replace(/\*\*([^*]+)\*\*/g, '$1')
+            .replace(/\*([^*]+)\*/g, '$1')
+            .replace(/`([^`]+)`/g, '$1')
+            .replace(/\s+/g, ' ')
+            .trim();
+        };
+
+        const parseIntentOptionsAndQuestions = (intentText: string) => {
+          const lines = intentText.split(/\r?\n/);
+          const options: string[] = [];
+          const questions: string[] = [];
+          let inQuestions = false;
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) continue;
+            if (/^(##\s+)?(Open questions|Questions|Вопросы)/i.test(line)) {
+              inQuestions = true;
+              continue;
+            }
+            const numbered = line.match(/^\s*\d+\.\s+(.*)$/);
+            const bulleted = line.match(/^\s*[-*]\s+(.*)$/);
+            if (numbered) {
+              const value = sanitizeSelectionText(numbered[1] ?? '');
+              if (value) (inQuestions ? questions : options).push(value);
+              continue;
+            }
+            if (bulleted && inQuestions) {
+              const value = sanitizeSelectionText(bulleted[1] ?? '');
+              if (value) questions.push(value);
+            }
+          }
+          return { options, questions };
+        };
+
+        const formatSelectionNote = (intentText: string, diagramType: string, source: string) => {
+          const items = parseIntentDiagrams(intentText);
+          const normalizedType = normalizeDiagramType(diagramType) ?? diagramType;
+          const sourceLabel = source === 'chat' ? 'чат' : source === 'build' ? 'build' : 'fallback';
+          const matches = items.filter((item) => item.type === normalizedType);
+          if (matches.length) {
+            const picked = matches.map((item) => item.raw).join('; ');
+            return `Выбрано: ${picked} (источник: ${sourceLabel}).`;
+          }
+          const { options, questions } = parseIntentOptionsAndQuestions(intentText);
+          if (options.length || questions.length) {
+            const parts: string[] = [];
+            if (options.length) {
+              parts.push(`Выбрано из предложений (${options.length}): ${options.join('; ')}`);
+            }
+            if (questions.length) {
+              parts.push(`Вопросы из чата (${questions.length}): ${questions.join('; ')}`);
+            }
+            return `${parts.join('. ')} (источник: ${sourceLabel}).`;
+          }
+          const title = parseIntentTitle(intentText);
+          if (title) {
+            return `Выбрано: ${title} — ${normalizedType} (источник: ${sourceLabel}).`;
+          }
+          return `Выбрано: ${normalizedType} (источник: ${sourceLabel}).`;
+        };
+
         if (prompt) stepMessages.push(ctx.addMessage('user', prompt, 'build'));
 
         if (ctx.connectionState.status !== 'connected') {
@@ -234,32 +202,25 @@ export const createBuildHandler = (ctx: StudioContext) => {
       const llmMessages = diagramContext ? [intentMessage, diagramContext] : [intentMessage];
 
       const selectionSummary = await ctx.getDocsSelectionSummary?.('build');
-      const selectionFiles = selectionSummary?.includedPaths ?? [];
-      const entries = selectionFiles.map((path) => ({ path, text: '' }));
-      const docsEntries = entries.length
-        ? await fetchDocsEntries(ctx.appState.diagramType)
-        : [];
-      const includedEntries = docsEntries.filter((entry) => selectionFiles.includes(entry.path));
-      const docsSummary = summarizeDocsEntries(includedEntries);
-      const msgSummary = summarizeMessages(llmMessages);
+      const msgSummary = summarizeMessagesForLog(llmMessages);
       const systemPrompt = buildSystemPrompt('generate', {
         diagramType: ctx.appState.diagramType,
         docsContext: 'Documentation context redacted.',
         language,
       });
-      const docsDetail = formatDocsDetail(docsSummary.items, docsSummary.total);
-      const contextTooltip = buildContextTooltip({
+      const docsDetail = formatDocsDetailForLog({ docsContext: docs, selectionSummary });
+      const contextTooltip = buildContextTooltipForLog({
         systemPrompt,
         messages: llmMessages,
         docsDetail,
       });
-      const docsTooltip = buildDocsTooltip(docsDetail);
+      const docsTooltip = buildDocsTooltipForLog(docsDetail);
       logEvent({
         phase: 'planning',
         level: 'info',
         title: 'Контекст',
         detail: [
-          `messages: ${msgSummary.count} (${msgSummary.chars} chars)`,
+          `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
           docsDetail,
         ].join('\n'),
         tooltipMessages: contextTooltip,

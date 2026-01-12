@@ -5,6 +5,7 @@ import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
 import { MODE_UI } from '../../utils/uiModes';
 import { isSystemPromptPath } from '../../utils/systemPrompts';
 import { useBuildDocsContent } from '../../hooks/editor/useBuildDocsContent';
+import { DOCS_MODE_ORDER } from '../../utils/docsModes';
 
 interface BuildDocsPanelProps {
   docsPanel: 'mode' | 'all';
@@ -123,7 +124,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
     <div className="flex-1 min-h-0 flex flex-col bg-slate-50 dark:bg-[#282c34]">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-2 py-2">
         <div className="flex items-center gap-1">
-          {(['chat', 'build', 'plan', 'analyze', 'fix'] as DocsMode[]).map((mode) => {
+          {DOCS_MODE_ORDER.map((mode) => {
             const tokenCount = promptPreviewByMode[mode]?.tokenCounts?.total;
             const tokenLabel = formatTokenCount(tokenCount);
             const styles = modeButtonStyles[mode];
@@ -166,7 +167,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
               <thead>
                 <tr className="text-left text-slate-400 dark:text-slate-500">
                   <th className="px-2 py-1 font-medium">File</th>
-                  {(['chat', 'build', 'plan', 'analyze', 'fix'] as DocsMode[]).map((mode) => (
+                  {DOCS_MODE_ORDER.map((mode) => (
                     <th key={mode} className="px-2 py-1 font-medium text-center uppercase tracking-wide">
                       {mode}
                     </th>
@@ -189,7 +190,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                           {fileName}
                         </button>
                       </td>
-                      {(['chat', 'build', 'plan', 'analyze', 'fix'] as DocsMode[]).map((mode) => {
+                      {DOCS_MODE_ORDER.map((mode) => {
                         const selection = buildDocsSelectionsByMode[mode] ?? {};
                         const isChecked = selection[entry.path] !== false;
                         return (
