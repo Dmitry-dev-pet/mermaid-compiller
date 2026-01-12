@@ -68,14 +68,14 @@ const Header: React.FC<HeaderProps> = ({
     if (connectionState.status === 'disconnected') return 'AI: Not connected';
     if (connectionState.status === 'connecting') return 'AI: Connecting...';
     if (connectionState.status === 'failed') return 'AI: Connection Failed';
-    if (!aiConfig.selectedModelId) return 'AI: Connected · Select model';
+    if (!aiConfig.selectedModelId) return `AI: Connected · Select model · ${timeoutSeconds}s`;
     
     // Find model name
     const model = connectionState.availableModels.find(m => m.id === aiConfig.selectedModelId);
     const modelName = model ? model.name : aiConfig.selectedModelId;
     const contextLabel = model?.contextLength ? ` (${formatContextLength(model.contextLength)})` : '';
     const providerName = aiConfig.provider === 'openrouter' ? 'OpenRouter' : 'Proxy';
-    return `AI: ${providerName} · ${modelName}${contextLabel}`;
+    return `AI: ${providerName} · ${modelName}${contextLabel} · ${timeoutSeconds}s`;
   };
 
   const getStatusColor = () => {
