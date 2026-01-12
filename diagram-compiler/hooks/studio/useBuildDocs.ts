@@ -61,6 +61,10 @@ export const useBuildDocs = (diagramType: DiagramType) => {
       },
     };
   });
+  const docsStateRef = useRef(docsState);
+  useEffect(() => {
+    docsStateRef.current = docsState;
+  }, [docsState]);
   const buildDocsRequestRef = useRef(0);
 
   const loadBuildDocsEntries = useCallback(async (type: DiagramType) => {
@@ -73,8 +77,8 @@ export const useBuildDocs = (diagramType: DiagramType) => {
       entries = getDocsPaths(type).map(({ path, isOptional }) => ({ path, text: '', isOptional }));
     }
 
-    const nextSelections: DocsSelectionState['selections'] = { ...docsState.selections };
-    const nextActivePaths: DocsSelectionState['activePaths'] = { ...docsState.activePaths };
+    const nextSelections: DocsSelectionState['selections'] = { ...docsStateRef.current.selections };
+    const nextActivePaths: DocsSelectionState['activePaths'] = { ...docsStateRef.current.activePaths };
 
     DOCS_MODE_ORDER.forEach((mode) => {
       const modeSelection = { ...nextSelections[mode] };
@@ -105,7 +109,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
       activePaths: nextActivePaths,
     }));
     return { entries, selections: nextSelections, activePaths: nextActivePaths };
-  }, [docsState.activePaths, docsState.selections]);
+  }, []);
 
   const ensureBuildDocsEntries = useCallback(async () => {
     if (buildDocsType === diagramType) {
@@ -210,10 +214,9 @@ export const useBuildDocs = (diagramType: DiagramType) => {
   }, []);
 
   useEffect(() => {
-    if (buildDocsType === diagramType) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadBuildDocsEntries(diagramType);
-  }, [buildDocsType, diagramType, loadBuildDocsEntries]);
+  }, [diagramType, loadBuildDocsEntries]);
 
   useEffect(() => {
     localStorage.setItem('dc_docs_selection_v2', JSON.stringify(docsState));
