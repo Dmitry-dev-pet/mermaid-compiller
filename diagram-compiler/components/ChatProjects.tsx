@@ -205,6 +205,62 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
     );
   };
 
+  const renderDiagramTypeSelectorControl = (placement: 'expanded' | 'active') => {
+    const selectedTypes = diagramType === 'auto' ? mainTypeList : [diagramType];
+    const overflowCount = Math.max(0, selectedTypes.length - 4);
+    const visibleTypes = selectedTypes.slice(0, 4);
+    const title =
+      diagramType === 'auto'
+        ? `Main (${selectedTypes.join(', ')})`
+        : (DIAGRAM_TYPE_LABELS[diagramType] ?? diagramType);
+
+    return (
+      <div
+        className="w-40 h-8 px-1.5 inline-flex items-center justify-between gap-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+        title={title}
+      >
+        <div className="flex items-center gap-1 min-w-0">
+          {visibleTypes.map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => {
+                const has = currentDiagramTypeSelection.includes(type);
+                if (!has) return;
+                const next = currentDiagramTypeSelection.filter((t) => t !== type);
+                if (!next.length) return;
+                if (next.length === 1) {
+                  onDiagramTypeChange(next[0]);
+                  return;
+                }
+                onMainDiagramTypesChange(next);
+                onDiagramTypeChange('auto');
+              }}
+              className="inline-flex items-center justify-center w-6 h-6 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+              title={DIAGRAM_TYPE_LABELS[type] ?? type}
+              aria-label={DIAGRAM_TYPE_LABELS[type] ?? type}
+            >
+              {getDiagramTypeIcon(type)}
+            </button>
+          ))}
+          {overflowCount > 0 && (
+            <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400 px-1.5">
+              +{overflowCount}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => openDiagramTypePicker(placement)}
+          className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-500 dark:text-slate-400"
+          aria-label="Open diagram type picker"
+        >
+          <ChevronDown size={12} className="opacity-70" />
+        </button>
+      </div>
+    );
+  };
+
   const renderDiagramTypePicker = (placement: 'expanded' | 'active') => {
     if (!isDiagramTypePickerOpen || diagramTypePickerPlacement !== placement) return null;
     return (
@@ -387,16 +443,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
               <div className="flex flex-col">
                 <div className="flex items-center gap-2 relative" ref={registerDiagramTypePickerRoot('expanded')}>
                   <span>Diagram type</span>
-                  <button
-                    type="button"
-                    onClick={() => openDiagramTypePicker('expanded')}
-                    className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40"
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      {renderDiagramTypeSelectionBadge()}
-                      <ChevronDown size={12} className="opacity-60" />
-                    </span>
-                  </button>
+                  {renderDiagramTypeSelectorControl('expanded')}
                   {renderDiagramTypePicker('expanded')}
                 </div>
               <div className="flex items-center gap-2 mt-1">
@@ -425,7 +472,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
             </div>
             {diagramType === 'auto' && (
               <span className="block text-[10px] text-slate-400 dark:text-slate-500">
-                Main ограничен: {mainTypeList.map((t) => getDiagramTypeShortLabel(t)).join(' / ')}
+                Main: {mainTypeList.map((t) => getDiagramTypeShortLabel(t)).join(' / ')}
               </span>
             )}
             {detectedLabel && diagramType === 'auto' && (
@@ -493,16 +540,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
               <div className="flex flex-col">
                 <div className="flex items-center gap-2 relative" ref={registerDiagramTypePickerRoot('active')}>
                   <span>Diagram type</span>
-                  <button
-                    type="button"
-                    onClick={() => openDiagramTypePicker('active')}
-                    className="w-40 px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40"
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      {renderDiagramTypeSelectionBadge()}
-                      <ChevronDown size={12} className="opacity-60" />
-                    </span>
-                  </button>
+                  {renderDiagramTypeSelectorControl('active')}
                   {renderDiagramTypePicker('active')}
                 </div>
                 <div className="flex items-center gap-2 mt-1">
