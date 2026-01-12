@@ -24,7 +24,7 @@ interface BuildDocsPanelProps {
   activeDocEntry?: DocsEntry;
 }
 
-const formatTokenCount = (value?: number) => {
+const formatCompactCount = (value?: number) => {
   if (!value || value <= 0) return '';
   if (value >= 1000) {
     return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}k`;
@@ -67,6 +67,28 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
         ? rawPromptPreview
         : systemPromptEntry.text
       : intentPreview;
+  const docsSizesByMode = React.useMemo(() => {
+    const sizes: Record<DocsMode, { totalChars: number; totalDocs: number }> = {
+      chat: { totalChars: 0, totalDocs: 0 },
+      build: { totalChars: 0, totalDocs: 0 },
+      plan: { totalChars: 0, totalDocs: 0 },
+      analyze: { totalChars: 0, totalDocs: 0 },
+      fix: { totalChars: 0, totalDocs: 0 },
+    };
+
+    for (const mode of DOCS_MODE_ORDER) {
+      const selection = buildDocsSelectionsByMode[mode] ?? {};
+      let totalChars = 0;
+      let totalDocs = 0;
+      for (const entry of buildDocsEntries) {
+        if (selection[entry.path] === false) continue;
+        totalDocs += 1;
+        totalChars += entry.text?.length ?? 0;
+      }
+      sizes[mode] = { totalChars, totalDocs };
+    }
+    return sizes;
+  }, [buildDocsEntries, buildDocsSelectionsByMode]);
   const containerRef = useRef<HTMLDivElement>(null);
   const [splitRatio, setSplitRatio] = useState(0.5);
   const dragRef = useRef<{ startY: number; startRatio: number } | null>(null);
@@ -97,30 +119,36 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
   };
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-slate-50 dark:bg-[#282c34]">
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800 px-2 py-1">
-        <div className="w-full overflow-auto">
+      <div className="border-b border-slate-200 dark:border-slate-800 px-2 py-2 bg-slate-100/60 dark:bg-slate-950/20">
+        <div className="w-full overflow-auto rounded-md border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/40">
             <table className="min-w-full text-[10px] text-slate-600 dark:text-slate-300">
               <thead>
                 <tr className="text-left text-slate-400 dark:text-slate-500">
                   <th className="px-2 py-1 font-medium">File</th>
                   {DOCS_MODE_ORDER.map((mode) => {
-                    const tokenCount = promptPreviewByMode[mode]?.tokenCounts?.total;
-                    const tokenLabel = formatTokenCount(tokenCount);
                     const isActiveMode = docsMode === mode;
+                    const docsSize = docsSizesByMode[mode]?.totalChars ?? 0;
+                    const docsLabel = formatCompactCount(docsSize);
+                    const docsCount = docsSizesByMode[mode]?.totalDocs ?? 0;
                     return (
                       <th key={mode} className="px-2 py-1 font-medium text-center uppercase tracking-wide">
                         <button
                           type="button"
                           onClick={() => onDocsModeChange(mode)}
-                          className={`w-full rounded px-1 py-0.5 ${
+                          className={`w-full rounded px-1 py-1 ${
                             isActiveMode
                               ? 'bg-indigo-600/20 text-indigo-700 dark:text-indigo-200'
                               : 'hover:bg-slate-100 dark:hover:bg-slate-800'
                           }`}
                           title={`Show ${mode} system prompt/intent`}
                         >
-                          {mode}
-                          {tokenLabel ? <span className="ml-1 opacity-70 normal-case">{tokenLabel}</span> : null}
+                          <div className="flex flex-col items-center leading-tight">
+                            <div>{mode}</div>
+                            <div className="text-[9px] normal-case opacity-70">
+                              {docsCount ? `${docsCount} • ` : ''}
+                              {docsLabel || '0'}
+                            </div>
+                          </div>
                         </button>
                       </th>
                     );
@@ -162,7 +190,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                 })}
               </tbody>
             </table>
-        </div>
+          </div>
       </div>
       <div ref={containerRef} className="flex-1 min-h-0 flex flex-col">
         <div style={{ flexBasis: `${splitRatio * 100}%` }} className="min-h-0 overflow-auto">
