@@ -1,4 +1,4 @@
-export type UiMode = 'chat' | 'build' | 'analyze' | 'fix' | 'system';
+export type UiMode = 'chat' | 'build' | 'analyze' | 'fix' | 'plan' | 'system';
 
 export const MODE_UI: Record<UiMode, { bubble: string; button?: string; buttonInactive?: string }> = {
   chat: {
@@ -28,6 +28,13 @@ export const MODE_UI: Record<UiMode, { bubble: string; button?: string; buttonIn
     button: 'bg-amber-600 text-white hover:bg-amber-700 border border-amber-600',
     buttonInactive:
       'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-200 border-amber-200 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/40',
+  },
+  plan: {
+    bubble:
+      'bg-violet-50 dark:bg-violet-950/35 border border-violet-200/70 dark:border-violet-800/70 text-violet-900 dark:text-violet-100',
+    button: 'bg-violet-600 text-white hover:bg-violet-700 border border-violet-600',
+    buttonInactive:
+      'bg-white dark:bg-slate-900 text-violet-600 dark:text-violet-200 border-violet-200 dark:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/40',
   },
   system: {
     bubble: 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200',

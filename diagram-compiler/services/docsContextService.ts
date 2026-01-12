@@ -93,6 +93,12 @@ export const fetchDocsEntries = async (diagramType: DiagramType): Promise<DocsEn
   return results;
 };
 
+export const fetchDocsEntriesByPaths = async (paths: string[]): Promise<DocsEntry[]> => {
+  const unique = Array.from(new Set(paths)).filter(Boolean);
+  const results = await Promise.all(unique.map((path) => fetchLocalDoc(path)));
+  return results;
+};
+
 export const formatDocsContext = (entries: DocsEntry[]): string => {
   let context = "Mermaid Documentation Snippets:\n\n";
   entries.forEach(result => {
@@ -113,6 +119,10 @@ export const getNotebookDocsPaths = (): Array<{ path: string; isOptional?: boole
     ...commonDocs.map((path) => ({ path })),
     ...optionalDocs.map((path) => ({ path, isOptional: true })),
   ];
+};
+
+export const getNotebookPlannerDocsPaths = (): Array<{ path: string; isOptional?: boolean }> => {
+  return plannerDocs.map((path) => ({ path }));
 };
 
 export const fetchNotebookDocsEntries = async (): Promise<DocsEntry[]> => {

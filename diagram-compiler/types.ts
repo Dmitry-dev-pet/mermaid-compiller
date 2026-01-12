@@ -154,9 +154,9 @@ export type NotebookPlan = {
   notes?: string[];
 };
 
-export type DocsMode = 'chat' | 'build' | 'analyze' | 'fix';
+export type DocsMode = 'chat' | 'build' | 'analyze' | 'fix' | 'plan';
 
-export type PromptPreviewMode = 'chat' | 'build' | 'analyze' | 'fix';
+export type PromptPreviewMode = 'chat' | 'build' | 'analyze' | 'fix' | 'plan';
 export type EditorTab =
   | 'code'
   | 'markdown_mermaid'

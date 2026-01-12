@@ -45,6 +45,7 @@ function App() {
     buildDocsSelectionKey,
     buildDocsActivePath,
     setBuildDocsActivePath,
+    setBuildDocsActivePathForMode,
     docsMode,
     setDocsMode,
     systemPromptRawByMode,
@@ -95,6 +96,10 @@ function App() {
       raw: promptPreviewByMode.build?.systemPrompt ?? '',
       redacted: promptPreviewByMode.build?.systemPromptRedacted ?? '',
     },
+    plan: {
+      raw: promptPreviewByMode.plan?.systemPrompt ?? '',
+      redacted: promptPreviewByMode.plan?.systemPromptRedacted ?? '',
+    },
     analyze: {
       raw: promptPreviewByMode.analyze?.systemPrompt ?? '',
       redacted: promptPreviewByMode.analyze?.systemPromptRedacted ?? '',
@@ -104,6 +109,19 @@ function App() {
       redacted: promptPreviewByMode.fix?.systemPromptRedacted ?? '',
     },
   };
+
+  const handleOpenBuildDocsFile = useCallback((fileLabel: string, mode: import('./types').DocsMode) => {
+    const cleaned = fileLabel.trim().replace(/\s*\([^)]*\)\s*$/, '').trim();
+    const fileName = cleaned.split('/').pop() || cleaned;
+    const match =
+      buildDocsEntries.find((entry) => (entry.path.split('/').pop() || entry.path) === fileName)
+      ?? buildDocsEntries.find((entry) => entry.path.endsWith(`/${fileName}`))
+      ?? null;
+    if (!match) return;
+    setEditorTab('build_docs');
+    setDocsMode(mode);
+    setBuildDocsActivePathForMode(mode, match.path);
+  }, [buildDocsEntries, setBuildDocsActivePathForMode, setDocsMode, setEditorTab]);
   const scrollSyncSourceRef = useRef<ScrollSyncPayload['source'] | null>(null);
   const [scrollSyncPayload, setScrollSyncPayload] = useState<ScrollSyncPayload | null>(null);
   const [hoveredMarkdownIndex, setHoveredMarkdownIndex] = useState<number | null>(null);
@@ -223,6 +241,7 @@ function App() {
                 onBackToNotebookMainChat={backToNotebookMainChat}
                 operationLogs={operationLogs}
                 activeOperationLog={activeOperationLog}
+                onOpenBuildDocsFile={handleOpenBuildDocsFile}
               />
             </div>
 

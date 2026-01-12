@@ -68,6 +68,10 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
       active: MODE_UI.build.button ?? '',
       inactive: MODE_UI.build.buttonInactive ?? '',
     },
+    plan: {
+      active: MODE_UI.plan.button ?? '',
+      inactive: MODE_UI.plan.buttonInactive ?? '',
+    },
     analyze: {
       active: MODE_UI.analyze.button ?? '',
       inactive: MODE_UI.analyze.buttonInactive ?? '',
@@ -119,7 +123,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
     <div className="flex-1 min-h-0 flex flex-col bg-slate-50 dark:bg-[#282c34]">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-2 py-2">
         <div className="flex items-center gap-1">
-          {(['chat', 'build', 'analyze', 'fix'] as DocsMode[]).map((mode) => {
+          {(['chat', 'build', 'plan', 'analyze', 'fix'] as DocsMode[]).map((mode) => {
             const tokenCount = promptPreviewByMode[mode]?.tokenCounts?.total;
             const tokenLabel = formatTokenCount(tokenCount);
             const styles = modeButtonStyles[mode];
@@ -157,12 +161,12 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
       </div>
       <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800 px-2 py-1">
         {docsPanel === 'all' ? (
-          <div className="w-full overflow-auto">
+                <div className="w-full overflow-auto">
             <table className="min-w-full text-[10px] text-slate-600 dark:text-slate-300">
               <thead>
                 <tr className="text-left text-slate-400 dark:text-slate-500">
                   <th className="px-2 py-1 font-medium">File</th>
-                  {(['chat', 'build', 'analyze', 'fix'] as DocsMode[]).map((mode) => (
+                  {(['chat', 'build', 'plan', 'analyze', 'fix'] as DocsMode[]).map((mode) => (
                     <th key={mode} className="px-2 py-1 font-medium text-center uppercase tracking-wide">
                       {mode}
                     </th>
@@ -185,7 +189,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                           {fileName}
                         </button>
                       </td>
-                      {(['chat', 'build', 'analyze', 'fix'] as DocsMode[]).map((mode) => {
+                      {(['chat', 'build', 'plan', 'analyze', 'fix'] as DocsMode[]).map((mode) => {
                         const selection = buildDocsSelectionsByMode[mode] ?? {};
                         const isChecked = selection[entry.path] !== false;
                         return (

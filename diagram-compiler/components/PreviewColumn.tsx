@@ -41,7 +41,7 @@ interface PreviewColumnProps {
   onSetInlineDirection: (direction: MermaidDirection | null) => void;
   onSetInlineLook: (look: MermaidLook | null) => void;
   activeEditorTab: EditorTab;
-  buildDocsSystemPrompts: Record<'chat' | 'build' | 'analyze' | 'fix', { raw: string; redacted: string }>;
+  buildDocsSystemPrompts: Record<'chat' | 'build' | 'plan' | 'analyze' | 'fix', { raw: string; redacted: string }>;
   systemPromptRawByMode: Record<'chat' | 'build' | 'analyze' | 'fix', boolean>;
   buildDocsEntries: Array<{ path: string; text: string }>;
   buildDocsActivePath: string;

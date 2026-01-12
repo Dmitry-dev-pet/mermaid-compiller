@@ -7,7 +7,7 @@ import { sanitizeMermaidByType } from '../../utils/mermaidSanitizer';
 import { NOTEBOOK_BUILD_RETRY_CONFIG } from './notebookBuildConfig';
 import { extractMermaidBlocksFromMarkdown, replaceMermaidBlockInMarkdown } from '../../services/mermaidService';
 import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
-import { fetchNotebookDocsContext, fetchNotebookDocsEntries, fetchNotebookPlannerDocsContext, fetchNotebookPlannerDocsEntries } from '../../services/docsContextService';
+import { fetchDocsEntriesByPaths, fetchNotebookDocsContext, fetchNotebookDocsEntries, getNotebookPlannerDocsPaths } from '../../services/docsContextService';
 import { planNotebook, summarizeBuild } from '../../services/llmService';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import { normalizeNotebookPlan, parseNotebookPlan } from '../../services/notebookPlanService';
@@ -589,9 +589,14 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         detail: requestedN ? `N=${requestedN}` : undefined,
         kind: 'status',
       });
-      const docs = await fetchNotebookPlannerDocsContext();
+      const docs = await deps.getDocsContext('plan');
       const plannerDocsSummary = summarizeDocsContext(docs);
-      const plannerEntries = await fetchNotebookPlannerDocsEntries();
+      const plannerSelection = await deps.getDocsSelectionSummary?.('plan');
+      const plannerPaths =
+        plannerSelection?.includedPaths?.length
+          ? plannerSelection.includedPaths
+          : getNotebookPlannerDocsPaths().map(({ path }) => path);
+      const plannerEntries = await fetchDocsEntriesByPaths(plannerPaths);
       const plannerFiles = summarizeDocsEntries(plannerEntries);
       const plannerDocsDetail = formatDocsDetail(plannerFiles.items, plannerFiles.total);
       const plannerMessage: Message = {

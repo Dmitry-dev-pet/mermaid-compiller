@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { DocsEntry } from '../../services/docsContextService';
 import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
 import { getSystemPromptPath, isSystemPromptPath } from '../../utils/systemPrompts';
+import { buildSystemPrompt } from '../../services/llm/prompts';
 
 type BuildDocsPanelState = {
   docsPanel: 'mode' | 'all';
@@ -47,16 +48,27 @@ export const useBuildDocsState = ({
   const activePrompt = useMemo(() => {
     if (docsMode === 'chat') return promptPreviewByMode.chat;
     if (docsMode === 'build') return promptPreviewByMode.build;
+    if (docsMode === 'plan') return promptPreviewByMode.plan;
     if (docsMode === 'analyze') return promptPreviewByMode.analyze;
     return promptPreviewByMode.fix;
-  }, [docsMode, promptPreviewByMode.analyze, promptPreviewByMode.build, promptPreviewByMode.chat, promptPreviewByMode.fix]);
+  }, [docsMode, promptPreviewByMode.analyze, promptPreviewByMode.build, promptPreviewByMode.chat, promptPreviewByMode.fix, promptPreviewByMode.plan]);
 
   const systemPromptLang = resolveSelectedLanguage(analyzeLanguage, appLanguage, activePrompt?.language);
   const systemPromptPath = getSystemPromptPath(systemPromptLang, docsMode);
   const isSystemPromptRaw = systemPromptRawByMode[docsMode] ?? false;
-  const systemPromptContent = isSystemPromptRaw
-    ? activePrompt?.systemPrompt ?? ''
-    : activePrompt?.systemPromptRedacted ?? activePrompt?.systemPrompt ?? '';
+  const fallbackPlannerLanguage = systemPromptLang === 'ru' ? 'Russian' : 'English';
+  const fallbackPlannerPrompt = buildSystemPrompt('plan_notebook', {
+    docsContext: 'Documentation context redacted.',
+    language: fallbackPlannerLanguage,
+  });
+  const systemPromptContent = (() => {
+    const fromPreview = isSystemPromptRaw
+      ? activePrompt?.systemPrompt ?? ''
+      : activePrompt?.systemPromptRedacted ?? activePrompt?.systemPrompt ?? '';
+    if (fromPreview) return fromPreview;
+    if (docsMode === 'plan') return fallbackPlannerPrompt;
+    return '';
+  })();
   const systemPromptEntry: DocsEntry = {
     path: systemPromptPath,
     text: systemPromptContent || 'No system prompt available.',

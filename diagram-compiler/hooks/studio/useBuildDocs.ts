@@ -3,6 +3,7 @@ import type { DiagramType, DocsMode } from '../../types';
 import { fetchDocsEntries, formatDocsContext, getDocsPaths } from '../../services/docsContextService';
 import type { DocsEntry } from '../../services/docsContextService';
 import { safeParse } from '../../utils';
+import { getNotebookPlannerDocsPaths } from '../../services/docsContextService';
 
 type DocsSelectionState = {
   mode: DocsMode;
@@ -12,6 +13,7 @@ type DocsSelectionState = {
 };
 
 const DOCS_MODES: DocsMode[] = ['chat', 'build', 'analyze', 'fix'];
+const PLAN_DEFAULT_DOCS = new Set(getNotebookPlannerDocsPaths().map(({ path }) => path));
 const DEFAULT_DOCS_STATE: DocsSelectionState = {
   mode: 'build',
   selections: {
@@ -19,18 +21,21 @@ const DEFAULT_DOCS_STATE: DocsSelectionState = {
     build: {},
     analyze: {},
     fix: {},
+    plan: {},
   },
   activePaths: {
     chat: '',
     build: '',
     analyze: '',
     fix: '',
+    plan: '',
   },
   systemPromptRawByMode: {
     chat: false,
     build: false,
     analyze: false,
     fix: false,
+    plan: false,
   },
 };
 
@@ -71,17 +76,24 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     const nextSelections: DocsSelectionState['selections'] = { ...docsState.selections };
     const nextActivePaths: DocsSelectionState['activePaths'] = { ...docsState.activePaths };
 
-    DOCS_MODES.forEach((mode) => {
+    ([...DOCS_MODES, 'plan'] as DocsMode[]).forEach((mode) => {
       const modeSelection = { ...nextSelections[mode] };
       entries.forEach((entry) => {
         if (modeSelection[entry.path] === undefined) {
-          modeSelection[entry.path] = true;
+          modeSelection[entry.path] = mode === 'plan' ? PLAN_DEFAULT_DOCS.has(entry.path) : true;
         }
       });
       nextSelections[mode] = modeSelection;
       const prevPath = nextActivePaths[mode];
       if (!prevPath || !entries.some((entry) => entry.path === prevPath)) {
-        nextActivePaths[mode] = entries[0]?.path ?? '';
+        if (mode === 'plan') {
+          nextActivePaths[mode] =
+            entries.find((entry) => PLAN_DEFAULT_DOCS.has(entry.path))?.path
+            ?? entries[0]?.path
+            ?? '';
+        } else {
+          nextActivePaths[mode] = entries[0]?.path ?? '';
+        }
       }
     });
 
@@ -147,13 +159,23 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     }));
   }, []);
 
+  const setBuildDocsActivePathForMode = useCallback((mode: DocsMode, path: string) => {
+    setDocsState((prev) => ({
+      ...prev,
+      activePaths: {
+        ...prev.activePaths,
+        [mode]: path,
+      },
+    }));
+  }, []);
+
   const setDocsMode = useCallback((mode: DocsMode) => {
     setDocsState((prev) => ({ ...prev, mode }));
   }, []);
 
   const buildDocsSelectionKey = useMemo(() => {
     if (!buildDocsEntries.length) return '';
-    return DOCS_MODES
+    return [...DOCS_MODES, 'plan']
       .map((mode) => {
         const selection = docsState.selections[mode] ?? {};
         const key = buildDocsEntries
@@ -203,6 +225,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     buildDocsSelectionKey,
     buildDocsActivePath: docsState.activePaths[docsState.mode] ?? '',
     setBuildDocsActivePath,
+    setBuildDocsActivePathForMode,
     docsMode: docsState.mode,
     setDocsMode,
     systemPromptRawByMode: docsState.systemPromptRawByMode,

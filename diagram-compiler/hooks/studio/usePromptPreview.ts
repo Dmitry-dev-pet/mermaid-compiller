@@ -28,6 +28,7 @@ const DEFAULT_PREVIEW_BY_MODE: Record<PromptPreviewMode, PromptPreviewTab | null
   build: null,
   analyze: null,
   fix: null,
+  plan: null,
 };
 
 export const usePromptPreview = ({
@@ -93,6 +94,41 @@ ${code}
   const buildPromptPreview = useCallback(async (mode: PromptPreviewMode, inputText: string): Promise<LLMRequestPreview> => {
     const trimmed = inputText.trim();
     const relevantMessages = messages.filter((m) => m.id !== 'init');
+
+    if (mode === 'plan') {
+      const docsContext = await getDocsContext('plan');
+      const language = resolvePreviewLanguage(trimmed, relevantMessages);
+      const systemPrompt = buildSystemPrompt('plan_notebook', {
+        docsContext,
+        language,
+      });
+      const systemPromptRedacted = buildSystemPrompt('plan_notebook', {
+        docsContext: 'Documentation context redacted.',
+        language,
+      });
+      const basis =
+        trimmed ||
+        relevantMessages
+          .slice()
+          .reverse()
+          .find((m) => m.role === 'user' && m.content.trim().length > 0)?.content ||
+        '';
+      const planMessage: Message = {
+        id: 'preview-notebook-plan-message',
+        role: 'user',
+        content: `userRequest: """${basis}"""`,
+        timestamp: Date.now(),
+      };
+      return {
+        mode,
+        diagramType,
+        language,
+        systemPrompt,
+        systemPromptRedacted,
+        docsContext,
+        messages: [planMessage],
+      };
+    }
 
     if (mode === 'analyze' || mode === 'fix') {
       const { code, errorMessage, diagramType: activeDiagramType, isValid } = resolveActiveMermaidContext();

@@ -54,6 +54,7 @@ interface ChatColumnProps {
   onLLMTimeoutMsChange: (timeoutMs: number) => void;
   operationLogs?: OperationLog[];
   activeOperationLog?: OperationLog | null;
+  onOpenBuildDocsFile?: (fileName: string, mode: import('../types').DocsMode) => void;
 }
 
 const ChatColumn: React.FC<ChatColumnProps> = ({
@@ -90,6 +91,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   intentText,
   operationLogs,
   activeOperationLog,
+  onOpenBuildDocsFile,
 }) => {
   const [input, setInput] = useState('');
   const columnRef = useRef<HTMLDivElement>(null);
@@ -691,6 +693,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                       operationLog={log}
                       showSummaryLine={log.status === 'running'}
                       timeoutMs={llmTimeoutMs}
+                      onOpenBuildDocsFile={onOpenBuildDocsFile}
                     />
                   </div>
                 ))}
@@ -750,6 +753,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                           operationLog={log}
                           showSummaryLine={log.status === 'running'}
                           timeoutMs={llmTimeoutMs}
+                          onOpenBuildDocsFile={onOpenBuildDocsFile}
                         />
                       ))}
                       {showBuildSummaryFallback && (
@@ -768,6 +772,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                             operationLog={log}
                             showSummaryLine={log.status === 'running'}
                             timeoutMs={llmTimeoutMs}
+                            onOpenBuildDocsFile={onOpenBuildDocsFile}
                           />
                         ))}
                       </div>
@@ -781,6 +786,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                             operationLog={log}
                             showSummaryLine={log.status === 'running'}
                             timeoutMs={llmTimeoutMs}
+                            onOpenBuildDocsFile={onOpenBuildDocsFile}
                           />
                         ))}
                         {showBuildSummaryFallback && buildLog ? (
@@ -869,6 +875,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                       operationLog={log}
                       showSummaryLine={log.status === 'running'}
                       timeoutMs={llmTimeoutMs}
+                      onOpenBuildDocsFile={onOpenBuildDocsFile}
                     />
                   </div>
                 ))}

@@ -3,17 +3,20 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { OperationLog } from '../../types';
 import { LLM_TIMEOUT_MS } from '../../constants';
 import { buildOperationLogViewModel } from './operationLogUtils';
+import type { DocsMode } from '../../types';
 
 type Props = {
   operationLog: OperationLog;
   showSummaryLine?: boolean;
   timeoutMs?: number;
+  onOpenBuildDocsFile?: (fileName: string, mode: DocsMode) => void;
 };
 
 const ChatOperationLog: React.FC<Props> = ({
   operationLog,
   showSummaryLine = true,
   timeoutMs = LLM_TIMEOUT_MS,
+  onOpenBuildDocsFile,
 }) => {
   const [now, setNow] = useState(() => Date.now());
   const [pinnedTooltip, setPinnedTooltip] = useState<string | null>(null);
@@ -62,6 +65,11 @@ const ChatOperationLog: React.FC<Props> = ({
     const selection = window.getSelection();
     if (!selection) return false;
     return selection.toString().trim().length > 0;
+  };
+  const normalizeFileLabel = (value: string) => {
+    const trimmed = value.trim();
+    const withoutSize = trimmed.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    return withoutSize || trimmed;
   };
   return (
     <div className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -184,6 +192,12 @@ const ChatOperationLog: React.FC<Props> = ({
                         const [_, prefix, files] = match;
                         const docsTooltipId = `${event.id}-docs-${index}`;
                         const isPinned = pinnedTooltip === docsTooltipId;
+                        const docsMode: DocsMode =
+                          event.contextScope === 'planner'
+                            ? 'plan'
+                            : event.contextScope === 'build' || event.contextScope === 'block'
+                              ? 'build'
+                              : 'build';
                         const fileParts = files
                           .split(',')
                           .map((part) => part.trim())
@@ -200,13 +214,39 @@ const ChatOperationLog: React.FC<Props> = ({
                             >
                               <span className="inline-flex flex-wrap items-center gap-1" data-tooltip-id={docsTooltipId}>
                                 {fileParts.length ? (
-                                  fileParts.map((part) => (
-                                    <span key={part} className="underline decoration-dotted">
-                                      {part}
-                                    </span>
-                                  ))
+                                  fileParts.map((part) => {
+                                    const normalized = normalizeFileLabel(part);
+                                    return (
+                                      <button
+                                        key={part}
+                                        type="button"
+                                        className="underline decoration-dotted hover:text-slate-900 dark:hover:text-slate-100"
+                                        onClick={(eventClick) => {
+                                          if (!onOpenBuildDocsFile) return;
+                                          eventClick.preventDefault();
+                                          eventClick.stopPropagation();
+                                          onOpenBuildDocsFile(normalized, docsMode);
+                                        }}
+                                        title="Открыть в Build Docs"
+                                      >
+                                        {part}
+                                      </button>
+                                    );
+                                  })
                                 ) : (
-                                  <span className="underline decoration-dotted">{files}</span>
+                                  <button
+                                    type="button"
+                                    className="underline decoration-dotted hover:text-slate-900 dark:hover:text-slate-100"
+                                    onClick={(eventClick) => {
+                                      if (!onOpenBuildDocsFile) return;
+                                      eventClick.preventDefault();
+                                      eventClick.stopPropagation();
+                                      onOpenBuildDocsFile(normalizeFileLabel(files), docsMode);
+                                    }}
+                                    title="Открыть в Build Docs"
+                                  >
+                                    {files}
+                                  </button>
                                 )}
                               </span>
                               <span className="text-[10px] text-slate-400 dark:text-slate-500">i</span>
