@@ -21,7 +21,7 @@ const ChatOperationLog: React.FC<Props> = ({
   const [now, setNow] = useState(() => Date.now());
   const [pinnedTooltip, setPinnedTooltip] = useState<string | null>(null);
   const isRunning = operationLog.status === 'running';
-  const [isOpen, setIsOpen] = useState(() => isRunning);
+  const [isOpen, setIsOpen] = useState(false);
   const [mouseDownSelectionLength, setMouseDownSelectionLength] = useState(0);
 
   useEffect(() => {
@@ -29,10 +29,6 @@ const ChatOperationLog: React.FC<Props> = ({
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, [isRunning]);
-
-  useEffect(() => {
-    setIsOpen(isRunning);
-  }, [isRunning, operationLog.id]);
 
   useEffect(() => {
     if (!pinnedTooltip) return;
@@ -147,9 +143,13 @@ const ChatOperationLog: React.FC<Props> = ({
 	                          const docsMode: DocsMode =
 	                            event.contextScope === 'planner'
 	                              ? 'plan'
-	                              : event.contextScope === 'build' || event.contextScope === 'block'
-	                                ? 'build'
-	                                : 'build';
+	                              : event.contextScope === 'chat'
+	                                ? 'chat'
+	                                : event.contextScope === 'analyze'
+	                                  ? 'analyze'
+	                                  : event.contextScope === 'fix'
+	                                    ? 'fix'
+	                                    : 'build';
 	                          const renderFileButton = (label: string) => (
 	                            <button
 	                              type="button"

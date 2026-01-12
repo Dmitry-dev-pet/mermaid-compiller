@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bookmark, Check, Copy, PenTool, RefreshCw } from 'lucide-react';
+import { Bookmark, Check, Copy, PenTool, RefreshCw, Loader2 } from 'lucide-react';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
 import { EditorTab, MermaidState } from '../../types';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../../utils/uiModes';
@@ -11,6 +11,7 @@ interface EditorHeaderProps {
   markdownValidCount: number;
   markdownInvalidCount: number;
   isProcessing: boolean;
+  activeOperationKind?: 'chat' | 'build' | 'analyze' | 'fix' | 'compile' | null;
   isAIReady: boolean;
   isReadOnly: boolean;
   canAnalyze: boolean;
@@ -36,6 +37,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
   markdownValidCount,
   markdownInvalidCount,
   isProcessing,
+  activeOperationKind = null,
   isAIReady,
   isReadOnly,
   canAnalyze,
@@ -55,6 +57,8 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
 }) => {
   const actionButtonBase =
     'px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap';
+  const isAnalyzing = isProcessing && activeOperationKind === 'analyze';
+  const isFixing = isProcessing && activeOperationKind === 'fix';
   return (
     <div className="h-24 p-2 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-950">
       <div className="flex flex-col flex-1 min-w-0">
@@ -86,7 +90,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
               className={`${actionButtonBase} ${canAnalyze ? MODE_UI.analyze.button : MODE_BUTTON_DISABLED}`}
               title="Explain this diagram in chat"
             >
-              <PenTool size={10} /> Analyze
+              {isAnalyzing ? <Loader2 size={10} className="animate-spin" /> : <PenTool size={10} />} Analyze
             </button>
 
             <select
@@ -107,7 +111,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
               className={`${actionButtonBase} ${canFix ? MODE_UI.fix.button : MODE_BUTTON_DISABLED}`}
               title={`Attempt to fix syntax errors (up to ${AUTO_FIX_MAX_ATTEMPTS} tries)`}
             >
-              <RefreshCw size={10} className={isProcessing ? 'animate-spin' : ''} /> Fix ({AUTO_FIX_MAX_ATTEMPTS})
+              <RefreshCw size={10} className={isFixing ? 'animate-spin' : ''} /> Fix ({AUTO_FIX_MAX_ATTEMPTS})
             </button>
 
             <button

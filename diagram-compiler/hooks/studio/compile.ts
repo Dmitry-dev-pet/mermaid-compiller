@@ -254,7 +254,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
             tooltipMessages,
             tooltipDocs,
             kind: 'context',
-            contextScope: 'build',
+            contextScope: 'fix',
           });
           await ctx.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
             codeLength: ctx.mermaidState.code.length,
@@ -405,7 +405,7 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
       run: async ({ stepMessages, logEvent, finalizeStep }) => {
         const notebookMarkdown = ctx.mermaidState.code.trim();
         const notebookBlocks = extractMermaidBlocksFromMarkdown(notebookMarkdown);
-        const isNotebookAnalysis = notebookBlocks.length > 1;
+        const isNotebookAnalysis = !ctx.isNotebookChatMode && notebookBlocks.length > 1;
         const diagramCode = ctx.getDiagramContextCode ? ctx.getDiagramContextCode().trim() : notebookMarkdown;
         const intent = ctx.getCurrentIntent?.() ?? null;
         const analysisInput = isNotebookAnalysis
@@ -471,13 +471,18 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
               : [];
           const docsEntries = isNotebookAnalysis ? notebookDocsEntries : singleDocsEntries;
           const docs = docsEntries.length ? formatDocsContext(docsEntries) : await ctx.getDocsContext('analyze');
+          const scopeLabel = isNotebookAnalysis
+            ? `notebook (${notebookBlocks.length} diagrams)`
+            : (
+                ctx.isNotebookChatMode && notebookBlockIndex !== null
+                  ? `diagram (${notebookBlockIndex + 1}/${Math.max(1, notebookBlocks.length)})`
+                  : 'diagram'
+              );
           logEvent({
             phase: 'analyze',
             level: 'info',
             title: 'Анализ',
-            detail: isNotebookAnalysis
-              ? `notebook (${notebookBlocks.length} diagrams), язык: ${language}`
-              : `язык: ${language}`,
+            detail: `${scopeLabel}, язык: ${language}`,
           });
           const selectionSummary = await ctx.getDocsSelectionSummary?.('analyze');
           const effectiveSelectionSummary =
@@ -517,7 +522,7 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             tooltipMessages,
             tooltipDocs,
             kind: 'context',
-            contextScope: 'build',
+            contextScope: 'analyze',
           });
           let llmDurationMs: number | null = null;
           const explanation = await runLLMRequest({

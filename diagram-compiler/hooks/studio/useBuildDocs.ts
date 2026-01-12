@@ -67,6 +67,22 @@ export const useBuildDocs = (diagramType: DiagramType) => {
   }, [docsState]);
   const buildDocsRequestRef = useRef(0);
 
+  const ensureDocsSelectionsForEntries = useCallback((entries: DocsEntry[]) => {
+    const nextSelections: DocsSelectionState['selections'] = { ...docsStateRef.current.selections };
+    let changed = false;
+    DOCS_MODE_ORDER.forEach((mode) => {
+      const modeSelection = { ...nextSelections[mode] };
+      entries.forEach((entry) => {
+        if (modeSelection[entry.path] === undefined) {
+          modeSelection[entry.path] = mode === 'plan' ? PLAN_DEFAULT_DOCS.has(entry.path) : true;
+          changed = true;
+        }
+      });
+      nextSelections[mode] = modeSelection;
+    });
+    return { selections: nextSelections, changed };
+  }, []);
+
   const loadBuildDocsEntries = useCallback(async (type: DiagramType) => {
     const requestId = ++buildDocsRequestRef.current;
     let entries = await fetchDocsEntries(type);
@@ -77,17 +93,9 @@ export const useBuildDocs = (diagramType: DiagramType) => {
       entries = getDocsPaths(type).map(({ path, isOptional }) => ({ path, text: '', isOptional }));
     }
 
-    const nextSelections: DocsSelectionState['selections'] = { ...docsStateRef.current.selections };
+    const { selections: nextSelections } = ensureDocsSelectionsForEntries(entries);
     const nextActivePaths: DocsSelectionState['activePaths'] = { ...docsStateRef.current.activePaths };
-
     DOCS_MODE_ORDER.forEach((mode) => {
-      const modeSelection = { ...nextSelections[mode] };
-      entries.forEach((entry) => {
-        if (modeSelection[entry.path] === undefined) {
-          modeSelection[entry.path] = mode === 'plan' ? PLAN_DEFAULT_DOCS.has(entry.path) : true;
-        }
-      });
-      nextSelections[mode] = modeSelection;
       const prevPath = nextActivePaths[mode];
       if (!prevPath || !entries.some((entry) => entry.path === prevPath)) {
         if (mode === 'plan') {
@@ -109,24 +117,56 @@ export const useBuildDocs = (diagramType: DiagramType) => {
       activePaths: nextActivePaths,
     }));
     return { entries, selections: nextSelections, activePaths: nextActivePaths };
-  }, []);
+  }, [ensureDocsSelectionsForEntries]);
 
-  const ensureBuildDocsEntries = useCallback(async () => {
-    if (buildDocsType === diagramType) {
+  const ensureViewerDocsEntries = useCallback(async () => {
+    if (buildDocsEntries.length && buildDocsType) {
       return { entries: buildDocsEntries, selections: docsState.selections, activePaths: docsState.activePaths };
     }
-    return await loadBuildDocsEntries(diagramType);
+    return await loadBuildDocsEntries(buildDocsType ?? diagramType);
   }, [buildDocsEntries, buildDocsType, diagramType, docsState.activePaths, docsState.selections, loadBuildDocsEntries]);
 
+  const fetchContextDocsEntries = useCallback(async () => {
+    if (buildDocsType === diagramType && buildDocsEntries.length) {
+      const { selections: nextSelections, changed } = ensureDocsSelectionsForEntries(buildDocsEntries);
+      if (changed) {
+        setDocsState((prev) => ({
+          ...prev,
+          selections: nextSelections,
+        }));
+      }
+      return { entries: buildDocsEntries, selections: nextSelections };
+    }
+    let entries = await fetchDocsEntries(diagramType);
+    if (!entries.length) {
+      entries = getDocsPaths(diagramType).map(({ path, isOptional }) => ({ path, text: '', isOptional }));
+    }
+    const { selections: nextSelections, changed } = ensureDocsSelectionsForEntries(entries);
+    if (changed) {
+      setDocsState((prev) => ({
+        ...prev,
+        selections: nextSelections,
+      }));
+    }
+    return { entries, selections: nextSelections };
+  }, [buildDocsEntries, buildDocsType, diagramType, ensureDocsSelectionsForEntries]);
+
   const getDocsContext = useCallback(async (mode: DocsMode) => {
-    const { entries, selections } = await ensureBuildDocsEntries();
+    const { entries, selections } = await fetchContextDocsEntries();
     const selection = selections[mode] ?? {};
     const selected = entries.filter((entry) => selection[entry.path] !== false);
     return formatDocsContext(selected);
-  }, [ensureBuildDocsEntries]);
+  }, [fetchContextDocsEntries]);
+
+  const getViewerDocsContext = useCallback(async (mode: DocsMode) => {
+    const { entries, selections } = await ensureViewerDocsEntries();
+    const selection = selections[mode] ?? {};
+    const selected = entries.filter((entry) => selection[entry.path] !== false);
+    return formatDocsContext(selected);
+  }, [ensureViewerDocsEntries]);
 
   const getDocsSelectionSummary = useCallback(async (mode: DocsMode) => {
-    const { entries, selections } = await ensureBuildDocsEntries();
+    const { entries, selections } = await fetchContextDocsEntries();
     const selection = selections[mode] ?? {};
     const included = entries.filter((entry) => selection[entry.path] !== false);
     const excluded = entries.filter((entry) => selection[entry.path] === false);
@@ -137,7 +177,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
       includedPaths: included.map((entry) => entry.path),
       excludedPaths: excluded.map((entry) => entry.path),
     };
-  }, [ensureBuildDocsEntries]);
+  }, [fetchContextDocsEntries]);
 
   const toggleBuildDocSelection = useCallback((path: string, isIncluded: boolean) => {
     setDocsState((prev) => {
@@ -224,6 +264,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
 
   return {
     buildDocsEntries,
+    buildDocsType,
     buildDocsSelection: docsState.selections[docsState.mode] ?? {},
     buildDocsSelectionKey,
     buildDocsActivePath: docsState.activePaths[docsState.mode] ?? '',
@@ -235,8 +276,9 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     setSystemPromptRaw,
     buildDocsSelectionsByMode: docsState.selections,
     setBuildDocSelectionForMode,
-    ensureBuildDocsEntries,
+    ensureBuildDocsEntries: ensureViewerDocsEntries,
     getDocsContext,
+    getViewerDocsContext,
     getDocsSelectionSummary,
     loadBuildDocsEntries,
     toggleBuildDocSelection,

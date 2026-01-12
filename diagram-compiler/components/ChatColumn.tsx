@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useEffect, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, MessageSquare, Play, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, MessageSquare, Play, Plus, Trash2, Loader2 } from 'lucide-react';
 import { LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
 import ChatProjects from './ChatProjects';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../utils/uiModes';
@@ -54,6 +54,7 @@ interface ChatColumnProps {
   onLLMTimeoutMsChange: (timeoutMs: number) => void;
   operationLogs?: OperationLog[];
   activeOperationLog?: OperationLog | null;
+  activeOperationKind?: 'chat' | 'build' | 'analyze' | 'fix' | 'compile' | null;
   onOpenBuildDocsFile?: (fileName: string, mode: import('../types').DocsMode) => void;
 }
 
@@ -91,6 +92,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   intentText,
   operationLogs,
   activeOperationLog,
+  activeOperationKind,
   onOpenBuildDocsFile,
 }) => {
   const [input, setInput] = useState('');
@@ -946,7 +948,12 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                 }`}
                 title="Chat (text only)"
               >
-                <MessageSquare size={14} /> Chat
+                {activeOperationKind === 'chat' ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <MessageSquare size={14} />
+                )}{' '}
+                Chat
               </button>
               <button
                 onClick={() => handleSubmit('build')}
@@ -958,7 +965,12 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                 }`}
                 title={input.trim() ? 'Build notebook from this prompt' : 'Build notebook from intent'}
               >
-                <Play size={14} /> Build
+                {activeOperationKind === 'build' ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Play size={14} />
+                )}{' '}
+                Build
               </button>
             </div>
           </div>

@@ -7,7 +7,7 @@ import { sanitizeMermaidByType } from '../../utils/mermaidSanitizer';
 import { NOTEBOOK_BUILD_RETRY_CONFIG } from './notebookBuildConfig';
 import { extractMermaidBlocksFromMarkdown, replaceMermaidBlockInMarkdown } from '../../services/mermaidService';
 import { MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
-import { getNotebookPlannerDocsPaths } from '../../services/docsContextService';
+import { formatDocsContext, getNotebookPlannerDocsPaths } from '../../services/docsContextService';
 import { planNotebook, summarizeBuild } from '../../services/llmService';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import { normalizeNotebookPlan, parseNotebookPlan } from '../../services/notebookPlanService';
@@ -669,10 +669,11 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         deps.setMarkdownMermaidActiveIndex(i);
         await deps.setDiagramTypeAndWait(targetDiagramType);
         const docsState = await deps.loadBuildDocsEntries(targetDiagramType);
-        const blockDocs = await deps.getDocsContext('build');
-        const docsEntries = (docsState as { entries?: Array<{ path: string }> }).entries ?? [];
+        const docsEntries = (docsState as { entries?: Array<{ path: string; text?: string; isOptional?: boolean }> }).entries ?? [];
         const docsSelections = (docsState as { selections?: Record<string, Record<string, boolean>> }).selections ?? {};
         const buildSelection = docsSelections.build ?? {};
+        const selectedDocsEntries = docsEntries.filter((entry) => buildSelection[entry.path] !== false);
+        const blockDocs = formatDocsContext(selectedDocsEntries as never);
         const selectionSummary = await deps.getDocsSelectionSummary?.('build');
         const includedPaths = docsEntries.length
           ? docsEntries.filter((entry) => buildSelection[entry.path] !== false).map((entry) => entry.path)

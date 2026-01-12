@@ -44,6 +44,7 @@ interface EditorColumnProps {
   onSnapshot: () => void;
   isAIReady: boolean;
   isProcessing: boolean;
+  activeOperationKind?: 'chat' | 'build' | 'analyze' | 'fix' | 'compile' | null;
   isReadOnly: boolean;
   analyzeLanguage: string;
   onAnalyzeLanguageChange: (lang: string) => void;
@@ -83,6 +84,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   onSnapshot,
   isAIReady,
   isProcessing,
+  activeOperationKind = null,
   isReadOnly,
   analyzeLanguage,
   onAnalyzeLanguageChange,
@@ -336,6 +338,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
           markdownValidCount={markdownValidCount}
           markdownInvalidCount={markdownInvalidCount}
           isProcessing={isProcessing}
+          activeOperationKind={activeOperationKind}
           isAIReady={isAIReady}
           isReadOnly={isReadOnly}
           canAnalyze={canAnalyze}

@@ -90,6 +90,7 @@ function App() {
     isNotebookChatMode,
     operationLogs,
     activeOperationLog,
+    activeOperationKind,
   } = useDiagramStudio();
   const buildDocsSystemPrompts = {
     chat: {
@@ -279,6 +280,7 @@ function App() {
                 onBackToNotebookMainChat={backToNotebookMainChat}
                 operationLogs={operationLogs}
                 activeOperationLog={activeOperationLog}
+                activeOperationKind={activeOperationKind}
                 onOpenBuildDocsFile={handleOpenBuildDocsFile}
               />
             </div>
@@ -299,6 +301,7 @@ function App() {
                 onSnapshot={isProjectPreview ? () => {} : handleManualSnapshot}
                 isAIReady={!isProjectPreview && connectionState.status === 'connected' && !!aiConfig.selectedModelId}
                 isProcessing={isProcessing}
+                activeOperationKind={activeOperationKind}
                 isReadOnly={isProjectPreview}
                 analyzeLanguage={appState.analyzeLanguage}
                 onAnalyzeLanguageChange={setAnalyzeLanguage}

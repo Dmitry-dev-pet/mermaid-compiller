@@ -337,6 +337,7 @@ export const useDiagramStudio = () => {
     setBuildDocsActivePath,
     setBuildDocsActivePathForMode,
     getDocsContext,
+    getViewerDocsContext,
     getDocsSelectionSummary,
     loadBuildDocsEntries,
     toggleBuildDocSelection,
@@ -346,6 +347,7 @@ export const useDiagramStudio = () => {
     setSystemPromptRaw,
     buildDocsSelectionsByMode,
     setBuildDocSelectionForMode,
+    buildDocsType,
   } = useBuildDocs(docsDiagramType);
 
   useEffect(() => {
@@ -420,20 +422,31 @@ export const useDiagramStudio = () => {
     return null;
   }, [filteredOperationLogs]);
 
+  const activeOperationKind = useMemo(() => {
+    const title = filteredActiveOperationLog?.events?.[0]?.title?.toLowerCase() ?? '';
+    if (!title) return null;
+    if (title.includes('чат')) return 'chat';
+    if (title.includes('сборка') || title.includes('notebook build') || title === 'build') return 'build';
+    if (title.includes('анализ')) return 'analyze';
+    if (title.includes('исправление')) return 'fix';
+    if (title.includes('пересборка') || title.includes('recompile')) return 'compile';
+    return null;
+  }, [filteredActiveOperationLog]);
+
   const {
     buildPromptPreview,
     promptPreviewByMode,
     resetPromptPreview,
     setPromptPreview,
   } = usePromptPreview({
-    diagramType: docsDiagramType,
+    diagramType: editorTab === 'build_docs' ? (buildDocsType ?? docsDiagramType) : docsDiagramType,
     analyzeLanguage: appState.analyzeLanguage ?? 'auto',
     appLanguage: appState.language ?? 'auto',
     isNotebookChatEnabled,
     messages: chatMessagesForView,
     diagramIntent,
     resolveActiveMermaidContext,
-    getDocsContext,
+    getDocsContext: editorTab === 'build_docs' ? getViewerDocsContext : getDocsContext,
   });
 
   const { buildDocsIntentText } = useNotebookChat({
@@ -1039,6 +1052,7 @@ export const useDiagramStudio = () => {
     isNotebookChatMode,
     operationLogs: filteredOperationLogs,
     activeOperationLog: filteredActiveOperationLog,
+    activeOperationKind,
     onLLMRequestStart: handleLLMRequestStart,
   };
 };

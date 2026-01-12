@@ -103,7 +103,7 @@ export type OperationEvent = {
   tooltipMessages?: string;
   tooltipDocs?: string;
   kind?: 'context' | 'planner' | 'block' | 'attempt' | 'status';
-  contextScope?: 'planner' | 'build' | 'block';
+  contextScope?: 'planner' | 'build' | 'block' | 'chat' | 'analyze' | 'fix';
   blockIndex?: number;
   attempt?: { current: number; max: number };
   metrics?: { autoFix?: number; tokens?: number; durationMs?: number };
