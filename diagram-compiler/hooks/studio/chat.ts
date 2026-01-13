@@ -11,6 +11,7 @@ import { runStudioOperation } from './runStudioOperation';
 import { isDefaultSessionTitle } from '../../services/history/sessionTitle';
 import { createStudioOperationRunner } from './operationRunner';
 import { buildSystemPrompt } from '../../services/llm/prompts';
+import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
 import {
   buildContextTooltipForLog,
   buildDocsTooltipForLog,
@@ -152,11 +153,22 @@ export const createChatHandler = (ctx: StudioContext) => {
           });
           const docsDetail = formatDocsDetailForLog({ docsContext: docs, selectionSummary });
           const msgSummary = summarizeMessagesForLog(llmMessages);
+          const selectionLine = (() => {
+            if (ctx.appState.diagramType && ctx.appState.diagramType !== 'auto') {
+              return `selection: ${getDiagramTypeShortLabel(ctx.appState.diagramType)}`;
+            }
+            if (allowedNotebookTypes?.length) {
+              const set = allowedNotebookTypes.map((t) => getDiagramTypeShortLabel(t)).join('/');
+              return `selection: ${set}`;
+            }
+            return '';
+          })();
           logEvent({
             phase: 'chat',
             level: 'info',
             title: 'Контекст',
             detail: joinLogDetailLines(
+              selectionLine,
               `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
               docsDetail
             ),

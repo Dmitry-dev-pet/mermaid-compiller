@@ -83,6 +83,13 @@ const getDiagramTypeRule = (
     return '';
   }
 
+  if ((mode === 'chat' || mode === 'chat_diagram') && diagramType === 'auto' && allowedDiagramTypes?.length) {
+    const list = allowedDiagramTypes.join(', ');
+    return promptLanguage === 'Russian'
+      ? `ограничение типов: только ${list}.`
+      : `allowed types: ${list}.`;
+  }
+
   const sanitizeTypeRuleForGenerate = (rule: string) => {
     const patterns = promptLanguage === 'Russian'
       ? [
@@ -535,13 +542,34 @@ const getDiagramTypeRule = (
     : "Default to 'flowchart TD' if unspecified.";
 };
 
+const getPlannerSelectionRule = (
+  diagramType: DiagramType | undefined,
+  allowedDiagramTypes: DiagramType[] | null | undefined,
+  promptLanguage: PromptLanguage
+) => {
+  if (diagramType && diagramType !== 'auto') {
+    return promptLanguage === 'Russian'
+      ? `- Активен forcedDiagramType: ${diagramType}. Следуй ему строго.`
+      : `- forcedDiagramType is active: ${diagramType}. Follow it strictly.`;
+  }
+  if (allowedDiagramTypes?.length) {
+    const list = allowedDiagramTypes.join(', ');
+    return promptLanguage === 'Russian'
+      ? `- Активен набор allowedDiagramTypes: ${list}. Выбирай diagramType только из этого списка.`
+      : `- allowedDiagramTypes is active: ${list}. Choose diagramType only from this list.`;
+  }
+  return '';
+};
+
 export const buildSystemPrompt = (mode: PromptMode, args: PromptArgs): string => {
   const promptLanguage = resolvePromptLanguage(args.language);
   const template = PROMPT_TEMPLATES[promptLanguage][mode];
 
-  const typeRule = mode === 'generate' || mode === 'chat' || mode === 'chat_diagram' || mode === 'chat_notebook'
-    ? getDiagramTypeRule(args.diagramType, args.allowedDiagramTypes, mode, promptLanguage)
-    : '';
+  const typeRule = mode === 'plan_notebook'
+    ? getPlannerSelectionRule(args.diagramType, args.allowedDiagramTypes, promptLanguage)
+    : (mode === 'generate' || mode === 'chat' || mode === 'chat_diagram' || mode === 'chat_notebook'
+      ? getDiagramTypeRule(args.diagramType, args.allowedDiagramTypes, mode, promptLanguage)
+      : '');
 
   const languageInstruction = getLanguageInstruction(args.language, promptLanguage);
   const docsContext = args.docsContext;

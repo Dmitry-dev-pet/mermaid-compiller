@@ -24,6 +24,7 @@ import {
   joinLogDetailLines,
   summarizeMessagesForLog,
 } from './logContextUtils';
+import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
 
 const NOTEBOOK_STYLE_CONSTRAINT_EN = 'No styling directives or color instructions (no theme/look/init/colors).';
 const NOTEBOOK_STYLE_CONSTRAINT_RU = 'Без стилевых директив и цветовых инструкций (без theme/look/init/colors).';
@@ -610,6 +611,8 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
       const plannerSystemPrompt = buildSystemPrompt('plan_notebook', {
         docsContext: 'Documentation context redacted.',
         language,
+        diagramType: forcedDiagramType ?? deps.appState.diagramType,
+        allowedDiagramTypes,
       });
       const plannerTooltip = buildContextTooltipForLog({
         systemPrompt: plannerSystemPrompt,
@@ -622,6 +625,11 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         level: 'info',
         title: 'Контекст',
         detail: joinLogDetailLines(
+          forcedDiagramType
+            ? `selection: ${getDiagramTypeShortLabel(forcedDiagramType)}`
+            : (allowedDiagramTypes?.length
+              ? `selection: ${allowedDiagramTypes.map((t) => getDiagramTypeShortLabel(t)).join('/')}`
+              : ''),
           `messages: ${plannerMessageSummary.count} (${plannerMessageSummary.tokens} tok)`,
           plannerDocsDetail
         ),
