@@ -19,12 +19,9 @@ import { runBuildPipeline } from './buildPipeline';
 import { createStudioOperationRunner, type StudioOperationRunner } from './operationRunner';
 import { buildOperationLogViewModel } from '../../components/chat/operationLogUtils';
 import {
-  buildContextTooltipForLog,
-  buildDocsTooltipForLog,
-  formatDocsDetailForLog,
-  joinLogDetailLines,
-  summarizeMessagesForLog,
   buildContextEventForLog,
+  formatDocsDetailForLog,
+  summarizeMessagesForLog,
 } from './logContextUtils';
 import { toRunnerContextEvent } from './operationTracer';
 import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
@@ -492,15 +489,6 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
       { onLLMRequestStart: deps.onLLMRequestStart },
       { logEvent }
     );
-    const logLLMStart = (notice: import('../../services/llmRequestRunner').LLMRequestStartNotice) => {
-      deps.onLLMRequestStart?.(notice);
-      logEvent({
-        phase: 'build',
-        level: 'info',
-        title: 'LLM',
-        detail: `start ${notice.task}`,
-      });
-    };
     const finalizeOperation = async (
       status: 'done' | 'error',
       meta?: Record<string, unknown>,
@@ -769,33 +757,28 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               content: `Intent:\n${intentText}`,
               timestamp: Date.now(),
             };
-            const msgSummary = summarizeMessagesForLog([intentMessage]);
             const blockSystemPrompt = buildSystemPrompt('generate', {
               diagramType: targetDiagramType,
               docsContext: 'Documentation context redacted.',
               language,
             });
-            const blockTooltip = buildContextTooltipForLog({
+            const blockContextEvent = buildContextEventForLog({
+              phase: 'planning',
+              contextScope: 'block',
+              selectionLine: blockLabel,
               systemPrompt: blockSystemPrompt,
               messages: [intentMessage],
-              docsDetail,
+              docsContext: blockDocs,
+              selectionSummary: { includedPaths: selectedDocsEntries.map((entry) => entry.path) },
             });
-            const blockDocsTooltip = buildDocsTooltipForLog(docsDetail);
-            logEvent({
-              phase: 'planning',
-              level: 'info',
-              title: 'Контекст',
-              detail: joinLogDetailLines(
-                `${blockLabel}`,
-                `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-                docsDetail
-              ),
-              tooltipMessages: blockTooltip,
-              tooltipDocs: blockDocsTooltip,
-              kind: 'context',
-              contextScope: 'block',
-              blockIndex: i,
-            });
+            const blockRunner = createStudioOperationRunner(
+              { onLLMRequestStart: deps.onLLMRequestStart },
+              {
+                logEvent: (args) => {
+                  logEvent({ ...args, blockIndex: i });
+                },
+              }
+            );
             const buildResult = await runBuildPipeline({
               aiConfig: deps.aiConfig,
               modelParams: deps.modelParams,
@@ -809,7 +792,9 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               autoFixRequestRetries: NOTEBOOK_BUILD_RETRY_CONFIG.fixRequestRetries,
               timeoutMs: deps.appState.llmTimeoutMs,
               allowFallback: false,
-              onLLMRequestStart: logLLMStart,
+              runner: blockRunner,
+              stageContextScope: 'block',
+              contextEvent: toRunnerContextEvent(blockContextEvent),
               callbacks: {
                 onAttempt: (attempt, max) => {
                   attempts = attempt;

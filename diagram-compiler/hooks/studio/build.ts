@@ -207,14 +207,14 @@ export const createBuildHandler = (ctx: StudioContext) => {
         docsContext: 'Documentation context redacted.',
         language,
       });
-      logEvent(buildContextEventForLog({
+      const buildContextEvent = buildContextEventForLog({
         phase: 'planning',
         contextScope: 'build',
         systemPrompt,
         messages: llmMessages,
         docsContext: docs,
         selectionSummary,
-      }));
+      });
 
       ctx.setCurrentIntent({
         content: normalizedIntent,
@@ -241,15 +241,9 @@ export const createBuildHandler = (ctx: StudioContext) => {
         maxAttempts: BUILD_MAX_ATTEMPTS,
         autoFixMaxAttempts: AUTO_FIX_MAX_ATTEMPTS,
         timeoutMs,
-        onLLMRequestStart: (notice) => {
-          ctx.onLLMRequestStart?.(notice);
-          logEvent({
-            phase: 'build',
-            level: 'info',
-            title: 'LLM',
-            detail: `start ${notice.task}`,
-          });
-        },
+        runner,
+        stageContextScope: 'build',
+        contextEvent: toRunnerContextEvent(buildContextEvent),
         callbacks: {
           onAttempt: (attempt, max) => {
             attemptNotes.push(`попытка ${attempt}/${max}`);

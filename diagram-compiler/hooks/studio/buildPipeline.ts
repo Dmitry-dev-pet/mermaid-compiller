@@ -3,10 +3,11 @@ import { generateDiagram, fixDiagram } from '../../services/llmService';
 import { runAttemptLoop } from './retry';
 import { runAutoFixLoop } from './autoFix';
 import { runLLMRequest } from '../../services/llmRequestRunner';
-import { LLM_TIMEOUT_RETRIES } from '../../constants';
+import { LLM_TIMEOUT_MS, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { formatMermaidErrorLine, sanitizeMermaidByType } from '../../utils/mermaidSanitizer';
 import { augmentMermaidErrorForAutoFix } from '../../utils/mermaidAutoFixHints';
 import type { AIConfig, DiagramType, Message, ModelParams } from '../../types';
+import type { StudioOperationRunner } from './operationRunner';
 
 type BuildAttemptCallbacks = {
   onAttempt?: (attempt: number, maxAttempts: number) => void;
@@ -42,6 +43,16 @@ type BuildPipelineOptions = {
   allowFallback?: boolean;
   callbacks?: BuildAttemptCallbacks & BuildAutoFixCallbacks & BuildValidationCallbacks;
   onLLMRequestStart?: (notice: import('../../services/llmRequestRunner').LLMRequestStartNotice) => void;
+  runner?: StudioOperationRunner;
+  stageContextScope?: import('../../types').OperationEvent['contextScope'];
+  contextEvent?: {
+    title?: string;
+    detail: string;
+    tooltipMessages?: string;
+    tooltipDocs?: string;
+    kind?: import('../../types').OperationEvent['kind'];
+    contextScope?: import('../../types').OperationEvent['contextScope'];
+  };
 };
 
 type BuildPipelineResult = {
@@ -112,9 +123,13 @@ export const runBuildPipeline = async (options: BuildPipelineOptions): Promise<B
     allowFallback = true,
     callbacks,
     onLLMRequestStart,
+    runner,
+    stageContextScope,
+    contextEvent,
   } = options;
   let currentAttempt = 0;
   let suppressEmpty = false;
+  let contextSent = false;
   const attemptResult = await runAttemptLoop({
     maxAttempts,
     onAttempt: (attempt) => {
@@ -133,13 +148,24 @@ export const runBuildPipeline = async (options: BuildPipelineOptions): Promise<B
       callbacks?.onError?.(attempt, maxAttempts, message);
     },
     execute: async () => {
-      const rawCode = await runLLMRequest({
-        task: 'build',
-        run: () => generateDiagram(llmMessages, aiConfig, diagramType, docs, language, modelParams),
-        retries: buildRequestRetries,
-        timeoutMs,
-        onStart: onLLMRequestStart,
-      });
+      const rawCode = runner
+        ? await runner.runLLM({
+            task: 'build',
+            phase: 'build',
+            run: () => generateDiagram(llmMessages, aiConfig, diagramType, docs, language, modelParams),
+            retries: buildRequestRetries,
+            timeoutMs: timeoutMs ?? LLM_TIMEOUT_MS,
+            stageContextScope,
+            contextEvent: contextEvent && !contextSent ? contextEvent : undefined,
+          })
+        : await runLLMRequest({
+            task: 'build',
+            run: () => generateDiagram(llmMessages, aiConfig, diagramType, docs, language, modelParams),
+            retries: buildRequestRetries,
+            timeoutMs,
+            onStart: onLLMRequestStart,
+          });
+      contextSent = true;
       const parsed = parseMermaidJsonResponse(rawCode);
       if (parsed) {
         if (parsed.status !== 'ok') {
@@ -204,13 +230,22 @@ export const runBuildPipeline = async (options: BuildPipelineOptions): Promise<B
       const enrichedErrorMessage = augmentMermaidErrorForAutoFix(diagramType, errorMessage);
       const errorLine = formatMermaidErrorLine(enrichedErrorMessage, 200);
       callbacks?.onAutoFixAttempt?.(currentAttempt, autoFixMaxAttempts, errorLine || undefined);
-      const fixedRaw = await runLLMRequest({
-        task: 'auto-fix',
-        run: () => fixDiagram(code, enrichedErrorMessage, aiConfig, docs, language, modelParams),
-        retries: autoFixRequestRetries,
-        timeoutMs,
-        onStart: onLLMRequestStart,
-      });
+      const fixedRaw = runner
+        ? await runner.runLLM({
+            task: 'auto-fix',
+            phase: 'fix',
+            run: () => fixDiagram(code, enrichedErrorMessage, aiConfig, docs, language, modelParams),
+            retries: autoFixRequestRetries,
+            timeoutMs: timeoutMs ?? LLM_TIMEOUT_MS,
+            stageContextScope,
+          })
+        : await runLLMRequest({
+            task: 'auto-fix',
+            run: () => fixDiagram(code, enrichedErrorMessage, aiConfig, docs, language, modelParams),
+            retries: autoFixRequestRetries,
+            timeoutMs,
+            onStart: onLLMRequestStart,
+          });
       return sanitizeMermaidByType(diagramType, extractMermaidCode(fixedRaw));
     },
     onIteration: (code, nextValidation) => {
