@@ -21,6 +21,7 @@ type PromptArgs = {
 
 type TemplateValues = {
   typeRule: string;
+  diagramTypeValues: string;
   languageInstruction: string;
   docsContext: string;
 };
@@ -65,6 +66,30 @@ const getLanguageInstruction = (language: string, promptLanguage: PromptLanguage
   return promptLanguage === 'Russian'
     ? '\nВАЖНО: отвечай на русском.'
     : '\nIMPORTANT: Respond in English.';
+};
+
+const getDiagramTypeValues = (
+  diagramType: DiagramType | undefined,
+  allowedDiagramTypes: DiagramType[] | null | undefined,
+  mode: PromptMode,
+  promptLanguage: PromptLanguage
+) => {
+  if (mode === 'chat_notebook') {
+    if (allowedDiagramTypes?.length) return allowedDiagramTypes.join(', ');
+    return promptLanguage === 'Russian'
+      ? 'любой поддерживаемый Mermaid diagramType (пример: flowchart, sequence, er)'
+      : 'any supported Mermaid diagramType (e.g. flowchart, sequence, er)';
+  }
+
+  if ((mode === 'chat' || mode === 'chat_diagram') && allowedDiagramTypes?.length) {
+    return allowedDiagramTypes.join(', ');
+  }
+
+  if (diagramType && diagramType !== 'auto') return diagramType;
+
+  return promptLanguage === 'Russian'
+    ? 'flowchart, sequence, er (или другой поддерживаемый Mermaid diagramType)'
+    : 'flowchart, sequence, er (or another supported Mermaid diagramType)';
 };
 
 const getDiagramTypeRule = (
@@ -587,10 +612,12 @@ export const buildSystemPrompt = (mode: PromptMode, args: PromptArgs): string =>
       : '');
 
   const languageInstruction = getLanguageInstruction(args.language, promptLanguage);
+  const diagramTypeValues = getDiagramTypeValues(args.diagramType, args.allowedDiagramTypes, mode, promptLanguage);
   const docsContext = args.docsContext;
 
   return renderTemplate(template, {
     typeRule,
+    diagramTypeValues,
     languageInstruction,
     docsContext,
   });
