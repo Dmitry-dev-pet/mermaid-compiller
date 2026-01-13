@@ -427,6 +427,31 @@ export const createBuildHandler = (ctx: StudioContext) => {
           `Fallback: ${buildResult.usedFallback ? 'yes' : 'no'}`,
           `Intent length: ${normalizedIntent.length}`,
         ].join('\n');
+        const summaryMessage = { id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() } as const;
+        const msgSummary = summarizeMessagesForLog([summaryMessage]);
+        const docsDetail = formatDocsDetailForLog({ docsContext: '', selectionSummary: null });
+        const systemPrompt = buildSystemPrompt('summary', {
+          docsContext: 'Documentation context redacted.',
+          language,
+          diagramType: ctx.appState.diagramType,
+        });
+        logEvent({
+          phase: 'build',
+          level: 'info',
+          title: 'Контекст',
+          detail: [
+            `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
+            docsDetail,
+          ].join('\n'),
+          tooltipMessages: buildContextTooltipForLog({
+            systemPrompt,
+            messages: [summaryMessage],
+            docsDetail,
+          }),
+          tooltipDocs: buildDocsTooltipForLog(docsDetail),
+          kind: 'context',
+          contextScope: 'build',
+        });
         const summaryText = await runner.runLLM({
           task: 'build-summary',
           phase: 'build',
@@ -435,7 +460,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
           stageTitle: 'Итог',
           stageContextScope: 'build',
           run: () => summarizeBuild(
-            [{ id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() }],
+            [summaryMessage],
             ctx.aiConfig,
             '',
             language,
