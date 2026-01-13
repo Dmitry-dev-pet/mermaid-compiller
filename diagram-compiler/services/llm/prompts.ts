@@ -75,10 +75,25 @@ const getDiagramTypeRule = (
 ) => {
   if (mode === 'chat_notebook') {
     if (diagramType === 'auto') {
-      const mainList = (allowedDiagramTypes?.length ? allowedDiagramTypes : MAIN_DIAGRAM_TYPES).join(', ');
+      const list = (allowedDiagramTypes?.length ? allowedDiagramTypes : MAIN_DIAGRAM_TYPES);
+      const mainSet = new Set<string>(MAIN_DIAGRAM_TYPES);
+      const isMain =
+        list.length === MAIN_DIAGRAM_TYPES.length
+        && list.every((type) => mainSet.has(type));
+      const listText = list.join(', ');
       return promptLanguage === 'Russian'
-        ? `- Режим Main: в разделе Diagrams выбирай только из ${mainList} (не обязательно все типы).`
-        : `- Main mode: in the Diagrams list choose only from ${mainList} (not necessarily all types).`;
+        ? [
+            isMain
+              ? `- Режим Main: в разделе Diagrams выбирай только из ${listText} (не обязательно все типы).`
+              : `- Набор типов: в разделе Diagrams выбирай только из ${listText} (не обязательно все типы).`,
+            '- НЕ используй другие типы диаграмм, даже если они кажутся уместными.',
+          ].join('\n')
+        : [
+            isMain
+              ? `- Main mode: in the Diagrams list choose only from ${listText} (not necessarily all types).`
+              : `- Active set: in the Diagrams list choose only from ${listText} (not necessarily all types).`,
+            '- Do NOT use other diagram types, even if they seem appropriate.',
+          ].join('\n');
     }
     return '';
   }
