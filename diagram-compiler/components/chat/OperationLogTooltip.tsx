@@ -119,7 +119,6 @@ const OperationLogTooltip: React.FC<Props> = ({
             top: position.top,
             left: position.left,
             width: position.width,
-            maxHeight: position.maxHeight,
             zIndex: TOOLTIP_Z_INDEX,
           }}
           onClick={(event) => {
@@ -133,7 +132,10 @@ const OperationLogTooltip: React.FC<Props> = ({
             </div>
           ) : null}
           {isPinned ? (
-            <div className="mt-1 max-h-full overflow-auto rounded bg-slate-900 px-2 py-1 shadow-lg whitespace-pre-wrap">
+            <div
+              className="mt-1 overflow-auto overscroll-contain rounded bg-slate-900 px-2 py-1 shadow-lg whitespace-pre-wrap"
+              style={{ maxHeight: position.maxHeight }}
+            >
               {content}
             </div>
           ) : null}
