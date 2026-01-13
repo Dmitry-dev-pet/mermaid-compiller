@@ -14,7 +14,7 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
 - If requestedNRange is provided (e.g., 2-4), choose resolvedN within that range.
 - If requestedN is null, choose 2–4 diagrams by default (prefer 3 unless the request clearly implies fewer/more).
 - Each diagram must have an independent buildPrompt and explicit diagramType.
-- diagramType must be one of: architecture, block, c4, class, er, flowchart, gantt, gitGraph, kanban, mindmap, packet, pie, quadrantChart, radar, requirementDiagram, sequence, sankey, state, timeline, treemap, userJourney, xychart, zenuml.
+- diagramType must be one of the values from supportedDiagramTypes provided in the user message.
 - If forcedDiagramType is provided in the user message, EVERY diagramType must equal it.
 - If allowedDiagramTypes is provided in the user message, choose each diagramType only from that list (you do NOT need to use all of them).
 {{typeRule}}
@@ -61,7 +61,7 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
 - Если requestedNRange задан (например, 2-4), выбери resolvedN в пределах этого диапазона.
 - Если requestedN равен null, по умолчанию выбери 2–4 диаграммы (предпочитай 3, если запрос не требует иного).
 - Каждая диаграмма должна иметь независимый buildPrompt и явный diagramType.
-- diagramType должен быть одним из: architecture, block, c4, class, er, flowchart, gantt, gitGraph, kanban, mindmap, packet, pie, quadrantChart, radar, requirementDiagram, sequence, sankey, state, timeline, treemap, userJourney, xychart, zenuml.
+- diagramType должен быть одним из значений supportedDiagramTypes, переданных в сообщении пользователя.
 - Если forcedDiagramType задан в сообщении пользователя, КАЖДЫЙ diagramType должен быть равен ему.
 - Если allowedDiagramTypes задан в сообщении пользователя, каждый diagramType выбирай ТОЛЬКО из этого списка (не обязательно использовать все типы из списка).
 {{typeRule}}
