@@ -1,4 +1,5 @@
 import type { Message } from '../../types';
+import type { OperationEvent, OperationPhase } from '../../types';
 
 type DocsSelectionSummary = {
   includedPaths: string[];
@@ -102,3 +103,40 @@ export const buildContextTooltipForLog = (args: {
 };
 
 export const buildDocsTooltipForLog = (docsDetail: string) => `Docs:\n${docsDetail.trim().length > 0 ? docsDetail : '(none)'}`;
+
+export const buildContextEventForLog = (args: {
+  phase: OperationPhase;
+  contextScope: OperationEvent['contextScope'];
+  selectionLine?: string;
+  systemPrompt: string;
+  messages: Message[];
+  docsContext: string;
+  selectionSummary?: DocsSelectionSummary | null;
+  docsPrefix?: string;
+}) => {
+  const docsDetail = formatDocsDetailForLog({
+    docsContext: args.docsContext,
+    selectionSummary: args.selectionSummary,
+    prefix: args.docsPrefix,
+  });
+  const msgSummary = summarizeMessagesForLog(args.messages);
+  const detail = joinLogDetailLines(
+    args.selectionLine,
+    `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
+    docsDetail
+  );
+  return {
+    phase: args.phase,
+    level: 'info' as const,
+    title: 'Контекст',
+    detail,
+    tooltipMessages: buildContextTooltipForLog({
+      systemPrompt: args.systemPrompt,
+      messages: args.messages,
+      docsDetail,
+    }),
+    tooltipDocs: buildDocsTooltipForLog(docsDetail),
+    kind: 'context' as const,
+    contextScope: args.contextScope,
+  };
+};

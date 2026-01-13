@@ -13,12 +13,9 @@ import { createStudioOperationRunner } from './operationRunner';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
 import {
-  buildContextTooltipForLog,
-  buildDocsTooltipForLog,
-  formatDocsDetailForLog,
-  joinLogDetailLines,
-  summarizeMessagesForLog,
+  buildContextEventForLog,
 } from './logContextUtils';
+import { toRunnerContextEvent } from './operationTracer';
 
 export const createChatHandler = (ctx: StudioContext) => {
   return async (text: string) => {
@@ -151,8 +148,6 @@ export const createChatHandler = (ctx: StudioContext) => {
             docsContext: 'Documentation context redacted.',
             language,
           });
-          const docsDetail = formatDocsDetailForLog({ docsContext: docs, selectionSummary });
-          const msgSummary = summarizeMessagesForLog(llmMessages);
           const selectionLine = (() => {
             if (ctx.appState.diagramType && ctx.appState.diagramType !== 'auto') {
               return `selection: ${getDiagramTypeShortLabel(ctx.appState.diagramType)}`;
@@ -163,29 +158,21 @@ export const createChatHandler = (ctx: StudioContext) => {
             }
             return '';
           })();
-          logEvent({
+          const contextEvent = buildContextEventForLog({
             phase: 'chat',
-            level: 'info',
-            title: 'Контекст',
-            detail: joinLogDetailLines(
-              selectionLine,
-              `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-              docsDetail
-            ),
-            tooltipMessages: buildContextTooltipForLog({
-              systemPrompt,
-              messages: llmMessages,
-              docsDetail,
-            }),
-            tooltipDocs: buildDocsTooltipForLog(docsDetail),
-            kind: 'context',
             contextScope: 'chat',
+            selectionLine,
+            systemPrompt,
+            messages: llmMessages,
+            docsContext: docs,
+            selectionSummary,
           });
           const responseText = await runner.runLLM({
             task: 'chat',
             phase: 'chat',
             retries: LLM_TIMEOUT_RETRIES,
             timeoutMs: ctx.appState.llmTimeoutMs,
+            contextEvent: toRunnerContextEvent(contextEvent),
             onTimeoutDetail: (notice) => formatTimeoutRetryMessage('Chat', notice.attempt, notice.maxAttempts),
             run: () => (
               useNotebookIntent

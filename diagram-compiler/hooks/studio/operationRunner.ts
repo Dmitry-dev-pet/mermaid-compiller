@@ -20,6 +20,14 @@ type RunLLMArgs<T> = {
   timeoutMs: number;
   stageTitle?: string;
   stageContextScope?: import('../../types').OperationEvent['contextScope'];
+  contextEvent?: {
+    title?: string;
+    detail: string;
+    tooltipMessages?: string;
+    tooltipDocs?: string;
+    kind?: import('../../types').OperationEvent['kind'];
+    contextScope?: import('../../types').OperationEvent['contextScope'];
+  };
   onTimeoutDetail?: (notice: TimeoutNotice) => string;
   onStart?: (notice: LLMRequestStartNotice) => void;
   onFinish?: (notice: LLMRequestFinishNotice) => void;
@@ -35,7 +43,9 @@ export const createStudioOperationRunner = (
 ): StudioOperationRunner => {
   const runLLM: StudioOperationRunner['runLLM'] = async (args) => {
     const stageTitle = args.stageTitle;
+    const contextEvent = args.contextEvent;
     let stageStarted = false;
+    let contextLogged = false;
 
     return runLLMRequest({
       task: args.task,
@@ -45,6 +55,19 @@ export const createStudioOperationRunner = (
       onStart: (notice) => {
         ctx.onLLMRequestStart?.(notice);
         args.onStart?.(notice);
+        if (contextEvent && !contextLogged) {
+          contextLogged = true;
+          helpers.logEvent({
+            phase: args.phase,
+            level: 'info',
+            title: contextEvent.title ?? 'Контекст',
+            detail: contextEvent.detail,
+            tooltipMessages: contextEvent.tooltipMessages,
+            tooltipDocs: contextEvent.tooltipDocs,
+            kind: contextEvent.kind ?? 'context',
+            contextScope: contextEvent.contextScope ?? args.stageContextScope,
+          });
+        }
         helpers.logEvent({
           phase: args.phase,
           level: 'info',

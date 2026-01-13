@@ -11,12 +11,9 @@ import { runStudioOperation } from './runStudioOperation';
 import { createStudioOperationRunner } from './operationRunner';
 import { buildOperationLogViewModel } from '../../components/chat/operationLogUtils';
 import {
-  buildContextTooltipForLog,
-  buildDocsTooltipForLog,
-  formatDocsDetailForLog,
-  joinLogDetailLines,
-  summarizeMessagesForLog,
+  buildContextEventForLog,
 } from './logContextUtils';
+import { toRunnerContextEvent } from './operationTracer';
 
 export const createBuildHandler = (ctx: StudioContext) => {
   return async (text?: string) => {
@@ -205,32 +202,19 @@ export const createBuildHandler = (ctx: StudioContext) => {
       const llmMessages = diagramContext ? [intentMessage, diagramContext] : [intentMessage];
 
       const selectionSummary = await ctx.getDocsSelectionSummary?.('build');
-      const msgSummary = summarizeMessagesForLog(llmMessages);
       const systemPrompt = buildSystemPrompt('generate', {
         diagramType: ctx.appState.diagramType,
         docsContext: 'Documentation context redacted.',
         language,
       });
-      const docsDetail = formatDocsDetailForLog({ docsContext: docs, selectionSummary });
-      const contextTooltip = buildContextTooltipForLog({
+      logEvent(buildContextEventForLog({
+        phase: 'planning',
+        contextScope: 'build',
         systemPrompt,
         messages: llmMessages,
-        docsDetail,
-      });
-      const docsTooltip = buildDocsTooltipForLog(docsDetail);
-      logEvent({
-        phase: 'planning',
-        level: 'info',
-        title: 'Контекст',
-        detail: joinLogDetailLines(
-          `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-          docsDetail
-        ),
-        tooltipMessages: contextTooltip,
-        tooltipDocs: docsTooltip,
-        kind: 'context',
-        contextScope: 'build',
-      });
+        docsContext: docs,
+        selectionSummary,
+      }));
 
       ctx.setCurrentIntent({
         content: normalizedIntent,
@@ -463,42 +447,32 @@ export const createBuildHandler = (ctx: StudioContext) => {
           operationLogText ? `\n${operationLogText}` : '',
         ].join('\n');
         const summaryMessage = { id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() } as const;
-        const msgSummary = summarizeMessagesForLog([summaryMessage]);
-        const docsDetail = formatDocsDetailForLog({ docsContext: '', selectionSummary: null });
         const systemPrompt = buildSystemPrompt('summary', {
           docsContext: 'Documentation context redacted.',
           language,
           diagramType: ctx.appState.diagramType,
         });
-        logEvent({
+        const summaryContextEvent = buildContextEventForLog({
           phase: 'build',
-          level: 'info',
-          title: 'Контекст',
-          detail: joinLogDetailLines(
-            `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-            docsDetail
-          ),
-          tooltipMessages: buildContextTooltipForLog({
-            systemPrompt,
-            messages: [summaryMessage],
-            docsDetail,
-          }),
-          tooltipDocs: buildDocsTooltipForLog(docsDetail),
-          kind: 'context',
           contextScope: 'summary',
+          systemPrompt,
+          messages: [summaryMessage],
+          docsContext: '',
+          selectionSummary: null,
         });
-        const summaryText = await runner.runLLM({
-          task: 'build-summary',
-          phase: 'build',
-          retries: 1,
-          timeoutMs,
-          stageTitle: 'Итог',
-          stageContextScope: 'summary',
-          run: () => summarizeBuild(
-            [summaryMessage],
-            ctx.aiConfig,
-            '',
-            language,
+          const summaryText = await runner.runLLM({
+            task: 'build-summary',
+            phase: 'build',
+            retries: 1,
+            timeoutMs,
+            stageTitle: 'Итог',
+            stageContextScope: 'summary',
+            contextEvent: toRunnerContextEvent(summaryContextEvent),
+            run: () => summarizeBuild(
+              [summaryMessage],
+              ctx.aiConfig,
+              '',
+              language,
             ctx.modelParams
           ),
         });

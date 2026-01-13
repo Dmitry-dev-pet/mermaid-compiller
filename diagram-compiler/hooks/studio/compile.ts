@@ -16,10 +16,12 @@ import { buildSystemPrompt } from '../../services/llm/prompts';
 import {
   buildContextTooltipForLog,
   buildDocsTooltipForLog,
+  buildContextEventForLog,
   formatDocsDetailForLog,
   joinLogDetailLines,
   summarizeMessagesForLog,
 } from './logContextUtils';
+import { toRunnerContextEvent } from './operationTracer';
 import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
 import { runStudioOperation } from './runStudioOperation';
 import { createStudioOperationRunner } from './operationRunner';
@@ -491,34 +493,18 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             content: analysisInput,
             timestamp: Date.now(),
           };
-          const msgSummary = summarizeMessagesForLog([analyzeMessage]);
-          const docsDetail = formatDocsDetailForLog({
-            docsContext: docs,
-            selectionSummary: effectiveSelectionSummary,
-          });
           const systemPrompt = buildSystemPrompt('analyze', {
             diagramType: detectedDiagramType,
             docsContext: 'Documentation context redacted.',
             language,
           });
-          const tooltipMessages = buildContextTooltipForLog({
+          const analyzeContextEvent = buildContextEventForLog({
+            phase: 'analyze',
+            contextScope: 'analyze',
             systemPrompt,
             messages: [analyzeMessage],
-            docsDetail,
-          });
-          const tooltipDocs = buildDocsTooltipForLog(docsDetail);
-          logEvent({
-            phase: 'analyze',
-            level: 'info',
-            title: 'Контекст',
-            detail: joinLogDetailLines(
-              `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-              docsDetail
-            ),
-            tooltipMessages,
-            tooltipDocs,
-            kind: 'context',
-            contextScope: 'analyze',
+            docsContext: docs,
+            selectionSummary: effectiveSelectionSummary,
           });
           const runner = createStudioOperationRunner(ctx, { logEvent });
           let llmDurationMs: number | null = null;
@@ -528,6 +514,7 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             run: () => analyzeDiagram(analysisInput, ctx.aiConfig, docs, language, ctx.modelParams),
             retries: LLM_TIMEOUT_RETRIES,
             timeoutMs: ctx.appState.llmTimeoutMs,
+            contextEvent: toRunnerContextEvent(analyzeContextEvent),
             onFinish: (notice) => {
               if (notice.status === 'success') {
                 llmDurationMs = notice.durationMs;

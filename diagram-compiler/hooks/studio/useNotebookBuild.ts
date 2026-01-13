@@ -23,7 +23,9 @@ import {
   formatDocsDetailForLog,
   joinLogDetailLines,
   summarizeMessagesForLog,
+  buildContextEventForLog,
 } from './logContextUtils';
+import { toRunnerContextEvent } from './operationTracer';
 import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
 
 const NOTEBOOK_STYLE_CONSTRAINT_EN = 'No styling directives or color instructions (no theme/look/init/colors).';
@@ -1106,29 +1108,18 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             operationLogText ? `\n${operationLogText}` : '',
           ].filter(Boolean).join('\n');
           const summaryMessage = { id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() } as const;
-          const msgSummary = summarizeMessagesForLog([summaryMessage]);
-          const docsDetail = formatDocsDetailForLog({ docsContext: '', selectionSummary: null });
           const systemPrompt = buildSystemPrompt('summary', {
             docsContext: 'Documentation context redacted.',
             language,
             diagramType: deps.appState.diagramType,
           });
-          logEvent({
+          const summaryContextEvent = buildContextEventForLog({
             phase: 'build',
-            level: 'info',
-            title: 'Контекст',
-            detail: joinLogDetailLines(
-              `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-              docsDetail
-            ),
-            tooltipMessages: buildContextTooltipForLog({
-              systemPrompt,
-              messages: [summaryMessage],
-              docsDetail,
-            }),
-            tooltipDocs: buildDocsTooltipForLog(docsDetail),
-            kind: 'context',
             contextScope: 'summary',
+            systemPrompt,
+            messages: [summaryMessage],
+            docsContext: '',
+            selectionSummary: null,
           });
           const summaryText = await runner.runLLM({
             task: 'build-summary',
@@ -1137,6 +1128,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             timeoutMs: deps.appState.llmTimeoutMs,
             stageTitle: 'Итог',
             stageContextScope: 'summary',
+            contextEvent: toRunnerContextEvent(summaryContextEvent),
             run: () => summarizeBuild(
               [summaryMessage],
               deps.aiConfig,
