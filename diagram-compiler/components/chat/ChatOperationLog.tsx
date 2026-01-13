@@ -36,20 +36,9 @@ const ChatOperationLog: React.FC<Props> = ({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setPinnedTooltip(null);
     };
-    const onPointerDown = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) {
-        setPinnedTooltip(null);
-        return;
-      }
-      const wrapper = target.closest('[data-tooltip-root]');
-      if (!wrapper) setPinnedTooltip(null);
-    };
     window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('pointerdown', onPointerDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('pointerdown', onPointerDown);
     };
   }, [pinnedTooltip]);
 

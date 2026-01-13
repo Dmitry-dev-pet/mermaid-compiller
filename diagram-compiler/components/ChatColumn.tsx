@@ -693,7 +693,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
             {chatMessages.length === 0 ? (
               <>
                 {unanchoredLogs.map((log) => (
-                  <div key={log.id} className="flex flex-col items-start gap-2">
+                  <div key={log.id} className="flex w-full flex-col items-stretch gap-2">
                     <ChatOperationLog
                       operationLog={log}
                       showSummaryLine={log.status === 'running'}
@@ -751,7 +751,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                   const showBuildSummaryFallback =
                     buildLog && hasFinishedBuildEvent && !hasBuildSummaryMessage;
                   const logBlock = attachedLogs.length > 0 ? (
-                    <div className="mt-1 flex flex-col gap-2">
+                    <div className="mt-1 flex w-full flex-col gap-2">
                       {attachedLogs.map((log) => (
                         <ChatOperationLog
                           key={log.id}
@@ -770,7 +770,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                   ) : null;
                   const chatLogBlock =
                     attachedChatLogs.length > 0 ? (
-                      <div className="mt-1 flex flex-col gap-2">
+                      <div className="mt-1 flex w-full flex-col gap-2">
                         {attachedChatLogs.map((log) => (
                           <ChatOperationLog
                             key={log.id}
@@ -784,7 +784,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                     ) : null;
                   const nonChatLogBlock =
                     attachedNonChatLogs.length > 0 ? (
-                      <div className="mt-1 flex flex-col gap-2">
+                      <div className="mt-1 flex w-full flex-col gap-2">
                         {attachedNonChatLogs.map((log) => (
                           <ChatOperationLog
                             key={log.id}
@@ -875,7 +875,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                   </div>
                 )}
                 {unanchoredLogs.map((log) => (
-                  <div key={log.id} className="flex flex-col items-start gap-2">
+                  <div key={log.id} className="flex w-full flex-col items-stretch gap-2">
                     <ChatOperationLog
                       operationLog={log}
                       showSummaryLine={log.status === 'running'}
