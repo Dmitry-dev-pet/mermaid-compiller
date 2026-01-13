@@ -1,6 +1,7 @@
 import type { OperationPhase } from '../../types';
 import { runLLMRequest } from '../../services/llmRequestRunner';
 import type { LLMRequestStartNotice } from '../../services/llmRequestRunner';
+import type { LLMRequestFinishNotice } from '../../services/llmRequestRunner';
 import type { StudioContext } from './actionsContext';
 import type { StudioOperationHelpers } from './runStudioOperation';
 
@@ -21,6 +22,7 @@ type RunLLMArgs<T> = {
   stageContextScope?: import('../../types').OperationEvent['contextScope'];
   onTimeoutDetail?: (notice: TimeoutNotice) => string;
   onStart?: (notice: LLMRequestStartNotice) => void;
+  onFinish?: (notice: LLMRequestFinishNotice) => void;
 };
 
 export type StudioOperationRunner = {
@@ -77,6 +79,7 @@ export const createStudioOperationRunner = (
         });
       },
       onFinish: (notice) => {
+        args.onFinish?.(notice);
         helpers.logEvent({
           phase: args.phase,
           level: notice.status === 'success' ? 'info' : 'warn',
@@ -103,4 +106,3 @@ export const createStudioOperationRunner = (
 
   return { runLLM };
 };
-

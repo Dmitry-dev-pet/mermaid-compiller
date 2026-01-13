@@ -11,7 +11,6 @@ import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { runAutoFixLoop } from './autoFix';
 import type { Message } from '../../types';
 import { TimeoutError } from '../../services/llmTimeout';
-import { runLLMRequest } from '../../services/llmRequestRunner';
 import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMessageUtils';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import {
@@ -22,6 +21,7 @@ import {
 } from './logContextUtils';
 import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
 import { runStudioOperation } from './runStudioOperation';
+import { createStudioOperationRunner } from './operationRunner';
 
 export const createRecompileHandler = (ctx: StudioContext) => {
   return async () => {
@@ -59,6 +59,7 @@ export const createRecompileHandler = (ctx: StudioContext) => {
           const language = ctx.resolveLanguage();
           const relevantMessages = ctx.getRelevantMessages();
           const llmMessages = ctx.buildLLMMessages(relevantMessages);
+          const runner = createStudioOperationRunner(ctx, { logEvent });
           let llmDurationMs: number | null = null;
           pushStatus(
             [
@@ -80,27 +81,22 @@ export const createRecompileHandler = (ctx: StudioContext) => {
             mode: 'recompile',
           });
 
-          const rawCode = await runLLMRequest({
+          const rawCode = await runner.runLLM({
             task: 'recompile',
+            phase: 'compile',
             run: () => generateDiagram(llmMessages, ctx.aiConfig, ctx.appState.diagramType, docs, language, ctx.modelParams),
             retries: LLM_TIMEOUT_RETRIES,
             timeoutMs: ctx.appState.llmTimeoutMs,
-            onStart: (notice) => {
-              ctx.onLLMRequestStart?.(notice);
-              logEvent({
-                phase: 'compile',
-                level: 'info',
-                title: 'LLM',
-                detail: `start ${notice.task}`,
-              });
-            },
+            stageContextScope: 'build',
             onFinish: (notice) => {
               if (notice.status === 'success') {
                 llmDurationMs = notice.durationMs;
               }
             },
-            onTimeout: (notice) => {
-              alert(formatTimeoutRetryMessage('Recompile', notice.attempt, notice.maxAttempts));
+            onTimeoutDetail: (notice) => {
+              const message = formatTimeoutRetryMessage('Recompile', notice.attempt, notice.maxAttempts);
+              alert(message);
+              return message;
             },
           });
           const parsed = parseMermaidJsonResponse(rawCode);
@@ -260,6 +256,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
             codeLength: ctx.mermaidState.code.length,
           });
 
+          const runner = createStudioOperationRunner(ctx, { logEvent });
           const startCode = ctx.mermaidState.code;
           const initialValidation = await validateMermaid(startCode, { logError: false });
           let fixAttempt = 0;
@@ -290,8 +287,9 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
                   kind: 'attempt',
                 });
               }
-              const fixedRaw = await runLLMRequest({
+              const fixedRaw = await runner.runLLM({
                 task: 'fix',
+                phase: 'fix',
                 run: () => fixDiagram(
                   code,
                   errorMessage || ctx.mermaidState.errorMessage || 'Unknown error',
@@ -302,17 +300,11 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
                 ),
                 retries: LLM_TIMEOUT_RETRIES,
                 timeoutMs: ctx.appState.llmTimeoutMs,
-                onStart: (notice) => {
-                  ctx.onLLMRequestStart?.(notice);
-                  logEvent({
-                    phase: 'fix',
-                    level: 'info',
-                    title: 'LLM',
-                    detail: `start ${notice.task}`,
-                  });
-                },
-                onTimeout: (notice) => {
-                  alert(formatTimeoutRetryMessage('Fix', notice.attempt, notice.maxAttempts));
+                stageContextScope: 'fix',
+                onTimeoutDetail: (notice) => {
+                  const message = formatTimeoutRetryMessage('Fix', notice.attempt, notice.maxAttempts);
+                  alert(message);
+                  return message;
                 },
               });
               return extractMermaidCode(fixedRaw);
@@ -524,28 +516,24 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             kind: 'context',
             contextScope: 'analyze',
           });
+          const runner = createStudioOperationRunner(ctx, { logEvent });
           let llmDurationMs: number | null = null;
-          const explanation = await runLLMRequest({
+          const explanation = await runner.runLLM({
             task: 'analyze',
+            phase: 'analyze',
             run: () => analyzeDiagram(analysisInput, ctx.aiConfig, docs, language, ctx.modelParams),
             retries: LLM_TIMEOUT_RETRIES,
             timeoutMs: ctx.appState.llmTimeoutMs,
-            onStart: (notice) => {
-              ctx.onLLMRequestStart?.(notice);
-              logEvent({
-                phase: 'analyze',
-                level: 'info',
-                title: 'LLM',
-                detail: `start ${notice.task}`,
-              });
-            },
             onFinish: (notice) => {
               if (notice.status === 'success') {
                 llmDurationMs = notice.durationMs;
               }
             },
-            onTimeout: (notice) => {
-              alert(formatTimeoutRetryMessage('Analyze', notice.attempt, notice.maxAttempts));
+            stageContextScope: 'analyze',
+            onTimeoutDetail: (notice) => {
+              const message = formatTimeoutRetryMessage('Analyze', notice.attempt, notice.maxAttempts);
+              alert(message);
+              return message;
             },
           });
           stepMessages.push(ctx.addMessage('assistant', explanation, 'analyze'));
