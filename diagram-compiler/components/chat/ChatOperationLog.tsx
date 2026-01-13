@@ -99,13 +99,33 @@ const ChatOperationLog: React.FC<Props> = ({
                 typeof event.blockIndex === 'number'
                 && typeof prev?.blockIndex === 'number'
                 && event.blockIndex !== prev.blockIndex;
+              const isContextRow =
+                (event.text.includes('Контекст') || event.text.toLowerCase().includes('context'))
+                && !event.isSection;
+              const isTimeLabelCountdown =
+                typeof event.timeLabel === 'string' && /^\d+:\d\d$/.test(event.timeLabel);
+              const isTimeLabelDuration =
+                typeof event.timeLabel === 'string' && /s$/.test(event.timeLabel);
+              const isTimeLabelDiagramType =
+                Boolean(event.timeLabel) && isContextRow && !isTimeLabelCountdown && !isTimeLabelDuration;
+
+              const rawText = event.text ?? '';
+              const splitIndex = rawText.indexOf(' — ');
+              const hasLabel = splitIndex > 0;
+              const labelText = hasLabel ? rawText.slice(0, splitIndex) : '';
+              const contentText = hasLabel ? rawText.slice(splitIndex + 3) : rawText;
+              const displayLabel = isTimeLabelDiagramType && event.timeLabel
+                ? `${event.timeLabel} ${labelText || 'Контекст'}`
+                : (labelText || (isContextRow ? 'Контекст' : ''));
+              const displayTime = isTimeLabelDiagramType ? '' : (event.timeLabel ?? '');
+              const contentRow = hasLabel ? { ...event, text: contentText } : event;
               return (
               <div
                 key={event.id}
-                className={`grid grid-cols-[4.25rem_1fr] items-start gap-x-2 text-[11px] leading-snug ${isNewBlock ? 'mt-1 pt-1 border-t border-slate-200/60 dark:border-slate-800/70' : ''}`}
+                className={`grid grid-cols-[7rem_1fr_4.25rem] items-start gap-x-2 text-[11px] leading-snug ${isNewBlock ? 'mt-1 pt-1 border-t border-slate-200/60 dark:border-slate-800/70' : ''}`}
               >
                 {event.isSection ? (
-                  <div className="col-span-2 mt-1 first:mt-0">
+                  <div className="col-span-3 mt-1 first:mt-0">
                     <div className="flex items-center gap-2">
                     <div className="h-px flex-1 bg-slate-200/60 dark:bg-slate-800/70" />
                     <div className="uppercase tracking-wide text-[10px] text-slate-400 dark:text-slate-500">
@@ -117,16 +137,19 @@ const ChatOperationLog: React.FC<Props> = ({
                 ) : (
                   <>
                     <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                      {event.timeLabel ?? ''}
+                      {displayLabel}
                     </span>
                     <div className="min-w-0 break-words">
                       <OperationLogRowText
-                        row={event}
+                        row={contentRow}
                         pinnedTooltip={pinnedTooltip}
                         setPinnedTooltip={setPinnedTooltip}
                         onOpenBuildDocsFile={onOpenBuildDocsFile}
                       />
                   </div>
+                    <span className="text-right font-mono tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                      {displayTime}
+                    </span>
                 </>
               )}
             </div>
