@@ -10,6 +10,13 @@ import type { StudioContext } from './actionsContext';
 import { runStudioOperation } from './runStudioOperation';
 import { isDefaultSessionTitle } from '../../services/history/sessionTitle';
 import { createStudioOperationRunner } from './operationRunner';
+import { buildSystemPrompt } from '../../services/llm/prompts';
+import {
+  buildContextTooltipForLog,
+  buildDocsTooltipForLog,
+  formatDocsDetailForLog,
+  summarizeMessagesForLog,
+} from './logContextUtils';
 
 export const createChatHandler = (ctx: StudioContext) => {
   return async (text: string) => {
@@ -128,8 +135,39 @@ export const createChatHandler = (ctx: StudioContext) => {
           ];
 
           const docs = await ctx.getDocsContext('chat');
+          const selectionSummary = await ctx.getDocsSelectionSummary?.('chat');
           const allowedNotebookTypes =
             ctx.appState.diagramType === 'auto' ? ctx.appState.mainDiagramTypes : null;
+          const promptMode = useNotebookIntent
+            ? 'chat_notebook'
+            : (ctx.isNotebookChatMode || isRefinementRequest)
+              ? 'chat_diagram'
+              : 'chat';
+          const systemPrompt = buildSystemPrompt(promptMode, {
+            diagramType: ctx.appState.diagramType,
+            allowedDiagramTypes: allowedNotebookTypes,
+            docsContext: 'Documentation context redacted.',
+            language,
+          });
+          const docsDetail = formatDocsDetailForLog({ docsContext: docs, selectionSummary });
+          const msgSummary = summarizeMessagesForLog(llmMessages);
+          logEvent({
+            phase: 'chat',
+            level: 'info',
+            title: 'Контекст',
+            detail: [
+              `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
+              docsDetail,
+            ].join('\n'),
+            tooltipMessages: buildContextTooltipForLog({
+              systemPrompt,
+              messages: llmMessages,
+              docsDetail,
+            }),
+            tooltipDocs: buildDocsTooltipForLog(docsDetail),
+            kind: 'context',
+            contextScope: 'chat',
+          });
           const responseText = await runner.runLLM({
             task: 'chat',
             phase: 'chat',
