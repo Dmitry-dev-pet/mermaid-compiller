@@ -17,6 +17,7 @@ import {
   buildContextTooltipForLog,
   buildDocsTooltipForLog,
   formatDocsDetailForLog,
+  joinLogDetailLines,
   summarizeMessagesForLog,
 } from './logContextUtils';
 import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
@@ -246,7 +247,10 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
             phase: 'fix',
             level: 'info',
             title: 'Контекст',
-            detail: [`messages: ${msgSummary.count} (${msgSummary.tokens} tok)`, docsDetail].join('\n'),
+            detail: joinLogDetailLines(
+              `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
+              docsDetail
+            ),
             tooltipMessages,
             tooltipDocs,
             kind: 'context',
@@ -507,10 +511,10 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             phase: 'analyze',
             level: 'info',
             title: 'Контекст',
-            detail: [
+            detail: joinLogDetailLines(
               `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-              docsDetail,
-            ].join('\n'),
+              docsDetail
+            ),
             tooltipMessages,
             tooltipDocs,
             kind: 'context',

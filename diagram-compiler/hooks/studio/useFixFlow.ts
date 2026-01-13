@@ -18,6 +18,7 @@ import {
   buildContextTooltipForLog,
   buildDocsTooltipForLog,
   formatDocsDetailForLog,
+  joinLogDetailLines,
   summarizeMessagesForLog,
 } from './logContextUtils';
 import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
@@ -358,7 +359,10 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           phase: 'fix',
           level: 'info',
           title: 'Контекст',
-          detail: [`messages: ${msgSummary.count} (${msgSummary.tokens} tok)`, docsDetail].join('\n'),
+          detail: joinLogDetailLines(
+            `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
+            docsDetail
+          ),
           tooltipMessages,
           tooltipDocs,
           kind: 'context',
@@ -689,7 +693,10 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         phase: 'fix',
         level: 'info',
         title: 'Контекст',
-        detail: [`messages: ${msgSummary.count} (${msgSummary.tokens} tok)`, docsDetail].join('\n'),
+        detail: joinLogDetailLines(
+          `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
+          docsDetail
+        ),
         tooltipMessages,
         tooltipDocs,
         kind: 'context',

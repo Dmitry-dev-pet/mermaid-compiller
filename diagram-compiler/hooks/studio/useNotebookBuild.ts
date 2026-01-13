@@ -21,6 +21,7 @@ import {
   buildContextTooltipForLog,
   buildDocsTooltipForLog,
   formatDocsDetailForLog,
+  joinLogDetailLines,
   summarizeMessagesForLog,
 } from './logContextUtils';
 
@@ -620,10 +621,10 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         phase: 'planning',
         level: 'info',
         title: 'Контекст',
-        detail: [
+        detail: joinLogDetailLines(
           `messages: ${plannerMessageSummary.count} (${plannerMessageSummary.tokens} tok)`,
-          plannerDocsDetail,
-        ].join('\n'),
+          plannerDocsDetail
+        ),
         tooltipMessages: plannerTooltip,
         tooltipDocs: plannerDocsTooltip,
         kind: 'context',
@@ -773,11 +774,11 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               phase: 'planning',
               level: 'info',
               title: 'Контекст',
-              detail: [
+              detail: joinLogDetailLines(
                 `${blockLabel}`,
                 `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-                docsDetail,
-              ].join('\n'),
+                docsDetail
+              ),
               tooltipMessages: blockTooltip,
               tooltipDocs: blockDocsTooltip,
               kind: 'context',
@@ -1108,10 +1109,10 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             phase: 'build',
             level: 'info',
             title: 'Контекст',
-            detail: [
+            detail: joinLogDetailLines(
               `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-              docsDetail,
-            ].join('\n'),
+              docsDetail
+            ),
             tooltipMessages: buildContextTooltipForLog({
               systemPrompt,
               messages: [summaryMessage],

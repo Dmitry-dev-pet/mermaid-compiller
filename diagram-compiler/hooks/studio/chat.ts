@@ -15,6 +15,7 @@ import {
   buildContextTooltipForLog,
   buildDocsTooltipForLog,
   formatDocsDetailForLog,
+  joinLogDetailLines,
   summarizeMessagesForLog,
 } from './logContextUtils';
 
@@ -155,10 +156,10 @@ export const createChatHandler = (ctx: StudioContext) => {
             phase: 'chat',
             level: 'info',
             title: 'Контекст',
-            detail: [
+            detail: joinLogDetailLines(
               `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-              docsDetail,
-            ].join('\n'),
+              docsDetail
+            ),
             tooltipMessages: buildContextTooltipForLog({
               systemPrompt,
               messages: llmMessages,

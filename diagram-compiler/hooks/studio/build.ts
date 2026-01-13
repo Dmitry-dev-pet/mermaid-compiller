@@ -14,6 +14,7 @@ import {
   buildContextTooltipForLog,
   buildDocsTooltipForLog,
   formatDocsDetailForLog,
+  joinLogDetailLines,
   summarizeMessagesForLog,
 } from './logContextUtils';
 
@@ -221,10 +222,10 @@ export const createBuildHandler = (ctx: StudioContext) => {
         phase: 'planning',
         level: 'info',
         title: 'Контекст',
-        detail: [
+        detail: joinLogDetailLines(
           `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-          docsDetail,
-        ].join('\n'),
+          docsDetail
+        ),
         tooltipMessages: contextTooltip,
         tooltipDocs: docsTooltip,
         kind: 'context',
@@ -473,10 +474,10 @@ export const createBuildHandler = (ctx: StudioContext) => {
           phase: 'build',
           level: 'info',
           title: 'Контекст',
-          detail: [
+          detail: joinLogDetailLines(
             `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-            docsDetail,
-          ].join('\n'),
+            docsDetail
+          ),
           tooltipMessages: buildContextTooltipForLog({
             systemPrompt,
             messages: [summaryMessage],

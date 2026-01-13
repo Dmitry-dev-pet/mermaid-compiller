@@ -4,6 +4,12 @@ type DocsSelectionSummary = {
   includedPaths: string[];
 };
 
+export const joinLogDetailLines = (...lines: Array<string | null | undefined>) => {
+  return lines
+    .filter((line): line is string => typeof line === 'string' && line.trim().length > 0)
+    .join('\n');
+};
+
 const estimateTokensFromChars = (chars: number) => {
   if (!Number.isFinite(chars) || chars <= 0) return 0;
   return Math.max(1, Math.ceil(chars / 4));
@@ -55,8 +61,9 @@ export const formatDocsDetailForLog = (args: {
     : Array.from(sections.keys());
 
   if (selectionPaths.length === 0) {
-    const tokens = estimateTokensFromChars(args.docsContext.length);
-    return `${prefix} (0 files, ${formatSize(tokens)} tok):`;
+    // When no docs are actually selected, treat docs as empty for logging purposes.
+    // (This keeps counts consistent and avoids confusing "0 files, N tok" rows.)
+    return '';
   }
 
   const items = selectionPaths.map((path) => {
@@ -81,6 +88,7 @@ export const buildContextTooltipForLog = (args: {
   docsDetail: string;
 }) => {
   const messageBlocks = args.messages.map(formatMessageBlockForLog).join('\n\n');
+  const docsBlock = args.docsDetail.trim().length > 0 ? args.docsDetail : '(none)';
   return [
     'System prompt:',
     args.systemPrompt,
@@ -89,8 +97,8 @@ export const buildContextTooltipForLog = (args: {
     messageBlocks,
     '',
     'Docs:',
-    args.docsDetail,
+    docsBlock,
   ].join('\n');
 };
 
-export const buildDocsTooltipForLog = (docsDetail: string) => `Docs:\n${docsDetail}`;
+export const buildDocsTooltipForLog = (docsDetail: string) => `Docs:\n${docsDetail.trim().length > 0 ? docsDetail : '(none)'}`;
