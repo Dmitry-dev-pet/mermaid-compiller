@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { DiagramIntent, DiagramType, Message, NotebookPlan, ModelParams } from '../../types';
+import { LLM_TIMEOUT_MS } from '../../constants';
 import { detectLanguage, generateId } from '../../utils';
 import { normalizeIntentText } from '../../utils/intent';
 import { normalizeSummaryText, sanitizeSummaryText } from '../../utils/buildSummary';
@@ -15,7 +16,7 @@ import { TimeoutError } from '../../services/llmTimeout';
 import { formatTimeoutRetryMessage } from './stepMessageUtils';
 import { createProgressTracker } from './progressTracker';
 import { runBuildPipeline } from './buildPipeline';
-import { createStudioOperationRunner } from './operationRunner';
+import { createStudioOperationRunner, type StudioOperationRunner } from './operationRunner';
 import { buildOperationLogViewModel } from '../../components/chat/operationLogUtils';
 import {
   buildContextTooltipForLog,
@@ -305,6 +306,8 @@ export const requestNotebookPlan = async (args: {
   forcedDiagramType?: DiagramType | null;
   allowedDiagramTypes?: DiagramType[] | null;
   runPlanner?: PlannerRunner;
+  runner?: StudioOperationRunner;
+  contextEvent?: ReturnType<typeof buildContextEventForLog>;
 }): Promise<NotebookPlan> => {
   const runPlanner: PlannerRunner = args.runPlanner ?? ((message) => (
     planNotebook([message], args.aiConfig, args.docs, args.language, args.modelParams)
@@ -313,6 +316,7 @@ export const requestNotebookPlan = async (args: {
   let lastCount: number | null = null;
   let lastInvalidTypes: number | null = null;
   let lastParseError: string | null = null;
+  let contextSent = false;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const plannerMessage: Message = {
@@ -330,20 +334,32 @@ export const requestNotebookPlan = async (args: {
       }),
       timestamp: Date.now(),
     };
-    const rawPlan = await runLLMRequest({
-      task: 'planner',
-      run: () => runPlanner(plannerMessage),
-      retries: NOTEBOOK_BUILD_RETRY_CONFIG.plannerTimeoutRetries,
-      timeoutMs: args.timeoutMs,
-      onStart: args.onLLMRequestStart,
-      onTimeout: (notice) => {
-        args.addMessage(
-          'assistant',
-          formatTimeoutRetryMessage('Planner', notice.attempt, notice.maxAttempts),
-          'build'
-        );
-      },
-    });
+    const rawPlan = args.runner
+      ? await args.runner.runLLM({
+          task: 'planner',
+          phase: 'planning',
+          run: () => runPlanner(plannerMessage),
+          retries: NOTEBOOK_BUILD_RETRY_CONFIG.plannerTimeoutRetries,
+          timeoutMs: args.timeoutMs ?? LLM_TIMEOUT_MS,
+          stageContextScope: 'planner',
+          contextEvent: args.contextEvent && !contextSent ? toRunnerContextEvent(args.contextEvent) : undefined,
+          onStart: args.onLLMRequestStart,
+        })
+      : await runLLMRequest({
+          task: 'planner',
+          run: () => runPlanner(plannerMessage),
+          retries: NOTEBOOK_BUILD_RETRY_CONFIG.plannerTimeoutRetries,
+          timeoutMs: args.timeoutMs,
+          onStart: args.onLLMRequestStart,
+          onTimeout: (notice) => {
+            args.addMessage(
+              'assistant',
+              formatTimeoutRetryMessage('Planner', notice.attempt, notice.maxAttempts),
+              'build'
+            );
+          },
+        });
+    contextSent = true;
     let parsedPlan: NotebookPlan;
     try {
       parsedPlan = parseNotebookPlan(rawPlan);
@@ -589,11 +605,6 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         plannerSelection?.includedPaths?.length
           ? plannerSelection.includedPaths
           : getNotebookPlannerDocsPaths().map(({ path }) => path);
-      const plannerDocsDetail = formatDocsDetailForLog({
-        docsContext: docs,
-        selectionSummary: { includedPaths: plannerPaths },
-        prefix: 'planner docs',
-      });
       const plannerMessage: Message = {
         id: 'notebook-plan-context',
         role: 'user',
@@ -609,36 +620,25 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         }),
         timestamp: Date.now(),
       };
-      const plannerMessageSummary = summarizeMessagesForLog([plannerMessage]);
       const plannerSystemPrompt = buildSystemPrompt('plan_notebook', {
         docsContext: 'Documentation context redacted.',
         language,
         diagramType: forcedDiagramType ?? deps.appState.diagramType,
         allowedDiagramTypes,
       });
-      const plannerTooltip = buildContextTooltipForLog({
+      const plannerContextEvent = buildContextEventForLog({
+        phase: 'planning',
+        contextScope: 'planner',
+        selectionLine: forcedDiagramType
+          ? `selection: ${getDiagramTypeShortLabel(forcedDiagramType)}`
+          : (allowedDiagramTypes?.length
+            ? `selection: ${allowedDiagramTypes.map((t) => getDiagramTypeShortLabel(t)).join('/')}`
+            : undefined),
         systemPrompt: plannerSystemPrompt,
         messages: [plannerMessage],
-        docsDetail: plannerDocsDetail,
-      });
-      const plannerDocsTooltip = buildDocsTooltipForLog(plannerDocsDetail);
-      logEvent({
-        phase: 'planning',
-        level: 'info',
-        title: 'Контекст',
-        detail: joinLogDetailLines(
-          forcedDiagramType
-            ? `selection: ${getDiagramTypeShortLabel(forcedDiagramType)}`
-            : (allowedDiagramTypes?.length
-              ? `selection: ${allowedDiagramTypes.map((t) => getDiagramTypeShortLabel(t)).join('/')}`
-              : ''),
-          `messages: ${plannerMessageSummary.count} (${plannerMessageSummary.tokens} tok)`,
-          plannerDocsDetail
-        ),
-        tooltipMessages: plannerTooltip,
-        tooltipDocs: plannerDocsTooltip,
-        kind: 'context',
-        contextScope: 'planner',
+        docsContext: docs,
+        selectionSummary: { includedPaths: plannerPaths },
+        docsPrefix: 'planner docs',
       });
       const plannerStartAt = Date.now();
       pushStatus('Планировщик\n- запрашиваю план');
@@ -652,10 +652,11 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         docs,
         language,
         addMessage: createEphemeralMessage,
-        onLLMRequestStart: logLLMStart,
         timeoutMs: deps.appState.llmTimeoutMs,
         forcedDiagramType,
         allowedDiagramTypes,
+        runner,
+        contextEvent: plannerContextEvent,
       });
       resolvedPlanCount = plan.resolvedN;
       pushStatus(

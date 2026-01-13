@@ -11,16 +11,14 @@ import {
 } from '../../services/mermaidService';
 import type { MermaidMarkdownBlock } from '../../services/mermaidService';
 import { fixDiagram } from '../../services/llmService';
-import { runLLMRequest, type LLMRequestStartNotice } from '../../services/llmRequestRunner';
+import type { LLMRequestStartNotice } from '../../services/llmRequestRunner';
 import { runAutoFixLoop } from './autoFix';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import {
-  buildContextTooltipForLog,
-  buildDocsTooltipForLog,
-  formatDocsDetailForLog,
-  joinLogDetailLines,
-  summarizeMessagesForLog,
+  buildContextEventForLog,
 } from './logContextUtils';
+import { toRunnerContextEvent } from './operationTracer';
+import { createStudioOperationRunner, type StudioOperationRunner } from './operationRunner';
 import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
 import { DIAGRAM_TYPES, normalizeDiagramType } from '../../utils/diagramTypes';
 import { augmentMermaidErrorForAutoFix } from '../../utils/mermaidAutoFixHints';
@@ -202,40 +200,38 @@ export const useFixFlow = (deps: FixFlowDeps) => {
   }, []);
 
   const runMarkdownFix = useCallback(async (args: {
+    runner: StudioOperationRunner;
+    contextEvent?: ReturnType<typeof buildContextEventForLog>;
     block: MermaidMarkdownBlock;
     markdown: string;
     docs: string;
     language: string;
     initialValidation: Awaited<ReturnType<typeof validateMermaidDiagramCode>>;
     onAttempt?: (attempt: number, validation: Awaited<ReturnType<typeof validateMermaidDiagramCode>>) => void;
-    onLLMStart?: (notice: LLMRequestStartNotice) => void;
-    onLLMFinish?: (durationMs: number) => void;
   }) => {
-    const { block, markdown, docs, language, initialValidation, onAttempt, onLLMStart, onLLMFinish } = args;
+    const { runner, contextEvent, block, markdown, docs, language, initialValidation, onAttempt } = args;
     let iteration = 0;
-    let lastRequestStartedAt = 0;
+    let contextSent = false;
     const { code: currentCode, validation, attempts } = await runAutoFixLoop({
       initialCode: block.code,
       initialValidation,
       maxAttempts: AUTO_FIX_MAX_ATTEMPTS,
       validate: (code) => validateMermaidDiagramCode(code, { logError: false }),
       fix: async (code, errorMessage) => {
-        lastRequestStartedAt = Date.now();
         const enrichedErrorMessage = augmentMermaidErrorForAutoFix(
           (block.diagramType ?? deps.appDiagramType ?? 'auto') as DiagramType,
           errorMessage
         );
-        const fixedRaw = await runLLMRequest({
+        const fixedRaw = await runner.runLLM({
           task: 'markdown-fix',
+          phase: 'fix',
           run: () => fixDiagram(code, enrichedErrorMessage, deps.aiConfig, docs, language, deps.modelParams),
           retries: LLM_TIMEOUT_RETRIES,
           timeoutMs: deps.llmTimeoutMs,
-          onStart: (notice) => {
-            deps.onLLMRequestStart?.(notice);
-            onLLMStart?.(notice);
-          },
+          stageContextScope: 'block',
+          contextEvent: contextEvent && !contextSent ? toRunnerContextEvent(contextEvent) : undefined,
         });
-        onLLMFinish?.(Date.now() - lastRequestStartedAt);
+        contextSent = true;
         return extractMermaidCode(fixedRaw);
       },
       onIteration: (_code, nextValidation) => {
@@ -270,7 +266,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
       nextMarkdown,
       nextMermaid,
     };
-  }, [deps.aiConfig]);
+  }, [deps.aiConfig, deps.appDiagramType, deps.llmTimeoutMs, deps.modelParams]);
 
   const handleFixAllMarkdownBlocks = useCallback(async () => {
     if (deps.connectionStatus !== 'connected') {
@@ -307,6 +303,14 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         if (initialValidation.isValid !== false) continue;
 
         deps.setMarkdownMermaidActiveIndex(i);
+        const runner = createStudioOperationRunner(
+          { onLLMRequestStart: deps.onLLMRequestStart },
+          {
+            logEvent: (args) => {
+              logEvent({ ...args, blockIndex: i });
+            },
+          }
+        );
 
         const diagramType = block.diagramType ?? (normalizeDiagramType(deps.appDiagramType ?? '') ?? null);
         const diagramTypeForDocs = coerceToDiagramType(diagramType);
@@ -323,12 +327,6 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           kind: 'block',
           contextScope: 'block',
         });
-        const docsDetail = formatDocsDetailForLog({
-          docsContext: docs,
-          selectionSummary: docsEntries.length
-            ? { includedPaths: docsEntries.map((entry) => entry.path) }
-            : (docsSelection ? { includedPaths: docsSelection.includedPaths } : null),
-        });
         const fixMessage: Message = {
           id: `fix-input-${i + 1}`,
           role: 'user',
@@ -343,31 +341,20 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           ].join('\n'),
           timestamp: Date.now(),
         };
-        const msgSummary = summarizeMessagesForLog([fixMessage]);
         const systemPrompt = buildSystemPrompt('fix', {
           diagramType: (diagramType ?? deps.appDiagramType ?? 'auto') as DiagramType,
           docsContext: 'Documentation context redacted.',
           language,
         });
-        const tooltipMessages = buildContextTooltipForLog({
+        const fixContextEvent = buildContextEventForLog({
+          phase: 'fix',
+          contextScope: 'block',
           systemPrompt,
           messages: [fixMessage],
-          docsDetail,
-        });
-        const tooltipDocs = buildDocsTooltipForLog(docsDetail);
-        logEvent({
-          phase: 'fix',
-          level: 'info',
-          title: 'Контекст',
-          detail: joinLogDetailLines(
-            `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-            docsDetail
-          ),
-          tooltipMessages,
-          tooltipDocs,
-          kind: 'context',
-          contextScope: 'block',
-          blockIndex: i,
+          docsContext: docs,
+          selectionSummary: docsEntries.length
+            ? { includedPaths: docsEntries.map((entry) => entry.path) }
+            : (docsSelection ? { includedPaths: docsSelection.includedPaths } : null),
         });
         await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
           diagramType,
@@ -375,7 +362,6 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           codeLength: block.code.length,
         });
 
-        let lastDurationMs: number | null = null;
         const {
           currentCode,
           validation,
@@ -385,6 +371,8 @@ export const useFixFlow = (deps: FixFlowDeps) => {
           nextMarkdown,
           nextMermaid,
         } = await runMarkdownFix({
+          runner,
+          contextEvent: fixContextEvent,
           block,
           markdown,
           docs,
@@ -398,7 +386,6 @@ export const useFixFlow = (deps: FixFlowDeps) => {
               detail: `attempt ${attempt}/${AUTO_FIX_MAX_ATTEMPTS}`,
               blockIndex: i,
               attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
-              metrics: lastDurationMs ? { durationMs: lastDurationMs } : undefined,
               kind: 'attempt',
               contextScope: 'block',
             });
@@ -418,20 +405,6 @@ export const useFixFlow = (deps: FixFlowDeps) => {
                 });
               }
             }
-          },
-          onLLMStart: (notice) => {
-            logEvent({
-              phase: 'fix',
-              level: 'info',
-              title: 'LLM',
-              detail: `start ${notice.task}`,
-              blockIndex: i,
-              kind: 'attempt',
-              contextScope: 'block',
-            });
-          },
-          onLLMFinish: (durationMs) => {
-            lastDurationMs = durationMs;
           },
         });
 
@@ -634,6 +607,14 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     try {
       const diagramType =
         targetBlock.diagramType ?? (normalizeDiagramType(deps.appDiagramType ?? '') ?? null);
+      const runner = createStudioOperationRunner(
+        { onLLMRequestStart: deps.onLLMRequestStart },
+        {
+          logEvent: (args) => {
+            logEvent({ ...args, blockIndex: targetIndex });
+          },
+        }
+      );
       const totalBlocks = deps.markdownMermaidBlocks.length;
       const label = `${targetIndex + 1}/${totalBlocks} - ${diagramType ?? 'unknown'} - Fix block`;
       logEvent({
@@ -657,12 +638,6 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         title: 'Fix',
         detail: `язык: ${language}`,
       });
-      const docsDetail = formatDocsDetailForLog({
-        docsContext: docs,
-        selectionSummary: docsEntries.length
-          ? { includedPaths: docsEntries.map((entry) => entry.path) }
-          : (docsSelection ? { includedPaths: docsSelection.includedPaths } : null),
-      });
       const fixMessage: Message = {
         id: `fix-input-${targetIndex + 1}`,
         role: 'user',
@@ -677,31 +652,20 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         ].join('\n'),
         timestamp: Date.now(),
       };
-      const msgSummary = summarizeMessagesForLog([fixMessage]);
       const systemPrompt = buildSystemPrompt('fix', {
         diagramType: (diagramType ?? normalizeDiagramType(deps.appDiagramType ?? '') ?? 'auto') as DiagramType,
         docsContext: 'Documentation context redacted.',
         language,
       });
-      const tooltipMessages = buildContextTooltipForLog({
+      const fixContextEvent = buildContextEventForLog({
+        phase: 'fix',
+        contextScope: 'block',
         systemPrompt,
         messages: [fixMessage],
-        docsDetail,
-      });
-      const tooltipDocs = buildDocsTooltipForLog(docsDetail);
-      logEvent({
-        phase: 'fix',
-        level: 'info',
-        title: 'Контекст',
-        detail: joinLogDetailLines(
-          `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-          docsDetail
-        ),
-        tooltipMessages,
-        tooltipDocs,
-        kind: 'context',
-        contextScope: 'block',
-        blockIndex: targetIndex,
+        docsContext: docs,
+        selectionSummary: docsEntries.length
+          ? { includedPaths: docsEntries.map((entry) => entry.path) }
+          : (docsSelection ? { includedPaths: docsSelection.includedPaths } : null),
       });
       await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
         diagramType,
@@ -720,22 +684,13 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         nextMarkdown,
         nextMermaid,
       } = await runMarkdownFix({
+        runner,
+        contextEvent: fixContextEvent,
         block: targetBlock,
         markdown: deps.mermaidState.code,
         docs,
         language,
         initialValidation,
-        onLLMStart: (notice) => {
-          logEvent({
-            phase: 'fix',
-            level: 'info',
-            title: 'LLM',
-            detail: `start ${notice.task}`,
-            blockIndex: targetIndex,
-            kind: 'attempt',
-            contextScope: 'block',
-          });
-        },
         onAttempt: (attempt, nextValidation) => {
           logEvent({
             phase: 'fix',

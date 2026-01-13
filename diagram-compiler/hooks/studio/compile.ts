@@ -14,12 +14,7 @@ import { TimeoutError } from '../../services/llmTimeout';
 import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMessageUtils';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import {
-  buildContextTooltipForLog,
-  buildDocsTooltipForLog,
   buildContextEventForLog,
-  formatDocsDetailForLog,
-  joinLogDetailLines,
-  summarizeMessagesForLog,
 } from './logContextUtils';
 import { toRunnerContextEvent } from './operationTracer';
 import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
@@ -229,40 +224,25 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
             ].join('\n'),
             timestamp: Date.now(),
           };
-          const msgSummary = summarizeMessagesForLog([fixMessage]);
-          const docsDetail = formatDocsDetailForLog({
-            docsContext: docs,
-            selectionSummary: effectiveSelectionSummary,
-          });
           const systemPrompt = buildSystemPrompt('fix', {
             diagramType: detectedDiagramType,
             docsContext: 'Documentation context redacted.',
             language,
           });
-          const tooltipMessages = buildContextTooltipForLog({
+          const fixContextEvent = buildContextEventForLog({
+            phase: 'fix',
+            contextScope: 'fix',
             systemPrompt,
             messages: [fixMessage],
-            docsDetail,
-          });
-          const tooltipDocs = buildDocsTooltipForLog(docsDetail);
-          logEvent({
-            phase: 'fix',
-            level: 'info',
-            title: 'Контекст',
-            detail: joinLogDetailLines(
-              `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-              docsDetail
-            ),
-            tooltipMessages,
-            tooltipDocs,
-            kind: 'context',
-            contextScope: 'fix',
+            docsContext: docs,
+            selectionSummary: effectiveSelectionSummary,
           });
           await ctx.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
             codeLength: ctx.mermaidState.code.length,
           });
 
           const runner = createStudioOperationRunner(ctx, { logEvent });
+          let fixContextSent = false;
           const startCode = ctx.mermaidState.code;
           const initialValidation = await validateMermaid(startCode, { logError: false });
           let fixAttempt = 0;
@@ -306,6 +286,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
                 ),
                 retries: LLM_TIMEOUT_RETRIES,
                 timeoutMs: ctx.appState.llmTimeoutMs,
+                contextEvent: !fixContextSent ? toRunnerContextEvent(fixContextEvent) : undefined,
                 stageContextScope: 'fix',
                 onTimeoutDetail: (notice) => {
                   const message = formatTimeoutRetryMessage('Fix', notice.attempt, notice.maxAttempts);
@@ -313,6 +294,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
                   return message;
                 },
               });
+              fixContextSent = true;
               return extractMermaidCode(fixedRaw);
             },
             onIteration: (code, nextValidation) => {
