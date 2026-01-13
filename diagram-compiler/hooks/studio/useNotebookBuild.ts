@@ -1054,6 +1054,19 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         ].filter(Boolean);
         let resolvedSummary = normalizeSummaryText(fallbackSummaryParts.join(' '));
         try {
+          const chatTranscript = (() => {
+            const filtered = deps.messages.filter((message) =>
+              message.id !== 'init'
+              && (message.mode === undefined || message.mode === 'chat')
+              && (message.role === 'user' || message.role === 'assistant')
+              && message.content.trim().length > 0
+            );
+            if (filtered.length === 0) return '';
+            return [
+              'Чат:',
+              ...filtered.map((m) => `${m.role}: ${m.content}`),
+            ].join('\n');
+          })();
           const operationLogText = (() => {
             const operationLog = deps.getOperationLog(opId);
             if (!operationLog?.events?.length) return '';
@@ -1075,6 +1088,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             `Ошибки: ${failedBlocks}`,
             uniqueTypes.length ? `Типы: ${uniqueTypes.join(', ')}` : '',
             selectionNote ? `\n${selectionNote}` : '',
+            chatTranscript ? `\n${chatTranscript}` : '',
             operationLogText ? `\n${operationLogText}` : '',
           ].filter(Boolean).join('\n');
           const summaryMessage = { id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() } as const;

@@ -419,6 +419,17 @@ export const createBuildHandler = (ctx: StudioContext) => {
       let resolvedSummary = normalizeSummaryText(fallbackSummary);
       const selectionNote = formatSelectionNote(normalizedIntent, ctx.appState.diagramType, intent.source);
       try {
+        const chatTranscript = (() => {
+          const filtered = ctx.getRelevantMessages().filter((message) =>
+            (message.mode === undefined || message.mode === 'chat')
+            && (message.role === 'user' || message.role === 'assistant')
+          );
+          if (filtered.length === 0) return '';
+          return [
+            'Чат:',
+            ...filtered.map((m) => `${m.role}: ${m.content}`),
+          ].join('\n');
+        })();
         const operationLogText = (() => {
           const operationLog = ctx.getOperationLog(opId);
           if (!operationLog?.events?.length) return '';
@@ -442,6 +453,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
           `Fallback: ${buildResult.usedFallback ? 'yes' : 'no'}`,
           `Intent length: ${normalizedIntent.length}`,
           selectionNote ? `\n${selectionNote}` : '',
+          chatTranscript ? `\n${chatTranscript}` : '',
           operationLogText ? `\n${operationLogText}` : '',
         ].join('\n');
         const summaryMessage = { id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() } as const;
