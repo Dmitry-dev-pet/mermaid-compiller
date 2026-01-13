@@ -16,6 +16,7 @@ import { formatTimeoutRetryMessage } from './stepMessageUtils';
 import { createProgressTracker } from './progressTracker';
 import { runBuildPipeline } from './buildPipeline';
 import { createStudioOperationRunner } from './operationRunner';
+import { buildOperationLogViewModel } from '../../components/chat/operationLogUtils';
 import {
   buildContextTooltipForLog,
   buildDocsTooltipForLog,
@@ -1070,15 +1071,19 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           const operationLogText = (() => {
             const operationLog = deps.getOperationLog(opId);
             if (!operationLog?.events?.length) return '';
-            const lines = operationLog.events.map((event) => {
-              const attempt = event.attempt ? ` (${event.attempt.current}/${event.attempt.max})` : '';
-              const detail = (event.detail ?? '')
-                .split(/\r?\n/)
-                .map((line) => line.trim())
-                .filter(Boolean)
-                .join(' | ');
-              const error = event.error?.message ? ` ⚠️ ${event.error.message}` : '';
-              return `${event.title}${attempt}${detail ? ` — ${detail}` : ''}${error}`.trim();
+            const now = Date.now();
+            const snapshot = { ...operationLog, status: 'done' as const, finishedAt: now };
+            const view = buildOperationLogViewModel(snapshot, {
+              showSummaryLine: false,
+              timeoutMs: deps.appState.llmTimeoutMs,
+              now,
+            });
+            const lines = view.rows.map((row) => {
+              if (!row.timeLabel) return row.text;
+              const parts = row.text.split('\n');
+              const head = `${row.timeLabel} ${parts[0] ?? ''}`.trimEnd();
+              const tail = parts.slice(1).map((line) => `  ${line}`);
+              return [head, ...tail].join('\n');
             });
             return `Логи:\n${lines.join('\n')}`.trim();
           })();
