@@ -24,7 +24,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
       title: 'Сборка',
       stepType: 'build',
       notebookBlockIndex,
-      run: async ({ stepMessages, logEvent, finalizeStep }) => {
+      run: async ({ opId, stepMessages, logEvent, finalizeStep }) => {
         const runner = createStudioOperationRunner(ctx, { logEvent });
         const parseIntentDiagrams = (intentText: string) => {
           const lines = intentText.split(/\r?\n/);
@@ -419,6 +419,21 @@ export const createBuildHandler = (ctx: StudioContext) => {
       let resolvedSummary = normalizeSummaryText(fallbackSummary);
       const selectionNote = formatSelectionNote(normalizedIntent, ctx.appState.diagramType, intent.source);
       try {
+        const operationLogText = (() => {
+          const operationLog = ctx.getOperationLog(opId);
+          if (!operationLog?.events?.length) return '';
+          const lines = operationLog.events.map((event) => {
+            const attempt = event.attempt ? ` (${event.attempt.current}/${event.attempt.max})` : '';
+            const detail = (event.detail ?? '')
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .join(' | ');
+            const error = event.error?.message ? ` ⚠️ ${event.error.message}` : '';
+            return `${event.title}${attempt}${detail ? ` — ${detail}` : ''}${error}`.trim();
+          });
+          return `Логи:\n${lines.join('\n')}`.trim();
+        })();
         const summaryInput = [
           `Тип: ${ctx.appState.diagramType}`,
           `Валидность: ${validation.isValid ? 'ok' : 'error'}`,
@@ -426,6 +441,8 @@ export const createBuildHandler = (ctx: StudioContext) => {
           `Auto-fix: ${autoFixAttempts}`,
           `Fallback: ${buildResult.usedFallback ? 'yes' : 'no'}`,
           `Intent length: ${normalizedIntent.length}`,
+          selectionNote ? `\n${selectionNote}` : '',
+          operationLogText ? `\n${operationLogText}` : '',
         ].join('\n');
         const summaryMessage = { id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() } as const;
         const msgSummary = summarizeMessagesForLog([summaryMessage]);
@@ -450,7 +467,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
           }),
           tooltipDocs: buildDocsTooltipForLog(docsDetail),
           kind: 'context',
-          contextScope: 'build',
+          contextScope: 'summary',
         });
         const summaryText = await runner.runLLM({
           task: 'build-summary',
@@ -458,7 +475,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
           retries: 1,
           timeoutMs,
           stageTitle: 'Итог',
-          stageContextScope: 'build',
+          stageContextScope: 'summary',
           run: () => summarizeBuild(
             [summaryMessage],
             ctx.aiConfig,

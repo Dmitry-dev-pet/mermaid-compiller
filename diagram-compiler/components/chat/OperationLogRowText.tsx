@@ -25,6 +25,8 @@ const resolveDocsMode = (row: LogRow): DocsMode => {
         ? 'analyze'
         : row.contextScope === 'fix'
           ? 'fix'
+          : row.contextScope === 'summary'
+            ? 'build'
           : 'build';
 };
 

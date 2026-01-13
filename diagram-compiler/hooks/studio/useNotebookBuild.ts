@@ -1054,11 +1054,28 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         ].filter(Boolean);
         let resolvedSummary = normalizeSummaryText(fallbackSummaryParts.join(' '));
         try {
+          const operationLogText = (() => {
+            const operationLog = deps.getOperationLog(opId);
+            if (!operationLog?.events?.length) return '';
+            const lines = operationLog.events.map((event) => {
+              const attempt = event.attempt ? ` (${event.attempt.current}/${event.attempt.max})` : '';
+              const detail = (event.detail ?? '')
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .join(' | ');
+              const error = event.error?.message ? ` ⚠️ ${event.error.message}` : '';
+              return `${event.title}${attempt}${detail ? ` — ${detail}` : ''}${error}`.trim();
+            });
+            return `Логи:\n${lines.join('\n')}`.trim();
+          })();
           const summaryInput = [
             `Блоки: ${total}`,
             `Успешно: ${successBlocks}`,
             `Ошибки: ${failedBlocks}`,
             uniqueTypes.length ? `Типы: ${uniqueTypes.join(', ')}` : '',
+            selectionNote ? `\n${selectionNote}` : '',
+            operationLogText ? `\n${operationLogText}` : '',
           ].filter(Boolean).join('\n');
           const summaryMessage = { id: 'build-summary', role: 'user', content: summaryInput, timestamp: Date.now() } as const;
           const msgSummary = summarizeMessagesForLog([summaryMessage]);
@@ -1083,7 +1100,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             }),
             tooltipDocs: buildDocsTooltipForLog(docsDetail),
             kind: 'context',
-            contextScope: 'build',
+            contextScope: 'summary',
           });
           const summaryText = await runner.runLLM({
             task: 'build-summary',
@@ -1091,7 +1108,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             retries: 1,
             timeoutMs: deps.appState.llmTimeoutMs,
             stageTitle: 'Итог',
-            stageContextScope: 'build',
+            stageContextScope: 'summary',
             run: () => summarizeBuild(
               [summaryMessage],
               deps.aiConfig,

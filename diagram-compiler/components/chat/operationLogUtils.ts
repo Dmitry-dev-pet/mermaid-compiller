@@ -453,6 +453,18 @@ export const buildOperationLogViewModel = (
       isSection: true,
     });
   }
+  const firstSummaryIndex = rows.findIndex((row) =>
+    row.contextScope === 'summary'
+    || row.text.startsWith('Итог')
+    || row.text.toLowerCase().startsWith('summary')
+  );
+  if (firstSummaryIndex >= 0) {
+    rows.splice(firstSummaryIndex, 0, {
+      id: `${operationLog.id}-section-result`,
+      text: 'Result',
+      isSection: true,
+    });
+  }
   if (isRunning && lastLlmStartAt) {
     const remainingMs = Math.max(0, timeoutMs - (now - lastLlmStartAt));
     if (remainingMs > 0) {
