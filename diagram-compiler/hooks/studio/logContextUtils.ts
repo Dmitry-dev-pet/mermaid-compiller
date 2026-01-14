@@ -136,15 +136,20 @@ export const formatMessageBlockForLog = (message: Message, index: number) => {
 
 export const buildContextTooltipForLog = (args: {
   systemPrompt: string;
+  selectionLine?: string;
   messages: Message[];
   docsDetail: string;
 }) => {
   const messageBlocks = args.messages.map(formatMessageBlockForLog).join('\n\n');
   const docsBlock = args.docsDetail.trim().length > 0 ? args.docsDetail : '(none)';
+  const selectionBlock = args.selectionLine?.trim().length
+    ? [`Selection:`, args.selectionLine.trim(), '']
+    : [];
   return [
     'System prompt:',
     args.systemPrompt,
     '',
+    ...selectionBlock,
     'Messages:',
     messageBlocks,
     '',
@@ -195,6 +200,7 @@ export const buildContextEventForLog = (args: {
     metrics: totalTokens > 0 ? { tokens: totalTokens } : undefined,
     tooltipMessages: buildContextTooltipForLog({
       systemPrompt: args.systemPrompt,
+      selectionLine: args.selectionLine,
       messages: args.messages,
       docsDetail,
     }),

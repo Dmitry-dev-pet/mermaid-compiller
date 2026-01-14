@@ -21,6 +21,35 @@ const TARGET_WIDTH_PX = 28 * 16; // 28rem
 const TARGET_MAX_HEIGHT_PX = 16 * 16; // 16rem
 const TOOLTIP_Z_INDEX = 2147483647;
 
+const renderTooltipContent = (content: string) => {
+  const lines = content.split(/\r?\n/);
+  return (
+    <>
+      {lines.map((line, index) => {
+        if (line.trim().length === 0) {
+          return <div key={`line-${index}`} className="h-3" />;
+        }
+        const selectionMatch = line.match(/^\s*selection\s*:\s*(.+)\s*$/i);
+        if (selectionMatch) {
+          return (
+            <div key={`line-${index}`} className="whitespace-pre-wrap">
+              <span className="text-[var(--control-muted-text)]">selection:</span>{' '}
+              <span className="font-mono text-[11px] text-blue-600 dark:text-blue-300">
+                {selectionMatch[1]}
+              </span>
+            </div>
+          );
+        }
+        return (
+          <div key={`line-${index}`} className="whitespace-pre-wrap">
+            {line}
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
 const OperationLogTooltip: React.FC<Props> = ({
   tooltipId,
   content,
@@ -136,7 +165,7 @@ const OperationLogTooltip: React.FC<Props> = ({
               className="mt-1 overflow-auto overscroll-contain rounded border border-[var(--panel-border)] bg-[var(--menu-bg)] px-2 py-1 shadow-lg whitespace-pre-wrap"
               style={{ maxHeight: position.maxHeight }}
             >
-              {content}
+              {renderTooltipContent(content)}
             </div>
           ) : null}
         </div>,
