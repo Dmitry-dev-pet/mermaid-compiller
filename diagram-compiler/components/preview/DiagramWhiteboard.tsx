@@ -1013,8 +1013,9 @@ const buildSceneFromMermaidCode = async (args: {
   theme: 'light' | 'dark';
   backgroundColor: string | null;
   debug?: boolean;
-}): Promise<{ scene: ExcalidrawInitialDataState; generator: MermaidLanggraphSceneGenerator } | null> => {
+}): Promise<{ scene: ExcalidrawInitialDataState; generator: MermaidLanggraphSceneGenerator; mermaidToExcalidrawError?: string } | null> => {
   try {
+    patchMermaidInitialize();
     const themeVars = extractFrontmatterThemeVariables(args.mermaidCode);
     const themeVariables = {
       ...(themeVars ?? {}),
@@ -1067,6 +1068,13 @@ const buildSceneFromMermaidCode = async (args: {
       console.warn('[whiteboard] mermaid-to-excalidraw failed; falling back to svg', message);
     }
     // Fall back to SVG parsing/snapshot.
+    const message = error instanceof Error ? error.message : String(error);
+    const svgImage = await buildSceneFromSvgMarkup({
+      svgMarkup: args.svgMarkup,
+      theme: args.theme,
+      backgroundColor: args.backgroundColor,
+    });
+    return svgImage ? { scene: svgImage, generator: 'svg-image', mermaidToExcalidrawError: message } : null;
   }
 
   // Fallback: import the rendered Mermaid SVG as a single image so it always stays visible.
@@ -1195,6 +1203,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const [isSceneBuilding, setIsSceneBuilding] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [lastGenerator, setLastGenerator] = useState<MermaidLanggraphSceneGenerator>('unknown');
+  const [lastMermaidToExcalidrawError, setLastMermaidToExcalidrawError] = useState<string | null>(null);
   const lastBuiltSignatureRef = useRef<string>('');
   const inFlightSignatureRef = useRef<string>('');
   const buildRunIdRef = useRef(0);
@@ -1360,6 +1369,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       setInitialDataState(prepareInitialData(result.scene));
       sceneMetaForSaveRef.current = { ...sceneMeta, generator: result.generator };
       setLastGenerator(result.generator);
+      setLastMermaidToExcalidrawError(result.mermaidToExcalidrawError ?? null);
       setBuildError(null);
       lastBuiltSignatureRef.current = signature;
       latestFilesRef.current = (result.scene.files ?? {}) as BinaryFiles;
@@ -1481,6 +1491,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       status,
       error: buildError,
       generator: lastGenerator,
+      mermaidToExcalidrawError: lastMermaidToExcalidrawError,
       builtCounts: counts,
       bounds,
       sampleRect,
@@ -1490,7 +1501,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       sceneKey,
       pendingFitKey: pendingFitSceneKeyRef.current,
     };
-  }, [buildError, debugEnabled, diagramTypeHint, initialDataState, isSceneBuilding, lastGenerator, sceneKey, svgMarkup]);
+  }, [buildError, debugEnabled, diagramTypeHint, initialDataState, isSceneBuilding, lastGenerator, lastMermaidToExcalidrawError, sceneKey, svgMarkup]);
 
   useEffect(() => {
     if (!api) return;
@@ -1604,7 +1615,9 @@ const DiagramWhiteboard: React.FC<Props> = ({
           viewBackgroundColor: expectedBackground || appState.viewBackgroundColor,
         }),
         filesForSave,
-        'database'
+        // Store as "local" so image files (SVG) are embedded; otherwise
+        // history scenes become non-portable and re-open as blank.
+        'local'
       );
       const json = injectSceneMetaJson(rawJson, sceneMetaForSaveRef.current);
       lastSerializedSignatureRef.current = signature;
@@ -1866,6 +1879,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
           <div>type: {debugOverlay?.diagramTypeHint ?? diagramTypeHint}</div>
           <div>generator: {debugOverlay?.generator ?? lastGenerator}</div>
           <div>svg: {debugOverlay?.svgChars ? `${debugOverlay.svgChars} chars` : 'empty'}</div>
+          {debugOverlay?.mermaidToExcalidrawError ? <div>m2e: {debugOverlay.mermaidToExcalidrawError}</div> : null}
           {debugOverlay?.error ? <div>error: {debugOverlay.error}</div> : null}
           {debugOverlay?.builtCounts ? <div>built: {JSON.stringify(debugOverlay.builtCounts)}</div> : null}
           {debugOverlay?.bounds ? <div>bounds: {JSON.stringify(debugOverlay.bounds)}</div> : null}
