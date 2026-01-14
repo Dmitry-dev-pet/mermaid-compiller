@@ -1,12 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CaptureUpdateAction, convertToExcalidrawElements, Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
-import { parseMermaidToExcalidraw } from '@excalidraw/mermaid-to-excalidraw';
 import mermaid from 'mermaid';
 import '@excalidraw/excalidraw/index.css';
 import './diagram-whiteboard.css';
 import { Code2, Copy, Download, X } from 'lucide-react';
 import { extractFrontmatterThemeVariables } from '../../utils/mermaidFrontmatterThemeVariables';
 import { extractMermaidSvgBackgroundColor } from '../../utils/mermaidSvgBackground';
+import {
+  detectMermaidDiagramTypeHint,
+  parseMermaidToExcalidrawSkeletons,
+  type MermaidDiagramTypeHint,
+} from '../../services/excalidraw/mermaidToExcalidrawService';
 import type {
   AppState,
   BinaryFileData,
@@ -29,8 +33,6 @@ type Props = {
   onAutosave: (sceneJson: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
 };
-
-type MermaidDiagramTypeHint = 'flowchart' | 'er' | 'sequence' | 'unknown';
 
 type MermaidLanggraphSceneGenerator = 'unknown' | 'mermaid-to-excalidraw' | 'svg-vectors' | 'svg-image';
 
@@ -84,201 +86,6 @@ const hashString = (s: string): number => {
     hash = (hash << 5) + hash + s.charCodeAt(i);
   }
   return hash >>> 0;
-};
-
-const stripYamlFrontmatter = (code: string): string => {
-  const lines = code.split(/\r?\n/);
-  let index = 0;
-  while (index < lines.length && (lines[index]?.trim() ?? '') === '') index += 1;
-  if ((lines[index]?.trim() ?? '') !== '---') return code;
-
-  const start = index;
-  index += 1;
-  while (index < lines.length) {
-    if ((lines[index]?.trim() ?? '') === '---') {
-      const rest = [...lines.slice(0, start), ...lines.slice(index + 1)];
-      return rest.join('\n');
-    }
-    index += 1;
-  }
-  return code;
-};
-
-const stripMermaidInitDirectives = (code: string): string => {
-  // Mermaid init directives are comments like: %%{init: {...}}%%
-  // `@excalidraw/mermaid-to-excalidraw` may fail on some directive variants,
-  // and we provide theme variables separately anyway.
-  return code
-    .split(/\r?\n/)
-    .filter((line) => !/^\s*%%\{.*\binit\s*:.*\}%%\s*$/.test(line))
-    .join('\n')
-    .trim();
-};
-
-const preprocessMermaidForExcalidraw = (code: string): string => {
-  return stripMermaidInitDirectives(stripYamlFrontmatter(code)).replace(/<br\s*\/?>/gi, '');
-};
-
-const normalizeMermaidToExcalidrawSkeletons = (raw: unknown): ExcalidrawElementSkeletonList => {
-  if (!Array.isArray(raw)) return [];
-  const out: ExcalidrawElementSkeleton[] = [];
-
-  const isRecord = (value: unknown): value is Record<string, unknown> =>
-    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
-  const asNumber = (value: unknown): number | null => {
-    if (typeof value !== 'number') return null;
-    return Number.isFinite(value) ? value : null;
-  };
-
-  const asString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
-  const asStrokeStyle = (value: unknown): 'solid' | 'dashed' | 'dotted' | undefined => {
-    const raw = typeof value === 'string' ? value : '';
-    if (raw === 'solid' || raw === 'dashed' || raw === 'dotted') return raw;
-    return undefined;
-  };
-
-  for (const item of raw) {
-    if (!isRecord(item)) continue;
-    const type = asString(item.type);
-    if (!type) continue;
-
-    // @excalidraw/mermaid-to-excalidraw v2 returns skeletons that are NOT
-    // compatible with Excalidraw v0.18 `convertToExcalidrawElements`
-    // (e.g. `startX/startY/endX/endY` instead of `x/y/points`).
-    // Normalize them to the current skeleton format.
-    if (type === 'line' || type === 'arrow') {
-      // Newer skeletons already use x/y/points.
-      const x = asNumber(item.x);
-      const y = asNumber(item.y);
-      const pointsRaw = item.points;
-      const points =
-        Array.isArray(pointsRaw)
-          ? pointsRaw
-            .map((p) => (Array.isArray(p) && p.length === 2 ? [Number(p[0]), Number(p[1])] : null))
-            .filter((p): p is [number, number] => Boolean(p) && p.every((n) => Number.isFinite(n)))
-          : [];
-      if (x !== null && y !== null && points.length >= 2) {
-        const labelRaw = isRecord(item.label) ? item.label : null;
-        const labelText = labelRaw ? asString(labelRaw.text) : null;
-        const labelFontSize = labelRaw ? asNumber(labelRaw.fontSize) : null;
-        const label =
-          labelText && labelText.trim()
-            ? {
-              text: labelText,
-              ...(labelFontSize ? { fontSize: labelFontSize } : {}),
-            }
-            : undefined;
-        out.push({
-          type: type as 'line' | 'arrow',
-          x,
-          y,
-          points,
-          ...(asString(item.strokeColor) ? { strokeColor: String(item.strokeColor) } : {}),
-          ...(asNumber(item.strokeWidth) !== null ? { strokeWidth: Number(item.strokeWidth) } : {}),
-          ...(asStrokeStyle(item.strokeStyle) ? { strokeStyle: asStrokeStyle(item.strokeStyle) } : {}),
-          ...(label ? { label } : {}),
-        } satisfies ExcalidrawElementSkeleton);
-        continue;
-      }
-
-      // Legacy skeletons (mermaid-to-excalidraw <=1.x) use startX/startY/endX/endY.
-      const startX = asNumber(item.startX);
-      const startY = asNumber(item.startY);
-      const endX = asNumber(item.endX);
-      const endY = asNumber(item.endY);
-      if (startX === null || startY === null || endX === null || endY === null) continue;
-      const fallbackPoints = [[0, 0], [endX - startX, endY - startY]] as const;
-
-      const strokeColor = asString(item.strokeColor);
-      const strokeWidth = asNumber(item.strokeWidth);
-      const strokeStyle = asStrokeStyle(item.strokeStyle);
-
-      const labelRaw = isRecord(item.label) ? item.label : null;
-      const labelText = labelRaw ? asString(labelRaw.text) : null;
-      const labelFontSize = labelRaw ? asNumber(labelRaw.fontSize) : null;
-      const label =
-        labelText && labelText.trim()
-          ? {
-            text: labelText,
-            ...(labelFontSize ? { fontSize: labelFontSize } : {}),
-          }
-          : undefined;
-
-      out.push({
-        type: type as 'line' | 'arrow',
-        x: startX,
-        y: startY,
-        points: fallbackPoints,
-        ...(strokeColor ? { strokeColor } : {}),
-        ...(strokeWidth !== null ? { strokeWidth } : {}),
-        ...(strokeStyle ? { strokeStyle } : {}),
-        ...(label ? { label } : {}),
-      } satisfies ExcalidrawElementSkeleton);
-      continue;
-    }
-
-    if (type === 'rectangle' || type === 'ellipse') {
-      const x = asNumber(item.x);
-      const y = asNumber(item.y);
-      if (x === null || y === null) continue;
-      const width = asNumber(item.width);
-      const height = asNumber(item.height);
-      const strokeColor = asString(item.strokeColor);
-      const strokeWidth = asNumber(item.strokeWidth);
-      const strokeStyle = asStrokeStyle(item.strokeStyle);
-      const backgroundColor = asString(item.backgroundColor) ?? asString(item.bgColor);
-
-      const labelRaw = isRecord(item.label) ? item.label : null;
-      const labelText = labelRaw ? asString(labelRaw.text) : null;
-      const labelFontSize = labelRaw ? asNumber(labelRaw.fontSize) : null;
-      const label =
-        labelText && labelText.trim()
-          ? {
-            text: labelText,
-            ...(labelFontSize ? { fontSize: labelFontSize } : {}),
-          }
-          : undefined;
-
-      out.push({
-        type: type as 'rectangle' | 'ellipse',
-        x,
-        y,
-        ...(width !== null ? { width } : {}),
-        ...(height !== null ? { height } : {}),
-        ...(strokeColor ? { strokeColor } : {}),
-        ...(strokeWidth !== null ? { strokeWidth } : {}),
-        ...(strokeStyle ? { strokeStyle } : {}),
-        ...(backgroundColor ? { backgroundColor } : {}),
-        ...(label ? { label } : {}),
-      } satisfies ExcalidrawElementSkeleton);
-      continue;
-    }
-
-    if (type === 'text') {
-      const text = asString(item.text) ?? '';
-      const x = asNumber(item.x);
-      const y = asNumber(item.y);
-      if (x === null || y === null) continue;
-      const width = asNumber(item.width);
-      const height = asNumber(item.height);
-      const fontSize = asNumber(item.fontSize);
-      const strokeColor = asString(item.strokeColor) ?? asString(item.color);
-      out.push({
-        type: 'text',
-        text,
-        x,
-        y,
-        ...(width !== null ? { width } : {}),
-        ...(height !== null ? { height } : {}),
-        ...(fontSize !== null ? { fontSize } : {}),
-        ...(strokeColor ? { strokeColor } : {}),
-      } satisfies ExcalidrawElementSkeleton);
-      continue;
-    }
-  }
-
-  return out;
 };
 
 const parseHexColor = (color: string): { r: number; g: number; b: number } | null => {
@@ -379,22 +186,6 @@ const applyMermaidThemeToExcalidrawElements = <T,>(
 
     return next as T;
   });
-};
-
-const detectMermaidDiagramTypeHint = (code: string): MermaidDiagramTypeHint => {
-  if (!code.trim()) return 'unknown';
-  const lines = code.split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (trimmed.startsWith('%%')) continue;
-    const lower = trimmed.toLowerCase();
-    if (lower.startsWith('flowchart') || lower.startsWith('graph')) return 'flowchart';
-    if (lower.startsWith('erdiagram')) return 'er';
-    if (lower.startsWith('sequencediagram')) return 'sequence';
-    return 'unknown';
-  }
-  return 'unknown';
 };
 
 const buildSceneMeta = (args: { mermaidCode: string; svgMarkup: string }): MermaidLanggraphSceneMeta => {
@@ -1059,29 +850,21 @@ const buildSceneFromMermaidCode = async (args: {
   const diagramTypeHintLocal = detectMermaidDiagramTypeHint(args.mermaidCode);
 
   try {
-    const preprocessed = preprocessMermaidForExcalidraw(args.mermaidCode);
-    // `parseMermaidToExcalidraw` does a full Mermaid render + DOM querying.
-    // The first call can take a few seconds; don't be too aggressive here.
-    const { elements, files } = await withTimeout(
-      parseMermaidToExcalidraw(preprocessed, { themeVariables }),
-      12000
-    );
-    const normalizedSkeletons = normalizeMermaidToExcalidrawSkeletons(elements);
-    const converted = convertToExcalidrawElements(normalizedSkeletons, { regenerateIds: true }).map((el) => ({ ...el, locked: false }));
+    const { skeletons, files } = await parseMermaidToExcalidrawSkeletons({
+      mermaidCode: args.mermaidCode,
+      diagramTypeHint: diagramTypeHintLocal,
+      themeVariables,
+      timeoutMs: 12000,
+    });
+    const converted = convertToExcalidrawElements(
+      skeletons as unknown as Parameters<typeof convertToExcalidrawElements>[0],
+      { regenerateIds: true }
+    ).map((el) => ({ ...el, locked: false }));
     const themed = applyMermaidThemeToExcalidrawElements(converted, {
       backgroundColor: backgroundCandidate,
       themeVariables: themeVars,
       uiTheme: args.theme,
     });
-    const isImageOnly =
-      themed.length > 0
-      && themed.every((el) => !!el && typeof el === 'object' && (el as { type?: unknown }).type === 'image');
-    // `mermaid-to-excalidraw` can silently fall back to a single graph image when
-    // it fails to parse/query the DOM. For flowchart/sequence we prefer an
-    // editable vector scene, so treat image-only results as a failure.
-    if (isImageOnly && (diagramTypeHintLocal === 'flowchart' || diagramTypeHintLocal === 'sequence')) {
-      throw new Error('mermaid-to-excalidraw returned graphImage (image-only) for flowchart/sequence');
-    }
 
     if (themed.length > 0) {
       return {
