@@ -1359,6 +1359,9 @@ const DiagramWhiteboard: React.FC<Props> = ({
         // ignore saved scene
       } else if (meta.mermaidHash !== sceneMeta.mermaidHash) {
         // ignore saved scene from a different Mermaid source
+      } else if (meta.generator === 'svg-image' && (diagramTypeHint === 'flowchart' || diagramTypeHint === 'sequence')) {
+        // Migration: image snapshots are not editable. Prefer regenerating
+        // semantic/vector elements when we can.
       } else {
       defer(() => {
         setInitialDataState(prepareInitialData(parsed));
