@@ -1611,12 +1611,28 @@ const DiagramWhiteboard: React.FC<Props> = ({
   }, [sceneJsonForViewer]);
 
   const handleDownloadSceneFile = useCallback(() => {
-    const text = (latestJsonRef.current || sceneJsonForViewer || '').trim();
-    if (!text) return;
+    const api = apiRef.current;
+    if (!api) return;
+    const elements = api.getSceneElements();
+    if (!elements?.length) return;
+
+    // For Excalidraw.com import we need the "local" JSON format, not "database".
+    const files = api.getFiles?.() ?? {};
+    const rawJson = serializeAsJSON(
+      elements as unknown as readonly ExcalidrawElement[],
+      pickAppStateForSave({
+        ...(api.getAppState() as AppState),
+        ...EDITABLE_APPSTATE,
+        viewBackgroundColor: effectiveBackgroundColor?.trim() || (api.getAppState() as AppState).viewBackgroundColor,
+      }),
+      files,
+      'local'
+    );
+
     const safeType = diagramTypeHint === 'unknown' ? 'diagram' : diagramTypeHint;
     const fileName = `${safeType}-${sceneMeta.mermaidHash}.excalidraw`;
     try {
-      const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+      const blob = new Blob([rawJson], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1628,7 +1644,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     } catch {
       // ignore
     }
-  }, [diagramTypeHint, sceneJsonForViewer, sceneMeta.mermaidHash]);
+  }, [diagramTypeHint, effectiveBackgroundColor, sceneMeta.mermaidHash]);
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
     const style: React.CSSProperties = {
