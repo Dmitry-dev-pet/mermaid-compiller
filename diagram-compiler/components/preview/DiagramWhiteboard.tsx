@@ -1056,6 +1056,8 @@ const buildSceneFromMermaidCode = async (args: {
     };
   };
 
+  const diagramTypeHintLocal = detectMermaidDiagramTypeHint(args.mermaidCode);
+
   try {
     const preprocessed = preprocessMermaidForExcalidraw(args.mermaidCode);
     // `parseMermaidToExcalidraw` does a full Mermaid render + DOM querying.
@@ -1071,6 +1073,16 @@ const buildSceneFromMermaidCode = async (args: {
       themeVariables: themeVars,
       uiTheme: args.theme,
     });
+    const isImageOnly =
+      themed.length > 0
+      && themed.every((el) => !!el && typeof el === 'object' && (el as { type?: unknown }).type === 'image');
+    // `mermaid-to-excalidraw` can silently fall back to a single graph image when
+    // it fails to parse/query the DOM. For flowchart/sequence we prefer an
+    // editable vector scene, so treat image-only results as a failure.
+    if (isImageOnly && (diagramTypeHintLocal === 'flowchart' || diagramTypeHintLocal === 'sequence')) {
+      throw new Error('mermaid-to-excalidraw returned graphImage (image-only) for flowchart/sequence');
+    }
+
     if (themed.length > 0) {
       return {
         generator: 'mermaid-to-excalidraw',
