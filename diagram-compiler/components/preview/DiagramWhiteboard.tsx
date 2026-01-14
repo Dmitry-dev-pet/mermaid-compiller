@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Excalidraw, convertToExcalidrawElements, serializeAsJSON } from '@excalidraw/excalidraw';
+import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
-import { parseMermaidToExcalidraw } from '@excalidraw/mermaid-to-excalidraw';
 import type { AppState, BinaryFiles, ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types';
 import type { ExcalidrawElement, OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 
@@ -9,6 +8,7 @@ type Props = {
   theme: 'light' | 'dark';
   backgroundColor: string | null;
   mermaidCode: string;
+  svgMarkup: string;
   initialSceneJson: string | null;
   onAutosave: (sceneJson: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -26,6 +26,21 @@ const pickAppStateForSave = (appState: AppState): Partial<AppState> => {
 
 const normalizeTheme = (theme: 'light' | 'dark') => theme;
 
+const toSvgDataUrl = (svg: string) => {
+  const decoded = unescape(encodeURIComponent(svg));
+  const base64 = btoa(decoded);
+  return `data:image/svg+xml;base64,${base64}`;
+};
+
+const parseViewBox = (svg: string) => {
+  const match = svg.match(/\bviewBox\s*=\s*["']\s*([0-9.\-]+)\s+([0-9.\-]+)\s+([0-9.\-]+)\s+([0-9.\-]+)\s*["']/i);
+  if (!match) return null;
+  const width = Number(match[3]);
+  const height = Number(match[4]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  return { width, height };
+};
+
 const tryParseInitialScene = (sceneJson: string | null): ExcalidrawInitialDataState | null => {
   if (!sceneJson?.trim()) return null;
   try {
@@ -40,22 +55,58 @@ const tryParseInitialScene = (sceneJson: string | null): ExcalidrawInitialDataSt
   }
 };
 
-const buildSceneFromMermaid = async (args: {
-  mermaidCode: string;
+const buildSceneFromSvgMarkup = async (args: {
+  svgMarkup: string;
   theme: 'light' | 'dark';
   backgroundColor: string | null;
 }): Promise<ExcalidrawInitialDataState | null> => {
-  const code = args.mermaidCode.trim();
-  if (!code) return null;
+  const svg = args.svgMarkup.trim();
+  if (!svg) return null;
 
-  const result = await parseMermaidToExcalidraw(code, {
-    startOnLoad: false,
-    maxEdges: 3000,
-    maxTextSize: 20000,
-  });
+  const measure = async (): Promise<{ width: number; height: number }> => {
+    const fallback = parseViewBox(svg) ?? { width: 800, height: 600 };
+    try {
+      const container = document.createElement('div');
+      container.setAttribute('style', 'opacity:0; position:fixed; left:-10000px; top:0; pointer-events:none;');
+      container.innerHTML = svg;
+      document.body.appendChild(container);
+      const el = container.querySelector('svg');
+      if (!el) {
+        container.remove();
+        return fallback;
+      }
+      // Wait one frame so the layout stabilizes.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const rect = el.getBoundingClientRect();
+      container.remove();
+      const width = rect.width > 0 ? rect.width : fallback.width;
+      const height = rect.height > 0 ? rect.height : fallback.height;
+      return { width: Math.max(1, width), height: Math.max(1, height) };
+    } catch {
+      return fallback;
+    }
+  };
 
-  const elements = convertToExcalidrawElements(result.elements ?? [], { regenerateIds: true });
-  const files = (result.files ?? {}) as BinaryFiles;
+  const { width, height } = await measure();
+  const fileId = `mermaid-svg-${Date.now()}`;
+  const files: BinaryFiles = {
+    [fileId]: {
+      mimeType: 'image/svg+xml' as any,
+      id: fileId as any,
+      dataURL: toSvgDataUrl(svg) as any,
+      created: Date.now(),
+    } as any,
+  };
+  const elements = [
+    {
+      type: 'image',
+      fileId: fileId as any,
+      x: 0,
+      y: 0,
+      width,
+      height,
+    } as any,
+  ];
 
   return {
     type: 'excalidraw',
@@ -76,6 +127,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   theme,
   backgroundColor,
   mermaidCode,
+  svgMarkup,
   initialSceneJson,
   onAutosave,
   onDirtyChange,
@@ -118,9 +170,10 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
 
     return async () => {
-      return buildSceneFromMermaid({ mermaidCode, theme, backgroundColor });
+      void mermaidCode;
+      return buildSceneFromSvgMarkup({ svgMarkup, theme, backgroundColor });
     };
-  }, [backgroundColor, initialSceneJson, mermaidCode, theme]);
+  }, [backgroundColor, initialSceneJson, mermaidCode, svgMarkup, theme]);
 
   const scheduleAutosave = useCallback((nextJson: string) => {
     latestJsonRef.current = nextJson;

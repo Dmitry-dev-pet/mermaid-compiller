@@ -851,6 +851,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
           theme={theme}
           backgroundColor={previewBackgroundColor}
           mermaidCode={codeForRender}
+          svgMarkup={svgMarkup}
           initialSceneJson={whiteboardInitialSceneOverride !== undefined ? whiteboardInitialSceneOverride : whiteboardSceneJson}
           onAutosave={(sceneJson) => onSaveWhiteboardSceneJson(sceneJson)}
           onDirtyChange={setIsWhiteboardDirty}
