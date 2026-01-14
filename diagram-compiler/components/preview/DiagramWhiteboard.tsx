@@ -336,8 +336,11 @@ const wrapTextToWidth = (text: string, opts: { maxWidth: number; fontSize: numbe
   if (!raw) return '';
   const { maxWidth, fontSize } = opts;
   if (!(maxWidth > 0) || !(fontSize > 0)) return raw;
-  const approxCharWidth = fontSize * 0.55;
-  const maxChars = Math.max(6, Math.floor(maxWidth / approxCharWidth));
+  // Excalidraw container text uses a fairly conservative fit-to-width algorithm;
+  // keep wrapped lines shorter than a naive monospace estimate to avoid
+  // overlapped glyphs when the original token has no spaces (e.g. long Russian words).
+  const approxCharWidth = fontSize * 0.75;
+  const maxChars = Math.max(5, Math.floor(maxWidth / approxCharWidth));
   if (raw.length <= maxChars) return raw;
 
   const linesIn = raw.split('\n');
@@ -434,6 +437,65 @@ const wrapMermaidToExcalidrawSkeletonLabels = (
 
     return el;
   }) as unknown as Parameters<typeof convertToExcalidrawElements>[0];
+};
+
+const expandExcalidrawContainersToFitText = <T,>(raw: readonly T[]): T[] => {
+  const elements = Array.isArray(raw) ? [...raw] : [];
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  const num = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+  const byId = new Map<string, T>();
+  for (const el of elements) {
+    if (!isRecord(el)) continue;
+    const id = typeof el.id === 'string' ? el.id : null;
+    if (id) byId.set(id, el);
+  }
+
+  const updates = new Map<string, T>();
+  const PADDING = 18;
+  for (const el of elements) {
+    if (!isRecord(el)) continue;
+    if (el.isDeleted === true) continue;
+    if (el.type !== 'text') continue;
+    const containerId = typeof el.containerId === 'string' ? el.containerId : null;
+    if (!containerId) continue;
+    const textWidth = num(el.width);
+    const textHeight = num(el.height);
+    if (!(textWidth && textHeight)) continue;
+
+    const container = byId.get(containerId);
+    if (!container || !isRecord(container)) continue;
+    if (container.isDeleted === true) continue;
+    if (container.type !== 'rectangle' && container.type !== 'diamond' && container.type !== 'ellipse') continue;
+    const cWidth = num(container.width);
+    const cHeight = num(container.height);
+    if (!(cWidth && cHeight)) continue;
+
+    const desiredWidth = Math.max(cWidth, textWidth + PADDING * 2);
+    const desiredHeight = Math.max(cHeight, textHeight + PADDING * 2);
+    if (desiredWidth <= cWidth + 0.5 && desiredHeight <= cHeight + 0.5) continue;
+
+    const x = num(container.x) ?? 0;
+    const y = num(container.y) ?? 0;
+    const next = {
+      ...container,
+      x: x - (desiredWidth - cWidth) / 2,
+      y: y - (desiredHeight - cHeight) / 2,
+      width: desiredWidth,
+      height: desiredHeight,
+    } as unknown as T;
+    updates.set(containerId, next);
+  }
+
+  if (!updates.size) return elements;
+  return elements.map((el) => {
+    if (!isRecord(el)) return el;
+    const id = typeof el.id === 'string' ? el.id : null;
+    if (!id) return el;
+    return updates.get(id) ?? el;
+  });
 };
 
 const buildSceneFromSvgVectors = async (args: {
@@ -775,17 +837,47 @@ const buildSceneFromMermaidCode = async (args: {
         1500
       );
       const wrappedSkeleton = wrapMermaidToExcalidrawSkeletonLabels(elements);
-      const converted = convertToExcalidrawElements(wrappedSkeleton, { regenerateIds: true }).map((el) => ({
-        ...el,
-        locked: false,
-        groupIds: [] as unknown as typeof el.groupIds,
-      }));
-      if (converted.length > 0) {
+      const converted = convertToExcalidrawElements(wrappedSkeleton, { regenerateIds: true }).map((el) => {
+        const base = {
+          ...el,
+          locked: false,
+          groupIds: [] as unknown as typeof el.groupIds,
+        };
+        if (base.type !== 'text') return base;
+
+        // Some Mermaid→Excalidraw conversions produce multi-line text with a
+        // missing/invalid lineHeight, which renders as overlapped glyphs.
+        const rec = base as unknown as Record<string, unknown>;
+        const rawLineHeight = rec.lineHeight;
+        const lineHeight =
+          typeof rawLineHeight === 'number' && Number.isFinite(rawLineHeight) && rawLineHeight >= 1
+            ? rawLineHeight
+            : 1.25;
+
+        const text = typeof rec.text === 'string' ? rec.text : '';
+        const fontSize = typeof rec.fontSize === 'number' && Number.isFinite(rec.fontSize) ? rec.fontSize : 16;
+        const width = typeof rec.width === 'number' && Number.isFinite(rec.width) ? rec.width : null;
+        const maxLineLen = Math.max(1, ...text.split('\n').map((l) => l.length));
+        const estimatedWidth = maxLineLen * fontSize * 0.62;
+        const nextWidth = width !== null && width >= 60 ? width : Math.max(width ?? 0, estimatedWidth, 60);
+
+        return {
+          ...rec,
+          lineHeight,
+          // Excalidraw sometimes relies on originalText/rawText for container text;
+          // keep it aligned with the wrapped content to prevent re-wrapping/overlap.
+          originalText: text,
+          rawText: text,
+          width: nextWidth,
+        } as typeof base;
+      });
+      const resized = expandExcalidrawContainersToFitText(converted);
+      if (resized.length > 0) {
         return {
           type: 'excalidraw',
           version: 2,
           source: 'mermaid-langgraph',
-          elements: converted,
+          elements: resized,
           files,
           scrollToContent: true,
           appState: {
@@ -927,7 +1019,9 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const [initialDataState, setInitialDataState] = useState<ExcalidrawInitialDataState | null>(null);
   const [isSceneBuilding, setIsSceneBuilding] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
-  const lastGeneratedSignatureRef = useRef<string>('');
+  const lastBuiltSignatureRef = useRef<string>('');
+  const inFlightSignatureRef = useRef<string>('');
+  const buildRunIdRef = useRef(0);
   const sceneMetaForSaveRef = useRef<MermaidLanggraphSceneMeta>(sceneMeta);
   const pendingFitSceneKeyRef = useRef<number | null>(null);
   const lastSerializedSignatureRef = useRef<string>('');
@@ -1004,8 +1098,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
 
     const signature = `${sceneMeta.mermaidHash}:${normalizeTheme(theme)}:${effectiveBackgroundColor ?? ''}`;
-    if (signature === lastGeneratedSignatureRef.current) return;
-    lastGeneratedSignatureRef.current = signature;
+    if (signature === lastBuiltSignatureRef.current) return;
+    if (signature === inFlightSignatureRef.current) return;
+    inFlightSignatureRef.current = signature;
+    buildRunIdRef.current += 1;
+    const buildId = buildRunIdRef.current;
 
     let cancelled = false;
     defer(() => {
@@ -1019,7 +1116,9 @@ const DiagramWhiteboard: React.FC<Props> = ({
       backgroundColor: effectiveBackgroundColor,
     }).then((scene) => {
       if (cancelled) return;
+      if (buildId !== buildRunIdRef.current) return;
       setIsSceneBuilding(false);
+      inFlightSignatureRef.current = '';
       if (!scene) {
         setBuildError('buildSceneFromMermaidCode returned null');
         return;
@@ -1027,6 +1126,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       setInitialDataState(prepareInitialData(scene));
       sceneMetaForSaveRef.current = sceneMeta;
       setBuildError(null);
+      lastBuiltSignatureRef.current = signature;
       setSceneKey((k) => {
         const next = k + 1;
         pendingFitSceneKeyRef.current = next;
@@ -1034,13 +1134,18 @@ const DiagramWhiteboard: React.FC<Props> = ({
       });
     }).catch((error: unknown) => {
       if (cancelled) return;
+      if (buildId !== buildRunIdRef.current) return;
       setIsSceneBuilding(false);
+      inFlightSignatureRef.current = '';
       const message = error instanceof Error ? error.message : String(error);
       setBuildError(message);
     });
 
     return () => {
       cancelled = true;
+      if (inFlightSignatureRef.current === signature) {
+        inFlightSignatureRef.current = '';
+      }
     };
   }, [
     diagramTypeHint,
@@ -1059,10 +1164,38 @@ const DiagramWhiteboard: React.FC<Props> = ({
     const status: 'idle' | 'building' | 'ready' | 'failed' =
       isSceneBuilding ? 'building' : buildError ? 'failed' : initialDataState ? 'ready' : 'idle';
     const counts = initialDataState?.elements ? countElementTypes(initialDataState.elements as unknown[]) : null;
+    const sampleText = (() => {
+      const list = (initialDataState?.elements ?? []) as unknown[];
+      let best: { rec: Record<string, unknown>; score: number } | null = null;
+      for (const el of list) {
+        if (!el || typeof el !== 'object') continue;
+        const rec = el as Record<string, unknown>;
+        if (rec.isDeleted === true) continue;
+        if (rec.type !== 'text') continue;
+        const text = typeof rec.text === 'string' ? rec.text : '';
+        const score = (text.includes('\n') ? 1000 : 0) + text.length;
+        if (!best || score > best.score) best = { rec, score };
+      }
+      if (!best) return null;
+      const rec = best.rec;
+      const text = typeof rec.text === 'string' ? rec.text : '';
+      const width = typeof rec.width === 'number' ? rec.width : null;
+      const height = typeof rec.height === 'number' ? rec.height : null;
+      const fontSize = typeof rec.fontSize === 'number' ? rec.fontSize : null;
+      const lineHeight = typeof rec.lineHeight === 'number' ? rec.lineHeight : null;
+      return {
+        fontSize,
+        lineHeight,
+        width,
+        height,
+        textPreview: text.length > 120 ? `${text.slice(0, 120)}…` : text,
+      };
+    })();
     return {
       status,
       error: buildError,
       builtCounts: counts,
+      sampleText,
       diagramTypeHint,
       svgChars: svgMarkup.trim() ? svgMarkup.length : 0,
     };
@@ -1149,7 +1282,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       hasHadContentRef.current = true;
     }
 
-    if (pendingFitSceneKeyRef.current === sceneKey && elements.length > 0) {
+    if (pendingFitSceneKeyRef.current === sceneKey && elements.length > 0 && apiRef.current) {
       pendingFitSceneKeyRef.current = null;
       requestAnimationFrame(() => {
         try {
@@ -1188,6 +1321,22 @@ const DiagramWhiteboard: React.FC<Props> = ({
       // Never throw from Excalidraw onChange — it can break interactions (selection/dragging).
     }
   }, [api, effectiveBackgroundColor, sceneKey, scheduleAutosave]);
+
+  useEffect(() => {
+    if (!api) return;
+    if (pendingFitSceneKeyRef.current !== sceneKey) return;
+    const elements = api.getSceneElements();
+    if (!elements?.length) return;
+
+    pendingFitSceneKeyRef.current = null;
+    requestAnimationFrame(() => {
+      try {
+        apiRef.current?.scrollToContent(undefined, { fitToContent: true });
+      } catch {
+        // ignore
+      }
+    });
+  }, [api, sceneKey]);
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
     const style: React.CSSProperties = {
@@ -1237,12 +1386,13 @@ const DiagramWhiteboard: React.FC<Props> = ({
         }}
       />
       {debugEnabled && (
-        <div className="absolute top-2 left-2 rounded border border-slate-300/40 bg-white/80 px-2 py-1 text-[11px] text-slate-700 dark:border-slate-600/50 dark:bg-slate-900/70 dark:text-slate-200">
+        <div className="pointer-events-none absolute top-2 left-2 z-50 rounded border border-slate-300/40 bg-white/80 px-2 py-1 text-[11px] text-slate-700 dark:border-slate-600/50 dark:bg-slate-900/70 dark:text-slate-200">
           <div>Whiteboard: {debugOverlay?.status ?? 'idle'}</div>
           <div>type: {debugOverlay?.diagramTypeHint ?? diagramTypeHint}</div>
           <div>svg: {debugOverlay?.svgChars ? `${debugOverlay.svgChars} chars` : 'empty'}</div>
           {debugOverlay?.error ? <div>error: {debugOverlay.error}</div> : null}
           {debugOverlay?.builtCounts ? <div>built: {JSON.stringify(debugOverlay.builtCounts)}</div> : null}
+          {debugOverlay?.sampleText ? <div>text: {JSON.stringify(debugOverlay.sampleText)}</div> : null}
         </div>
       )}
     </div>
