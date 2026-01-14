@@ -1616,11 +1616,85 @@ const DiagramWhiteboard: React.FC<Props> = ({
     const elements = api.getSceneElements();
     if (!elements?.length) return;
 
+    const bounds = (() => {
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      let seen = 0;
+
+      for (const el of elements as unknown as Array<Record<string, unknown>>) {
+        if (!el || typeof el !== 'object') continue;
+        if (el.isDeleted === true) continue;
+        const x = typeof el.x === 'number' ? el.x : null;
+        const y = typeof el.y === 'number' ? el.y : null;
+        if (x === null || y === null) continue;
+
+        const width = typeof el.width === 'number' ? el.width : null;
+        const height = typeof el.height === 'number' ? el.height : null;
+        if (width !== null && height !== null) {
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x + width);
+          maxY = Math.max(maxY, y + height);
+          seen += 1;
+          continue;
+        }
+
+        const pointsRaw = el.points;
+        if (Array.isArray(pointsRaw)) {
+          let pMinX = Number.POSITIVE_INFINITY;
+          let pMinY = Number.POSITIVE_INFINITY;
+          let pMaxX = Number.NEGATIVE_INFINITY;
+          let pMaxY = Number.NEGATIVE_INFINITY;
+          let pSeen = 0;
+          for (const p of pointsRaw) {
+            if (!Array.isArray(p) || p.length !== 2) continue;
+            const px = typeof p[0] === 'number' ? p[0] : Number(p[0]);
+            const py = typeof p[1] === 'number' ? p[1] : Number(p[1]);
+            if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+            pMinX = Math.min(pMinX, px);
+            pMinY = Math.min(pMinY, py);
+            pMaxX = Math.max(pMaxX, px);
+            pMaxY = Math.max(pMaxY, py);
+            pSeen += 1;
+          }
+          if (pSeen > 0) {
+            minX = Math.min(minX, x + pMinX);
+            minY = Math.min(minY, y + pMinY);
+            maxX = Math.max(maxX, x + pMaxX);
+            maxY = Math.max(maxY, y + pMaxY);
+            seen += 1;
+          }
+        }
+      }
+
+      if (seen === 0) return null;
+      return { minX, minY, maxX, maxY };
+    })();
+
+    const centeredElements = (() => {
+      if (!bounds) return elements;
+      const cx = (bounds.minX + bounds.maxX) / 2;
+      const cy = (bounds.minY + bounds.maxY) / 2;
+      const dx = -cx;
+      const dy = -cy;
+
+      return (elements as unknown as Array<Record<string, unknown>>).map((el) => {
+        if (!el || typeof el !== 'object') return el as unknown as OrderedExcalidrawElement;
+        if (el.isDeleted === true) return el as unknown as OrderedExcalidrawElement;
+        const x = typeof el.x === 'number' ? el.x : null;
+        const y = typeof el.y === 'number' ? el.y : null;
+        if (x === null || y === null) return el as unknown as OrderedExcalidrawElement;
+        return { ...el, x: x + dx, y: y + dy } as unknown as OrderedExcalidrawElement;
+      });
+    })();
+
     // For Excalidraw.com import we need the "local" JSON format, not "database".
     const files = api.getFiles?.() ?? {};
     const appState = api.getAppState() as AppState;
     const rawJson = serializeAsJSON(
-      elements as unknown as readonly ExcalidrawElement[],
+      centeredElements as unknown as readonly ExcalidrawElement[],
       {
         // Keep the exported file portable: don't persist viewport scroll/zoom,
         // otherwise Excalidraw.com may open it "blank" (content off-screen).
