@@ -3,7 +3,7 @@ import { CaptureUpdateAction, convertToExcalidrawElements, Excalidraw, serialize
 import { parseMermaidToExcalidraw } from '@excalidraw/mermaid-to-excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import './diagram-whiteboard.css';
-import { Code2, Copy, X } from 'lucide-react';
+import { Code2, Copy, Download, X } from 'lucide-react';
 import { extractFrontmatterThemeVariables } from '../../utils/mermaidFrontmatterThemeVariables';
 import { extractMermaidSvgBackgroundColor } from '../../utils/mermaidSvgBackground';
 import type {
@@ -1610,6 +1610,26 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
   }, [sceneJsonForViewer]);
 
+  const handleDownloadSceneFile = useCallback(() => {
+    const text = (latestJsonRef.current || sceneJsonForViewer || '').trim();
+    if (!text) return;
+    const safeType = diagramTypeHint === 'unknown' ? 'diagram' : diagramTypeHint;
+    const fileName = `${safeType}-${sceneMeta.mermaidHash}.excalidraw`;
+    try {
+      const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // ignore
+    }
+  }, [diagramTypeHint, sceneJsonForViewer, sceneMeta.mermaidHash]);
+
   const containerStyle = useMemo<React.CSSProperties>(() => {
     const style: React.CSSProperties = {
       // Disable the dark-theme canvas filter so Mermaid colors/background stay exact.
@@ -1689,6 +1709,15 @@ const DiagramWhiteboard: React.FC<Props> = ({
               >
                 <Copy className="h-3.5 w-3.5" />
                 Copy
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded border border-slate-300/60 bg-white/70 px-2 py-1 text-xs text-slate-700 hover:bg-white dark:border-slate-700/70 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-900"
+                onClick={handleDownloadSceneFile}
+                title="Download .excalidraw"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Save
               </button>
               <button
                 type="button"
