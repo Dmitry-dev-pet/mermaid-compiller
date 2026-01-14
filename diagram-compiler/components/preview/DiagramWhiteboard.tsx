@@ -348,18 +348,33 @@ const wrapTextToWidth = (text: string, opts: { maxWidth: number; fontSize: numbe
       out.push('');
       continue;
     }
-    let cur = words[0]!;
-    for (let i = 1; i < words.length; i += 1) {
-      const next = words[i]!;
-      const merged = `${cur} ${next}`;
-      if (merged.length <= maxChars) {
-        cur = merged;
-        continue;
+    const splitLongToken = (token: string) => {
+      if (token.length <= maxChars) return [token];
+      const parts: string[] = [];
+      for (let i = 0; i < token.length; i += maxChars) {
+        parts.push(token.slice(i, i + maxChars));
       }
-      out.push(cur);
-      cur = next;
+      return parts;
+    };
+
+    let cur = '';
+    for (const word of words) {
+      const parts = splitLongToken(word);
+      for (const part of parts) {
+        if (!cur) {
+          cur = part;
+          continue;
+        }
+        const merged = `${cur} ${part}`;
+        if (merged.length <= maxChars) {
+          cur = merged;
+          continue;
+        }
+        out.push(cur);
+        cur = part;
+      }
     }
-    out.push(cur);
+    if (cur) out.push(cur);
   }
   return out.join('\n').trim();
 };
@@ -473,6 +488,13 @@ const buildSceneFromSvgVectors = async (args: {
     };
 
     const elementsSkeleton: Array<Record<string, unknown>> = [];
+    const seenTextKeys = new Set<string>();
+    const shouldSkipText = (args: { text: string; x: number; y: number }) => {
+      const key = `${Math.round(args.x)}:${Math.round(args.y)}:${args.text}`;
+      if (seenTextKeys.has(key)) return true;
+      seenTextKeys.add(key);
+      return false;
+    };
 
     // Rectangles (nodes/containers).
     const rects = Array.from(svgEl.querySelectorAll('rect'));
@@ -528,6 +550,7 @@ const buildSceneFromSvgVectors = async (args: {
       const p = svgToLocal({ x: bb.x, y: bb.y });
       const fontSize = 16;
       const wrapped = wrapTextToWidth(content, { maxWidth: bb.width, fontSize });
+      if (shouldSkipText({ text: wrapped, x: p.x, y: p.y })) continue;
       elementsSkeleton.push({
         type: 'text',
         text: wrapped,
@@ -562,6 +585,7 @@ const buildSceneFromSvgVectors = async (args: {
         return { x: local.x - anchorShift, y: local.y - fontSize };
       })();
       const wrapped = bb ? wrapTextToWidth(content, { maxWidth: bb.width, fontSize }) : content;
+      if (shouldSkipText({ text: wrapped, x: p.x, y: p.y })) continue;
 
       elementsSkeleton.push({
         type: 'text',
