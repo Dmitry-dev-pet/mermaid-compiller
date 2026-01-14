@@ -312,6 +312,7 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
     && (/^\d+:\d\d$/.test(row.timeLabel) || /s$/.test(row.timeLabel));
   const carriedTimeLabel = shouldCarryTime ? row.timeLabel : undefined;
   const baseRow = shouldCarryTime ? { ...row, timeLabel: undefined } : row;
+  const subRowBase: LogRow = { ...baseRow, eventKind: undefined };
 
   const label = row.labelText ?? 'Контекст';
   const metaSelectionLine = row.contextMeta?.selectionLine?.trim() || '';
@@ -341,7 +342,7 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
       hasHeaderRow = true;
     } else {
     out.push({
-      ...baseRow,
+      ...subRowBase,
       id: `${row.id}-sel`,
       labelText: label,
       contentText: first,
@@ -383,7 +384,7 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
   const msgCount = msgCountMatch ? Number(msgCountMatch[1]) : null;
   if (msgLine) {
     out.push({
-      ...baseRow,
+      ...subRowBase,
       id: `${row.id}-messages`,
       labelText: hasHeaderRow ? '' : label,
       contentText: displayMsgLine,
@@ -404,7 +405,7 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
       const normalizedFile = file.replace(/\s*\([^)]*\)\s*$/, '').trim();
       const tokens = docsTokensByFile.get(normalizedFile) ?? null;
       out.push({
-        ...baseRow,
+        ...subRowBase,
         id: `${row.id}-doc-${normalizedFile}`,
         labelText: hasHeaderRow ? '' : label,
         contentText: normalizedFile,
