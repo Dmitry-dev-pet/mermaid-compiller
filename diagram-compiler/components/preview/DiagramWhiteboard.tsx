@@ -38,6 +38,16 @@ const pickAppStateForSave = (appState: AppState): Partial<AppState> => {
 
 const normalizeTheme = (theme: 'light' | 'dark') => theme;
 
+const EDITABLE_APPSTATE: Partial<AppState> = {
+  viewModeEnabled: false,
+  zenModeEnabled: false,
+  activeTool: {
+    type: 'selection',
+    lastActiveTool: null,
+    locked: false,
+  } as AppState['activeTool'],
+};
+
 const toSvgDataUrl = (svg: string): DataURL => {
   // Prefer UTF-8 encoding to avoid base64/Unicode pitfalls.
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` as DataURL;
@@ -616,6 +626,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         ...parsed,
         appState: {
           ...parsedAppState,
+          ...EDITABLE_APPSTATE,
           theme: normalizeTheme(theme),
           viewBackgroundColor: effectiveBackgroundColor ?? parsedAppState.viewBackgroundColor,
         },
@@ -683,6 +694,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       api.updateScene({
         elements,
         appState: {
+          ...EDITABLE_APPSTATE,
           theme: normalizeTheme(theme),
           viewBackgroundColor: backgroundColor ?? undefined,
         },
@@ -702,9 +714,15 @@ const DiagramWhiteboard: React.FC<Props> = ({
     const nextBackground = effectiveBackgroundColor ?? undefined;
     const apply = () => {
       const current = api.getAppState();
-      if (current.theme === nextTheme && current.viewBackgroundColor === nextBackground) return;
+      if (
+        current.theme === nextTheme
+        && current.viewBackgroundColor === nextBackground
+        && current.viewModeEnabled === false
+        && current.zenModeEnabled === false
+      ) return;
       api.updateScene({
         appState: {
+          ...EDITABLE_APPSTATE,
           theme: nextTheme,
           viewBackgroundColor: nextBackground,
         },
@@ -753,6 +771,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
   }, [onAutosave, onDirtyChange]);
 
+  useEffect(() => {
+    lastSerializedSignatureRef.current = '';
+  }, [initialSceneJson, mermaidCode, svgMarkup]);
+
+  const lastSerializedSignatureRef = useRef<string>('');
   const handleChange = useCallback((
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -767,26 +790,29 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
 
     const expectedBackground = effectiveBackgroundColor?.trim() ?? '';
-    if (expectedBackground && appState.viewBackgroundColor !== expectedBackground) {
-      api?.updateScene({
-        appState: {
-          viewBackgroundColor: expectedBackground,
-        },
-        captureUpdate: CaptureUpdateAction.NEVER,
-      });
-    }
 
-    const filesForSave = api?.getFiles?.() ?? files;
-    const json = serializeAsJSON(
-      elements as unknown as readonly ExcalidrawElement[],
-      pickAppStateForSave({
-        ...appState,
-        viewBackgroundColor: expectedBackground || appState.viewBackgroundColor,
-      }),
-      filesForSave,
-      'database'
-    );
-    scheduleAutosave(json);
+    // Excalidraw calls onChange for selection/appState changes; don’t pay the
+    // cost of serialization unless elements/files actually changed.
+    const signature = `${elements.length}:${elements.at(-1)?.id ?? ''}:${elements.at(-1)?.version ?? 0}:${Object.keys(files ?? {}).length}`;
+    if (signature === lastSerializedSignatureRef.current) return;
+
+    try {
+      const filesForSave = api?.getFiles?.() ?? files;
+      const json = serializeAsJSON(
+        elements as unknown as readonly ExcalidrawElement[],
+        pickAppStateForSave({
+          ...appState,
+          ...EDITABLE_APPSTATE,
+          viewBackgroundColor: expectedBackground || appState.viewBackgroundColor,
+        }),
+        filesForSave,
+        'database'
+      );
+      lastSerializedSignatureRef.current = signature;
+      scheduleAutosave(json);
+    } catch {
+      // Never throw from Excalidraw onChange — it can break interactions (selection/dragging).
+    }
   }, [api, effectiveBackgroundColor, scheduleAutosave]);
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
