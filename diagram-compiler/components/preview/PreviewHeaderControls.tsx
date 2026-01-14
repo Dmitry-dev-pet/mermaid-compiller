@@ -6,7 +6,7 @@ import type { FlowchartEdgeStyle, FlowchartEdgeStyleUpdate } from '../../utils/f
 import type { FlowchartLinkStylePresetId } from '../../utils/flowchartLinkStyle';
 import { FLOWCHART_CURVES, FlowchartCurve } from '../../utils/flowchartCurveConfig';
 import { MermaidThemePresetId } from '../../utils/mermaidThemePreset';
-import { HEADER_CONTROL_BUTTON } from '../../utils/uiControlStyles';
+import { CONTROL_BASE, HEADER_CONTROL_BUTTON } from '../../utils/uiControlStyles';
 
 interface PreviewHeaderControlsProps {
   title: string;
@@ -398,7 +398,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               className={`rounded border px-2 py-1 text-[11px] transition-colors ${
                                 isSelected
                                   ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                  : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                  : CONTROL_BASE
                               }`}
                             >
                                 <span className="inline-flex items-center justify-between w-full gap-2">
@@ -436,7 +436,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               className={`rounded border px-2 py-1 text-[11px] transition-colors ${
                                 isSelected
                                   ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                  : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                  : CONTROL_BASE
                               }`}
                             >
                               <span className="inline-flex items-center justify-between w-full gap-2">
@@ -471,7 +471,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                           className={`rounded border px-2 py-1 text-[11px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                             !selectedInlineDirection
                               ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                              : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                              : CONTROL_BASE
                           }`}
                           title={isMarkdownMode ? 'Direction is disabled in markdown mode' : undefined}
                         >
@@ -488,7 +488,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               className={`rounded border px-2 py-1 text-[11px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                                 isSelected
                                   ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                  : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                  : CONTROL_BASE
                               }`}
                               title={isMarkdownMode ? 'Direction is disabled in markdown mode' : undefined}
                             >
@@ -537,7 +537,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                     className={`rounded border px-2 py-1 text-[11px] transition-colors ${
                                       isSelected
                                         ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                        : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                        : CONTROL_BASE
                                     }`}
                                   >
                                     <div className="flex items-center justify-between gap-2">
@@ -573,7 +573,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                     className={`rounded border px-2 py-1 text-[11px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                                       isSelected
                                         ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                        : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                        : CONTROL_BASE
                                     }`}
                                     title={isDisabled ? 'Circle/Cross caps use normal lines' : undefined}
                                   >
@@ -602,7 +602,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                     className={`rounded border px-2 py-1 text-[11px] transition-colors ${
                                       isSelected
                                         ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                        : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                        : CONTROL_BASE
                                     }`}
                                   >
                                     <div className="flex items-center justify-between gap-2">
@@ -647,7 +647,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                     className={`rounded border px-2 py-1 text-[11px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                                       isSelected
                                         ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                        : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                        : CONTROL_BASE
                                     }`}
                                     title={isDisabled ? 'Direction applies only to arrow caps' : undefined}
                                   >
@@ -674,7 +674,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                 className={`rounded border px-2 py-1 text-[11px] transition-colors ${
                                   !isFlowchartCurveMixed && !flowchartCurve
                                     ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                    : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                    : CONTROL_BASE
                                 }`}
                               >
                                 <span className="font-mono">(none)</span>
@@ -689,7 +689,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                     className={`rounded border px-2 py-1 text-[11px] transition-colors ${
                                       isSelected
                                         ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                        : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                        : CONTROL_BASE
                                     }`}
                                     title={`curve: ${curve}`}
                                   >
@@ -725,7 +725,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                     className={`rounded border px-2 py-1 text-[11px] transition-colors ${
                                       isSelected
                                         ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                        : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                        : CONTROL_BASE
                                     }`}
                                   >
                                     <div className="flex items-center justify-between gap-2">
@@ -743,7 +743,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                 className={`rounded border px-2 py-1 text-[11px] transition-colors ${
                                   flowchartLinkStylePreset === 'accent'
                                     ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                    : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                                    : CONTROL_BASE
                                 }`}
                                 title="stroke:#3b82f6, stroke-width:2px"
                               >
@@ -808,7 +808,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                 className={`h-7 px-2 rounded border transition-colors shrink-0 inline-flex items-center gap-1 text-[10px] font-medium ${
                   isScrollSyncEnabled
                     ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
-                    : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                    : CONTROL_BASE
                 }`}
                 title={isScrollSyncEnabled ? 'Disable scroll sync' : 'Enable scroll sync'}
                 aria-label={isScrollSyncEnabled ? 'Disable scroll sync' : 'Enable scroll sync'}

@@ -31,7 +31,7 @@ import type { DiagramType } from '../types';
 import type { HistorySession } from '../services/history/types';
 import { DIAGRAM_TYPE_LABELS, getDiagramTypeShortLabel } from '../utils/diagramTypeMeta';
 import { DIAGRAM_TYPES, MAIN_DIAGRAM_TYPES } from '../utils/diagramTypes';
-import { HEADER_CONTROL_BUTTON, HEADER_CONTROL_SELECT } from '../utils/uiControlStyles';
+import { CONTROL_BASE, HEADER_CONTROL_BUTTON, HEADER_CONTROL_SELECT } from '../utils/uiControlStyles';
 
 type ChatProjectsProps = {
   projects: HistorySession[];
@@ -454,7 +454,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
                   className={`relative group rounded border px-2 py-1 text-[11px] font-mono tabular-nums transition-colors ${
                     isSelected
                       ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                      : 'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]'
+                      : CONTROL_BASE
                   }`}
                 >
                   <span className="flex items-center justify-center gap-1">

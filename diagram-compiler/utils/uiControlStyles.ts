@@ -6,3 +6,6 @@ export const HEADER_CONTROL_ICON_BUTTON =
 
 export const HEADER_CONTROL_SELECT =
   'h-7 px-2 rounded border border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-blue-500/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
+
+export const CONTROL_BASE =
+  'border-[var(--panel-border)] bg-[var(--control-bg)] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)]';

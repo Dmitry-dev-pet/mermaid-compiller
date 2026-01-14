@@ -1,10 +1,10 @@
 import React from 'react';
 import type { DocsMode } from '../../types';
-import type { LogRow } from './operationLogUtils';
+import type { OperationLogTextRow } from './operationLogUtils';
 import OperationLogTooltip from './OperationLogTooltip';
 
 type Props = {
-  row: LogRow;
+  row: OperationLogTextRow;
   pinnedTooltip: string | null;
   setPinnedTooltip: React.Dispatch<React.SetStateAction<string | null>>;
   onOpenBuildDocsFile?: (fileName: string, mode: DocsMode) => void;
@@ -16,7 +16,7 @@ const normalizeFileLabel = (value: string) => {
   return withoutSize || trimmed;
 };
 
-const resolveDocsMode = (row: LogRow): DocsMode => {
+const resolveDocsMode = (row: OperationLogTextRow): DocsMode => {
   return row.contextScope === 'planner'
     ? 'plan'
     : row.contextScope === 'chat'

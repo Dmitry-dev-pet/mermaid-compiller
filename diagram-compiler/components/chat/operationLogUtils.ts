@@ -8,7 +8,7 @@ import {
   stripInnerBlockLabelFromContextText,
 } from './operationLogTextUtils';
 
-export type LogRow = {
+type LogRow = {
   id: string;
   text: string;
   blockIndex?: number;
@@ -28,10 +28,28 @@ export type LogRow = {
   contextScope?: OperationEvent['contextScope'];
 };
 
+export type OperationLogTextRow = {
+  id: string;
+  text: string;
+  tooltipMessages?: string;
+  tooltipDocs?: string;
+  contextScope?: OperationEvent['contextScope'];
+};
+
+export type OperationLogRowView = OperationLogTextRow & {
+  leftLabel: string;
+  leftBadge?: { text: string; status?: 'ok' | 'err' };
+  volumeLabel?: string;
+  timeLabel?: string;
+  isNewBlock?: boolean;
+  isSection?: boolean;
+  blockIndex?: number;
+};
+
 export type OperationLogViewModel = {
   summaryLabel: string;
   summaryLine: string | null;
-  rows: LogRow[];
+  rows: OperationLogRowView[];
 };
 
 const parseBlockDetail = (detail: string) => {
@@ -206,6 +224,62 @@ const shouldDropContextHeaderLine = (row: LogRow, line: string) => {
   // For block-scoped context rows, the first line is often the diagram title / block label
   // which duplicates what the block row already shows.
   return true;
+};
+
+const buildViewRows = (rows: LogRow[]): OperationLogRowView[] => {
+  return rows.map((row, index) => {
+    if (row.isSection) {
+      return {
+        id: row.id,
+        isSection: true,
+        text: row.text,
+        leftLabel: '',
+        blockIndex: row.blockIndex,
+      };
+    }
+
+    const rawText = row.text ?? '';
+    const splitIndex = rawText.indexOf(' — ');
+    const hasLabel = splitIndex > 0;
+    const labelText = hasLabel ? rawText.slice(0, splitIndex) : '';
+    const contentText = hasLabel ? rawText.slice(splitIndex + 3) : rawText;
+    const isContextRow = rawText.includes('Контекст') || rawText.toLowerCase().includes('context');
+    const isTimeLabelCountdown =
+      typeof row.timeLabel === 'string' && /^\d+:\d\d$/.test(row.timeLabel);
+    const isTimeLabelDuration =
+      typeof row.timeLabel === 'string' && /s$/.test(row.timeLabel);
+    const isTimeLabelDiagramType =
+      Boolean(row.timeLabel) && isContextRow && !isTimeLabelCountdown && !isTimeLabelDuration;
+    const baseLeftLabel = labelText || (isContextRow ? 'Контекст' : '');
+    const leftLabel = isTimeLabelDiagramType && row.timeLabel
+      ? `${row.timeLabel} ${baseLeftLabel}`.trim()
+      : baseLeftLabel;
+    const timeLabel = isTimeLabelDiagramType ? '' : (row.timeLabel ?? '');
+    const isBlockRow =
+      row.kind === 'block' || row.kind === 'block_attempt' || row.kind === 'block_validation';
+    const leftBadge = isBlockRow && row.diagramTypeLabel
+      ? { text: row.diagramTypeLabel, status: row.status }
+      : undefined;
+    const prev = rows[index - 1];
+    const isNewBlock =
+      typeof row.blockIndex === 'number'
+      && typeof prev?.blockIndex === 'number'
+      && row.blockIndex !== prev.blockIndex;
+
+    return {
+      id: row.id,
+      text: contentText,
+      leftLabel,
+      leftBadge,
+      volumeLabel: row.volumeLabel,
+      timeLabel,
+      isNewBlock,
+      tooltipMessages: row.tooltipMessages,
+      tooltipDocs: row.tooltipDocs,
+      contextScope: row.contextScope,
+      blockIndex: row.blockIndex,
+    };
+  });
 };
 
 const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
@@ -756,5 +830,6 @@ export const buildOperationLogViewModel = (
   // on context rows (so it appears above the timed result row).
   stripDiagramTypeFromRows(rows, isRunning);
 
-  return { summaryLabel, summaryLine, rows };
+  const viewRows = buildViewRows(rows);
+  return { summaryLabel, summaryLine, rows: viewRows };
 };

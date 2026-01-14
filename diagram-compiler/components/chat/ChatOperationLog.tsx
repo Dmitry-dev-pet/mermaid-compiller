@@ -94,31 +94,8 @@ const ChatOperationLog: React.FC<Props> = ({
         <div className="mt-1 rounded border border-[var(--panel-border)] bg-[var(--menu-bg)]">
           <div className="px-2 py-1 space-y-0.5">
             {rows.map((event, index) => {
-              const prev = rows[index - 1];
-              const isNewBlock =
-                typeof event.blockIndex === 'number'
-                && typeof prev?.blockIndex === 'number'
-                && event.blockIndex !== prev.blockIndex;
-              const isContextRow =
-                (event.text.includes('Контекст') || event.text.toLowerCase().includes('context'))
-                && !event.isSection;
-              const isTimeLabelCountdown =
-                typeof event.timeLabel === 'string' && /^\d+:\d\d$/.test(event.timeLabel);
-              const isTimeLabelDuration =
-                typeof event.timeLabel === 'string' && /s$/.test(event.timeLabel);
-              const isTimeLabelDiagramType =
-                Boolean(event.timeLabel) && isContextRow && !isTimeLabelCountdown && !isTimeLabelDuration;
-
-              const rawText = event.text ?? '';
-              const splitIndex = rawText.indexOf(' — ');
-              const hasLabel = splitIndex > 0;
-              const labelText = hasLabel ? rawText.slice(0, splitIndex) : '';
-              const contentText = hasLabel ? rawText.slice(splitIndex + 3) : rawText;
-              const displayLabel = isTimeLabelDiagramType && event.timeLabel
-                ? `${event.timeLabel} ${labelText || 'Контекст'}`
-                : (labelText || (isContextRow ? 'Контекст' : ''));
-              const displayTime = isTimeLabelDiagramType ? '' : (event.timeLabel ?? '');
-              const statusIcon = event.status === 'ok'
+              const isNewBlock = event.isNewBlock;
+              const statusIcon = event.leftBadge?.status === 'ok'
                 ? (
                     <CheckCircle2
                       aria-label="OK"
@@ -127,7 +104,7 @@ const ChatOperationLog: React.FC<Props> = ({
                       title="OK"
                     />
                   )
-                : event.status === 'err'
+                : event.leftBadge?.status === 'err'
                   ? (
                       <AlertTriangle
                         aria-label="Error"
@@ -137,11 +114,10 @@ const ChatOperationLog: React.FC<Props> = ({
                       />
                     )
                   : null;
-              const contentRow = hasLabel ? { ...event, text: contentText } : event;
-              const showBlockMeta = typeof event.blockIndex === 'number' && Boolean(event.diagramTypeLabel);
-              const blockBadgeClassName = event.status === 'ok'
+              const showBlockMeta = Boolean(event.leftBadge);
+              const blockBadgeClassName = event.leftBadge?.status === 'ok'
                 ? 'border-emerald-500/60 text-emerald-700 dark:text-emerald-200 dark:border-emerald-400/40'
-                : event.status === 'err'
+                : event.leftBadge?.status === 'err'
                   ? 'border-amber-500/60 text-amber-700 dark:text-amber-200 dark:border-amber-400/40'
                   : 'border-[var(--panel-border)] text-[var(--control-muted-text)]';
               return (
@@ -164,22 +140,22 @@ const ChatOperationLog: React.FC<Props> = ({
                     <div className="font-mono tabular-nums text-[var(--control-muted-text)] whitespace-nowrap">
                       {showBlockMeta ? (
                         <div className="inline-flex items-center gap-2">
-                          {displayLabel ? <span>{displayLabel}</span> : null}
+                          {event.leftLabel ? <span>{event.leftLabel}</span> : null}
                           <span
                             className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] leading-none ${blockBadgeClassName}`}
-                            title={event.status === 'ok' ? 'OK' : event.status === 'err' ? 'Error' : undefined}
+                            title={event.leftBadge?.status === 'ok' ? 'OK' : event.leftBadge?.status === 'err' ? 'Error' : undefined}
                           >
-                            <span>{event.diagramTypeLabel}</span>
+                            <span>{event.leftBadge?.text}</span>
                             {statusIcon}
                           </span>
                         </div>
                       ) : (
-                        <div>{displayLabel}</div>
+                        <div>{event.leftLabel}</div>
                       )}
                     </div>
                     <div className="min-w-0 break-words text-[var(--control-text)]">
                       <OperationLogRowText
-                        row={contentRow}
+                        row={event}
                         pinnedTooltip={pinnedTooltip}
                         setPinnedTooltip={setPinnedTooltip}
                         onOpenBuildDocsFile={onOpenBuildDocsFile}
@@ -192,7 +168,7 @@ const ChatOperationLog: React.FC<Props> = ({
                       {event.volumeLabel ?? ''}
                     </span>
                     <span className="text-right font-mono tabular-nums text-[var(--control-muted-text)] whitespace-nowrap">
-                      {displayTime}
+                      {event.timeLabel ?? ''}
                     </span>
                 </>
               )}
