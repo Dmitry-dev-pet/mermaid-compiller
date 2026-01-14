@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { convertToExcalidrawElements, Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
+import { CaptureUpdateAction, convertToExcalidrawElements, Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
+import { parseMermaidToExcalidraw } from '@excalidraw/mermaid-to-excalidraw';
 import '@excalidraw/excalidraw/index.css';
+import './diagram-whiteboard.css';
+import mermaid from 'mermaid';
+import { extractFrontmatterThemeVariables } from '../../utils/mermaidFrontmatterThemeVariables';
+import { extractMermaidSvgBackgroundColor } from '../../utils/mermaidSvgBackground';
 import type {
   AppState,
   BinaryFileData,
@@ -149,10 +154,90 @@ const tryParseInitialScene = (sceneJson: string | null): ExcalidrawInitialDataSt
     if (filesCount === 0 && elements.some((el) => !!el && typeof el === 'object' && (el as { type?: unknown }).type === 'image')) {
       return null;
     }
-    return parsed as ExcalidrawInitialDataState;
+    // Migration: older whiteboard scenes were stored as a single locked image
+    // snapshot of the Mermaid SVG. This is not editable; prefer regenerating
+    // semantic elements from Mermaid code.
+    const isImageOnly = elements.length > 0 && elements.every((el) => !!el && typeof el === 'object' && (el as { type?: unknown }).type === 'image');
+    const isAllLocked =
+      elements.length > 0
+      && elements.every((el) => !!el && typeof el === 'object' && (el as { locked?: unknown }).locked === true);
+    if (filesCount > 0 && isImageOnly && isAllLocked) return null;
+  return parsed as ExcalidrawInitialDataState;
   } catch {
     return null;
   }
+};
+
+const withMermaidInitializeGuard = async <T,>(fn: () => Promise<T>): Promise<T> => {
+  const originalInitialize = mermaid.initialize.bind(mermaid);
+  const guardedInitialize: typeof mermaid.initialize = ((config: unknown) => {
+    try {
+      return originalInitialize(config as never);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // mermaid-to-excalidraw calls mermaid.initialize() on each parse. In Mermaid v11
+      // this can throw if a diagram type was already registered, which would make
+      // imports always fall back to a locked snapshot.
+      if (message.includes('already registered')) return undefined as never;
+      throw error;
+    }
+  }) as typeof mermaid.initialize;
+
+  (mermaid.initialize as typeof mermaid.initialize) = guardedInitialize;
+  try {
+    return await fn();
+  } finally {
+    (mermaid.initialize as typeof mermaid.initialize) = originalInitialize;
+  }
+};
+
+const buildSceneFromMermaidCode = async (args: {
+  mermaidCode: string;
+  svgMarkup: string;
+  theme: 'light' | 'dark';
+  backgroundColor: string | null;
+}): Promise<ExcalidrawInitialDataState | null> => {
+  const definition = args.mermaidCode.trim();
+  if (definition) {
+    try {
+      const { elements: skeletons, files } = await withMermaidInitializeGuard(() =>
+        parseMermaidToExcalidraw(definition, {
+          maxEdges: 2000,
+          maxTextSize: 50000,
+        })
+      );
+      if (skeletons?.length) {
+        const elements = convertToExcalidrawElements(skeletons).map((element) => ({
+          ...element,
+          locked: false,
+          // Mermaid imports often use groupIds for convenience, but it makes the
+          // scene feel "all-grouped" (hard to edit individual parts). Start
+          // ungrouped; users can group manually if needed.
+          groupIds: [] as unknown as typeof element.groupIds,
+        }));
+        return {
+          type: 'excalidraw',
+          version: 2,
+          source: 'mermaid-langgraph',
+          elements,
+          files,
+          scrollToContent: true,
+          appState: {
+            theme: normalizeTheme(args.theme),
+            viewBackgroundColor: args.backgroundColor ?? undefined,
+          } as Partial<AppState>,
+        };
+      }
+    } catch {
+      // Fall back to a rasterized SVG snapshot when conversion fails.
+    }
+  }
+
+  return buildSceneFromSvgMarkup({
+    svgMarkup: args.svgMarkup,
+    theme: args.theme,
+    backgroundColor: args.backgroundColor,
+  });
 };
 
 const buildSceneFromSvgMarkup = async (args: {
@@ -213,7 +298,10 @@ const buildSceneFromSvgMarkup = async (args: {
       y: -height / 2,
       width,
       height,
-      locked: true,
+      // Fallback scenes (non-flowchart diagrams or parse failures) are imported
+      // as an image. Keep it selectable/movable so users can draw on top and at
+      // least manipulate the snapshot.
+      locked: false,
     }], { regenerateIds: false }),
   ];
 
@@ -243,6 +331,15 @@ const DiagramWhiteboard: React.FC<Props> = ({
   onAutosave,
   onDirtyChange,
 }) => {
+  const effectiveBackgroundColor = useMemo(() => {
+    const fromProp = backgroundColor?.trim() ?? '';
+    if (fromProp) return fromProp;
+    const vars = extractFrontmatterThemeVariables(mermaidCode);
+    const fromVars = typeof vars?.background === 'string' ? vars.background.trim() : '';
+    if (fromVars && fromVars !== 'transparent' && fromVars !== 'none') return fromVars;
+    return extractMermaidSvgBackgroundColor(svgMarkup);
+  }, [backgroundColor, mermaidCode, svgMarkup]);
+
   const lastSavedJsonRef = useRef<string>(initialSceneJson ?? '');
   const pendingSaveRef = useRef<number | null>(null);
   const latestJsonRef = useRef<string>(initialSceneJson ?? '');
@@ -281,16 +378,19 @@ const DiagramWhiteboard: React.FC<Props> = ({
         appState: {
           ...parsedAppState,
           theme: normalizeTheme(theme),
-          viewBackgroundColor: backgroundColor ?? parsedAppState.viewBackgroundColor,
+          viewBackgroundColor: effectiveBackgroundColor ?? parsedAppState.viewBackgroundColor,
         },
       } as ExcalidrawInitialDataState;
     }
 
-    return async () => {
-      void mermaidCode;
-      return buildSceneFromSvgMarkup({ svgMarkup, theme, backgroundColor });
-    };
-  }, [backgroundColor, initialSceneJson, mermaidCode, svgMarkup, theme]);
+    return async () =>
+      buildSceneFromMermaidCode({
+        mermaidCode,
+        svgMarkup,
+        theme,
+        backgroundColor: effectiveBackgroundColor,
+      });
+  }, [effectiveBackgroundColor, initialSceneJson, mermaidCode, svgMarkup, theme]);
 
   const fitToContentIfNeeded = useCallback((animate: boolean) => {
     if (!api || didInitialFitRef.current) return;
@@ -335,7 +435,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
 
     let cancelled = false;
-    void buildSceneFromSvgMarkup({ svgMarkup, theme, backgroundColor }).then((scene) => {
+    void buildSceneFromMermaidCode({ mermaidCode, svgMarkup, theme, backgroundColor }).then((scene) => {
       if (cancelled || !scene) return;
 
       const elements = (scene.elements ?? []) as readonly ExcalidrawElement[];
@@ -355,7 +455,39 @@ const DiagramWhiteboard: React.FC<Props> = ({
     return () => {
       cancelled = true;
     };
-  }, [api, backgroundColor, fitToContentIfNeeded, initialSceneJson, svgMarkup, theme]);
+  }, [api, backgroundColor, fitToContentIfNeeded, initialSceneJson, mermaidCode, svgMarkup, theme]);
+
+  useEffect(() => {
+    if (!api) return;
+    const nextTheme = normalizeTheme(theme);
+    const nextBackground = effectiveBackgroundColor ?? undefined;
+    const apply = () => {
+      const current = api.getAppState();
+      if (current.theme === nextTheme && current.viewBackgroundColor === nextBackground) return;
+      api.updateScene({
+        appState: {
+          theme: nextTheme,
+          viewBackgroundColor: nextBackground,
+        },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+      api.refresh();
+    };
+
+    // Excalidraw can update its internal appState during initialization/theme changes.
+    // Apply twice across frames to ensure the canvas background sticks.
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      apply();
+      raf2 = requestAnimationFrame(() => apply());
+    });
+
+    return () => {
+      if (raf1) cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
+  }, [api, effectiveBackgroundColor, theme]);
 
   const scheduleAutosave = useCallback((nextJson: string) => {
     latestJsonRef.current = nextJson;
@@ -395,16 +527,47 @@ const DiagramWhiteboard: React.FC<Props> = ({
       hasHadContentRef.current = true;
     }
 
+    const expectedBackground = effectiveBackgroundColor?.trim() ?? '';
+    if (expectedBackground && appState.viewBackgroundColor !== expectedBackground) {
+      api?.updateScene({
+        appState: {
+          viewBackgroundColor: expectedBackground,
+        },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    }
+
     const filesForSave = api?.getFiles?.() ?? files;
-    const json = serializeAsJSON(elements as unknown as readonly ExcalidrawElement[], pickAppStateForSave(appState), filesForSave, 'database');
+    const json = serializeAsJSON(
+      elements as unknown as readonly ExcalidrawElement[],
+      pickAppStateForSave({
+        ...appState,
+        viewBackgroundColor: expectedBackground || appState.viewBackgroundColor,
+      }),
+      filesForSave,
+      'database'
+    );
     scheduleAutosave(json);
-  }, [api, scheduleAutosave]);
+  }, [api, effectiveBackgroundColor, scheduleAutosave]);
+
+  const containerStyle = useMemo<React.CSSProperties>(() => {
+    const style: React.CSSProperties = {
+      // Disable the dark-theme canvas filter so Mermaid colors/background stay exact.
+      ['--theme-filter' as keyof React.CSSProperties]: 'none',
+    };
+    if (effectiveBackgroundColor) {
+      style.backgroundColor = effectiveBackgroundColor;
+    }
+    return style;
+  }, [effectiveBackgroundColor]);
 
   return (
-    <div className="flex-1 min-h-0">
+    <div className="diagram-whiteboard flex-1 min-h-0" style={containerStyle}>
       <Excalidraw
         initialData={initialData}
         theme={normalizeTheme(theme)}
+        viewModeEnabled={false}
+        zenModeEnabled={false}
         excalidrawAPI={(api) => {
           setApi(api);
           // Defer to the next frame so Excalidraw can finish initializing.
@@ -413,6 +576,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         onChange={handleChange}
         UIOptions={{
           canvasActions: {
+            changeViewBackgroundColor: false,
             loadScene: false,
             saveAsImage: false,
             saveToActiveFile: false,
