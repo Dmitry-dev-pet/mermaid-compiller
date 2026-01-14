@@ -1618,13 +1618,15 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
     // For Excalidraw.com import we need the "local" JSON format, not "database".
     const files = api.getFiles?.() ?? {};
+    const appState = api.getAppState() as AppState;
     const rawJson = serializeAsJSON(
       elements as unknown as readonly ExcalidrawElement[],
-      pickAppStateForSave({
-        ...(api.getAppState() as AppState),
-        ...EDITABLE_APPSTATE,
-        viewBackgroundColor: effectiveBackgroundColor?.trim() || (api.getAppState() as AppState).viewBackgroundColor,
-      }),
+      {
+        // Keep the exported file portable: don't persist viewport scroll/zoom,
+        // otherwise Excalidraw.com may open it "blank" (content off-screen).
+        theme: appState.theme,
+        viewBackgroundColor: effectiveBackgroundColor?.trim() || appState.viewBackgroundColor,
+      },
       files,
       'local'
     );
