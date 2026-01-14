@@ -21,6 +21,44 @@ const TARGET_WIDTH_PX = 28 * 16; // 28rem
 const TARGET_MAX_HEIGHT_PX = 16 * 16; // 16rem
 const TOOLTIP_Z_INDEX = 2147483647;
 
+const DIAGRAM_TYPE_HIGHLIGHTS = [
+  'flowchart',
+  'sequence',
+  'er',
+  'class',
+  'state',
+  'journey',
+  'gantt',
+  'pie',
+  'mindmap',
+  'timeline',
+  'requirement',
+  'gitgraph',
+] as const;
+
+const renderHighlightedDiagramTypes = (line: string) => {
+  const re = new RegExp(`\\b(${DIAGRAM_TYPE_HIGHLIGHTS.join('|')})\\b`, 'gi');
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null = null;
+  while ((match = re.exec(line))) {
+    const start = match.index ?? 0;
+    const end = start + (match[0]?.length ?? 0);
+    if (start > lastIndex) parts.push(line.slice(lastIndex, start));
+    parts.push(
+      <span
+        key={`dt-${start}`}
+        className="font-mono text-[11px] text-blue-600 dark:text-blue-300"
+      >
+        {line.slice(start, end)}
+      </span>
+    );
+    lastIndex = end;
+  }
+  if (lastIndex < line.length) parts.push(line.slice(lastIndex));
+  return parts.length ? parts : line;
+};
+
 const renderTooltipContent = (content: string) => {
   const lines = content.split(/\r?\n/);
   return (
@@ -42,7 +80,7 @@ const renderTooltipContent = (content: string) => {
         }
         return (
           <div key={`line-${index}`} className="whitespace-pre-wrap">
-            {line}
+            {renderHighlightedDiagramTypes(line)}
           </div>
         );
       })}
