@@ -50,6 +50,34 @@ export const summarizeMessagesForLog = (messages: Message[]) => {
   return { count: messages.length, chars, tokens: estimateTokensFromChars(chars) };
 };
 
+const formatMessagesLineForLog = (messages: Message[], count: number) => {
+  const ids = new Set(messages.map((msg) => msg.id));
+  const hasIntent = ids.has('diagram-intent');
+  const hasContext = ids.has('diagram-context');
+  if (count === 2 && hasIntent && hasContext) {
+    return 'intent + context';
+  }
+  const labels: string[] = [];
+  for (const msg of messages) {
+    if (msg.id === 'diagram-context') continue;
+    if (msg.id === 'diagram-intent') {
+      labels.push('intent');
+      continue;
+    }
+    labels.push(msg.role);
+  }
+  const counts = new Map<string, number>();
+  for (const label of labels) {
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  const formatLabel = (label: string, n: number) => (n > 1 ? `${label}×${n}` : label);
+  const parts = Array.from(counts.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([label, n]) => formatLabel(label, n));
+  const base = parts.length ? parts.join(' + ') : `messages×${count}`;
+  return hasContext ? `${base} + context` : base;
+};
+
 export const formatDocsDetailForLog = (args: {
   docsContext: string;
   selectionSummary?: DocsSelectionSummary | null;
@@ -152,9 +180,10 @@ export const buildContextEventForLog = (args: {
     docsSummary.files.length > 0
       ? ['docs:', ...docsSummary.files].join('\n')
       : '';
+  const messagesLine = formatMessagesLineForLog(args.messages, msgSummary.count);
   const detail = joinLogDetailLines(
     args.selectionLine,
-    `messages: ${msgSummary.count}`,
+    messagesLine,
     logDocsLines
   );
   return {

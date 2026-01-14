@@ -241,8 +241,8 @@ const buildViewRows = (rows: LogRow[]): OperationLogRowView[] => {
     const rawText = row.text ?? '';
     const splitIndex = rawText.indexOf(' — ');
     const hasLabel = splitIndex > 0;
-    const labelText = hasLabel ? rawText.slice(0, splitIndex) : '';
-    const contentText = hasLabel ? rawText.slice(splitIndex + 3) : rawText;
+    let labelText = hasLabel ? rawText.slice(0, splitIndex) : '';
+    let contentText = hasLabel ? rawText.slice(splitIndex + 3) : rawText;
     const isContextRow = rawText.includes('Контекст') || rawText.toLowerCase().includes('context');
     const isTimeLabelCountdown =
       typeof row.timeLabel === 'string' && /^\d+:\d\d$/.test(row.timeLabel);
@@ -250,13 +250,25 @@ const buildViewRows = (rows: LogRow[]): OperationLogRowView[] => {
       typeof row.timeLabel === 'string' && /s$/.test(row.timeLabel);
     const isTimeLabelDiagramType =
       Boolean(row.timeLabel) && isContextRow && !isTimeLabelCountdown && !isTimeLabelDuration;
+    const isNumericLabel = /^\d+(?:\/\d+)?$/.test(labelText.trim());
+    const isBlockRow =
+      row.kind === 'block' || row.kind === 'block_attempt' || row.kind === 'block_validation';
+    if (isNumericLabel && row.blockIndex !== undefined && !isBlockRow) {
+      labelText = '';
+      if (!hasLabel) contentText = rawText;
+    }
+    if (!labelText && isContextRow && contentText.includes(' — ')) {
+      const innerSplit = contentText.indexOf(' — ');
+      const innerLabel = contentText.slice(0, innerSplit).trim();
+      if (innerLabel.toLowerCase() === 'контекст' || innerLabel.toLowerCase() === 'context') {
+        contentText = contentText.slice(innerSplit + 3);
+      }
+    }
     const baseLeftLabel = labelText || (isContextRow ? 'Контекст' : '');
     const leftLabel = isTimeLabelDiagramType && row.timeLabel
       ? `${row.timeLabel} ${baseLeftLabel}`.trim()
       : baseLeftLabel;
     const timeLabel = isTimeLabelDiagramType ? '' : (row.timeLabel ?? '');
-    const isBlockRow =
-      row.kind === 'block' || row.kind === 'block_attempt' || row.kind === 'block_validation';
     const leftBadge = isBlockRow && row.diagramTypeLabel
       ? { text: row.diagramTypeLabel, status: row.status }
       : undefined;
@@ -330,14 +342,30 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
   }
 
   const remaining = lines.slice(idx);
-  const msgLine = remaining.find((line) => /^messages:\s*\d+/i.test(line)) ?? '';
+  const isSelectionLine = (line: string) => /^selection:\s*/i.test(line);
+  const isDocsHeaderLine = (line: string) => /^docs:\s*$/i.test(line);
+  const isDocsFileLine = (line: string) => /^[A-Za-z0-9_.-]+\.(?:md|mdx)\b/i.test(line);
+  const msgLine = remaining.find((line) => {
+    if (!line.trim()) return false;
+    if (isSelectionLine(line)) return false;
+    if (isDocsHeaderLine(line)) return false;
+    if (isDocsFileLine(line)) return false;
+    return true;
+  }) ?? '';
+  const normalizedMsgLine = msgLine.trim();
+  const displayMsgLine = (() => {
+    const strippedPrefix = normalizedMsgLine.replace(/^messages:\s*/i, '').trim();
+    if (/^\d+$/.test(strippedPrefix)) return `msgs×${strippedPrefix}`;
+    if (/^\d+$/.test(normalizedMsgLine)) return `msgs×${normalizedMsgLine}`;
+    return strippedPrefix || normalizedMsgLine;
+  })();
   const msgCountMatch = msgLine.match(/^messages:\s*(\d+)/i);
   const msgCount = msgCountMatch ? Number(msgCountMatch[1]) : null;
-  if (msgCount !== null && Number.isFinite(msgCount)) {
+  if (msgLine) {
     out.push({
       ...baseRow,
       id: `${row.id}-messages`,
-      text: hasHeaderRow ? `messages: ${msgCount}` : `${label} — messages: ${msgCount}`,
+      text: hasHeaderRow ? displayMsgLine : `${label} — ${displayMsgLine}`,
       volumeTokens: messageTokens ?? undefined,
       volumeLabel: messageTokens ? `${formatCompactCount(messageTokens)}` : undefined,
       tooltipDocs: undefined,
@@ -399,7 +427,7 @@ const formatEvent = (event: OperationEvent) => {
     parts.push(parsedDetail.label);
     parts.push(parsedDetail.rest);
   }
-  if (parts.length === 0 && typeof event.blockIndex === 'number') {
+  if (parts.length === 0 && typeof event.blockIndex === 'number' && isBlockEvent) {
     parts.push(`${event.blockIndex + 1}`);
   }
   if (!isBlockEvent) {

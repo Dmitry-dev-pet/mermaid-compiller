@@ -84,6 +84,8 @@ const OperationLogRowText: React.FC<Props> = ({
       );
     }
 
+    const isSelectionLine = /^selection:\s*/i.test(line.trim());
+    const isDocsFileLine = /^[A-Za-z0-9_.-]+\.(?:md|mdx)\s*(?:\([^)]*\)\s*)?$/i.test(line.trim());
     const docsHeaderMatch = row.tooltipDocs
       ? line.trim().match(/^(.*?\bdocs\b)\s*:\s*$/i)
       : null;
@@ -109,6 +111,19 @@ const OperationLogRowText: React.FC<Props> = ({
       }
       if (/^[A-Za-z0-9_.-]+\.(?:md|mdx)\s*\([^)]*\)\s*$/i.test(trimmed)) {
         return renderFileButton(trimmed);
+      }
+      if (row.tooltipMessages && !row.tooltipDocs && !isSelectionLine && !isDocsFileLine) {
+        const tooltipId = `${row.id}-messages`;
+        return (
+          <OperationLogTooltip
+            tooltipId={tooltipId}
+            content={row.tooltipMessages}
+            pinnedTooltip={pinnedTooltip}
+            setPinnedTooltip={setPinnedTooltip}
+          >
+            <span className="underline decoration-dotted">{line}</span>
+          </OperationLogTooltip>
+        );
       }
       return <span key={`line-${index}`}>{line}</span>;
     }
