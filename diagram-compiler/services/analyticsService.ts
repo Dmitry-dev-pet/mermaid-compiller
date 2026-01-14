@@ -39,7 +39,9 @@ const getSessionId = () => {
 const isAnalyticsDisabled = () => {
   if (ANALYTICS_DISABLED) return true;
   if (typeof window === 'undefined') return false;
+  if (isDefaultEndpoint && import.meta.env.DEV) return true;
   if (isDefaultEndpoint && window.location.hostname === 'localhost') return true;
+  if (isDefaultEndpoint && window.location.hostname === '127.0.0.1') return true;
   return window.localStorage.getItem(DISABLED_KEY) === 'true';
 };
 

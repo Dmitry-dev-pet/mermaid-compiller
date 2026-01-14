@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect, useLayoutEffect } from 'react';
-import { AppState, DiagramType } from '../../types';
+import { AppState, DiagramType, ThemePresetId } from '../../types';
 import { DEFAULT_APP_STATE } from '../../constants';
 import { initializeMermaid } from '../../services/mermaidService';
 import { safeParse } from '../../utils';
 import { DIAGRAM_TYPES, MAIN_DIAGRAM_TYPES } from '../../utils/diagramTypes';
+import { MERMAID_THEME_PRESETS } from '../../utils/mermaidThemePreset';
+import { coerceThemePresetId, getAppThemeTokens, getThemeColorScheme } from '../../utils/appTheme';
 
 export const useLayout = () => {
   const [appState, setAppState] = useState<AppState>(() => {
@@ -12,7 +14,11 @@ export const useLayout = () => {
     const sanitized = nextTypes
       .map((t) => (typeof t === 'string' ? (t as DiagramType) : null))
       .filter((t): t is DiagramType => !!t && t !== 'auto' && (DIAGRAM_TYPES as readonly string[]).includes(t));
-    return { ...parsed, mainDiagramTypes: sanitized.length ? sanitized : [...MAIN_DIAGRAM_TYPES] };
+    return {
+      ...parsed,
+      theme: coerceThemePresetId((parsed as Partial<AppState>)?.theme),
+      mainDiagramTypes: sanitized.length ? sanitized : [...MAIN_DIAGRAM_TYPES],
+    };
   });
 
   // --- Persistence ---
@@ -23,13 +29,33 @@ export const useLayout = () => {
   // --- Theme Effect ---
   useLayoutEffect(() => {
     const root = window.document.documentElement;
-    if (appState.theme === 'dark') {
-      root.classList.add('dark');
-      initializeMermaid('dark');
-    } else {
-      root.classList.remove('dark');
-      initializeMermaid('default');
+    const colorScheme = getThemeColorScheme(appState.theme);
+    if (colorScheme === 'dark') root.classList.add('dark');
+    else root.classList.remove('dark');
+
+    const tokens = getAppThemeTokens(appState.theme);
+    root.style.setProperty('--app-bg', tokens.appBackground);
+    root.style.setProperty('--app-header-bg', tokens.headerBackground);
+    root.style.setProperty('--panel-bg', tokens.panelBackground);
+    root.style.setProperty('--panel-alt-bg', tokens.panelAltBackground);
+    root.style.setProperty('--panel-border', tokens.borderColor);
+    root.style.setProperty('--control-bg', tokens.controlBackground);
+    root.style.setProperty('--control-bg-hover', tokens.controlHoverBackground);
+    root.style.setProperty('--control-text', tokens.controlText);
+    root.style.setProperty('--control-muted-text', tokens.controlMutedText);
+    root.style.setProperty('--menu-bg', tokens.menuBackground);
+    root.style.setProperty('--menu-bg-hover', tokens.menuHoverBackground);
+
+    const mermaidPreset = MERMAID_THEME_PRESETS.find((p) => p.id === appState.theme);
+    if (mermaidPreset?.themeVariables) {
+      initializeMermaid({ theme: 'base', themeVariables: mermaidPreset.themeVariables as Record<string, unknown> });
+      return;
     }
+    if (mermaidPreset) {
+      initializeMermaid(mermaidPreset.theme);
+      return;
+    }
+    initializeMermaid('default');
   }, [appState.theme]);
 
   // --- Resizing Logic ---
@@ -93,8 +119,12 @@ export const useLayout = () => {
     }));
   }, []);
 
+  const setThemePreset = useCallback((theme: ThemePresetId) => {
+    setAppState((prev) => ({ ...prev, theme }));
+  }, []);
+
   const toggleTheme = useCallback(() => {
-    setAppState(prev => ({ ...prev, theme: prev.theme === 'light' ? 'dark' : 'light' }));
+    setAppState((prev) => ({ ...prev, theme: prev.theme === 'darkPlus' ? 'lightPlus' : 'darkPlus' }));
   }, []);
 
   const setLanguage = useCallback((lang: string) => {
@@ -123,6 +153,7 @@ export const useLayout = () => {
     startResize,
     setDiagramType,
     setMainDiagramTypes,
+    setThemePreset,
     toggleTheme,
     setLanguage,
     setAnalyzeLanguage,

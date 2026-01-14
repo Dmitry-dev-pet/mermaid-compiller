@@ -1,5 +1,4 @@
 import React from 'react';
-import { Scan, ZoomIn, ZoomOut } from 'lucide-react';
 import { MermaidState } from '../../types';
 
 interface PreviewBodyProps {
@@ -17,12 +16,9 @@ interface PreviewBodyProps {
   codeForRender: string;
   svgMarkup: string;
   exportError: string | null;
-  zoomPercent: number;
-  onZoomOut: () => void;
-  onZoomIn: () => void;
-  onFitToViewport: () => void;
   hasBuildDocs: boolean;
   onMarkdownScroll?: () => void;
+  onToggleFullScreen: () => void;
 }
 
 const PreviewBody: React.FC<PreviewBodyProps> = ({
@@ -40,61 +36,20 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
   codeForRender,
   svgMarkup,
   exportError,
-  zoomPercent,
-  onZoomOut,
-  onZoomIn,
-  onFitToViewport,
   hasBuildDocs,
   onMarkdownScroll,
+  onToggleFullScreen,
 }) => {
   return (
     <div
       ref={viewportRef}
       className="flex-1 relative overflow-hidden flex items-center justify-center"
     >
-      {!isBuildDocsMode && !isMarkdownMode && (
-        <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 rounded-lg border border-slate-200/80 dark:border-slate-700/80 bg-white/90 dark:bg-slate-900/80 backdrop-blur px-2 py-1 shadow-sm">
-          <button
-            type="button"
-            onClick={onZoomOut}
-            disabled={!svgMarkup || isMarkdownMode}
-            className="p-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-950/40 text-slate-800 dark:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white dark:hover:bg-slate-800"
-            title="Zoom out"
-            aria-label="Zoom out"
-          >
-            <ZoomOut size={16} />
-          </button>
-
-          <span className="text-[11px] text-slate-700 dark:text-slate-200 font-mono w-12 text-right select-none">
-            {zoomPercent}%
-          </span>
-
-          <button
-            type="button"
-            onClick={onZoomIn}
-            disabled={!svgMarkup || isMarkdownMode}
-            className="p-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-950/40 text-slate-800 dark:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white dark:hover:bg-slate-800"
-            title="Zoom in"
-            aria-label="Zoom in"
-          >
-            <ZoomIn size={16} />
-          </button>
-
-          <button
-            type="button"
-            onClick={onFitToViewport}
-            disabled={!svgMarkup || isMarkdownMode}
-            className="p-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-950/40 text-slate-800 dark:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white dark:hover:bg-slate-800"
-            title="Fit (center & maximize)"
-            aria-label="Fit (center & maximize)"
-          >
-            <Scan size={16} />
-          </button>
-        </div>
-      )}
-
       {exportError && !isBuildDocsMode && !isMarkdownMode && (
-        <div className="absolute top-3 left-3 z-20 max-w-[60%] rounded border border-red-200/70 dark:border-red-900/60 bg-red-50/90 dark:bg-red-950/40 backdrop-blur px-2 py-1 text-[10px] text-red-700 dark:text-red-200 truncate">
+        <div
+          className="absolute top-3 left-3 z-20 max-w-[60%] rounded border border-red-200/70 dark:border-red-900/60 bg-red-50/90 dark:bg-red-950/40 backdrop-blur px-2 py-1 text-[10px] text-red-700 dark:text-red-200 truncate"
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
           {exportError}
         </div>
       )}
@@ -149,7 +104,14 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
       )}
 
       {!isBuildDocsMode && svgMarkup && !isMarkdownMode && (
-        <div ref={svgMountRef} className="absolute inset-0" />
+        <div
+          ref={svgMountRef}
+          className="absolute inset-0"
+          onDoubleClick={(e) => {
+            e.preventDefault();
+            onToggleFullScreen();
+          }}
+        />
       )}
       {!isBuildDocsMode && isMarkdownMode && (
         <div

@@ -22,6 +22,8 @@ import MarkdownTabs from './editor/MarkdownTabs';
 import type { DiagramMarker } from '../hooks/core/useHistory';
 import { DIAGRAM_TYPE_LABELS } from '../utils/diagramTypeMeta';
 import { MODE_UI, MODE_BUTTON_DISABLED, UiMode } from '../utils/uiModes';
+import { HEADER_CONTROL_BUTTON } from '../utils/uiControlStyles';
+import { Circle, Hammer, Layers, MessageSquare, RotateCw, Search, Settings, Sparkles, SquarePen, Wrench } from 'lucide-react';
 
 // Define minimal Mermaid grammar
 languages.mermaid = {
@@ -57,6 +59,7 @@ interface EditorColumnProps {
   buildDocsEntries: DocsEntry[];
   buildDocsSelectionsByMode: Record<DocsMode, Record<string, boolean>>;
   onToggleBuildDocForMode: (mode: DocsMode, path: string, isIncluded: boolean) => void;
+  onResetBuildDocsSelections?: () => void;
   buildDocsActivePath: string;
   onBuildDocsActivePathChange: (path: string) => void;
   systemPromptRawByMode: Record<DocsMode, boolean>;
@@ -97,6 +100,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   buildDocsEntries,
   buildDocsSelectionsByMode,
   onToggleBuildDocForMode,
+  onResetBuildDocsSelections,
   buildDocsActivePath,
   onBuildDocsActivePathChange,
   systemPromptRawByMode,
@@ -150,10 +154,56 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     hoveredIndex: hoveredMarkdownIndex,
   });
 
+  const markerIconByType = useMemo(() => {
+    return {
+      seed: Sparkles,
+      manual_edit: SquarePen,
+      chat: MessageSquare,
+      build: Hammer,
+      fix: Wrench,
+      analyze: Search,
+      recompile: RotateCw,
+      system: Settings,
+    } satisfies Record<DiagramMarker['type'], React.ComponentType<{ className?: string }>>;
+  }, []);
+
   const markersUi = useMemo(() => {
-    return diagramMarkers.map((m) => {
+    const inactiveClassByMode: Record<UiMode, string> = {
+      chat:
+        'text-indigo-600 dark:text-indigo-200 border-indigo-200/70 dark:border-indigo-700/70 hover:border-indigo-300 dark:hover:border-indigo-600',
+      build:
+        'text-emerald-600 dark:text-emerald-200 border-emerald-200/70 dark:border-emerald-700/70 hover:border-emerald-300 dark:hover:border-emerald-600',
+      analyze:
+        'text-sky-600 dark:text-sky-200 border-sky-200/70 dark:border-sky-700/70 hover:border-sky-300 dark:hover:border-sky-600',
+      fix:
+        'text-amber-600 dark:text-amber-200 border-amber-200/70 dark:border-amber-700/70 hover:border-amber-300 dark:hover:border-amber-600',
+      plan:
+        'text-violet-600 dark:text-violet-200 border-violet-200/70 dark:border-violet-700/70 hover:border-violet-300 dark:hover:border-violet-600',
+      system: 'text-[var(--control-muted-text)] border-[var(--panel-border)]',
+    };
+
+    const extractNotebookTitle = (rawIntent: string) => {
+      const lines = rawIntent.split(/\r?\n/).map((line) => line.trim());
+      const titleIndex = lines.findIndex((line) => /^##\s+(Название|Title)\b/i.test(line));
+      if (titleIndex === -1) return '';
+      for (let i = titleIndex + 1; i < lines.length; i += 1) {
+        const line = lines[i];
+        if (!line) continue;
+        if (/^##\s+/.test(line)) break;
+        return line.replace(/^[-*]\s+/, '');
+      }
+      return '';
+    };
+
+    const asNumber = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+    const asBoolean = (value: unknown): boolean | null => (typeof value === 'boolean' ? value : null);
+    const asString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+
+    return diagramMarkers.map((m, markerIndex) => {
       const isSelected = m.stepId === selectedStepId;
       const meta = (m.meta ?? {}) as Record<string, unknown>;
+      const metaMode = asString(meta.mode) ?? '';
+      const isNotebook = metaMode === 'notebook';
       const diagramTypeRaw = typeof meta.diagramType === 'string' ? meta.diagramType : '';
       const diagramType = diagramTypeRaw ? DIAGRAM_TYPE_LABELS[diagramTypeRaw] ?? diagramTypeRaw : '';
       const blockIndex = typeof meta.blockIndex === 'number' ? meta.blockIndex : null;
@@ -164,19 +214,34 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
             ? `block ${blockIndex + 1}/${totalBlocks}`
             : `block ${blockIndex + 1}`
           : '';
-      const label =
+      const notebookTitle = isNotebook ? extractNotebookTitle(asString(meta.notebookPlanIntent) ?? '') : '';
+      const actionLabel =
         m.type === 'build'
-          ? (isMarkdownMermaidMode ? (blockLabel || 'Diagram') : (diagramType || 'Diagram'))
+          ? isNotebook
+            ? 'Build notebook'
+            : 'Build'
           : m.type === 'fix'
             ? 'Fix'
             : m.type === 'recompile'
               ? 'Run'
               : m.type === 'manual_edit'
-                ? 'Snapshot'
+                ? 'Edit'
                 : m.type === 'seed'
                   ? 'Seed'
-                  : m.type;
-      const detailParts = isMarkdownMermaidMode ? [] : [blockLabel].filter(Boolean);
+                  : m.type === 'analyze'
+                    ? 'Analyze'
+                    : m.type;
+
+      const targetLabel =
+        m.type === 'build'
+          ? [blockLabel, diagramType, notebookTitle].filter(Boolean).join(' • ') || 'Diagram'
+          : '';
+
+      const detailParts = [
+        isNotebook && m.type === 'build' ? 'notebook' : '',
+        !isNotebook && m.type === 'build' ? diagramType : '',
+        !isMarkdownMermaidMode && blockLabel ? blockLabel : '',
+      ].filter(Boolean);
       const detail = detailParts.join(' · ');
       const uiMode: UiMode =
         m.type === 'fix'
@@ -190,11 +255,46 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                 : 'system';
       const modeStyles = MODE_UI[uiMode];
       const activeClass = modeStyles.button ?? MODE_BUTTON_DISABLED;
-      const inactiveClass = modeStyles.buttonInactive ?? MODE_BUTTON_DISABLED;
+      const inactiveClass = inactiveClassByMode[uiMode] ?? MODE_BUTTON_DISABLED;
+      const Icon =
+        m.type === 'build'
+          ? (isNotebook ? Layers : Hammer)
+          : markerIconByType[m.type] ?? Circle;
 
-      return { ...m, isSelected, label, detail, activeClass, inactiveClass };
+      const timeLabel = new Date(m.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      const markerLabel = `#${markerIndex + 1}/${diagramMarkers.length}`;
+      const tooltipNotes: string[] = [];
+      if (m.type === 'build') {
+        const attempts = asNumber(meta.attempts) ?? asNumber(meta.buildAttempts);
+        const autoFix = asNumber(meta.autoFixAttempts);
+        const isValid = asBoolean(meta.isValid);
+        const success = asBoolean(meta.success);
+        const error = asString(meta.error);
+        if (attempts !== null) tooltipNotes.push(`attempts: ${attempts}`);
+        if (autoFix !== null) tooltipNotes.push(`auto-fix: ${autoFix}`);
+        if (isValid !== null) tooltipNotes.push(`valid: ${isValid ? 'ok' : 'error'}`);
+        if (success !== null) tooltipNotes.push(`success: ${success ? 'yes' : 'no'}`);
+        if (error) tooltipNotes.push(`error: ${error}`);
+      }
+      const tooltipLines = [
+        `${markerLabel} • ${timeLabel}`,
+        [actionLabel, targetLabel].filter(Boolean).join(' • '),
+        detail ? `details: ${detail}` : '',
+        tooltipNotes.length ? tooltipNotes.join(' • ') : '',
+        `step ${m.stepIndex + 1}`,
+      ].filter(Boolean);
+      const tooltip = tooltipLines.join('\n');
+
+      return { ...m, markerIndex, isSelected, label: targetLabel || actionLabel, detail, activeClass, inactiveClass, Icon, tooltip };
     });
-  }, [diagramMarkers, isMarkdownMermaidMode, selectedStepId]);
+  }, [diagramMarkers, isMarkdownMermaidMode, markerIconByType, selectedStepId]);
+
+  const historySummary = useMemo(() => {
+    if (markersUi.length === 0) return '';
+    const selectedIndex = markersUi.findIndex((m) => m.isSelected);
+    if (selectedIndex >= 0) return `#${selectedIndex + 1}/${markersUi.length}`;
+    return `#${markersUi.length}`;
+  }, [markersUi]);
 
   const markdownBlockScrollTops = useMemo(() => {
     if (!isMarkdownLike(mermaidState.code)) return [];
@@ -330,7 +430,10 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-l border-r border-slate-200 dark:border-slate-800">
+    <div
+      className="flex flex-col h-full bg-transparent border-l border-r"
+      style={{ backgroundColor: 'var(--panel-alt-bg, #ffffff)', borderColor: 'var(--panel-border, #e5e7eb)' }}
+    >
         <EditorHeader
           mermaidState={mermaidState}
           isMarkdown={isMarkdown}
@@ -373,9 +476,17 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
           />
         )}
         {!isBuildDocsTab && diagramMarkers.length > 0 && (
-          <div className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 px-4 py-2">
-            <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
-              {activeTab === 'markdown_mermaid' ? 'Markdown history' : 'Diagram history'}
+          <div
+            className="border-b bg-transparent px-4 py-2"
+            style={{ borderColor: 'var(--panel-border, #e5e7eb)', backgroundColor: 'var(--panel-bg, #f3f4f6)' }}
+          >
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <div className="text-[10px] font-semibold text-[var(--control-muted-text)]">
+                {activeTab === 'markdown_mermaid' ? 'Markdown history' : 'Diagram history'}
+              </div>
+              {!!historySummary && (
+                <div className="text-[10px] font-medium text-[var(--control-muted-text)]">{historySummary}</div>
+              )}
             </div>
             <div className="flex gap-1 overflow-x-auto pb-1">
               {markersUi.map((m) => (
@@ -383,15 +494,16 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
                   key={m.stepId}
                   type="button"
                   onClick={() => onSelectDiagramStep?.(m)}
-                  className={`shrink-0 px-2 py-1 rounded-full text-[10px] border transition-colors ${
+                  onMouseEnter={(e) => showTabTooltip(e, m.tooltip)}
+                  onMouseMove={(e) => showTabTooltip(e, m.tooltip)}
+                  onMouseLeave={hideTabTooltip}
+                  className={`shrink-0 whitespace-nowrap ${HEADER_CONTROL_BUTTON} rounded-full ${
                     m.isSelected ? m.activeClass : m.inactiveClass
                   }`}
-                  title={`Step #${m.stepIndex + 1} • ${m.label}${m.detail ? ` • ${m.detail}` : ''}`}
+                  title={m.tooltip}
                 >
-                  <span className="flex flex-col leading-tight">
-                    <span>#{m.stepIndex + 1} {m.label}</span>
-                    {m.detail && <span className="text-[9px] opacity-70">{m.detail}</span>}
-                  </span>
+                  <m.Icon className="h-3 w-3 opacity-80" />
+                  <span className="tabular-nums font-semibold">#{m.markerIndex + 1}</span>
                 </button>
               ))}
             </div>
@@ -411,6 +523,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
             onBuildDocsActivePathChange={onBuildDocsActivePathChange}
             buildDocsSelectionsByMode={buildDocsSelectionsByMode}
             onToggleBuildDocForMode={onToggleBuildDocForMode}
+            onResetBuildDocsSelections={onResetBuildDocsSelections}
             systemPromptEntry={systemPromptEntry}
             isSystemPromptRaw={isSystemPromptRaw}
             onSystemPromptRawChange={onSystemPromptRawChange}

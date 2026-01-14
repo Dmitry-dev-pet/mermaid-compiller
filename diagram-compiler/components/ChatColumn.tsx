@@ -636,7 +636,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   });
 
   return (
-    <div ref={columnRef} className="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50">
+    <div
+      ref={columnRef}
+      className="flex flex-col h-full bg-transparent"
+      style={{ backgroundColor: 'var(--panel-bg, #f3f4f6)' }}
+    >
         <ChatProjects
           projects={projects}
           activeProjectId={activeProjectId}
@@ -658,7 +662,10 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         />
 
       {isNotebookChatMode && onBackToNotebookMainChat && (
-        <div className="px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+        <div
+          className="px-4 py-2 border-t bg-transparent text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between"
+          style={{ borderColor: 'var(--panel-border, #e5e7eb)' }}
+        >
           <span>Чат диаграммы</span>
           <button
             type="button"
@@ -903,7 +910,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
       {/* Composer */}
       <div
-        className="flex flex-col p-3 bg-white dark:bg-slate-900"
+        className="flex flex-col p-3 bg-transparent"
         style={{ height: composerHeight }}
       >
         <div className="relative flex-1 min-h-0">

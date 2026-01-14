@@ -31,7 +31,7 @@ const baseAppState: AppState = {
   isResizing: null,
   isPreviewFullScreen: false,
   isScrollSyncEnabled: false,
-  theme: 'dark',
+  theme: 'darkPlus',
   language: 'auto',
   analyzeLanguage: 'auto',
   notebookBuildCount: null,

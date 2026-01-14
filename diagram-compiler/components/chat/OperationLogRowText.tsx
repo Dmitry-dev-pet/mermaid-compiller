@@ -47,7 +47,7 @@ const OperationLogRowText: React.FC<Props> = ({
     return (
       <button
         type="button"
-        className="underline decoration-dotted hover:text-slate-900 dark:hover:text-slate-100"
+        className="underline decoration-dotted hover:text-[var(--control-text)]"
         onClick={(eventClick) => {
           if (!onOpenBuildDocsFile) return;
           eventClick.preventDefault();
@@ -84,9 +84,29 @@ const OperationLogRowText: React.FC<Props> = ({
       );
     }
 
+    const docsHeaderMatch = row.tooltipDocs
+      ? line.trim().match(/^(.*?\bdocs\b)\s*:\s*$/i)
+      : null;
+    if (docsHeaderMatch && row.tooltipDocs) {
+      const tooltipId = `${row.id}-docs-header`;
+      return (
+        <OperationLogTooltip
+          tooltipId={tooltipId}
+          content={row.tooltipDocs}
+          pinnedTooltip={pinnedTooltip}
+          setPinnedTooltip={setPinnedTooltip}
+        >
+          <span className="underline decoration-dotted">{line}</span>
+        </OperationLogTooltip>
+      );
+    }
+
     const docsMatch = line.match(/^(.*?\bdocs\b.*?:\s*)(.+)$/i);
     if (!docsMatch) {
       const trimmed = line.trim();
+      if (/^[A-Za-z0-9_.-]+\.(?:md|mdx)\s*$/i.test(trimmed)) {
+        return renderFileButton(trimmed);
+      }
       if (/^[A-Za-z0-9_.-]+\.(?:md|mdx)\s*\([^)]*\)\s*$/i.test(trimmed)) {
         return renderFileButton(trimmed);
       }

@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Sun, Eye, EyeOff, Timer } from 'lucide-react';
-import { AIConfig, CliproxyFilters, ConnectionState, OpenRouterFilters } from '../types';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Eye, EyeOff, Timer, Palette, Layers } from 'lucide-react';
+import { AIConfig, CliproxyFilters, ConnectionState, OpenRouterFilters, ThemePresetId } from '../types';
 import { MERMAID_VERSION } from '../constants';
+import { APP_THEME_PRESETS } from '../utils/appTheme';
 
 interface HeaderProps {
   aiConfig: AIConfig;
@@ -9,8 +10,8 @@ interface HeaderProps {
   onConfigChange: React.Dispatch<React.SetStateAction<AIConfig>>;
   onConnect: () => Promise<void>;
   onDisconnect: () => void;
-  theme: 'light' | 'dark';
-  onToggleTheme: () => void;
+  theme: ThemePresetId;
+  onThemeChange: (theme: ThemePresetId) => void;
   llmTimeoutMs: number;
   onLLMTimeoutMsChange: (timeoutMs: number) => void;
 }
@@ -22,13 +23,15 @@ const Header: React.FC<HeaderProps> = ({
   onConnect, 
   onDisconnect,
   theme,
-  onToggleTheme,
+  onThemeChange,
   llmTimeoutMs,
   onLLMTimeoutMsChange,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const themeDropdownRef = useRef<HTMLDivElement>(null);
+  const [isThemeOpen, setIsThemeOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
   const [showProxyKey, setShowProxyKey] = useState(false);
@@ -36,9 +39,9 @@ const Header: React.FC<HeaderProps> = ({
   // Close dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
+      const target = event.target as Node;
+      if (dropdownRef.current && !dropdownRef.current.contains(target)) setIsOpen(false);
+      if (themeDropdownRef.current && !themeDropdownRef.current.contains(target)) setIsThemeOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -114,6 +117,13 @@ const Header: React.FC<HeaderProps> = ({
     ? aiConfig.filtersByProvider.openrouter
     : aiConfig.filtersByProvider.cliproxy;
   const timeoutSeconds = Math.max(5, Math.min(300, Math.round(llmTimeoutMs / 1000)));
+  const themeLabel = APP_THEME_PRESETS.find((p) => p.id === theme)?.label ?? theme;
+  const ThemeIcon = useMemo(() => {
+    if (theme === 'lightPlus') return Palette;
+    if (theme === 'darkPlus') return Moon;
+    if (theme === 'abyss') return Layers;
+    return Palette;
+  }, [theme]);
 
   const updateFilters = (updates: Partial<OpenRouterFilters & CliproxyFilters>) => {
     onConfigChange((prev) => {
@@ -182,7 +192,8 @@ const Header: React.FC<HeaderProps> = ({
   return (
     <header
       ref={headerRef}
-      className="fixed top-0 left-0 right-0 flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm shrink-0 z-50 min-h-12 transition-colors"
+      className="fixed top-0 left-0 right-0 flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-transparent shadow-sm shrink-0 z-50 min-h-12 transition-colors"
+      style={{ backgroundColor: 'var(--app-header-bg, #ffffff)' }}
     >
       <div className="flex items-center gap-6">
         <h1 className="font-bold text-lg tracking-tight text-slate-800 dark:text-slate-100">Diagram Compiler</h1>
@@ -460,13 +471,58 @@ const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 font-medium">
-        <button 
-          onClick={onToggleTheme}
-          className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors"
-          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-        >
-          {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-        </button>
+        <div className="relative" ref={themeDropdownRef}>
+          <button
+            type="button"
+            onClick={() => setIsThemeOpen((v) => !v)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
+            title="Theme"
+            aria-haspopup="menu"
+            aria-expanded={isThemeOpen}
+          >
+            <ThemeIcon size={16} className="opacity-80" />
+            <span className="text-sm font-medium">Theme</span>
+            <span className="text-[11px] font-mono text-slate-400 dark:text-slate-400">{themeLabel}</span>
+            <ChevronDown size={14} className={`transition-transform ${isThemeOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {isThemeOpen && (
+            <div
+              className="absolute right-0 top-full mt-2 w-48 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl p-1 z-50"
+              role="menu"
+              aria-label="Theme"
+            >
+              {APP_THEME_PRESETS.map((preset) => {
+                const isSelected = preset.id === theme;
+                const icon =
+                  preset.id === 'darkPlus' ? Moon
+                    : preset.id === 'abyss' ? Layers
+                      : Palette;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      onThemeChange(preset.id);
+                      setIsThemeOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between gap-2 px-2 py-2 rounded-md text-sm transition-colors ${
+                      isSelected
+                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
+                        : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+                    }`}
+                    role="menuitem"
+                  >
+                    <span className="flex items-center gap-2">
+                      {React.createElement(icon, { size: 14, className: 'opacity-80' })}
+                      <span className="font-medium">{preset.label}</span>
+                    </span>
+                    {isSelected && <Check size={14} className="opacity-80" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <span className="cursor-pointer hover:text-slate-800 dark:hover:text-slate-200">Privacy</span>
         <span className="cursor-pointer hover:text-slate-800 dark:hover:text-slate-200">Donate</span>
       </div>

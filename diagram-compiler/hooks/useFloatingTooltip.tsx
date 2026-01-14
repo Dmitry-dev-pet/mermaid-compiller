@@ -55,7 +55,9 @@ export const useFloatingTooltip = () => {
               fontSize: 11,
               pointerEvents: 'none',
               zIndex: 50,
-              whiteSpace: 'nowrap',
+              whiteSpace: 'pre-line',
+              maxWidth: 420,
+              lineHeight: 1.25,
               boxShadow: '0 6px 16px rgba(0,0,0,0.2)',
             }}
           >

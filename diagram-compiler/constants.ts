@@ -41,7 +41,7 @@ export const DEFAULT_APP_STATE: AppState = {
   isResizing: null,
   isPreviewFullScreen: false,
   isScrollSyncEnabled: false,
-  theme: 'light',
+  theme: 'lightPlus',
   language: 'auto',
   analyzeLanguage: 'auto',
   notebookBuildCount: null,

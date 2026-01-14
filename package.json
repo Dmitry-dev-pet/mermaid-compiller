@@ -13,7 +13,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "AGPL-3.0-or-later",
   "type": "commonjs",
   "devDependencies": {
     "@eslint/js": "^9.39.1",

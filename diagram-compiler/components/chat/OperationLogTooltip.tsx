@@ -114,7 +114,7 @@ const OperationLogTooltip: React.FC<Props> = ({
     ? createPortal(
         <div
           ref={tooltipRef}
-          className="fixed text-[10px] text-slate-100"
+          className="fixed text-[10px] text-[var(--control-text)]"
           style={{
             top: position.top,
             left: position.left,
@@ -127,13 +127,13 @@ const OperationLogTooltip: React.FC<Props> = ({
           }}
         >
           {shouldShowHoverHint ? (
-            <div className="pointer-events-none select-none whitespace-nowrap rounded bg-slate-900 px-2 py-1 shadow-lg">
+            <div className="pointer-events-none select-none whitespace-nowrap rounded border border-[var(--panel-border)] bg-[var(--menu-bg)] px-2 py-1 shadow-lg">
               Нажмите для подробностей
             </div>
           ) : null}
           {isPinned ? (
             <div
-              className="mt-1 overflow-auto overscroll-contain rounded bg-slate-900 px-2 py-1 shadow-lg whitespace-pre-wrap"
+              className="mt-1 overflow-auto overscroll-contain rounded border border-[var(--panel-border)] bg-[var(--menu-bg)] px-2 py-1 shadow-lg whitespace-pre-wrap"
               style={{ maxHeight: position.maxHeight }}
             >
               {content}
@@ -157,7 +157,6 @@ const OperationLogTooltip: React.FC<Props> = ({
       }}
     >
       <span data-tooltip-id={tooltipId}>{children}</span>
-      <span className="text-[10px] text-slate-400 dark:text-slate-500">i</span>
       {portalContent}
     </span>
   );

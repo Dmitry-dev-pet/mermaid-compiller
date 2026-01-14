@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { OperationLog } from '../../types';
 import { LLM_TIMEOUT_MS } from '../../constants';
 import { buildOperationLogViewModel } from './operationLogUtils';
@@ -53,9 +53,9 @@ const ChatOperationLog: React.FC<Props> = ({
     return selection.toString().trim().length > 0;
   };
   return (
-    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+    <div className="text-[11px] text-[var(--control-muted-text)]">
       <details
-        className="text-[11px] text-slate-500 dark:text-slate-400"
+        className="text-[11px] text-[var(--control-muted-text)]"
         open={open}
       >
         <summary
@@ -77,7 +77,7 @@ const ChatOperationLog: React.FC<Props> = ({
             <button
               type="button"
               aria-label={open ? 'Collapse log' : 'Expand log'}
-              className="inline-flex w-3 text-slate-400 dark:text-slate-500 select-none"
+              className="inline-flex w-3 text-[var(--control-muted-text)] select-none"
               onClick={(event) => {
                 if (isRunning) return;
                 event.preventDefault();
@@ -88,10 +88,10 @@ const ChatOperationLog: React.FC<Props> = ({
             >
               {open ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />}
             </button>
-            <span className="select-text">{summaryLabel}</span>
+            <span className="select-text text-[var(--control-text)]">{summaryLabel}</span>
           </span>
         </summary>
-        <div className="mt-1 rounded border border-slate-200/40 dark:border-slate-800/60 bg-white/40 dark:bg-slate-950/20">
+        <div className="mt-1 rounded border border-[var(--panel-border)] bg-[var(--menu-bg)]">
           <div className="px-2 py-1 space-y-0.5">
             {rows.map((event, index) => {
               const prev = rows[index - 1];
@@ -118,28 +118,66 @@ const ChatOperationLog: React.FC<Props> = ({
                 ? `${event.timeLabel} ${labelText || 'Контекст'}`
                 : (labelText || (isContextRow ? 'Контекст' : ''));
               const displayTime = isTimeLabelDiagramType ? '' : (event.timeLabel ?? '');
+              const statusIcon = event.status === 'ok'
+                ? (
+                    <CheckCircle2
+                      aria-label="OK"
+                      size={10}
+                      className="text-emerald-600 dark:text-emerald-300"
+                      title="OK"
+                    />
+                  )
+                : event.status === 'err'
+                  ? (
+                      <AlertTriangle
+                        aria-label="Error"
+                        size={10}
+                        className="text-amber-600 dark:text-amber-300"
+                        title="Error"
+                      />
+                    )
+                  : null;
               const contentRow = hasLabel ? { ...event, text: contentText } : event;
+              const showBlockMeta = typeof event.blockIndex === 'number' && Boolean(event.diagramTypeLabel);
+              const blockBadgeClassName = event.status === 'ok'
+                ? 'border-emerald-500/60 text-emerald-700 dark:text-emerald-200 dark:border-emerald-400/40'
+                : event.status === 'err'
+                  ? 'border-amber-500/60 text-amber-700 dark:text-amber-200 dark:border-amber-400/40'
+                  : 'border-[var(--panel-border)] text-[var(--control-muted-text)]';
               return (
               <div
                 key={event.id}
-                className={`grid grid-cols-[7rem_1fr_4.25rem] items-start gap-x-2 text-[11px] leading-snug ${isNewBlock ? 'mt-1 pt-1 border-t border-slate-200/60 dark:border-slate-800/70' : ''}`}
+                className={`grid grid-cols-[7rem_1fr_4rem_5rem] items-start gap-x-2 text-[11px] leading-snug ${isNewBlock ? 'mt-1 pt-1 border-t border-[var(--panel-border)]' : ''}`}
               >
                 {event.isSection ? (
-                  <div className="col-span-3 mt-1 first:mt-0">
+                  <div className="col-span-4 mt-1 first:mt-0">
                     <div className="flex items-center gap-2">
-                    <div className="h-px flex-1 bg-slate-200/60 dark:bg-slate-800/70" />
-                    <div className="uppercase tracking-wide text-[10px] text-slate-400 dark:text-slate-500">
+                    <div className="h-px flex-1 bg-[var(--panel-border)]" />
+                    <div className="uppercase tracking-wide text-[10px] text-[var(--control-muted-text)]">
                       {event.text}
                     </div>
-                    <div className="h-px flex-1 bg-slate-200/60 dark:bg-slate-800/70" />
+                    <div className="h-px flex-1 bg-[var(--panel-border)]" />
                   </div>
                   </div>
                 ) : (
                   <>
-                    <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                      {displayLabel}
-                    </span>
-                    <div className="min-w-0 break-words">
+                    <div className="font-mono tabular-nums text-[var(--control-muted-text)] whitespace-nowrap">
+                      {showBlockMeta ? (
+                        <div className="inline-flex items-center gap-2">
+                          {displayLabel ? <span>{displayLabel}</span> : null}
+                          <span
+                            className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] leading-none ${blockBadgeClassName}`}
+                            title={event.status === 'ok' ? 'OK' : event.status === 'err' ? 'Error' : undefined}
+                          >
+                            <span>{event.diagramTypeLabel}</span>
+                            {statusIcon}
+                          </span>
+                        </div>
+                      ) : (
+                        <div>{displayLabel}</div>
+                      )}
+                    </div>
+                    <div className="min-w-0 break-words text-[var(--control-text)]">
                       <OperationLogRowText
                         row={contentRow}
                         pinnedTooltip={pinnedTooltip}
@@ -147,7 +185,13 @@ const ChatOperationLog: React.FC<Props> = ({
                         onOpenBuildDocsFile={onOpenBuildDocsFile}
                       />
                   </div>
-                    <span className="text-right font-mono tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                    <span
+                      className="text-right font-mono tabular-nums text-[var(--control-muted-text)] whitespace-nowrap"
+                      title={event.volumeLabel ? 'Approx context volume' : undefined}
+                    >
+                      {event.volumeLabel ?? ''}
+                    </span>
+                    <span className="text-right font-mono tabular-nums text-[var(--control-muted-text)] whitespace-nowrap">
                       {displayTime}
                     </span>
                 </>
@@ -159,7 +203,7 @@ const ChatOperationLog: React.FC<Props> = ({
         </div>
       </details>
       {summaryLine && (
-        <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap truncate">
+        <div className="mt-1 text-[11px] text-[var(--control-muted-text)] whitespace-nowrap truncate">
           {summaryLine}
         </div>
       )}

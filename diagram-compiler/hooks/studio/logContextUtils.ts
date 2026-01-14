@@ -78,6 +78,28 @@ export const formatDocsDetailForLog = (args: {
   return `${prefix} (${selectionPaths.length} ${label}, ${formatSize(totalTokens)} tok): ${list}`;
 };
 
+const summarizeDocsTokensAndNamesForLog = (args: {
+  docsContext: string;
+  selectionSummary?: DocsSelectionSummary | null;
+}) => {
+  const sections = parseDocsContextSections(args.docsContext);
+  const selectionPaths = args.selectionSummary?.includedPaths?.length
+    ? args.selectionSummary.includedPaths
+    : Array.from(sections.keys());
+
+  if (selectionPaths.length === 0) {
+    return { files: [] as string[], tokens: 0 };
+  }
+
+  const items = selectionPaths.map((path) => {
+    const name = path.split('/').pop() || path;
+    const chars = sections.get(path) ?? 0;
+    return { name, tokens: estimateTokensFromChars(chars) };
+  });
+  const totalTokens = items.reduce((sum, item) => sum + item.tokens, 0);
+  return { files: items.map((item) => item.name), tokens: totalTokens };
+};
+
 export const formatMessageBlockForLog = (message: Message, index: number) => {
   const label = `[${index + 1}] ${message.role}${message.id ? ` (${message.id})` : ''}`;
   return `${label}\n${message.content}`;
@@ -120,16 +142,27 @@ export const buildContextEventForLog = (args: {
     prefix: args.docsPrefix,
   });
   const msgSummary = summarizeMessagesForLog(args.messages);
+  const docsSummary = summarizeDocsTokensAndNamesForLog({
+    docsContext: args.docsContext,
+    selectionSummary: args.selectionSummary,
+  });
+  const totalTokens = msgSummary.tokens + docsSummary.tokens;
+
+  const logDocsLines =
+    docsSummary.files.length > 0
+      ? ['docs:', ...docsSummary.files].join('\n')
+      : '';
   const detail = joinLogDetailLines(
     args.selectionLine,
-    `messages: ${msgSummary.count} (${msgSummary.tokens} tok)`,
-    docsDetail
+    `messages: ${msgSummary.count}`,
+    logDocsLines
   );
   return {
     phase: args.phase,
     level: 'info' as const,
     title: 'Контекст',
     detail,
+    metrics: totalTokens > 0 ? { tokens: totalTokens } : undefined,
     tooltipMessages: buildContextTooltipForLog({
       systemPrompt: args.systemPrompt,
       messages: args.messages,

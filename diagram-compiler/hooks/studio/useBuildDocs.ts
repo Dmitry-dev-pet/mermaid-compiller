@@ -253,6 +253,35 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     }));
   }, []);
 
+  const resetDocsSelectionsToDefault = useCallback(() => {
+    if (!buildDocsEntries.length) return;
+    setDocsState((prev) => {
+      const nextSelections: DocsSelectionState['selections'] = { ...prev.selections };
+      const syntaxDocPath =
+        buildDocsEntries.find((entry) => entry.path.startsWith('packages/mermaid/src/docs/syntax/'))?.path ?? '';
+      const syntaxReferencePath = 'packages/mermaid/src/docs/intro/syntax-reference.md';
+
+      for (const mode of DOCS_MODE_ORDER) {
+        const modeSelection: Record<string, boolean> = {};
+        if (mode === 'plan') {
+          for (const entry of buildDocsEntries) {
+            modeSelection[entry.path] = PLAN_DEFAULT_DOCS.has(entry.path);
+          }
+        } else {
+          const defaultPath = syntaxDocPath || syntaxReferencePath;
+          for (const entry of buildDocsEntries) {
+            modeSelection[entry.path] = entry.path === defaultPath;
+          }
+        }
+        nextSelections[mode] = modeSelection;
+      }
+      return {
+        ...prev,
+        selections: nextSelections,
+      };
+    });
+  }, [buildDocsEntries]);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadBuildDocsEntries(diagramType);
@@ -276,6 +305,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     setSystemPromptRaw,
     buildDocsSelectionsByMode: docsState.selections,
     setBuildDocSelectionForMode,
+    resetDocsSelectionsToDefault,
     ensureBuildDocsEntries: ensureViewerDocsEntries,
     getDocsContext,
     getViewerDocsContext,

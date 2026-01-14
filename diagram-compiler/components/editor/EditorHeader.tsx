@@ -1,7 +1,8 @@
 import React from 'react';
-import { Bookmark, Check, Copy, PenTool, RefreshCw, Loader2 } from 'lucide-react';
+import { Bookmark, Check, Copy, FileCode2, Loader2, PenTool, RefreshCw } from 'lucide-react';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
 import { EditorTab, MermaidState } from '../../types';
+import { HEADER_CONTROL_ICON_BUTTON, HEADER_CONTROL_SELECT } from '../../utils/uiControlStyles';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../../utils/uiModes';
 
 interface EditorHeaderProps {
@@ -30,7 +31,7 @@ interface EditorHeaderProps {
   isBuildDocsTab: boolean;
 }
 
-const EditorHeader: React.FC<EditorHeaderProps> = ({
+  const EditorHeader: React.FC<EditorHeaderProps> = ({
   mermaidState,
   isMarkdown,
   showMarkdownStats,
@@ -56,22 +57,38 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
   isBuildDocsTab,
 }) => {
   const actionButtonBase =
-    'px-2 py-1 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap';
+    'h-7 px-2 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1 shrink-0 whitespace-nowrap normal-case tracking-normal';
   const isAnalyzing = isProcessing && activeOperationKind === 'analyze';
   const isFixing = isProcessing && activeOperationKind === 'fix';
+
+  const editorTitle = isBuildDocsTab ? 'Build Docs' : isMarkdownMermaidTab ? 'Markdown' : 'Editor';
+
   return (
-    <div className="h-24 p-2 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-950">
-      <div className="flex flex-col flex-1 min-w-0">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-xs font-mono w-full">
-          <div className="flex items-center gap-2 min-w-0">
-            {showMarkdownStats && <span className="text-blue-600 dark:text-blue-400 font-bold">📄 Markdown</span>}
-            {showMarkdownStats && markdownValidCount + markdownInvalidCount > 0 && (
+    <div
+      className="h-24 px-4 py-2 border-b bg-transparent text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-col gap-2"
+      style={{ borderColor: 'var(--panel-border, #e5e7eb)', backgroundColor: 'var(--panel-alt-bg, #ffffff)' }}
+    >
+      <div className="flex items-center justify-between gap-3 min-w-0 normal-case tracking-normal">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="min-w-0 truncate font-semibold text-[var(--control-text)] inline-flex items-center gap-2">
+            <FileCode2 size={14} className="text-slate-400 dark:text-slate-500" />
+            {editorTitle}
+          </div>
+
+          <div className="flex items-center gap-2 min-w-0 text-xs font-mono">
+            {showMarkdownStats && (
               <span className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                <span>{markdownValidCount}</span>
-                <span>·</span>
-                <span>{markdownInvalidCount}</span>
+                <span className="text-blue-600 dark:text-blue-400 font-bold">📄 Markdown</span>
+                {markdownValidCount + markdownInvalidCount > 0 && (
+                  <>
+                    <span>{markdownValidCount}</span>
+                    <span>·</span>
+                    <span>{markdownInvalidCount}</span>
+                  </>
+                )}
               </span>
             )}
+
             {!isMarkdown && mermaidState.status === 'invalid' && (
               <span
                 className="inline-flex h-3 w-3 rounded-full bg-red-500 ring-1 ring-red-700"
@@ -83,78 +100,72 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
               <span className="text-amber-600 dark:text-amber-400">⚠ Edited</span>
             )}
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-1.5 font-sans justify-self-end">
-            <button
-              onClick={onAnalyze}
-              disabled={!canAnalyze}
-              className={`${actionButtonBase} ${canAnalyze ? MODE_UI.analyze.button : MODE_BUTTON_DISABLED}`}
-              title="Explain this diagram in chat"
-            >
-              {isAnalyzing ? <Loader2 size={10} className="animate-spin" /> : <PenTool size={10} />} Analyze
-            </button>
-
-            <select
-              value={analyzeLanguage}
-              onChange={(e) => onAnalyzeLanguageChange(e.target.value)}
-              className="px-2 py-1 text-[10px] font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500/20 cursor-pointer shrink-0"
-              title="Analyze language"
-              disabled={isProcessing || isReadOnly}
-            >
-              <option value="auto">Auto</option>
-              <option value="English">EN</option>
-              <option value="Russian">RU</option>
-            </select>
-
-            <button
-              onClick={onFixSyntax}
-              disabled={!isAIReady || isProcessing || !canFix}
-              className={`${actionButtonBase} ${canFix ? MODE_UI.fix.button : MODE_BUTTON_DISABLED}`}
-              title={`Attempt to fix syntax errors (up to ${AUTO_FIX_MAX_ATTEMPTS} tries)`}
-            >
-              <RefreshCw size={10} className={isFixing ? 'animate-spin' : ''} /> Fix ({AUTO_FIX_MAX_ATTEMPTS})
-            </button>
-
-            <button
-              onClick={onSnapshot}
-              disabled={!canSnapshot}
-              className={`${actionButtonBase} ${
-                canSnapshot
-                  ? 'text-white bg-slate-700 hover:bg-slate-800'
-                  : 'text-slate-400 bg-slate-200 dark:bg-slate-700 dark:text-slate-500'
-              }`}
-              title={isMarkdownMermaidTab ? 'Save current diagram state to history' : 'Save current diagram state to history'}
-            >
-              <Bookmark size={10} /> Snapshot
-            </button>
-
-            <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1"></div>
-
-            <button
-              onClick={onCopy}
-              className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded text-slate-500 dark:text-slate-400 transition-colors"
-              title={
-                isMarkdownMermaidTab
-                  ? 'Copy mermaid block'
-                  : isBuildDocsTab
-                  ? 'Copy docs'
-                  : 'Copy code'
-              }
-            >
-              {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
-            </button>
-          </div>
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-          <span>
-            Source:{' '}
-            {mermaidState.source === 'user'
-              ? 'User'
-              : mermaidState.source === 'compiled'
-              ? 'Compiled'
-              : 'User (Override)'}
-          </span>
+
+        <div className="flex flex-wrap items-center justify-end gap-1.5 font-sans shrink-0">
+          <button
+            onClick={onAnalyze}
+            disabled={!canAnalyze}
+            className={`${actionButtonBase} ${canAnalyze ? MODE_UI.analyze.button : MODE_BUTTON_DISABLED}`}
+            title="Explain this diagram in chat"
+          >
+            {isAnalyzing ? <Loader2 size={10} className="animate-spin" /> : <PenTool size={10} />} Analyze
+          </button>
+
+          <select
+            value={analyzeLanguage}
+            onChange={(e) => onAnalyzeLanguageChange(e.target.value)}
+            className={HEADER_CONTROL_SELECT}
+            title="Analyze language"
+            disabled={isProcessing || isReadOnly}
+          >
+            <option value="auto">Auto</option>
+            <option value="English">EN</option>
+            <option value="Russian">RU</option>
+          </select>
+
+          <button
+            onClick={onFixSyntax}
+            disabled={!isAIReady || isProcessing || !canFix}
+            className={`${actionButtonBase} ${canFix ? MODE_UI.fix.button : MODE_BUTTON_DISABLED}`}
+            title={`Attempt to fix syntax errors (up to ${AUTO_FIX_MAX_ATTEMPTS} tries)`}
+          >
+            <RefreshCw size={10} className={isFixing ? 'animate-spin' : ''} /> Fix ({AUTO_FIX_MAX_ATTEMPTS})
+          </button>
+
+          <button
+            onClick={onSnapshot}
+            disabled={!canSnapshot}
+            className={`${actionButtonBase} ${
+              canSnapshot
+                ? 'text-white bg-slate-700 hover:bg-slate-800 border border-slate-700'
+                : 'text-slate-400 bg-slate-200 dark:bg-slate-800 dark:text-slate-500 border border-slate-300/60 dark:border-slate-500/60'
+            }`}
+            title="Save current diagram state to history"
+          >
+            <Bookmark size={10} /> Snapshot
+          </button>
+
+          <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+
+          <button
+            onClick={onCopy}
+            className={HEADER_CONTROL_ICON_BUTTON}
+            title={
+              isMarkdownMermaidTab
+                ? 'Copy mermaid block'
+                : isBuildDocsTab
+                ? 'Copy docs'
+                : 'Copy code'
+            }
+          >
+            {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+          </button>
         </div>
-        <div className="flex items-center gap-1 mt-2">
+      </div>
+
+      <div className="flex items-center justify-between gap-2 normal-case tracking-normal">
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => onActiveTabChange('code')}
@@ -166,7 +177,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
           >
             Code
           </button>
-          <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1"></div>
+          <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
           <button
             type="button"
             onClick={() => onActiveTabChange('build_docs')}
@@ -179,6 +190,17 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
           >
             Build Docs
           </button>
+        </div>
+
+        <div className="text-[10px] text-[var(--control-muted-text)]">
+          <span>
+            Source:{' '}
+            {mermaidState.source === 'user'
+              ? 'User'
+              : mermaidState.source === 'compiled'
+              ? 'Compiled'
+              : 'User (Override)'}
+          </span>
         </div>
       </div>
     </div>

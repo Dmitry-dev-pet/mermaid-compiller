@@ -5,17 +5,28 @@ import EditorColumn from './components/EditorColumn';
 import PreviewColumn from './components/PreviewColumn';
 import { useDiagramStudio } from './hooks/studio/useDiagramStudio';
 import { ScrollSyncMeasure, ScrollSyncPayload } from './hooks/studio/useScrollSync';
-import { MermaidThemeName, setInlineThemeCommand } from './utils/inlineThemeCommand';
+import type { MermaidThemePresetId } from './utils/mermaidThemePreset';
+import { setMermaidThemePreset } from './utils/mermaidThemePreset';
 import { MermaidDirection, setInlineDirectionCommand } from './utils/inlineDirectionCommand';
 import { MermaidLook, setInlineLookCommand } from './utils/inlineLookCommand';
+import type { FlowchartEdgeStyleUpdate } from './utils/flowchartArrowStyle';
+import { setFlowchartEdgeStyle } from './utils/flowchartArrowStyle';
+import type { FlowchartLinkStylePresetId } from './utils/flowchartLinkStyle';
+import { setFlowchartLinkStylePreset } from './utils/flowchartLinkStyle';
+import type { FlowchartCurve } from './utils/flowchartCurveConfig';
+import { setFlowchartCurve } from './utils/flowchartCurveConfig';
 import { DIAGRAM_TYPES } from './utils/diagramTypes';
 import { getDiagramSyntaxPath, getDocsPaths } from './services/docsContextService';
 import type { DiagramType } from './types';
+import { getThemeColorScheme } from './utils/appTheme';
 import {
   isMarkdownLike,
   replaceMermaidBlockInMarkdown,
+  setFlowchartEdgeStyleForMarkdownMermaidBlocks,
+  setFlowchartLinkStylePresetForMarkdownMermaidBlocks,
+  setFlowchartCurveForMarkdownMermaidBlocks,
   setLookForMarkdownMermaidBlocks,
-  setThemeForMarkdownMermaidBlocks,
+  setThemePresetForMarkdownMermaidBlocks,
 } from './services/mermaidService';
 
 function App() {
@@ -55,6 +66,7 @@ function App() {
     setSystemPromptRaw,
     buildDocsSelectionsByMode,
     setBuildDocSelectionForMode,
+    resetDocsSelectionsToDefault,
     markdownMermaidBlocks,
     markdownMermaidDiagnostics,
     markdownMermaidActiveIndex,
@@ -75,6 +87,7 @@ function App() {
     clearProjectPreview,
     previewMermaidState,
     toggleTheme,
+    setThemePreset,
     setAnalyzeLanguage,
     setLLMTimeoutMs,
     togglePreviewFullScreen,
@@ -168,6 +181,7 @@ function App() {
   const isProjectPreview = !!previewMermaidState;
   const mermaidStateForView = previewMermaidState ?? mermaidState;
   const editorTabForView = isProjectPreview ? 'code' : editorTab;
+  const colorScheme = getThemeColorScheme(appState.theme);
   const markdownMermaidBlocksForView = isProjectPreview ? [] : markdownMermaidBlocks;
   const markdownMermaidDiagnosticsForView = isProjectPreview ? [] : markdownMermaidDiagnostics;
   const markdownMermaidActiveIndexForView = isProjectPreview ? 0 : markdownMermaidActiveIndex;
@@ -228,7 +242,10 @@ function App() {
   // and their useEffect for event listeners is also gone from here.
 
   return (
-    <div className="flex flex-col h-screen text-slate-800 dark:text-slate-100 font-sans bg-white dark:bg-slate-950 transition-colors">
+    <div
+      className="flex flex-col h-screen text-slate-800 dark:text-slate-100 font-sans transition-colors"
+      style={{ backgroundColor: 'var(--app-bg, #ffffff)' }}
+    >
       <Header 
         aiConfig={aiConfig}
         connectionState={connectionState}
@@ -236,7 +253,7 @@ function App() {
         onConnect={connectAI}
         onDisconnect={disconnectAI}
         theme={appState.theme}
-        onToggleTheme={toggleTheme}
+        onThemeChange={setThemePreset}
         llmTimeoutMs={appState.llmTimeoutMs}
         onLLMTimeoutMsChange={setLLMTimeoutMs}
       />
@@ -297,12 +314,12 @@ function App() {
 
             {/* Col 2: Editor */}
             <div style={{ width: `${appState.columnWidths[1]}%` }} className="flex flex-col min-w-[300px]">
-              <EditorColumn 
-                mermaidState={mermaidStateForView}
-                onChange={isProjectPreview ? () => {} : handleMermaidChange}
-                onAnalyze={isProjectPreview ? () => {} : handleAnalyze}
-                onFixSyntax={isProjectPreview ? () => {} : handleFixSyntax}
-                onSnapshot={isProjectPreview ? () => {} : handleManualSnapshot}
+	              <EditorColumn 
+	                mermaidState={mermaidStateForView}
+	                onChange={isProjectPreview ? () => {} : handleMermaidChange}
+	                onAnalyze={isProjectPreview ? () => {} : handleAnalyze}
+	                onFixSyntax={isProjectPreview ? () => {} : handleFixSyntax}
+	                onSnapshot={isProjectPreview ? () => {} : handleManualSnapshot}
                 isAIReady={!isProjectPreview && connectionState.status === 'connected' && !!aiConfig.selectedModelId}
                 isProcessing={isProcessing}
                 activeOperationKind={activeOperationKind}
@@ -313,14 +330,15 @@ function App() {
                 promptPreviewByMode={promptPreviewByMode}
                 intentText={buildDocsIntentText}
                 activeTab={editorTabForView}
-                buildDocsEntries={buildDocsEntries}
-                buildDocsSelectionsByMode={buildDocsSelectionsByMode}
-                onToggleBuildDocForMode={setBuildDocSelectionForMode}
-                buildDocsActivePath={buildDocsActivePath}
-                onBuildDocsActivePathChange={setBuildDocsActivePath}
-                docsMode={docsMode}
-                onDocsModeChange={setDocsMode}
-                systemPromptRawByMode={systemPromptRawByMode}
+	                buildDocsEntries={buildDocsEntries}
+	                buildDocsSelectionsByMode={buildDocsSelectionsByMode}
+	                onToggleBuildDocForMode={setBuildDocSelectionForMode}
+	                onResetBuildDocsSelections={resetDocsSelectionsToDefault}
+	                buildDocsActivePath={buildDocsActivePath}
+	                onBuildDocsActivePathChange={setBuildDocsActivePath}
+	                docsMode={docsMode}
+	                onDocsModeChange={setDocsMode}
+	                systemPromptRawByMode={systemPromptRawByMode}
                 onSystemPromptRawChange={setSystemPromptRaw}
                 markdownMermaidBlocks={markdownMermaidBlocksForView}
                 markdownMermaidDiagnostics={markdownMermaidDiagnosticsForView}
@@ -353,21 +371,22 @@ function App() {
         >
           <PreviewColumn
             mermaidState={mermaidStateForView}
-            theme={appState.theme}
+            theme={colorScheme}
+            appThemePresetId={appState.theme}
             isFullScreen={appState.isPreviewFullScreen}
             onToggleFullScreen={togglePreviewFullScreen}
             isScrollSyncEnabled={appState.isScrollSyncEnabled}
             onToggleScrollSync={toggleScrollSync}
             scrollSyncPayload={scrollSyncPayload}
             onScrollSync={handlePreviewScrollSync}
-            onSetInlineTheme={(nextTheme: MermaidThemeName | null) => {
+            onSetThemePreset={(presetId: MermaidThemePresetId | null) => {
               if (isProjectPreview) return;
               if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
-                const nextMarkdown = setThemeForMarkdownMermaidBlocks(mermaidStateForView.code, nextTheme);
+                const nextMarkdown = setThemePresetForMarkdownMermaidBlocks(mermaidStateForView.code, presetId);
                 handleMermaidChange(nextMarkdown);
                 return;
               }
-              applyInlineUpdate((code) => setInlineThemeCommand(code, nextTheme));
+              applyInlineUpdate((code) => setMermaidThemePreset(code, presetId));
             }}
             onSetInlineDirection={(nextDirection: MermaidDirection | null) => {
               if (isProjectPreview) return;
@@ -381,6 +400,34 @@ function App() {
                 return;
               }
               applyInlineUpdate((code) => setInlineLookCommand(code, nextLook));
+            }}
+            onSetFlowchartEdgeStyle={(update: FlowchartEdgeStyleUpdate) => {
+              if (isProjectPreview) return;
+              if (!update || !Object.keys(update).length) return;
+              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                const nextMarkdown = setFlowchartEdgeStyleForMarkdownMermaidBlocks(mermaidStateForView.code, update);
+                handleMermaidChange(nextMarkdown);
+                return;
+              }
+              applyInlineUpdate((code) => setFlowchartEdgeStyle(code, update));
+            }}
+            onSetFlowchartLinkStylePreset={(presetId: FlowchartLinkStylePresetId) => {
+              if (isProjectPreview) return;
+              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                const nextMarkdown = setFlowchartLinkStylePresetForMarkdownMermaidBlocks(mermaidStateForView.code, presetId);
+                handleMermaidChange(nextMarkdown);
+                return;
+              }
+              applyInlineUpdate((code) => setFlowchartLinkStylePreset(code, presetId));
+            }}
+            onSetFlowchartCurve={(curve: FlowchartCurve | null) => {
+              if (isProjectPreview) return;
+              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                const nextMarkdown = setFlowchartCurveForMarkdownMermaidBlocks(mermaidStateForView.code, curve);
+                handleMermaidChange(nextMarkdown);
+                return;
+              }
+              applyInlineUpdate((code) => setFlowchartCurve(code, curve));
             }}
             activeEditorTab={editorTabForView}
             buildDocsSystemPrompts={buildDocsSystemPrompts}

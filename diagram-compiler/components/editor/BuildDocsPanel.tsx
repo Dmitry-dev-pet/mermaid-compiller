@@ -4,6 +4,8 @@ import type { DocsEntry } from '../../services/docsContextService';
 import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
 import { useBuildDocsContent } from '../../hooks/editor/useBuildDocsContent';
 import { DOCS_MODE_ORDER } from '../../utils/docsModes';
+import { HEADER_CONTROL_BUTTON } from '../../utils/uiControlStyles';
+import { Sparkles } from 'lucide-react';
 
 interface BuildDocsPanelProps {
   docsMode: DocsMode;
@@ -17,6 +19,7 @@ interface BuildDocsPanelProps {
   onBuildDocsActivePathChange: (path: string) => void;
   buildDocsSelectionsByMode: Record<DocsMode, Record<string, boolean>>;
   onToggleBuildDocForMode: (mode: DocsMode, path: string, isIncluded: boolean) => void;
+  onResetBuildDocsSelections?: () => void;
   systemPromptEntry: DocsEntry;
   isSystemPromptRaw: boolean;
   onSystemPromptRawChange: (mode: DocsMode, isRaw: boolean) => void;
@@ -44,6 +47,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
   onBuildDocsActivePathChange,
   buildDocsSelectionsByMode,
   onToggleBuildDocForMode,
+  onResetBuildDocsSelections,
   systemPromptEntry,
   isSystemPromptRaw,
   onSystemPromptRawChange,
@@ -117,13 +121,31 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
     if (!containerRef.current) return;
     dragRef.current = { startY: event.clientY, startRatio: splitRatio };
   };
+
   return (
-    <div className="flex-1 min-h-0 flex flex-col bg-slate-50 dark:bg-[#282c34]">
-      <div className="border-b border-slate-200 dark:border-slate-800 px-2 py-2 bg-slate-100/60 dark:bg-slate-950/20">
-        <div className="w-full overflow-auto rounded-md border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/40">
-            <table className="min-w-full text-[10px] text-slate-600 dark:text-slate-300">
+    <div className="flex-1 min-h-0 flex flex-col bg-transparent" style={{ backgroundColor: 'var(--panel-alt-bg, #ffffff)' }}>
+      <div
+        className="border-b px-2 py-2 bg-transparent"
+        style={{ borderColor: 'var(--panel-border, #e5e7eb)', backgroundColor: 'var(--panel-bg, #f3f4f6)' }}
+      >
+        {!!onResetBuildDocsSelections && (
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-[10px] font-semibold text-[var(--control-muted-text)]">Docs</div>
+            <button
+              type="button"
+              className={HEADER_CONTROL_BUTTON}
+              onClick={onResetBuildDocsSelections}
+              title="Reset docs selection to minimal defaults (affects all modes)"
+            >
+              <Sparkles className="h-3 w-3" />
+              Default
+            </button>
+          </div>
+        )}
+        <div className="w-full overflow-auto rounded-md border border-[var(--panel-border)] bg-[var(--menu-bg)]">
+            <table className="min-w-full text-[10px] text-[var(--control-text)]">
               <thead>
-                <tr className="text-left text-slate-400 dark:text-slate-500">
+                <tr className="text-left text-[var(--control-muted-text)]">
                   <th className="px-2 py-1 font-medium">File</th>
                   {DOCS_MODE_ORDER.map((mode) => {
                     const isActiveMode = docsMode === mode;
@@ -138,7 +160,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                           className={`w-full rounded px-1 py-1 ${
                             isActiveMode
                               ? 'bg-indigo-600/20 text-indigo-700 dark:text-indigo-200'
-                              : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                              : 'hover:bg-[var(--menu-bg-hover)]'
                           }`}
                           title={`Show ${mode} system prompt/intent`}
                         >
@@ -160,7 +182,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                   const fileName = entry.path.split('/').pop() || entry.path;
                   const isActive = entry.path === buildDocsActivePath;
                   return (
-                    <tr key={entry.path} className={isActive ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}>
+                    <tr key={entry.path} className={isActive ? 'bg-[var(--menu-bg-hover)]' : ''}>
                       <td className="px-2 py-1">
                         <button
                           type="button"
@@ -195,9 +217,9 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
       <div ref={containerRef} className="flex-1 min-h-0 flex flex-col">
         <div style={{ flexBasis: `${splitRatio * 100}%` }} className="min-h-0 overflow-auto">
           <div className="px-4 py-3">
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">{topPanelTitle}</div>
+            <div className="text-[11px] text-[var(--control-muted-text)] mb-2">{topPanelTitle}</div>
             {topPanelText ? (
-              <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
+              <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-[var(--control-text)]">
                 <code
                   className="language-markdown"
                   dangerouslySetInnerHTML={{
@@ -206,28 +228,29 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                 />
               </pre>
             ) : (
-              <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+              <div className="text-[11px] text-[var(--control-muted-text)] italic">
                 No documentation loaded for this type.
               </div>
             )}
           </div>
         </div>
         <div
-          className="h-2 cursor-row-resize bg-slate-200 dark:bg-slate-700 hover:bg-blue-400 transition-colors"
+          className="h-2 cursor-row-resize hover:bg-blue-400 transition-colors"
+          style={{ backgroundColor: 'var(--panel-border, #e5e7eb)' }}
           onMouseDown={handleDragStart}
           title="Resize panels"
         />
         <div style={{ flexBasis: `${(1 - splitRatio) * 100}%` }} className="min-h-0 overflow-auto">
           <div className="px-4 py-3">
-            <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+            <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--control-muted-text)] mb-2">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setBottomTab('system')}
-                  className={`px-2 py-0.5 rounded border text-[10px] ${
+                  className={`${HEADER_CONTROL_BUTTON} ${
                     bottomTab === 'system'
                       ? 'bg-indigo-600/20 border-indigo-500/30 text-indigo-700 dark:text-indigo-200'
-                      : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      : ''
                   }`}
                   title="Show system prompt"
                 >
@@ -236,10 +259,10 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setBottomTab('intent')}
-                  className={`px-2 py-0.5 rounded border text-[10px] ${
+                  className={`${HEADER_CONTROL_BUTTON} ${
                     bottomTab === 'intent'
                       ? 'bg-indigo-600/20 border-indigo-500/30 text-indigo-700 dark:text-indigo-200'
-                      : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      : ''
                   }`}
                   title="Show intent"
                 >
@@ -262,7 +285,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
               </div>
             </div>
             {bottomPanelText ? (
-              <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
+              <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-[var(--control-text)]">
                 <code
                   className={
                     bottomTab === 'system'
@@ -289,7 +312,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                 />
               </pre>
             ) : (
-              <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+              <div className="text-[11px] text-[var(--control-muted-text)] italic">
                 {bottomTab === 'system'
                   ? (isSystemPromptRaw ? 'Raw prompt is not available yet.' : 'No system prompt available.')
                   : 'Intent is not available for this block yet.'}

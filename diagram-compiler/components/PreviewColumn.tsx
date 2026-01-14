@@ -3,9 +3,19 @@ import mermaid from 'mermaid';
 import svgPanZoom from 'svg-pan-zoom';
 import { EditorTab, MermaidState } from '../types';
 import { useDiagramExport } from '../hooks/studio/useDiagramExport';
-import { extractInlineThemeCommand, MermaidThemeName } from '../utils/inlineThemeCommand';
+import { MermaidThemeName } from '../utils/inlineThemeCommand';
 import { extractInlineDirectionCommand, MermaidDirection } from '../utils/inlineDirectionCommand';
 import { extractInlineLookCommand, MermaidLook } from '../utils/inlineLookCommand';
+import {
+  extractFlowchartEdgeStyle,
+  FlowchartEdgeStyle,
+  FlowchartEdgeStyleUpdate,
+} from '../utils/flowchartArrowStyle';
+import { extractFlowchartLinkStylePreset, FlowchartLinkStylePresetId } from '../utils/flowchartLinkStyle';
+import { extractFlowchartCurve, FlowchartCurve } from '../utils/flowchartCurveConfig';
+import { extractFrontmatterThemeVariables } from '../utils/mermaidFrontmatterThemeVariables';
+import { extractMermaidThemePreset, getMermaidThemePresetPanelBackground, MermaidThemePresetId } from '../utils/mermaidThemePreset';
+import { extractMermaidSvgBackgroundColor } from '../utils/mermaidSvgBackground';
 import {
   applyInlineMermaidDirectives,
   detectMermaidDiagramType,
@@ -31,15 +41,19 @@ import './markdown-preview.css';
 interface PreviewColumnProps {
   mermaidState: MermaidState;
   theme: 'light' | 'dark';
+  appThemePresetId: MermaidThemePresetId;
   isFullScreen: boolean;
   onToggleFullScreen: () => void;
   isScrollSyncEnabled: boolean;
   onToggleScrollSync: () => void;
   scrollSyncPayload: ScrollSyncPayload | null;
   onScrollSync: (payload: ScrollSyncMeasure) => void;
-  onSetInlineTheme: (theme: MermaidThemeName | null) => void;
+  onSetThemePreset: (presetId: MermaidThemePresetId | null) => void;
   onSetInlineDirection: (direction: MermaidDirection | null) => void;
   onSetInlineLook: (look: MermaidLook | null) => void;
+  onSetFlowchartEdgeStyle: (update: FlowchartEdgeStyleUpdate) => void;
+  onSetFlowchartLinkStylePreset: (presetId: FlowchartLinkStylePresetId) => void;
+  onSetFlowchartCurve: (curve: FlowchartCurve | null) => void;
   activeEditorTab: EditorTab;
   buildDocsSystemPrompts: Record<'chat' | 'build' | 'plan' | 'analyze' | 'fix', { raw: string; redacted: string }>;
   systemPromptRawByMode: Record<'chat' | 'build' | 'analyze' | 'fix', boolean>;
@@ -74,15 +88,19 @@ const parseViewBoxAttr = (value: string | null): ViewBox | null => {
 const PreviewColumn: React.FC<PreviewColumnProps> = ({
   mermaidState,
   theme,
+  appThemePresetId,
   isFullScreen,
   onToggleFullScreen,
   isScrollSyncEnabled,
   onToggleScrollSync,
   scrollSyncPayload,
   onScrollSync,
-  onSetInlineTheme,
+  onSetThemePreset,
   onSetInlineDirection,
   onSetInlineLook,
+  onSetFlowchartEdgeStyle,
+  onSetFlowchartLinkStylePreset,
+  onSetFlowchartCurve,
   activeEditorTab,
   buildDocsSystemPrompts,
   systemPromptRawByMode,
@@ -137,6 +155,71 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     () => getInlineDirectionOptions(activeDiagramType),
     [activeDiagramType]
   );
+  const flowchartBlocksCount = useMemo(() => {
+    if (!isMarkdownMode) return 0;
+    return markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart').length;
+  }, [isMarkdownMode, markdownMermaidBlocks]);
+  const selectedFlowchartEdgeStyle = useMemo<FlowchartEdgeStyle | null>(() => {
+    if (isMarkdownMermaidMode) return extractFlowchartEdgeStyle(codeForRender);
+    if (!isMarkdownMode) return extractFlowchartEdgeStyle(codeForRender);
+
+    const flowchartBlocks = markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart');
+    if (!flowchartBlocks.length) return null;
+    const extracted = flowchartBlocks
+      .map((block) => extractFlowchartEdgeStyle(block.code))
+      .filter(Boolean) as FlowchartEdgeStyle[];
+    if (!extracted.length) return null;
+
+    const pick = <K extends keyof FlowchartEdgeStyle>(key: K): FlowchartEdgeStyle[K] => {
+      const values = new Set(extracted.map((value) => value[key]).filter((value) => value !== null));
+      if (!values.size) return null;
+      if (values.size === 1) return Array.from(values)[0] as FlowchartEdgeStyle[K];
+      return null;
+    };
+
+    return {
+      lineStyle: pick('lineStyle'),
+      endCap: pick('endCap'),
+      direction: pick('direction'),
+      length: pick('length'),
+    };
+  }, [codeForRender, isMarkdownMermaidMode, isMarkdownMode, markdownMermaidBlocks]);
+  const selectedFlowchartLinkStylePreset = useMemo<FlowchartLinkStylePresetId | null>(() => {
+    if (isMarkdownMermaidMode) return extractFlowchartLinkStylePreset(codeForRender);
+    if (!isMarkdownMode) return extractFlowchartLinkStylePreset(codeForRender);
+
+    const flowchartBlocks = markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart');
+    if (!flowchartBlocks.length) return null;
+    const presets = new Set(
+      flowchartBlocks
+        .map((block) => extractFlowchartLinkStylePreset(block.code))
+        .filter((value): value is FlowchartLinkStylePresetId => Boolean(value))
+    );
+    return presets.size === 1 ? (Array.from(presets)[0] ?? null) : null;
+  }, [codeForRender, isMarkdownMermaidMode, isMarkdownMode, markdownMermaidBlocks]);
+
+  const selectedFlowchartCurve = useMemo<FlowchartCurve | null>(() => {
+    if (isMarkdownMermaidMode) return extractFlowchartCurve(codeForRender);
+    if (!isMarkdownMode) return extractFlowchartCurve(codeForRender);
+
+    const flowchartBlocks = markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart');
+    if (!flowchartBlocks.length) return null;
+    const curves = new Set(
+      flowchartBlocks
+        .map((block) => extractFlowchartCurve(block.code))
+        .filter((value): value is FlowchartCurve => Boolean(value))
+    );
+    return curves.size === 1 ? (Array.from(curves)[0] ?? null) : null;
+  }, [codeForRender, isMarkdownMermaidMode, isMarkdownMode, markdownMermaidBlocks]);
+
+  const isFlowchartCurveMixed = useMemo(() => {
+    if (isMarkdownMermaidMode) return false;
+    if (!isMarkdownMode) return false;
+    const flowchartBlocks = markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart');
+    if (!flowchartBlocks.length) return false;
+    const curves = new Set(flowchartBlocks.map((block) => extractFlowchartCurve(block.code) ?? null));
+    return curves.size > 1;
+  }, [isMarkdownMermaidMode, isMarkdownMode, markdownMermaidBlocks]);
   const markdownNavEnabled =
     (isMarkdownMode || isMarkdownMermaidMode) && markdownMermaidBlocks.length > 1;
   const markdownNavLabel = markdownNavEnabled
@@ -197,7 +280,12 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     if (!container) return;
     refreshOffsets(container);
   }, [refreshOffsets]);
-  const { exportError, exportPng, exportSvg, isExporting } = useDiagramExport({ svgRef, code: codeForRender, theme });
+  const { exportError, exportPng, exportSvg, isExporting } = useDiagramExport({
+    svgRef,
+    code: codeForRender,
+    theme,
+    appThemePresetId,
+  });
 
   const resolveSystemPromptForPath = (path: string) => {
     const mode = getSystemPromptModeFromPath(path);
@@ -217,15 +305,32 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   }, [activeBuildDoc?.text, isBuildDocsMode, markdownRenderer]);
 
 
-  const selectedInlineTheme = useMemo(() => {
+  const selectedThemePreset = useMemo<MermaidThemePresetId | null>(() => {
     if (!isMarkdownMode) {
-      return extractInlineThemeCommand(codeForRender).theme ?? '';
+      const vars = extractFrontmatterThemeVariables(codeForRender);
+      return extractMermaidThemePreset(codeForRender, { themeVariables: vars });
     }
-    if (!markdownMermaidBlocks.length) return '';
-    const themes = markdownMermaidBlocks.map((block) => extractInlineThemeCommand(block.code).theme ?? '');
-    const first = themes[0] ?? '';
-    return themes.every((value) => value === first) ? first : '';
+    if (!markdownMermaidBlocks.length) return null;
+    const values = new Set(
+      markdownMermaidBlocks.map((block) => {
+        const vars = extractFrontmatterThemeVariables(block.code);
+        return extractMermaidThemePreset(block.code, { themeVariables: vars });
+      })
+    );
+    return values.size === 1 ? (Array.from(values)[0] ?? null) : null;
   }, [codeForRender, isMarkdownMode, markdownMermaidBlocks]);
+
+  const isThemePresetMixed = useMemo(() => {
+    if (!isMarkdownMode) return false;
+    if (!markdownMermaidBlocks.length) return false;
+    const values = new Set(
+      markdownMermaidBlocks.map((block) => {
+        const vars = extractFrontmatterThemeVariables(block.code);
+        return extractMermaidThemePreset(block.code, { themeVariables: vars });
+      })
+    );
+    return values.size > 1;
+  }, [isMarkdownMode, markdownMermaidBlocks]);
 
   const selectedInlineDirection = useMemo(() => {
     return extractInlineDirectionCommand(codeForRender).direction ?? '';
@@ -618,8 +723,27 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     return () => cancelAnimationFrame(rafId);
   }, [fitToViewport, isFullScreen, isBuildDocsMode, svgMarkup]);
 
+  const previewBackgroundColor = useMemo(() => {
+    if (isBuildDocsMode) return null;
+
+    // Prefer the user-selected preset/background from code (frontmatter), because Mermaid SVG background is often transparent.
+    if (!isMarkdownMode) {
+      const vars = extractFrontmatterThemeVariables(codeForRender);
+      const fromCode = typeof vars?.background === 'string' ? vars.background.trim() : '';
+      if (fromCode) return fromCode;
+      return getMermaidThemePresetPanelBackground(selectedThemePreset, appThemePresetId);
+    } else if (!isThemePresetMixed && selectedThemePreset) {
+      return getMermaidThemePresetPanelBackground(selectedThemePreset, appThemePresetId);
+    }
+
+    const fromSvg = extractMermaidSvgBackgroundColor(svgMarkup);
+    if (fromSvg) return fromSvg;
+
+    return getMermaidThemePresetPanelBackground(null, appThemePresetId);
+  }, [appThemePresetId, codeForRender, isBuildDocsMode, isMarkdownMode, isThemePresetMixed, selectedThemePreset, svgMarkup]);
+
   return (
-    <div className="h-full flex flex-col bg-slate-50/30 dark:bg-slate-900/30">
+    <div className="h-full flex flex-col bg-transparent" style={previewBackgroundColor ? { backgroundColor: previewBackgroundColor } : undefined}>
       <PreviewHeaderControls
         title={isBuildDocsMode ? 'Build Docs' : 'Preview'}
         isBuildDocsMode={isBuildDocsMode}
@@ -635,13 +759,22 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
           )
         }
         showThemeControl={supportsInlineTheme || (isMarkdownMode && markdownMermaidBlocks.length > 0)}
+        showArrowControl={(activeDiagramType === 'flowchart' && !isMarkdownMode) || (isMarkdownMode && flowchartBlocksCount > 0)}
         showDirectionControl={!isMarkdownMode && supportsInlineDirection}
         showLookControl={supportsInlineLook || (isMarkdownMode && markdownMermaidBlocks.length > 0)}
         directionOptions={directionOptions}
-        selectedInlineTheme={selectedInlineTheme}
+        selectedThemePreset={selectedThemePreset}
+        isThemePresetMixed={isThemePresetMixed}
         selectedInlineDirection={selectedInlineDirection}
         selectedInlineLook={selectedInlineLook}
-        onSetInlineTheme={onSetInlineTheme}
+        onSetThemePreset={onSetThemePreset}
+        flowchartEdgeStyle={selectedFlowchartEdgeStyle}
+        onSetFlowchartEdgeStyle={onSetFlowchartEdgeStyle}
+        flowchartLinkStylePreset={selectedFlowchartLinkStylePreset}
+        onSetFlowchartLinkStylePreset={onSetFlowchartLinkStylePreset}
+        flowchartCurve={selectedFlowchartCurve}
+        isFlowchartCurveMixed={isFlowchartCurveMixed}
+        onSetFlowchartCurve={onSetFlowchartCurve}
         onSetInlineDirection={onSetInlineDirection}
         onSetInlineLook={onSetInlineLook}
         codeForRender={codeForRender}
@@ -654,6 +787,10 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         isExporting={isExporting}
         onExportSvg={exportSvg}
         onExportPng={exportPng}
+        zoomPercent={zoomPercent}
+        onZoomOut={zoomOut}
+        onZoomIn={zoomIn}
+        onFitToViewport={fitToViewport}
       />
 
       <PreviewBody
@@ -671,12 +808,9 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         codeForRender={codeForRender}
         svgMarkup={svgMarkup}
         exportError={exportError}
-        zoomPercent={zoomPercent}
-        onZoomOut={zoomOut}
-        onZoomIn={zoomIn}
-        onFitToViewport={fitToViewport}
         hasBuildDocs={Boolean(activeBuildDoc?.text)}
         onMarkdownScroll={handleMarkdownScroll}
+        onToggleFullScreen={onToggleFullScreen}
       />
     </div>
   );

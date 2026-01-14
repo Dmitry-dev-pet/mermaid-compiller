@@ -34,7 +34,7 @@ export const useDiagramStudio = () => {
   const [activeLLMRequest, setActiveLLMRequest] = useState<LLMRequestStartNotice | null>(null);
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } = useAI();
   const { mermaidState, setMermaidState, handleMermaidChange } = useMermaid();
-  const { appState, setAppState, startResize, setDiagramType, setMainDiagramTypes, toggleTheme, setAnalyzeLanguage, setLLMTimeoutMs, togglePreviewFullScreen } = useLayout();
+  const { appState, setAppState, startResize, setDiagramType, setMainDiagramTypes, setThemePreset, toggleTheme, setAnalyzeLanguage, setLLMTimeoutMs, togglePreviewFullScreen } = useLayout();
   const {
     messages,
     setMessages,
@@ -347,6 +347,7 @@ export const useDiagramStudio = () => {
     setSystemPromptRaw,
     buildDocsSelectionsByMode,
     setBuildDocSelectionForMode,
+    resetDocsSelectionsToDefault,
     buildDocsType,
   } = useBuildDocs(docsDiagramType);
 
@@ -1015,6 +1016,7 @@ export const useDiagramStudio = () => {
     setSystemPromptRaw,
     buildDocsSelectionsByMode,
     setBuildDocSelectionForMode,
+    resetDocsSelectionsToDefault,
     markdownMermaidBlocks,
     markdownMermaidDiagnostics,
     markdownMermaidActiveIndex,
@@ -1036,6 +1038,7 @@ export const useDiagramStudio = () => {
     clearProjectPreview,
     previewMermaidState,
     toggleTheme,
+    setThemePreset,
     setAnalyzeLanguage,
     setLLMTimeoutMs,
     togglePreviewFullScreen,

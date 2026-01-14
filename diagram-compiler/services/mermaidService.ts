@@ -2,11 +2,21 @@ import mermaid from 'mermaid';
 import { DiagramType, MermaidState } from '../types';
 import { applyInlineDirectionCommand } from '../utils/inlineDirectionCommand';
 import { applyInlineThemeAndLookCommands } from '../utils/inlineLookCommand';
-import { MermaidThemeName, setInlineThemeCommand } from '../utils/inlineThemeCommand';
+import { setInlineThemeCommand } from '../utils/inlineThemeCommand';
+import type { MermaidThemeName } from '../utils/inlineThemeCommand';
+import { MermaidThemePresetId, setMermaidThemePreset } from '../utils/mermaidThemePreset';
 import { MermaidLook, setInlineLookCommand } from '../utils/inlineLookCommand';
 import { MERMAID_BLOCK_PATTERN } from '../utils/markdownMermaid';
 import { DIAGRAM_TYPE_PATTERNS } from '../utils/mermaidPatterns';
 import { normalizeDiagramType } from '../utils/diagramTypes';
+import {
+  FlowchartArrowStyle,
+  FlowchartEdgeStyleUpdate,
+  setFlowchartArrowStyle,
+  setFlowchartEdgeStyle,
+} from '../utils/flowchartArrowStyle';
+import { FlowchartLinkStylePresetId, setFlowchartLinkStylePreset } from '../utils/flowchartLinkStyle';
+import { FlowchartCurve, setFlowchartCurve } from '../utils/flowchartCurveConfig';
 
 export const isMarkdownLike = (code: string): boolean => {
   if (!code.trim()) return false;
@@ -106,6 +116,24 @@ export const setThemeForMarkdownMermaidBlocks = (
   return nextMarkdown;
 };
 
+export const setThemePresetForMarkdownMermaidBlocks = (
+  markdown: string,
+  presetId: MermaidThemePresetId | null
+): string => {
+  if (!markdown.trim()) return markdown;
+  const blocks = extractMermaidBlocksFromMarkdown(markdown);
+  if (blocks.length === 0) return markdown;
+
+  let nextMarkdown = markdown;
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    const nextCode = setMermaidThemePreset(block.code, presetId);
+    nextMarkdown = replaceMermaidBlockInMarkdown(nextMarkdown, block, nextCode);
+  }
+
+  return nextMarkdown;
+};
+
 export const setLookForMarkdownMermaidBlocks = (
   markdown: string,
   look: MermaidLook | null
@@ -118,6 +146,84 @@ export const setLookForMarkdownMermaidBlocks = (
   for (let i = blocks.length - 1; i >= 0; i -= 1) {
     const block = blocks[i];
     const nextCode = setInlineLookCommand(block.code, look);
+    nextMarkdown = replaceMermaidBlockInMarkdown(nextMarkdown, block, nextCode);
+  }
+
+  return nextMarkdown;
+};
+
+export const setFlowchartArrowStyleForMarkdownMermaidBlocks = (
+  markdown: string,
+  style: FlowchartArrowStyle | null
+): string => {
+  if (!markdown.trim()) return markdown;
+  if (!style) return markdown;
+  const blocks = extractMermaidBlocksFromMarkdown(markdown);
+  if (blocks.length === 0) return markdown;
+
+  let nextMarkdown = markdown;
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    if (block.diagramType !== 'flowchart') continue;
+    const nextCode = setFlowchartArrowStyle(block.code, style);
+    nextMarkdown = replaceMermaidBlockInMarkdown(nextMarkdown, block, nextCode);
+  }
+
+  return nextMarkdown;
+};
+
+export const setFlowchartEdgeStyleForMarkdownMermaidBlocks = (
+  markdown: string,
+  update: FlowchartEdgeStyleUpdate
+): string => {
+  if (!markdown.trim()) return markdown;
+  if (!Object.keys(update).length) return markdown;
+  const blocks = extractMermaidBlocksFromMarkdown(markdown);
+  if (blocks.length === 0) return markdown;
+
+  let nextMarkdown = markdown;
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    if (block.diagramType !== 'flowchart') continue;
+    const nextCode = setFlowchartEdgeStyle(block.code, update);
+    nextMarkdown = replaceMermaidBlockInMarkdown(nextMarkdown, block, nextCode);
+  }
+
+  return nextMarkdown;
+};
+
+export const setFlowchartLinkStylePresetForMarkdownMermaidBlocks = (
+  markdown: string,
+  presetId: FlowchartLinkStylePresetId
+): string => {
+  if (!markdown.trim()) return markdown;
+  const blocks = extractMermaidBlocksFromMarkdown(markdown);
+  if (blocks.length === 0) return markdown;
+
+  let nextMarkdown = markdown;
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    if (block.diagramType !== 'flowchart') continue;
+    const nextCode = setFlowchartLinkStylePreset(block.code, presetId);
+    nextMarkdown = replaceMermaidBlockInMarkdown(nextMarkdown, block, nextCode);
+  }
+
+  return nextMarkdown;
+};
+
+export const setFlowchartCurveForMarkdownMermaidBlocks = (
+  markdown: string,
+  curve: FlowchartCurve | null
+): string => {
+  if (!markdown.trim()) return markdown;
+  const blocks = extractMermaidBlocksFromMarkdown(markdown);
+  if (blocks.length === 0) return markdown;
+
+  let nextMarkdown = markdown;
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    if (block.diagramType !== 'flowchart') continue;
+    const nextCode = setFlowchartCurve(block.code, curve);
     nextMarkdown = replaceMermaidBlockInMarkdown(nextMarkdown, block, nextCode);
   }
 
@@ -142,11 +248,14 @@ export const appendEmptyMermaidBlockToMarkdown = (markdown: string): string => {
   return `${prefix}## Diagram ${nextIndex}\n\n\`\`\`mermaid\n\`\`\`\n`;
 };
 
-export const initializeMermaid = (theme: 'default' | 'dark' = 'default') => {
+export const initializeMermaid = (
+  theme: MermaidThemeName | { theme: MermaidThemeName; themeVariables?: Record<string, unknown> } = 'default'
+) => {
+  const config = typeof theme === 'string' ? { theme } : theme;
   mermaid.initialize({
     startOnLoad: false,
-    theme: theme,
     securityLevel: 'loose',
+    ...config,
   });
 };
 

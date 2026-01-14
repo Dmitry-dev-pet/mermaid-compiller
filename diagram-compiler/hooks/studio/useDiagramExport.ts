@@ -6,6 +6,8 @@ import { insertDirectiveAfterLeadingDirectives } from '../../utils/mermaidDirect
 import { extractInlineThemeCommand } from '../../utils/inlineThemeCommand';
 import { applyInlineDirectionCommand } from '../../utils/inlineDirectionCommand';
 import { extractInlineLookCommand } from '../../utils/inlineLookCommand';
+import { extractFrontmatterThemeVariables } from '../../utils/mermaidFrontmatterThemeVariables';
+import { extractMermaidThemePreset, getMermaidThemePresetPanelBackground } from '../../utils/mermaidThemePreset';
 
 const OFFSCREEN_EXPORT_ID = 'dc-export-svg-mount';
 
@@ -13,6 +15,7 @@ type UseDiagramExportArgs = {
   svgRef: React.RefObject<SVGSVGElement | null>;
   code: string;
   theme: 'light' | 'dark';
+  appThemePresetId: import('../../types').ThemePresetId;
 };
 
 const sanitizeFilenameToken = (value: string): string => {
@@ -20,7 +23,7 @@ const sanitizeFilenameToken = (value: string): string => {
   return safe || 'mermaid';
 };
 
-export const useDiagramExport = ({ svgRef, code, theme }: UseDiagramExportArgs) => {
+export const useDiagramExport = ({ svgRef, code, theme, appThemePresetId }: UseDiagramExportArgs) => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -109,7 +112,13 @@ export const useDiagramExport = ({ svgRef, code, theme }: UseDiagramExportArgs) 
     setExportError(null);
     try {
       const svgForExport = svg.querySelector('foreignObject') ? await renderPngCompatibleSvg() : svg;
-      await exportDiagramAsPng(svgForExport, { filenameBase, backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff' });
+      const vars = extractFrontmatterThemeVariables(code);
+      const backgroundCandidate = vars?.background;
+      const backgroundColor =
+        typeof backgroundCandidate === 'string' && backgroundCandidate.trim()
+          ? backgroundCandidate
+          : getMermaidThemePresetPanelBackground(extractMermaidThemePreset(code, { themeVariables: vars }), appThemePresetId);
+      await exportDiagramAsPng(svgForExport, { filenameBase, backgroundColor });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setExportError(message);

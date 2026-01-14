@@ -209,9 +209,13 @@ export interface AppState {
   isResizing: number | null;
   isPreviewFullScreen: boolean;
   isScrollSyncEnabled: boolean;
-  theme: 'light' | 'dark';
+  theme: ThemePresetId;
   language: string;
   analyzeLanguage: string;
   notebookBuildCount: number | string | null;
   llmTimeoutMs: number;
 }
+
+export type ColorScheme = 'light' | 'dark';
+
+export type ThemePresetId = 'lightPlus' | 'darkPlus' | 'abyss';
