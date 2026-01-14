@@ -80,6 +80,7 @@ export const useDiagramStudio = () => {
   const previewCacheRef = useRef<Record<string, MermaidState>>({});
   const previewLoadingRef = useRef<Set<string>>(new Set());
   const [whiteboardSceneJson, setWhiteboardSceneJson] = useState<string | null>(null);
+  const whiteboardRawRef = useRef<string | null>(null);
 
   const isHydratingRef = useRef(true);
   const hydratedSessionIdRef = useRef<string | null>(null);
@@ -102,6 +103,56 @@ export const useDiagramStudio = () => {
     editorTab,
     setEditorTab,
   });
+
+  type WhiteboardBundleV1 = {
+    kind: 'mlg-whiteboard-bundle';
+    v: 1;
+    byBlock: Record<string, string | null>;
+  };
+
+  const parseWhiteboardBundle = (raw: string | null): WhiteboardBundleV1 | null => {
+    if (!raw?.trim()) return null;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== 'object') return null;
+      const rec = parsed as Record<string, unknown>;
+      if (rec.kind !== 'mlg-whiteboard-bundle') return null;
+      if (rec.v !== 1) return null;
+      const byBlockRaw = rec.byBlock;
+      if (!byBlockRaw || typeof byBlockRaw !== 'object') return { kind: 'mlg-whiteboard-bundle', v: 1, byBlock: {} };
+      const byBlock = Object.entries(byBlockRaw as Record<string, unknown>).reduce<Record<string, string | null>>((acc, [k, v]) => {
+        if (typeof v === 'string') acc[k] = v;
+        else if (v === null) acc[k] = null;
+        return acc;
+      }, {});
+      return { kind: 'mlg-whiteboard-bundle', v: 1, byBlock };
+    } catch {
+      return null;
+    }
+  };
+
+  const normalizeWhiteboardRawToBundle = (raw: string | null, blockIndex: number): WhiteboardBundleV1 => {
+    const existing = parseWhiteboardBundle(raw);
+    if (existing) return existing;
+    // Migration: if this revision stored a single Excalidraw scene, assume it
+    // belonged to the currently active markdown block.
+    if (raw?.trim()) {
+      return {
+        kind: 'mlg-whiteboard-bundle',
+        v: 1,
+        byBlock: { [String(blockIndex)]: raw },
+      };
+    }
+    return { kind: 'mlg-whiteboard-bundle', v: 1, byBlock: {} };
+  };
+
+  const resolveWhiteboardSceneForActiveContext = useCallback((raw: string | null): string | null => {
+    const isMarkdownBlock = markdownMermaidBlocks.length > 0;
+    if (!isMarkdownBlock) return raw?.trim() ? raw : null;
+    const bundle = parseWhiteboardBundle(raw);
+    if (!bundle) return null;
+    return bundle.byBlock[String(markdownMermaidActiveIndex)] ?? null;
+  }, [markdownMermaidActiveIndex, markdownMermaidBlocks.length]);
 
   const {
     operationLogs,
@@ -494,7 +545,9 @@ export const useDiagramStudio = () => {
       const diag = historyLoadResult.currentRevisionDiagnostics;
 
       lastManualRecordedCodeRef.current = code;
-      setWhiteboardSceneJson(historyLoadResult.currentRevisionWhiteboard ?? null);
+      const rawWhiteboard = historyLoadResult.currentRevisionWhiteboard ?? null;
+      whiteboardRawRef.current = rawWhiteboard;
+      setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(rawWhiteboard));
       hydratedRevisionIdRef.current = historyLoadResult.session.currentRevisionId ?? null;
       setMermaidState((prev) => ({
         ...prev,
@@ -508,31 +561,59 @@ export const useDiagramStudio = () => {
       }));
     } else {
       lastManualRecordedCodeRef.current = '';
+      whiteboardRawRef.current = null;
       setWhiteboardSceneJson(null);
       hydratedRevisionIdRef.current = null;
       setMermaidState(DEFAULT_MERMAID_STATE);
     }
 
     isHydratingRef.current = false;
-  }, [historyLoadResult, historySteps, setMermaidState, setMessages]);
+  }, [historyLoadResult, historySteps, resolveWhiteboardSceneForActiveContext, setMermaidState, setMessagesForContext]);
 
   useEffect(() => {
     const revId = historySession?.currentRevisionId ?? null;
     if (revId === hydratedRevisionIdRef.current) return;
     hydratedRevisionIdRef.current = revId;
     if (!revId) {
+      whiteboardRawRef.current = null;
       setWhiteboardSceneJson(null);
       return;
     }
-    void getRevision(revId).then((rev) => setWhiteboardSceneJson(rev?.whiteboard ?? null));
-  }, [historySession?.currentRevisionId]);
+    void getRevision(revId).then((rev) => {
+      const raw = rev?.whiteboard ?? null;
+      whiteboardRawRef.current = raw;
+      setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(raw));
+    });
+  }, [getRevision, historySession?.currentRevisionId, resolveWhiteboardSceneForActiveContext]);
 
   const saveWhiteboardForCurrentRevision = useCallback(async (sceneJson: string | null) => {
     if (!historySession?.currentRevisionId) return null;
-    const updated = await updateCurrentRevisionWhiteboard(sceneJson);
-    setWhiteboardSceneJson(updated?.whiteboard ?? null);
+    const isMarkdownBlock = markdownMermaidBlocks.length > 0;
+    const nextRaw = (() => {
+      const trimmed = sceneJson?.trim() ? sceneJson : null;
+      if (!isMarkdownBlock) return trimmed;
+      const bundle = normalizeWhiteboardRawToBundle(whiteboardRawRef.current, markdownMermaidActiveIndex);
+      bundle.byBlock[String(markdownMermaidActiveIndex)] = trimmed;
+      return JSON.stringify(bundle);
+    })();
+    const updated = await updateCurrentRevisionWhiteboard(nextRaw);
+    const raw = updated?.whiteboard ?? null;
+    whiteboardRawRef.current = raw;
+    setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(raw));
     return updated;
-  }, [historySession?.currentRevisionId, updateCurrentRevisionWhiteboard]);
+  }, [
+    historySession?.currentRevisionId,
+    markdownMermaidActiveIndex,
+    markdownMermaidBlocks.length,
+    resolveWhiteboardSceneForActiveContext,
+    updateCurrentRevisionWhiteboard,
+  ]);
+
+  useEffect(() => {
+    // Keep the active whiteboard scene in sync with the selected markdown block.
+    // The underlying revision stores a bundle of scenes per block index.
+    setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(whiteboardRawRef.current));
+  }, [markdownMermaidActiveIndex, markdownMermaidBlocks.length, resolveWhiteboardSceneForActiveContext]);
 
   useEffect(() => {
     if (!historyLoadResult) return;
@@ -958,7 +1039,9 @@ export const useDiagramStudio = () => {
     if (!revision) return;
 
     lastManualRecordedCodeRef.current = revision.mermaid;
-    setWhiteboardSceneJson(revision.whiteboard ?? null);
+    const rawWhiteboard = revision.whiteboard ?? null;
+    whiteboardRawRef.current = rawWhiteboard;
+    setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(rawWhiteboard));
     setMermaidState((prev) => ({
       ...prev,
       code: revision.mermaid,

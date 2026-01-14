@@ -847,7 +847,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
 
       {previewMode === 'whiteboard' ? (
         <DiagramWhiteboard
-          key={`${historyRevisionId ?? 'no-rev'}:${whiteboardResetKey}`}
+          key={`${historyRevisionId ?? 'no-rev'}:${whiteboardResetKey}:${markdownNavEnabled ? markdownMermaidActiveIndex : 'single'}`}
           theme={theme}
           backgroundColor={previewBackgroundColor}
           mermaidCode={codeForRender}

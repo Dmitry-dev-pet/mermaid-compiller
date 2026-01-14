@@ -15,6 +15,9 @@ import type {
 } from '@excalidraw/excalidraw/types';
 import type { ExcalidrawElement, OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 
+type ExcalidrawElementSkeletonList = NonNullable<Parameters<typeof convertToExcalidrawElements>[0]>;
+type ExcalidrawElementSkeleton = ExcalidrawElementSkeletonList[number];
+
 type Props = {
   theme: 'light' | 'dark';
   backgroundColor: string | null;
@@ -27,11 +30,14 @@ type Props = {
 
 type MermaidDiagramTypeHint = 'flowchart' | 'er' | 'sequence' | 'unknown';
 
+type MermaidLanggraphSceneGenerator = 'unknown' | 'mermaid-to-excalidraw' | 'svg-vectors' | 'svg-image';
+
 type MermaidLanggraphSceneMeta = {
-  v: 1;
+  v: 2;
   diagramType: MermaidDiagramTypeHint;
   mermaidHash: number;
   svgHash: number;
+  generator: MermaidLanggraphSceneGenerator;
 };
 
 const MLG_META_KEY = '__mermaidLanggraph' as const;
@@ -90,6 +96,168 @@ const preprocessMermaidForExcalidraw = (code: string): string => {
   return stripMermaidInitDirectives(stripYamlFrontmatter(code)).replace(/<br\s*\/?>/gi, '');
 };
 
+const normalizeMermaidToExcalidrawSkeletons = (raw: unknown): ExcalidrawElementSkeletonList => {
+  if (!Array.isArray(raw)) return [];
+  const out: ExcalidrawElementSkeleton[] = [];
+
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+  const asNumber = (value: unknown): number | null => {
+    if (typeof value !== 'number') return null;
+    return Number.isFinite(value) ? value : null;
+  };
+
+  const asString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+  const asStrokeStyle = (value: unknown): 'solid' | 'dashed' | 'dotted' | undefined => {
+    const raw = typeof value === 'string' ? value : '';
+    if (raw === 'solid' || raw === 'dashed' || raw === 'dotted') return raw;
+    return undefined;
+  };
+
+  for (const item of raw) {
+    if (!isRecord(item)) continue;
+    const type = asString(item.type);
+    if (!type) continue;
+
+    // @excalidraw/mermaid-to-excalidraw v2 returns skeletons that are NOT
+    // compatible with Excalidraw v0.18 `convertToExcalidrawElements`
+    // (e.g. `startX/startY/endX/endY` instead of `x/y/points`).
+    // Normalize them to the current skeleton format.
+    if (type === 'line' || type === 'arrow') {
+      // Newer skeletons already use x/y/points.
+      const x = asNumber(item.x);
+      const y = asNumber(item.y);
+      const pointsRaw = item.points;
+      const points =
+        Array.isArray(pointsRaw)
+          ? pointsRaw
+            .map((p) => (Array.isArray(p) && p.length === 2 ? [Number(p[0]), Number(p[1])] : null))
+            .filter((p): p is [number, number] => Boolean(p) && p.every((n) => Number.isFinite(n)))
+          : [];
+      if (x !== null && y !== null && points.length >= 2) {
+        const labelRaw = isRecord(item.label) ? item.label : null;
+        const labelText = labelRaw ? asString(labelRaw.text) : null;
+        const labelFontSize = labelRaw ? asNumber(labelRaw.fontSize) : null;
+        const label =
+          labelText && labelText.trim()
+            ? {
+              text: labelText,
+              ...(labelFontSize ? { fontSize: labelFontSize } : {}),
+            }
+            : undefined;
+        out.push({
+          type: type as 'line' | 'arrow',
+          x,
+          y,
+          points,
+          ...(asString(item.strokeColor) ? { strokeColor: String(item.strokeColor) } : {}),
+          ...(asNumber(item.strokeWidth) !== null ? { strokeWidth: Number(item.strokeWidth) } : {}),
+          ...(asStrokeStyle(item.strokeStyle) ? { strokeStyle: asStrokeStyle(item.strokeStyle) } : {}),
+          ...(label ? { label } : {}),
+        } satisfies ExcalidrawElementSkeleton);
+        continue;
+      }
+
+      // Legacy skeletons (mermaid-to-excalidraw <=1.x) use startX/startY/endX/endY.
+      const startX = asNumber(item.startX);
+      const startY = asNumber(item.startY);
+      const endX = asNumber(item.endX);
+      const endY = asNumber(item.endY);
+      if (startX === null || startY === null || endX === null || endY === null) continue;
+      const fallbackPoints = [[0, 0], [endX - startX, endY - startY]] as const;
+
+      const strokeColor = asString(item.strokeColor);
+      const strokeWidth = asNumber(item.strokeWidth);
+      const strokeStyle = asStrokeStyle(item.strokeStyle);
+
+      const labelRaw = isRecord(item.label) ? item.label : null;
+      const labelText = labelRaw ? asString(labelRaw.text) : null;
+      const labelFontSize = labelRaw ? asNumber(labelRaw.fontSize) : null;
+      const label =
+        labelText && labelText.trim()
+          ? {
+            text: labelText,
+            ...(labelFontSize ? { fontSize: labelFontSize } : {}),
+          }
+          : undefined;
+
+      out.push({
+        type: type as 'line' | 'arrow',
+        x: startX,
+        y: startY,
+        points: fallbackPoints,
+        ...(strokeColor ? { strokeColor } : {}),
+        ...(strokeWidth !== null ? { strokeWidth } : {}),
+        ...(strokeStyle ? { strokeStyle } : {}),
+        ...(label ? { label } : {}),
+      } satisfies ExcalidrawElementSkeleton);
+      continue;
+    }
+
+    if (type === 'rectangle' || type === 'ellipse') {
+      const x = asNumber(item.x);
+      const y = asNumber(item.y);
+      if (x === null || y === null) continue;
+      const width = asNumber(item.width);
+      const height = asNumber(item.height);
+      const strokeColor = asString(item.strokeColor);
+      const strokeWidth = asNumber(item.strokeWidth);
+      const strokeStyle = asStrokeStyle(item.strokeStyle);
+      const backgroundColor = asString(item.backgroundColor) ?? asString(item.bgColor);
+
+      const labelRaw = isRecord(item.label) ? item.label : null;
+      const labelText = labelRaw ? asString(labelRaw.text) : null;
+      const labelFontSize = labelRaw ? asNumber(labelRaw.fontSize) : null;
+      const label =
+        labelText && labelText.trim()
+          ? {
+            text: labelText,
+            ...(labelFontSize ? { fontSize: labelFontSize } : {}),
+          }
+          : undefined;
+
+      out.push({
+        type: type as 'rectangle' | 'ellipse',
+        x,
+        y,
+        ...(width !== null ? { width } : {}),
+        ...(height !== null ? { height } : {}),
+        ...(strokeColor ? { strokeColor } : {}),
+        ...(strokeWidth !== null ? { strokeWidth } : {}),
+        ...(strokeStyle ? { strokeStyle } : {}),
+        ...(backgroundColor ? { backgroundColor } : {}),
+        ...(label ? { label } : {}),
+      } satisfies ExcalidrawElementSkeleton);
+      continue;
+    }
+
+    if (type === 'text') {
+      const text = asString(item.text) ?? '';
+      const x = asNumber(item.x);
+      const y = asNumber(item.y);
+      if (x === null || y === null) continue;
+      const width = asNumber(item.width);
+      const height = asNumber(item.height);
+      const fontSize = asNumber(item.fontSize);
+      const strokeColor = asString(item.strokeColor) ?? asString(item.color);
+      out.push({
+        type: 'text',
+        text,
+        x,
+        y,
+        ...(width !== null ? { width } : {}),
+        ...(height !== null ? { height } : {}),
+        ...(fontSize !== null ? { fontSize } : {}),
+        ...(strokeColor ? { strokeColor } : {}),
+      } satisfies ExcalidrawElementSkeleton);
+      continue;
+    }
+  }
+
+  return out;
+};
+
 const parseHexColor = (color: string): { r: number; g: number; b: number } | null => {
   const raw = color.trim();
   const hex = raw.startsWith('#') ? raw.slice(1) : raw;
@@ -142,6 +310,15 @@ const applyMermaidThemeToExcalidrawElements = <T,>(
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
+  const shouldFixContrast = (color: unknown): boolean => {
+    if (typeof color !== 'string') return true;
+    const trimmed = color.trim();
+    if (!trimmed) return true;
+    const dark = isDarkColor(trimmed);
+    if (dark === null) return false;
+    return bgDark ? dark : !dark;
+  };
+
   return elements.map((el) => {
     if (!isRecord(el)) return el;
     const type = typeof el.type === 'string' ? el.type : '';
@@ -152,18 +329,28 @@ const applyMermaidThemeToExcalidrawElements = <T,>(
 
     const next: Record<string, unknown> = { ...el, locked: false };
     if (type === 'text') {
-      next.strokeColor = textColor;
+      if (shouldFixContrast(el.strokeColor)) {
+        next.strokeColor = textColor;
+      }
       return next as T;
     }
 
     if (type === 'rectangle' || type === 'diamond' || type === 'ellipse') {
-      next.strokeColor = lineColor;
-      next.backgroundColor = nodeFill;
+      if (shouldFixContrast(el.strokeColor)) {
+        next.strokeColor = lineColor;
+      }
+      // Don’t aggressively override fills — users may have edited them.
+      // Only set a fill when it’s missing/transparent (common in old imports).
+      if (typeof el.backgroundColor !== 'string' || el.backgroundColor === 'transparent') {
+        next.backgroundColor = nodeFill;
+      }
       return next as T;
     }
 
     if (type === 'line' || type === 'arrow') {
-      next.strokeColor = lineColor;
+      if (shouldFixContrast(el.strokeColor)) {
+        next.strokeColor = lineColor;
+      }
       return next as T;
     }
 
@@ -189,10 +376,11 @@ const detectMermaidDiagramTypeHint = (code: string): MermaidDiagramTypeHint => {
 
 const buildSceneMeta = (args: { mermaidCode: string; svgMarkup: string }): MermaidLanggraphSceneMeta => {
   return {
-    v: 1,
+    v: 2,
     diagramType: detectMermaidDiagramTypeHint(args.mermaidCode),
     mermaidHash: hashString(args.mermaidCode.trim()),
     svgHash: hashString(args.svgMarkup.trim()),
+    generator: 'unknown',
   };
 };
 
@@ -212,11 +400,19 @@ const readSceneMeta = (record: Record<string, unknown>): MermaidLanggraphSceneMe
   const raw = record[MLG_META_KEY];
   if (!raw || typeof raw !== 'object') return null;
   const meta = raw as Partial<MermaidLanggraphSceneMeta>;
-  if (meta.v !== 1) return null;
+  if (meta.v !== 2) return null;
   if (meta.diagramType !== 'flowchart' && meta.diagramType !== 'er' && meta.diagramType !== 'sequence' && meta.diagramType !== 'unknown') {
     return null;
   }
   if (typeof meta.mermaidHash !== 'number' || typeof meta.svgHash !== 'number') return null;
+  if (
+    meta.generator !== 'unknown'
+    && meta.generator !== 'mermaid-to-excalidraw'
+    && meta.generator !== 'svg-vectors'
+    && meta.generator !== 'svg-image'
+  ) {
+    return null;
+  }
   return meta as MermaidLanggraphSceneMeta;
 };
 
@@ -797,7 +993,8 @@ const buildSceneFromMermaidCode = async (args: {
   svgMarkup: string;
   theme: 'light' | 'dark';
   backgroundColor: string | null;
-}): Promise<ExcalidrawInitialDataState | null> => {
+  debug?: boolean;
+}): Promise<{ scene: ExcalidrawInitialDataState; generator: MermaidLanggraphSceneGenerator } | null> => {
   try {
     const themeVars = extractFrontmatterThemeVariables(args.mermaidCode);
     const themeVariables = {
@@ -816,7 +1013,8 @@ const buildSceneFromMermaidCode = async (args: {
       parseMermaidToExcalidraw(preprocessed, { themeVariables }),
       2000
     );
-    const converted = convertToExcalidrawElements(elements, { regenerateIds: true }).map((el) => ({ ...el, locked: false }));
+    const normalizedSkeletons = normalizeMermaidToExcalidrawSkeletons(elements);
+    const converted = convertToExcalidrawElements(normalizedSkeletons, { regenerateIds: true }).map((el) => ({ ...el, locked: false }));
     const themed = applyMermaidThemeToExcalidrawElements(converted, {
       backgroundColor: backgroundCandidate,
       themeVariables: themeVars,
@@ -824,6 +1022,8 @@ const buildSceneFromMermaidCode = async (args: {
     });
     if (themed.length > 0) {
       return {
+        generator: 'mermaid-to-excalidraw',
+        scene: {
         type: 'excalidraw',
         version: 2,
         source: 'mermaid-langgraph',
@@ -834,25 +1034,29 @@ const buildSceneFromMermaidCode = async (args: {
           theme: normalizeTheme(args.theme),
           viewBackgroundColor: backgroundCandidate ?? undefined,
         } as Partial<AppState>,
+        },
       };
     }
-  } catch {
+    if (args.debug) {
+      // eslint-disable-next-line no-console
+      console.warn('[whiteboard] mermaid-to-excalidraw returned 0 elements; falling back to svg');
+    }
+  } catch (error) {
+    if (args.debug) {
+      const message = error instanceof Error ? error.message : String(error);
+      // eslint-disable-next-line no-console
+      console.warn('[whiteboard] mermaid-to-excalidraw failed; falling back to svg', message);
+    }
     // Fall back to SVG parsing/snapshot.
   }
 
-  // Prefer parsing the already-rendered SVG (fast + works across Mermaid versions).
-  const svgVectors = await buildSceneFromSvgVectors({
+  // Fallback: import the rendered Mermaid SVG as a single image so it always stays visible.
+  const svgImage = await buildSceneFromSvgMarkup({
     svgMarkup: args.svgMarkup,
     theme: args.theme,
     backgroundColor: args.backgroundColor,
   });
-  if (svgVectors) return svgVectors;
-
-  return buildSceneFromSvgMarkup({
-    svgMarkup: args.svgMarkup,
-    theme: args.theme,
-    backgroundColor: args.backgroundColor,
-  });
+  return svgImage ? { scene: svgImage, generator: 'svg-image' } : null;
 };
 
 const buildSceneFromSvgMarkup = async (args: {
@@ -968,6 +1172,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const [initialDataState, setInitialDataState] = useState<ExcalidrawInitialDataState | null>(null);
   const [isSceneBuilding, setIsSceneBuilding] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
+  const [lastGenerator, setLastGenerator] = useState<MermaidLanggraphSceneGenerator>('unknown');
   const lastBuiltSignatureRef = useRef<string>('');
   const inFlightSignatureRef = useRef<string>('');
   const buildRunIdRef = useRef(0);
@@ -975,10 +1180,61 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const pendingFitSceneKeyRef = useRef<number | null>(null);
   const lastSerializedSignatureRef = useRef<string>('');
 
+  const scheduleFitToContent = useCallback((
+    api: ExcalidrawImperativeAPI,
+    targetSceneKey: number
+  ) => {
+    // The Excalidraw API instance is recreated when we bump `sceneKey` (key prop).
+    // Fit-to-content must run after the new scene is actually loaded.
+    if (pendingFitSceneKeyRef.current !== targetSceneKey) return;
+
+    let attempts = 0;
+    const maxAttempts = 600;
+    const tick = () => {
+      if (pendingFitSceneKeyRef.current !== targetSceneKey) return;
+      attempts += 1;
+      const elements = api.getSceneElements();
+      const appState = api.getAppState() as AppState;
+      // `isLoading` is not present in all Excalidraw versions; treat `undefined`
+      // as "not loading" to avoid permanently skipping fit-to-content.
+      const isLoading = (appState as unknown as { isLoading?: unknown }).isLoading === true;
+      const viewportReady =
+        typeof (appState as unknown as { width?: unknown }).width === 'number'
+        && (appState as unknown as { width: number }).width > 0
+        && typeof (appState as unknown as { height?: unknown }).height === 'number'
+        && (appState as unknown as { height: number }).height > 0;
+      if (elements?.length && !isLoading && viewportReady) {
+        try {
+          api.scrollToContent(elements, { fitToViewport: true, viewportZoomFactor: 0.92 });
+          pendingFitSceneKeyRef.current = null;
+          api.refresh();
+          return;
+        } catch (error) {
+          // Keep retrying until it succeeds (Excalidraw can throw during early mount).
+          if (debugEnabled) {
+            // eslint-disable-next-line no-console
+            console.warn('[whiteboard] scrollToContent failed; retrying', error);
+          }
+        }
+      }
+      if (attempts >= maxAttempts) return;
+      requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
+  }, [debugEnabled]);
+
   const prepareInitialData = useCallback((scene: ExcalidrawInitialDataState): ExcalidrawInitialDataState => {
     const sceneAppState = (scene.appState ?? {}) as Partial<AppState>;
+    const themeVars = extractFrontmatterThemeVariables(mermaidCode);
+    const themedElements = applyMermaidThemeToExcalidrawElements((scene.elements ?? []) as unknown[], {
+      backgroundColor: effectiveBackgroundColor ?? null,
+      themeVariables: themeVars,
+      uiTheme: theme,
+    }) as unknown as ExcalidrawInitialDataState['elements'];
     return {
       ...scene,
+      elements: themedElements,
       appState: {
         ...sceneAppState,
         ...EDITABLE_APPSTATE,
@@ -986,7 +1242,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         viewBackgroundColor: effectiveBackgroundColor ?? sceneAppState.viewBackgroundColor,
       },
     };
-  }, [effectiveBackgroundColor, theme]);
+  }, [effectiveBackgroundColor, mermaidCode, theme]);
 
   useEffect(() => {
     lastSavedJsonRef.current = initialSceneJson ?? '';
@@ -1035,6 +1291,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       defer(() => {
         setInitialDataState(prepareInitialData(parsed));
         sceneMetaForSaveRef.current = meta;
+        setLastGenerator(meta.generator ?? 'unknown');
         setBuildError(null);
         setSceneKey((k) => {
           const next = k + 1;
@@ -1063,17 +1320,19 @@ const DiagramWhiteboard: React.FC<Props> = ({
       svgMarkup,
       theme,
       backgroundColor: effectiveBackgroundColor,
-    }).then((scene) => {
+      debug: debugEnabled,
+    }).then((result) => {
       if (cancelled) return;
       if (buildId !== buildRunIdRef.current) return;
       setIsSceneBuilding(false);
       inFlightSignatureRef.current = '';
-      if (!scene) {
+      if (!result) {
         setBuildError('buildSceneFromMermaidCode returned null');
         return;
       }
-      setInitialDataState(prepareInitialData(scene));
-      sceneMetaForSaveRef.current = sceneMeta;
+      setInitialDataState(prepareInitialData(result.scene));
+      sceneMetaForSaveRef.current = { ...sceneMeta, generator: result.generator };
+      setLastGenerator(result.generator);
       setBuildError(null);
       lastBuiltSignatureRef.current = signature;
       setSceneKey((k) => {
@@ -1113,6 +1372,56 @@ const DiagramWhiteboard: React.FC<Props> = ({
     const status: 'idle' | 'building' | 'ready' | 'failed' =
       isSceneBuilding ? 'building' : buildError ? 'failed' : initialDataState ? 'ready' : 'idle';
     const counts = initialDataState?.elements ? countElementTypes(initialDataState.elements as unknown[]) : null;
+    const bounds = (() => {
+      const list = (initialDataState?.elements ?? []) as unknown[];
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      let seen = 0;
+      for (const el of list) {
+        if (!el || typeof el !== 'object') continue;
+        const rec = el as Record<string, unknown>;
+        if (rec.isDeleted === true) continue;
+        const x = typeof rec.x === 'number' ? rec.x : null;
+        const y = typeof rec.y === 'number' ? rec.y : null;
+        const w = typeof rec.width === 'number' ? rec.width : null;
+        const h = typeof rec.height === 'number' ? rec.height : null;
+        if (x === null || y === null || w === null || h === null) continue;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + w);
+        maxY = Math.max(maxY, y + h);
+        seen += 1;
+      }
+      if (seen === 0) return null;
+      return {
+        minX: Math.round(minX),
+        minY: Math.round(minY),
+        maxX: Math.round(maxX),
+        maxY: Math.round(maxY),
+        w: Math.round(maxX - minX),
+        h: Math.round(maxY - minY),
+        seen,
+      };
+    })();
+    const sampleRect = (() => {
+      const list = (initialDataState?.elements ?? []) as unknown[];
+      for (const el of list) {
+        if (!el || typeof el !== 'object') continue;
+        const rec = el as Record<string, unknown>;
+        if (rec.isDeleted === true) continue;
+        if (rec.type !== 'rectangle') continue;
+        const x = typeof rec.x === 'number' ? rec.x : null;
+        const y = typeof rec.y === 'number' ? rec.y : null;
+        const width = typeof rec.width === 'number' ? rec.width : null;
+        const height = typeof rec.height === 'number' ? rec.height : null;
+        const strokeColor = typeof rec.strokeColor === 'string' ? rec.strokeColor : null;
+        const backgroundColor = typeof rec.backgroundColor === 'string' ? rec.backgroundColor : null;
+        return { x, y, width, height, strokeColor, backgroundColor };
+      }
+      return null;
+    })();
     const sampleText = (() => {
       const list = (initialDataState?.elements ?? []) as unknown[];
       let best: { rec: Record<string, unknown>; score: number } | null = null;
@@ -1143,12 +1452,17 @@ const DiagramWhiteboard: React.FC<Props> = ({
     return {
       status,
       error: buildError,
+      generator: lastGenerator,
       builtCounts: counts,
+      bounds,
+      sampleRect,
       sampleText,
       diagramTypeHint,
       svgChars: svgMarkup.trim() ? svgMarkup.length : 0,
+      sceneKey,
+      pendingFitKey: pendingFitSceneKeyRef.current,
     };
-  }, [buildError, debugEnabled, diagramTypeHint, initialDataState, isSceneBuilding, svgMarkup]);
+  }, [buildError, debugEnabled, diagramTypeHint, initialDataState, isSceneBuilding, lastGenerator, sceneKey, svgMarkup]);
 
   useEffect(() => {
     if (!api) return;
@@ -1218,6 +1532,13 @@ const DiagramWhiteboard: React.FC<Props> = ({
     lastSerializedSignatureRef.current = '';
   }, [mermaidCode, svgMarkup]);
 
+  useEffect(() => {
+    if (!apiRef.current) return;
+    if (pendingFitSceneKeyRef.current !== sceneKey) return;
+    if (!initialDataState?.elements?.length) return;
+    scheduleFitToContent(apiRef.current, sceneKey);
+  }, [initialDataState, sceneKey, scheduleFitToContent]);
+
   const handleChange = useCallback((
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -1232,14 +1553,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
 
     if (pendingFitSceneKeyRef.current === sceneKey && elements.length > 0 && apiRef.current) {
-      pendingFitSceneKeyRef.current = null;
-      requestAnimationFrame(() => {
-        try {
-          apiRef.current?.scrollToContent(undefined, { fitToContent: true });
-        } catch {
-          // ignore
-        }
-      });
+      scheduleFitToContent(apiRef.current, sceneKey);
     }
 
     const expectedBackground = effectiveBackgroundColor?.trim() ?? '';
@@ -1269,23 +1583,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     } catch {
       // Never throw from Excalidraw onChange — it can break interactions (selection/dragging).
     }
-  }, [api, effectiveBackgroundColor, sceneKey, scheduleAutosave]);
-
-  useEffect(() => {
-    if (!api) return;
-    if (pendingFitSceneKeyRef.current !== sceneKey) return;
-    const elements = api.getSceneElements();
-    if (!elements?.length) return;
-
-    pendingFitSceneKeyRef.current = null;
-    requestAnimationFrame(() => {
-      try {
-        apiRef.current?.scrollToContent(undefined, { fitToContent: true });
-      } catch {
-        // ignore
-      }
-    });
-  }, [api, sceneKey]);
+  }, [api, effectiveBackgroundColor, sceneKey, scheduleAutosave, scheduleFitToContent]);
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
     const style: React.CSSProperties = {
@@ -1322,6 +1620,9 @@ const DiagramWhiteboard: React.FC<Props> = ({
         excalidrawAPI={(api) => {
           apiRef.current = api;
           setApi(api);
+          if (api && pendingFitSceneKeyRef.current === sceneKey) {
+            scheduleFitToContent(api, sceneKey);
+          }
         }}
         onChange={handleChange}
         UIOptions={{
@@ -1337,10 +1638,14 @@ const DiagramWhiteboard: React.FC<Props> = ({
       {debugEnabled && (
         <div className="pointer-events-none absolute top-2 left-2 z-50 rounded border border-slate-300/40 bg-white/80 px-2 py-1 text-[11px] text-slate-700 dark:border-slate-600/50 dark:bg-slate-900/70 dark:text-slate-200">
           <div>Whiteboard: {debugOverlay?.status ?? 'idle'}</div>
+          <div>sceneKey: {debugOverlay?.sceneKey ?? sceneKey} (pendingFit: {debugOverlay?.pendingFitKey ?? 'null'})</div>
           <div>type: {debugOverlay?.diagramTypeHint ?? diagramTypeHint}</div>
+          <div>generator: {debugOverlay?.generator ?? lastGenerator}</div>
           <div>svg: {debugOverlay?.svgChars ? `${debugOverlay.svgChars} chars` : 'empty'}</div>
           {debugOverlay?.error ? <div>error: {debugOverlay.error}</div> : null}
           {debugOverlay?.builtCounts ? <div>built: {JSON.stringify(debugOverlay.builtCounts)}</div> : null}
+          {debugOverlay?.bounds ? <div>bounds: {JSON.stringify(debugOverlay.bounds)}</div> : null}
+          {debugOverlay?.sampleRect ? <div>rect: {JSON.stringify(debugOverlay.sampleRect)}</div> : null}
           {debugOverlay?.sampleText ? <div>text: {JSON.stringify(debugOverlay.sampleText)}</div> : null}
         </div>
       )}
