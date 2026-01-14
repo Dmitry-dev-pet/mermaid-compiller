@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CaptureUpdateAction, convertToExcalidrawElements, Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
 import { parseMermaidToExcalidraw } from '@excalidraw/mermaid-to-excalidraw';
+import mermaid from 'mermaid';
 import '@excalidraw/excalidraw/index.css';
 import './diagram-whiteboard.css';
 import { Code2, Copy, Download, X } from 'lucide-react';
@@ -42,6 +43,27 @@ type MermaidLanggraphSceneMeta = {
 };
 
 const MLG_META_KEY = '__mermaidLanggraph' as const;
+
+// Mermaid v11 can throw when re-initialized while diagrams are already registered
+// (e.g. "Diagram flowchart-v2 already registered."). Our app re-initializes
+// Mermaid on theme/look changes; `@excalidraw/mermaid-to-excalidraw` calls
+// `mermaid.initialize()` internally and doesn't swallow the error.
+// Patch once per page-load so conversion doesn't always fall back to svg-image.
+let mermaidInitializePatched = false;
+const patchMermaidInitialize = () => {
+  if (mermaidInitializePatched) return;
+  mermaidInitializePatched = true;
+  const original = mermaid.initialize.bind(mermaid);
+  mermaid.initialize = ((config: unknown) => {
+    try {
+      return original(config as any);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('already registered')) return;
+      throw error;
+    }
+  }) as typeof mermaid.initialize;
+};
 
 const pickAppStateForSave = (appState: AppState): Partial<AppState> => {
   return {
@@ -1163,6 +1185,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const latestJsonRef = useRef<string>(initialSceneJson ?? '');
   const [isSceneJsonOpen, setIsSceneJsonOpen] = useState(false);
   const [sceneJsonForViewer, setSceneJsonForViewer] = useState<string>(initialSceneJson ?? '');
+  const latestFilesRef = useRef<BinaryFiles>({});
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const hasHadContentRef = useRef(false);
@@ -1242,6 +1265,10 @@ const DiagramWhiteboard: React.FC<Props> = ({
       },
     };
   }, [effectiveBackgroundColor, mermaidCode, theme]);
+
+  useEffect(() => {
+    patchMermaidInitialize();
+  }, []);
 
   useEffect(() => {
     lastSavedJsonRef.current = initialSceneJson ?? '';
@@ -1335,6 +1362,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       setLastGenerator(result.generator);
       setBuildError(null);
       lastBuiltSignatureRef.current = signature;
+      latestFilesRef.current = (result.scene.files ?? {}) as BinaryFiles;
       setSceneKey((k) => {
         const next = k + 1;
         pendingFitSceneKeyRef.current = next;
@@ -1566,6 +1594,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     if (signature === lastSerializedSignatureRef.current) return;
 
     try {
+      latestFilesRef.current = files ?? {};
       const filesForSave = api?.getFiles?.() ?? files;
       const rawJson = serializeAsJSON(
         elements as unknown as readonly ExcalidrawElement[],
@@ -1691,7 +1720,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     })();
 
     // For Excalidraw.com import we need the "local" JSON format, not "database".
-    const files = api.getFiles?.() ?? {};
+    const files = (api.getFiles?.() ?? latestFilesRef.current ?? {}) as BinaryFiles;
     const appState = api.getAppState() as AppState;
     const rawJson = serializeAsJSON(
       centeredElements as unknown as readonly ExcalidrawElement[],
