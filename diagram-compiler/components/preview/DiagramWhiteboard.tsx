@@ -1,7 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
+import { convertToExcalidrawElements, Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
-import type { AppState, BinaryFiles, ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types';
+import type {
+  AppState,
+  BinaryFileData,
+  BinaryFiles,
+  DataURL,
+  ExcalidrawImperativeAPI,
+  ExcalidrawInitialDataState,
+} from '@excalidraw/excalidraw/types';
 import type { ExcalidrawElement, OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 
 type Props = {
@@ -26,10 +33,10 @@ const pickAppStateForSave = (appState: AppState): Partial<AppState> => {
 
 const normalizeTheme = (theme: 'light' | 'dark') => theme;
 
-const toSvgDataUrl = (svg: string) => {
+const toSvgDataUrl = (svg: string): DataURL => {
   const decoded = unescape(encodeURIComponent(svg));
   const base64 = btoa(decoded);
-  return `data:image/svg+xml;base64,${base64}`;
+  return `data:image/svg+xml;base64,${base64}` as DataURL;
 };
 
 const parseViewBox = (svg: string) => {
@@ -88,24 +95,26 @@ const buildSceneFromSvgMarkup = async (args: {
   };
 
   const { width, height } = await measure();
-  const fileId = `mermaid-svg-${Date.now()}`;
+  const fileId = `mermaid-svg-${Date.now()}` as BinaryFileData['id'];
+  const file: BinaryFileData = {
+    mimeType: 'image/svg+xml',
+    id: fileId,
+    dataURL: toSvgDataUrl(svg),
+    created: Date.now(),
+  };
   const files: BinaryFiles = {
-    [fileId]: {
-      mimeType: 'image/svg+xml' as any,
-      id: fileId as any,
-      dataURL: toSvgDataUrl(svg) as any,
-      created: Date.now(),
-    } as any,
+    [fileId]: file,
   };
   const elements = [
-    {
+    ...convertToExcalidrawElements([{
       type: 'image',
-      fileId: fileId as any,
-      x: 0,
-      y: 0,
+      fileId,
+      x: -width / 2,
+      y: -height / 2,
       width,
       height,
-    } as any,
+      locked: true,
+    }], { regenerateIds: true }),
   ];
 
   return {
@@ -114,11 +123,12 @@ const buildSceneFromSvgMarkup = async (args: {
     source: 'mermaid-langgraph',
     elements,
     files,
+    scrollToContent: true,
     appState: {
       theme: normalizeTheme(args.theme),
       viewBackgroundColor: args.backgroundColor ?? undefined,
     } as Partial<AppState>,
-  } as unknown as ExcalidrawInitialDataState;
+  };
 };
 
 const AUTOSAVE_DEBOUNCE_MS = 1200;
@@ -135,11 +145,14 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const lastSavedJsonRef = useRef<string>(initialSceneJson ?? '');
   const pendingSaveRef = useRef<number | null>(null);
   const latestJsonRef = useRef<string>(initialSceneJson ?? '');
+  const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const didInitialFitRef = useRef(false);
 
   useEffect(() => {
     lastSavedJsonRef.current = initialSceneJson ?? '';
     latestJsonRef.current = initialSceneJson ?? '';
     onDirtyChange?.(false);
+    didInitialFitRef.current = false;
   }, [initialSceneJson, onDirtyChange]);
 
   useEffect(() => {
@@ -174,6 +187,74 @@ const DiagramWhiteboard: React.FC<Props> = ({
       return buildSceneFromSvgMarkup({ svgMarkup, theme, backgroundColor });
     };
   }, [backgroundColor, initialSceneJson, mermaidCode, svgMarkup, theme]);
+
+  const fitToContentIfNeeded = useCallback((animate: boolean) => {
+    const api = apiRef.current;
+    if (!api || didInitialFitRef.current) return;
+
+    const elements = api.getSceneElements();
+    if (elements.length === 0) return;
+
+    didInitialFitRef.current = true;
+    api.scrollToContent(elements, { fitToContent: true, animate, duration: animate ? 250 : 0 });
+  }, []);
+
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+
+    let cancelled = false;
+    let raf = 0;
+
+    const tick = () => {
+      if (cancelled) return;
+      fitToContentIfNeeded(false);
+      if (!didInitialFitRef.current) {
+        raf = requestAnimationFrame(tick);
+      }
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [fitToContentIfNeeded]);
+
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    if (tryParseInitialScene(initialSceneJson)) return;
+    if (!svgMarkup.trim()) return;
+
+    const existing = api.getSceneElements();
+    if (existing.length > 0) {
+      fitToContentIfNeeded(false);
+      return;
+    }
+
+    let cancelled = false;
+    void buildSceneFromSvgMarkup({ svgMarkup, theme, backgroundColor }).then((scene) => {
+      if (cancelled || !scene) return;
+
+      const elements = (scene.elements ?? []) as readonly ExcalidrawElement[];
+      const files = (scene.files ?? {}) as BinaryFiles;
+      api.addFiles(Object.values(files));
+      api.updateScene({
+        elements,
+        appState: {
+          theme: normalizeTheme(theme),
+          viewBackgroundColor: backgroundColor ?? undefined,
+        },
+      });
+
+      requestAnimationFrame(() => fitToContentIfNeeded(false));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [backgroundColor, fitToContentIfNeeded, initialSceneJson, svgMarkup, theme]);
 
   const scheduleAutosave = useCallback((nextJson: string) => {
     latestJsonRef.current = nextJson;
@@ -214,6 +295,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
       <Excalidraw
         initialData={initialData}
         theme={normalizeTheme(theme)}
+        excalidrawAPI={(api) => {
+          apiRef.current = api;
+          // Defer to the next frame so Excalidraw can finish initializing.
+          requestAnimationFrame(() => fitToContentIfNeeded(false));
+        }}
         onChange={handleChange}
         UIOptions={{
           canvasActions: {
