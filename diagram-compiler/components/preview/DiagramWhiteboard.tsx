@@ -364,6 +364,63 @@ const wrapTextToWidth = (text: string, opts: { maxWidth: number; fontSize: numbe
   return out.join('\n').trim();
 };
 
+const wrapMermaidToExcalidrawSkeletonLabels = (
+  raw: unknown
+): Parameters<typeof convertToExcalidrawElements>[0] => {
+  const elements = (Array.isArray(raw) ? raw : []) as unknown[];
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  const num = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+  const containerWidthById = new Map<string, number>();
+  for (const el of elements) {
+    if (!isRecord(el)) continue;
+    const id = typeof el.id === 'string' ? el.id : null;
+    const width = num(el.width);
+    if (id && width !== null) containerWidthById.set(id, width);
+  }
+
+  return elements.map((el) => {
+    if (!isRecord(el)) return el;
+
+    const width = num(el.width);
+    const labelRaw = el.label;
+    if (labelRaw && isRecord(labelRaw) && typeof labelRaw.text === 'string') {
+      const fontSize = num(labelRaw.fontSize) ?? 16;
+      const maxWidth = (width ?? 0) > 0 ? (width as number) - 24 : 0;
+      const wrapped = wrapTextToWidth(labelRaw.text, { maxWidth, fontSize });
+      if (wrapped !== labelRaw.text) {
+        return {
+          ...el,
+          label: {
+            ...labelRaw,
+            text: wrapped,
+          },
+        };
+      }
+      return el;
+    }
+
+    // Some converters output text elements bound to containers.
+    if (el.type === 'text' && typeof el.text === 'string') {
+      const containerId = typeof el.containerId === 'string' ? el.containerId : null;
+      if (!containerId) return el;
+      const containerWidth = containerWidthById.get(containerId);
+      if (!containerWidth) return el;
+      const fontSize = num(el.fontSize) ?? 16;
+      const maxWidth = containerWidth - 24;
+      const wrapped = wrapTextToWidth(el.text, { maxWidth, fontSize });
+      if (wrapped !== el.text) {
+        return { ...el, text: wrapped, originalText: wrapped };
+      }
+      return el;
+    }
+
+    return el;
+  }) as unknown as Parameters<typeof convertToExcalidrawElements>[0];
+};
+
 const buildSceneFromSvgVectors = async (args: {
   svgMarkup: string;
   theme: 'light' | 'dark';
@@ -693,7 +750,8 @@ const buildSceneFromMermaidCode = async (args: {
         }),
         1500
       );
-      const converted = convertToExcalidrawElements(elements, { regenerateIds: true }).map((el) => ({
+      const wrappedSkeleton = wrapMermaidToExcalidrawSkeletonLabels(elements);
+      const converted = convertToExcalidrawElements(wrappedSkeleton, { regenerateIds: true }).map((el) => ({
         ...el,
         locked: false,
         groupIds: [] as unknown as typeof el.groupIds,
