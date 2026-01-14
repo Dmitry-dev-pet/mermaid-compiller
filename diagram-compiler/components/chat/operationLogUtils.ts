@@ -149,6 +149,14 @@ const resolveVolumeForEvent = (event: OperationEvent): { volumeTokens: number; v
 
   const isContext = event.kind === 'context' || event.title === 'Контекст';
   if (!isContext || !event.detail) return null;
+
+  const metaMessageTokens = event.contextMeta?.messageTokens ?? null;
+  const metaDocsTokens = event.contextMeta?.docsTokens?.reduce((sum, item) => sum + (item.tokens || 0), 0) ?? null;
+  if ((metaMessageTokens ?? 0) > 0 || (metaDocsTokens ?? 0) > 0) {
+    const total = (metaMessageTokens ?? 0) + (metaDocsTokens ?? 0);
+    return { volumeTokens: total, volumeLabel: `${formatCompactCount(total)}` };
+  }
+
   const msgMatch = event.detail.match(/messages:\s*\d+\s*\((\d+)\s*tok\)/i);
   const docsMatch = event.detail.match(/docs\s*\([^)]*?,\s*([0-9]+(?:\.[0-9])?k?)\s*tok\)/i);
   const msgTokens =
@@ -324,8 +332,12 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
   const normalizedContent = expandDocsListsInText(content);
   const lines = normalizedContent.split('\n').map((line) => line.trim()).filter(Boolean);
 
-  const docsTokensByFile = parseDocsFileTokensFromTooltip(row.tooltipDocs);
-  const messageTokens = extractMessageTokensFromTooltip(row.tooltipMessages);
+  const docsTokensByFile = row.contextMeta?.docsTokens?.length
+    ? new Map(row.contextMeta.docsTokens.map((item) => [item.file, item.tokens]))
+    : parseDocsFileTokensFromTooltip(row.tooltipDocs);
+  const messageTokens =
+    row.contextMeta?.messageTokens
+    ?? extractMessageTokensFromTooltip(row.tooltipMessages);
 
   const out: LogRow[] = [];
   let idx = 0;

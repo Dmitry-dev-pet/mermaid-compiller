@@ -106,6 +106,8 @@ export type OperationEvent = {
     selectionLine?: string;
     inputsLine?: string;
     docsFiles?: string[];
+    messageTokens?: number;
+    docsTokens?: Array<{ file: string; tokens: number }>;
   };
   kind?: 'context' | 'planner' | 'block' | 'attempt' | 'status';
   contextScope?: 'planner' | 'build' | 'block' | 'chat' | 'analyze' | 'fix' | 'summary';

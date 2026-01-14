@@ -117,7 +117,7 @@ const summarizeDocsTokensAndNamesForLog = (args: {
     : Array.from(sections.keys());
 
   if (selectionPaths.length === 0) {
-    return { files: [] as string[], tokens: 0 };
+    return { files: [] as string[], items: [] as Array<{ name: string; tokens: number }>, tokens: 0 };
   }
 
   const items = selectionPaths.map((path) => {
@@ -126,7 +126,7 @@ const summarizeDocsTokensAndNamesForLog = (args: {
     return { name, tokens: estimateTokensFromChars(chars) };
   });
   const totalTokens = items.reduce((sum, item) => sum + item.tokens, 0);
-  return { files: items.map((item) => item.name), tokens: totalTokens };
+  return { files: items.map((item) => item.name), items, tokens: totalTokens };
 };
 
 export const formatMessageBlockForLog = (message: Message, index: number) => {
@@ -202,6 +202,10 @@ export const buildContextEventForLog = (args: {
       selectionLine: args.selectionLine?.trim() || undefined,
       inputsLine: messagesLine.trim() || undefined,
       docsFiles: docsSummary.files.length ? docsSummary.files : undefined,
+      messageTokens: msgSummary.tokens > 0 ? msgSummary.tokens : undefined,
+      docsTokens: docsSummary.items.length
+        ? docsSummary.items.map((item) => ({ file: item.name, tokens: item.tokens }))
+        : undefined,
     },
     tooltipMessages: buildContextTooltipForLog({
       systemPrompt: args.systemPrompt,
