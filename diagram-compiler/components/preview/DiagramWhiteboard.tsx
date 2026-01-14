@@ -75,6 +75,102 @@ const stripYamlFrontmatter = (code: string): string => {
   return code;
 };
 
+const stripMermaidInitDirectives = (code: string): string => {
+  // Mermaid init directives are comments like: %%{init: {...}}%%
+  // `@excalidraw/mermaid-to-excalidraw` may fail on some directive variants,
+  // and we provide theme variables separately anyway.
+  return code
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*%%\{.*\binit\s*:.*\}%%\s*$/.test(line))
+    .join('\n')
+    .trim();
+};
+
+const preprocessMermaidForExcalidraw = (code: string): string => {
+  return stripMermaidInitDirectives(stripYamlFrontmatter(code)).replace(/<br\s*\/?>/gi, '');
+};
+
+const parseHexColor = (color: string): { r: number; g: number; b: number } | null => {
+  const raw = color.trim();
+  const hex = raw.startsWith('#') ? raw.slice(1) : raw;
+  if (![3, 6].includes(hex.length)) return null;
+  const full = hex.length === 3 ? hex.split('').map((c) => `${c}${c}`).join('') : hex;
+  const int = Number.parseInt(full, 16);
+  if (!Number.isFinite(int)) return null;
+  return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+};
+
+const parseRgbColor = (color: string): { r: number; g: number; b: number } | null => {
+  const m = color.trim().match(/^rgba?\(\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)(?:\s*,\s*([0-9.]+)\s*)?\)$/i);
+  if (!m) return null;
+  const r = Number(m[1]);
+  const g = Number(m[2]);
+  const b = Number(m[3]);
+  if (![r, g, b].every((n) => Number.isFinite(n) && n >= 0 && n <= 255)) return null;
+  return { r, g, b };
+};
+
+const isDarkColor = (color: string): boolean | null => {
+  const rgb = parseHexColor(color) ?? parseRgbColor(color);
+  if (!rgb) return null;
+  // Perceived luminance (0..255).
+  const l = 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+  return l < 128;
+};
+
+const applyMermaidThemeToExcalidrawElements = <T,>(
+  raw: readonly T[],
+  opts: { backgroundColor: string | null; themeVariables: Record<string, string | number | boolean> | null; uiTheme: 'light' | 'dark' }
+): T[] => {
+  const elements = Array.isArray(raw) ? [...raw] : [];
+  const vars = opts.themeVariables ?? null;
+  const fromVarsBackground = typeof vars?.background === 'string' ? vars.background.trim() : '';
+  const bg = (opts.backgroundColor?.trim() ?? '') || fromVarsBackground;
+  const darkModeVar = typeof vars?.darkMode === 'boolean' ? vars.darkMode : null;
+  const bgDark = (bg ? isDarkColor(bg) : null) ?? darkModeVar ?? (opts.uiTheme === 'dark');
+
+  const lineColor =
+    (typeof vars?.lineColor === 'string' && vars.lineColor.trim()) ? String(vars.lineColor).trim()
+      : bgDark ? '#9da5b4' : '#374151';
+  const textColor =
+    (typeof vars?.primaryTextColor === 'string' && vars.primaryTextColor.trim()) ? String(vars.primaryTextColor).trim()
+      : bgDark ? '#d4d4d4' : '#0f172a';
+  const nodeFill =
+    (typeof vars?.primaryColor === 'string' && vars.primaryColor.trim()) ? String(vars.primaryColor).trim()
+      : bgDark ? '#1e1e1e' : '#ffffff';
+
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+  return elements.map((el) => {
+    if (!isRecord(el)) return el;
+    const type = typeof el.type === 'string' ? el.type : '';
+    if (!type) return el;
+
+    // Keep images untouched.
+    if (type === 'image') return el;
+
+    const next: Record<string, unknown> = { ...el, locked: false };
+    if (type === 'text') {
+      next.strokeColor = textColor;
+      return next as T;
+    }
+
+    if (type === 'rectangle' || type === 'diamond' || type === 'ellipse') {
+      next.strokeColor = lineColor;
+      next.backgroundColor = nodeFill;
+      return next as T;
+    }
+
+    if (type === 'line' || type === 'arrow') {
+      next.strokeColor = lineColor;
+      return next as T;
+    }
+
+    return next as T;
+  });
+};
+
 const detectMermaidDiagramTypeHint = (code: string): MermaidDiagramTypeHint => {
   if (!code.trim()) return 'unknown';
   const lines = code.split(/\r?\n/);
@@ -382,122 +478,6 @@ const wrapTextToWidth = (text: string, opts: { maxWidth: number; fontSize: numbe
   return out.join('\n').trim();
 };
 
-const wrapMermaidToExcalidrawSkeletonLabels = (
-  raw: unknown
-): Parameters<typeof convertToExcalidrawElements>[0] => {
-  const elements = (Array.isArray(raw) ? raw : []) as unknown[];
-  const isRecord = (value: unknown): value is Record<string, unknown> =>
-    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-  const num = (value: unknown): number | null =>
-    typeof value === 'number' && Number.isFinite(value) ? value : null;
-
-  const containerWidthById = new Map<string, number>();
-  for (const el of elements) {
-    if (!isRecord(el)) continue;
-    const id = typeof el.id === 'string' ? el.id : null;
-    const width = num(el.width);
-    if (id && width !== null) containerWidthById.set(id, width);
-  }
-
-  return elements.map((el) => {
-    if (!isRecord(el)) return el;
-
-    const width = num(el.width);
-    const labelRaw = el.label;
-    if (labelRaw && isRecord(labelRaw) && typeof labelRaw.text === 'string') {
-      const fontSize = num(labelRaw.fontSize) ?? 16;
-      const maxWidth = (width ?? 0) > 0 ? (width as number) - 24 : 0;
-      const wrapped = wrapTextToWidth(labelRaw.text, { maxWidth, fontSize });
-      if (wrapped !== labelRaw.text) {
-        return {
-          ...el,
-          label: {
-            ...labelRaw,
-            text: wrapped,
-          },
-        };
-      }
-      return el;
-    }
-
-    // Some converters output text elements bound to containers.
-    if (el.type === 'text' && typeof el.text === 'string') {
-      const containerId = typeof el.containerId === 'string' ? el.containerId : null;
-      if (!containerId) return el;
-      const containerWidth = containerWidthById.get(containerId);
-      if (!containerWidth) return el;
-      const fontSize = num(el.fontSize) ?? 16;
-      const maxWidth = containerWidth - 24;
-      const wrapped = wrapTextToWidth(el.text, { maxWidth, fontSize });
-      if (wrapped !== el.text) {
-        return { ...el, text: wrapped, originalText: wrapped };
-      }
-      return el;
-    }
-
-    return el;
-  }) as unknown as Parameters<typeof convertToExcalidrawElements>[0];
-};
-
-const expandExcalidrawContainersToFitText = <T,>(raw: readonly T[]): T[] => {
-  const elements = Array.isArray(raw) ? [...raw] : [];
-  const isRecord = (value: unknown): value is Record<string, unknown> =>
-    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-  const num = (value: unknown): number | null =>
-    typeof value === 'number' && Number.isFinite(value) ? value : null;
-
-  const byId = new Map<string, T>();
-  for (const el of elements) {
-    if (!isRecord(el)) continue;
-    const id = typeof el.id === 'string' ? el.id : null;
-    if (id) byId.set(id, el);
-  }
-
-  const updates = new Map<string, T>();
-  const PADDING = 18;
-  for (const el of elements) {
-    if (!isRecord(el)) continue;
-    if (el.isDeleted === true) continue;
-    if (el.type !== 'text') continue;
-    const containerId = typeof el.containerId === 'string' ? el.containerId : null;
-    if (!containerId) continue;
-    const textWidth = num(el.width);
-    const textHeight = num(el.height);
-    if (!(textWidth && textHeight)) continue;
-
-    const container = byId.get(containerId);
-    if (!container || !isRecord(container)) continue;
-    if (container.isDeleted === true) continue;
-    if (container.type !== 'rectangle' && container.type !== 'diamond' && container.type !== 'ellipse') continue;
-    const cWidth = num(container.width);
-    const cHeight = num(container.height);
-    if (!(cWidth && cHeight)) continue;
-
-    const desiredWidth = Math.max(cWidth, textWidth + PADDING * 2);
-    const desiredHeight = Math.max(cHeight, textHeight + PADDING * 2);
-    if (desiredWidth <= cWidth + 0.5 && desiredHeight <= cHeight + 0.5) continue;
-
-    const x = num(container.x) ?? 0;
-    const y = num(container.y) ?? 0;
-    const next = {
-      ...container,
-      x: x - (desiredWidth - cWidth) / 2,
-      y: y - (desiredHeight - cHeight) / 2,
-      width: desiredWidth,
-      height: desiredHeight,
-    } as unknown as T;
-    updates.set(containerId, next);
-  }
-
-  if (!updates.size) return elements;
-  return elements.map((el) => {
-    if (!isRecord(el)) return el;
-    const id = typeof el.id === 'string' ? el.id : null;
-    if (!id) return el;
-    return updates.get(id) ?? el;
-  });
-};
-
 const buildSceneFromSvgVectors = async (args: {
   svgMarkup: string;
   theme: 'light' | 'dark';
@@ -745,11 +725,7 @@ const buildSceneFromSvgVectors = async (args: {
     if (elementsSkeleton.length < 2) return null;
 
     const skeleton = elementsSkeleton as unknown as Parameters<typeof convertToExcalidrawElements>[0];
-    const elements = convertToExcalidrawElements(skeleton, { regenerateIds: true }).map((el) => ({
-      ...el,
-      locked: false,
-      groupIds: [] as unknown as typeof el.groupIds,
-    }));
+    const elements = convertToExcalidrawElements(skeleton, { regenerateIds: true }).map((el) => ({ ...el, locked: false }));
 
     return {
       type: 'excalidraw',
@@ -822,73 +798,46 @@ const buildSceneFromMermaidCode = async (args: {
   theme: 'light' | 'dark';
   backgroundColor: string | null;
 }): Promise<ExcalidrawInitialDataState | null> => {
-  const diagramTypeHint = detectMermaidDiagramTypeHint(args.mermaidCode);
+  try {
+    const themeVars = extractFrontmatterThemeVariables(args.mermaidCode);
+    const themeVariables = {
+      ...(themeVars ?? {}),
+      // Keep font size consistent and avoid huge labels.
+      fontSize: '16px',
+    };
+    const backgroundCandidate =
+      (args.backgroundColor?.trim() ?? '')
+      || (typeof themeVars?.background === 'string' ? themeVars.background.trim() : '')
+      || extractMermaidSvgBackgroundColor(args.svgMarkup)
+      || null;
 
-  // Prefer the official Mermaid→Excalidraw converter for flowcharts (best editability).
-  if (diagramTypeHint === 'flowchart') {
-    try {
-      const stripped = stripYamlFrontmatter(args.mermaidCode);
-      const { elements, files } = await withTimeout(
-        parseMermaidToExcalidraw(stripped, {
-          themeVariables: {
-            fontSize: '16px',
-          },
-        }),
-        1500
-      );
-      const wrappedSkeleton = wrapMermaidToExcalidrawSkeletonLabels(elements);
-      const converted = convertToExcalidrawElements(wrappedSkeleton, { regenerateIds: true }).map((el) => {
-        const base = {
-          ...el,
-          locked: false,
-          groupIds: [] as unknown as typeof el.groupIds,
-        };
-        if (base.type !== 'text') return base;
-
-        // Some Mermaid→Excalidraw conversions produce multi-line text with a
-        // missing/invalid lineHeight, which renders as overlapped glyphs.
-        const rec = base as unknown as Record<string, unknown>;
-        const rawLineHeight = rec.lineHeight;
-        const lineHeight =
-          typeof rawLineHeight === 'number' && Number.isFinite(rawLineHeight) && rawLineHeight >= 1
-            ? rawLineHeight
-            : 1.25;
-
-        const text = typeof rec.text === 'string' ? rec.text : '';
-        const fontSize = typeof rec.fontSize === 'number' && Number.isFinite(rec.fontSize) ? rec.fontSize : 16;
-        const width = typeof rec.width === 'number' && Number.isFinite(rec.width) ? rec.width : null;
-        const maxLineLen = Math.max(1, ...text.split('\n').map((l) => l.length));
-        const estimatedWidth = maxLineLen * fontSize * 0.62;
-        const nextWidth = width !== null && width >= 60 ? width : Math.max(width ?? 0, estimatedWidth, 60);
-
-        return {
-          ...rec,
-          lineHeight,
-          // Excalidraw sometimes relies on originalText/rawText for container text;
-          // keep it aligned with the wrapped content to prevent re-wrapping/overlap.
-          originalText: text,
-          rawText: text,
-          width: nextWidth,
-        } as typeof base;
-      });
-      const resized = expandExcalidrawContainersToFitText(converted);
-      if (resized.length > 0) {
-        return {
-          type: 'excalidraw',
-          version: 2,
-          source: 'mermaid-langgraph',
-          elements: resized,
-          files,
-          scrollToContent: true,
-          appState: {
-            theme: normalizeTheme(args.theme),
-            viewBackgroundColor: args.backgroundColor ?? undefined,
-          } as Partial<AppState>,
-        };
-      }
-    } catch {
-      // Fall back to SVG parsing/snapshot.
+    const preprocessed = preprocessMermaidForExcalidraw(args.mermaidCode);
+    const { elements, files } = await withTimeout(
+      parseMermaidToExcalidraw(preprocessed, { themeVariables }),
+      2000
+    );
+    const converted = convertToExcalidrawElements(elements, { regenerateIds: true }).map((el) => ({ ...el, locked: false }));
+    const themed = applyMermaidThemeToExcalidrawElements(converted, {
+      backgroundColor: backgroundCandidate,
+      themeVariables: themeVars,
+      uiTheme: args.theme,
+    });
+    if (themed.length > 0) {
+      return {
+        type: 'excalidraw',
+        version: 2,
+        source: 'mermaid-langgraph',
+        elements: themed,
+        files,
+        scrollToContent: true,
+        appState: {
+          theme: normalizeTheme(args.theme),
+          viewBackgroundColor: backgroundCandidate ?? undefined,
+        } as Partial<AppState>,
+      };
     }
+  } catch {
+    // Fall back to SVG parsing/snapshot.
   }
 
   // Prefer parsing the already-rendered SVG (fast + works across Mermaid versions).
