@@ -233,6 +233,26 @@ export const updateRevision = async (
   });
 };
 
+export const updateRevisionWhiteboard = async (revisionId: string, whiteboard: string | null): Promise<DiagramRevision | null> => {
+  return withTx([STORE_REVISIONS, STORE_SESSIONS], 'readwrite', async (tx) => {
+    const revisions = tx.objectStore(STORE_REVISIONS);
+    const sessions = tx.objectStore(STORE_SESSIONS);
+    const existing = (await requestToPromise(revisions.get(revisionId))) as DiagramRevision | undefined;
+    if (!existing) return null;
+
+    const updated: DiagramRevision = {
+      ...existing,
+      whiteboard: whiteboard?.trim() ? whiteboard : undefined,
+    };
+    await requestToPromise(revisions.put(updated));
+    const session = (await requestToPromise(sessions.get(existing.sessionId))) as HistorySession | undefined;
+    if (session) {
+      await requestToPromise(sessions.put({ ...session, updatedAt: now() }));
+    }
+    return updated;
+  });
+};
+
 export const listSteps = async (sessionId: string): Promise<TimeStep[]> => {
   return withTx([STORE_STEPS], 'readonly', async (tx) => {
     const index = tx.objectStore(STORE_STEPS).index('bySessionIndex');

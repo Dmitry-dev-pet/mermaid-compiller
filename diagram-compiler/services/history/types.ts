@@ -67,4 +67,9 @@ export interface DiagramRevision {
   parentRevisionId: string | null;
   mermaid: string;
   diagnostics?: RevisionDiagnostics;
+  /**
+   * Serialized Excalidraw scene JSON (independent from Mermaid).
+   * One-way sync: generated from Mermaid on demand.
+   */
+  whiteboard?: string;
 }

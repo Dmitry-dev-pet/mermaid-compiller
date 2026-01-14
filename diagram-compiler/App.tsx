@@ -105,6 +105,9 @@ function App() {
     operationLogs,
     activeOperationLog,
     activeOperationKind,
+    historySessionCurrentRevisionId,
+    whiteboardSceneJson,
+    saveWhiteboardForCurrentRevision,
   } = useDiagramStudio();
   const buildDocsSystemPrompts = {
     chat: {
@@ -441,6 +444,10 @@ function App() {
             onActiveEditorTabChange={isProjectPreview ? () => {} : setEditorTab}
             hoveredMarkdownIndex={hoveredMarkdownIndexForView}
             onHoverMarkdownIndex={isProjectPreview ? () => {} : setHoveredMarkdownIndex}
+
+            historyRevisionId={historySessionCurrentRevisionId}
+            whiteboardSceneJson={whiteboardSceneJson}
+            onSaveWhiteboardSceneJson={isProjectPreview ? async () => null : saveWhiteboardForCurrentRevision}
           />
         </div>
       </div>

@@ -5,6 +5,7 @@ import { useLayout } from '../core/useLayout';
 import { useChat } from '../core/useChat';
 import { createStudioActions } from './studioActions';
 import { useHistory } from '../core/useHistory';
+import { getRevision } from '../../services/history/store';
 import { useBuildDocs } from './useBuildDocs';
 import { useMarkdownMermaid } from './useMarkdownMermaid';
 import { useOperationLog } from './useOperationLog';
@@ -55,6 +56,7 @@ export const useDiagramStudio = () => {
     historySteps,
     appendTimeStep,
     updateCurrentRevision,
+    updateCurrentRevisionWhiteboard,
     diagramMarkers,
     diagramStepAnchors,
     selectedStepId,
@@ -77,9 +79,11 @@ export const useDiagramStudio = () => {
   const [previewMermaidState, setPreviewMermaidState] = useState<MermaidState | null>(null);
   const previewCacheRef = useRef<Record<string, MermaidState>>({});
   const previewLoadingRef = useRef<Set<string>>(new Set());
+  const [whiteboardSceneJson, setWhiteboardSceneJson] = useState<string | null>(null);
 
   const isHydratingRef = useRef(true);
   const hydratedSessionIdRef = useRef<string | null>(null);
+  const hydratedRevisionIdRef = useRef<string | null>(null);
   const seededNotebookSessionIdsRef = useRef<Set<string>>(new Set());
   const lastManualRecordedCodeRef = useRef<string>('');
   const diagramTypeWaitRef = useRef<{ target: DiagramType; resolve: () => void } | null>(null);
@@ -490,6 +494,8 @@ export const useDiagramStudio = () => {
       const diag = historyLoadResult.currentRevisionDiagnostics;
 
       lastManualRecordedCodeRef.current = code;
+      setWhiteboardSceneJson(historyLoadResult.currentRevisionWhiteboard ?? null);
+      hydratedRevisionIdRef.current = historyLoadResult.session.currentRevisionId ?? null;
       setMermaidState((prev) => ({
         ...prev,
         code,
@@ -502,11 +508,31 @@ export const useDiagramStudio = () => {
       }));
     } else {
       lastManualRecordedCodeRef.current = '';
+      setWhiteboardSceneJson(null);
+      hydratedRevisionIdRef.current = null;
       setMermaidState(DEFAULT_MERMAID_STATE);
     }
 
     isHydratingRef.current = false;
   }, [historyLoadResult, historySteps, setMermaidState, setMessages]);
+
+  useEffect(() => {
+    const revId = historySession?.currentRevisionId ?? null;
+    if (revId === hydratedRevisionIdRef.current) return;
+    hydratedRevisionIdRef.current = revId;
+    if (!revId) {
+      setWhiteboardSceneJson(null);
+      return;
+    }
+    void getRevision(revId).then((rev) => setWhiteboardSceneJson(rev?.whiteboard ?? null));
+  }, [historySession?.currentRevisionId]);
+
+  const saveWhiteboardForCurrentRevision = useCallback(async (sceneJson: string | null) => {
+    if (!historySession?.currentRevisionId) return null;
+    const updated = await updateCurrentRevisionWhiteboard(sceneJson);
+    setWhiteboardSceneJson(updated?.whiteboard ?? null);
+    return updated;
+  }, [historySession?.currentRevisionId, updateCurrentRevisionWhiteboard]);
 
   useEffect(() => {
     if (!historyLoadResult) return;
@@ -932,6 +958,7 @@ export const useDiagramStudio = () => {
     if (!revision) return;
 
     lastManualRecordedCodeRef.current = revision.mermaid;
+    setWhiteboardSceneJson(revision.whiteboard ?? null);
     setMermaidState((prev) => ({
       ...prev,
       code: revision.mermaid,
@@ -1057,5 +1084,9 @@ export const useDiagramStudio = () => {
     activeOperationLog: filteredActiveOperationLog,
     activeOperationKind,
     onLLMRequestStart: handleLLMRequestStart,
+
+    historySessionCurrentRevisionId: historySession?.currentRevisionId ?? null,
+    whiteboardSceneJson,
+    saveWhiteboardForCurrentRevision,
   };
 };

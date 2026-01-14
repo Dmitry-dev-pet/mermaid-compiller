@@ -36,6 +36,7 @@ import {
 import { getSystemPromptModeFromPath, isSystemPromptPath } from '../utils/systemPrompts';
 import PreviewHeaderControls from './preview/PreviewHeaderControls';
 import PreviewBody from './preview/PreviewBody';
+import DiagramWhiteboard from './preview/DiagramWhiteboard';
 import './markdown-preview.css';
 
 interface PreviewColumnProps {
@@ -66,6 +67,9 @@ interface PreviewColumnProps {
   onActiveEditorTabChange: (tab: EditorTab) => void;
   hoveredMarkdownIndex: number | null;
   onHoverMarkdownIndex: (index: number | null) => void;
+  historyRevisionId: string | null;
+  whiteboardSceneJson: string | null;
+  onSaveWhiteboardSceneJson: (sceneJson: string | null) => Promise<unknown> | unknown;
 }
 
 type ViewBox = { x: number; y: number; width: number; height: number };
@@ -113,11 +117,18 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   onActiveEditorTabChange,
   hoveredMarkdownIndex,
   onHoverMarkdownIndex,
+  historyRevisionId,
+  whiteboardSceneJson,
+  onSaveWhiteboardSceneJson,
 }) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const svgMountRef = useRef<HTMLDivElement>(null);
   const markdownMountRef = useRef<HTMLDivElement>(null);
   const docsMountRef = useRef<HTMLDivElement>(null);
+  const [previewMode, setPreviewMode] = useState<'preview' | 'whiteboard'>('preview');
+  const [whiteboardResetKey, setWhiteboardResetKey] = useState(0);
+  const [isWhiteboardDirty, setIsWhiteboardDirty] = useState(false);
+  const [whiteboardInitialSceneOverride, setWhiteboardInitialSceneOverride] = useState<string | null | undefined>(undefined);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const bindFunctionsRef = useRef<((element: Element) => void) | null>(null);
   const panZoomRef = useRef<ReturnType<typeof svgPanZoom> | null>(null);
@@ -625,6 +636,11 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
 
   useEffect(() => {
     if (isBuildDocsMode) return;
+    if (previewMode !== 'preview') {
+      panZoomRef.current?.destroy();
+      panZoomRef.current = null;
+      return;
+    }
     if (!svgMarkup) return;
     const mount = svgMountRef.current;
     if (!mount) return;
@@ -711,17 +727,18 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
       panZoomRef.current?.destroy();
       panZoomRef.current = null;
     };
-  }, [computeFitViewBoxFromBBox, isBuildDocsMode, svgMarkup, updateZoomPercent]);
+  }, [computeFitViewBoxFromBBox, isBuildDocsMode, previewMode, svgMarkup, updateZoomPercent]);
 
   useEffect(() => {
     if (isBuildDocsMode) return;
+    if (previewMode !== 'preview') return;
     if (!svgMarkup) return;
     if (!panZoomRef.current) return;
     const rafId = requestAnimationFrame(() => {
       fitToViewport();
     });
     return () => cancelAnimationFrame(rafId);
-  }, [fitToViewport, isFullScreen, isBuildDocsMode, svgMarkup]);
+  }, [fitToViewport, isFullScreen, isBuildDocsMode, previewMode, svgMarkup]);
 
   const previewBackgroundColor = useMemo(() => {
     if (isBuildDocsMode) return null;
@@ -742,12 +759,47 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     return getMermaidThemePresetPanelBackground(null, appThemePresetId);
   }, [appThemePresetId, codeForRender, isBuildDocsMode, isMarkdownMode, isThemePresetMixed, selectedThemePreset, svgMarkup]);
 
+  const canWhiteboard = Boolean(
+    !isBuildDocsMode
+    && !isMarkdownMode
+    && svgMarkup.trim().length > 0
+    && historyRevisionId
+  );
+
+  useEffect(() => {
+    // Whiteboard mode is only for single Mermaid SVG preview.
+    if (previewMode === 'whiteboard' && !canWhiteboard) {
+      setPreviewMode('preview');
+    }
+  }, [canWhiteboard, previewMode]);
+
+  const handleToggleWhiteboard = useCallback(() => {
+    setIsWhiteboardDirty(false);
+    setWhiteboardInitialSceneOverride(undefined);
+    setPreviewMode((prev) => (prev === 'whiteboard' ? 'preview' : 'whiteboard'));
+  }, []);
+
+  const handleWhiteboardSyncFromCode = useCallback(() => {
+    if (!canWhiteboard) return;
+    const ok = window.confirm('Sync from Mermaid code?\n\nThis will overwrite the current whiteboard scene.');
+    if (!ok) return;
+    setIsWhiteboardDirty(false);
+    setWhiteboardInitialSceneOverride(null);
+    void Promise.resolve(onSaveWhiteboardSceneJson(null)).catch(() => {});
+    setWhiteboardResetKey((v) => v + 1);
+  }, [canWhiteboard, onSaveWhiteboardSceneJson]);
+
   return (
     <div className="h-full flex flex-col bg-transparent" style={previewBackgroundColor ? { backgroundColor: previewBackgroundColor } : undefined}>
       <PreviewHeaderControls
         title={isBuildDocsMode ? 'Build Docs' : 'Preview'}
         isBuildDocsMode={isBuildDocsMode}
         isMarkdownMode={isMarkdownMode}
+        showWhiteboardToggle={canWhiteboard}
+        isWhiteboardMode={previewMode === 'whiteboard'}
+        isWhiteboardDirty={isWhiteboardDirty}
+        onToggleWhiteboard={handleToggleWhiteboard}
+        onWhiteboardSyncFromCode={handleWhiteboardSyncFromCode}
         markdownNavEnabled={markdownNavEnabled}
         markdownNavLabel={markdownNavLabel}
         markdownPrevDisabled={markdownMermaidActiveIndex <= 0}
@@ -793,25 +845,37 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         onFitToViewport={fitToViewport}
       />
 
-      <PreviewBody
-        viewportRef={viewportRef}
-        svgMountRef={svgMountRef}
-        markdownMountRef={markdownMountRef}
-        docsMountRef={docsMountRef}
-        isBuildDocsMode={isBuildDocsMode}
-        isMarkdownMode={isMarkdownMode}
-        isMarkdownMermaidMode={isMarkdownMermaidMode}
-        isMarkdownMermaidInvalid={isMarkdownMermaidInvalid}
-        renderError={renderError}
-        mermaidState={mermaidState}
-        activeMarkdownErrorMessage={activeMarkdownDiagnostics?.errorMessage ?? null}
-        codeForRender={codeForRender}
-        svgMarkup={svgMarkup}
-        exportError={exportError}
-        hasBuildDocs={Boolean(activeBuildDoc?.text)}
-        onMarkdownScroll={handleMarkdownScroll}
-        onToggleFullScreen={onToggleFullScreen}
-      />
+      {previewMode === 'whiteboard' ? (
+        <DiagramWhiteboard
+          key={`${historyRevisionId ?? 'no-rev'}:${whiteboardResetKey}`}
+          theme={theme}
+          backgroundColor={previewBackgroundColor}
+          mermaidCode={codeForRender}
+          initialSceneJson={whiteboardInitialSceneOverride !== undefined ? whiteboardInitialSceneOverride : whiteboardSceneJson}
+          onAutosave={(sceneJson) => onSaveWhiteboardSceneJson(sceneJson)}
+          onDirtyChange={setIsWhiteboardDirty}
+        />
+      ) : (
+        <PreviewBody
+          viewportRef={viewportRef}
+          svgMountRef={svgMountRef}
+          markdownMountRef={markdownMountRef}
+          docsMountRef={docsMountRef}
+          isBuildDocsMode={isBuildDocsMode}
+          isMarkdownMode={isMarkdownMode}
+          isMarkdownMermaidMode={isMarkdownMermaidMode}
+          isMarkdownMermaidInvalid={isMarkdownMermaidInvalid}
+          renderError={renderError}
+          mermaidState={mermaidState}
+          activeMarkdownErrorMessage={activeMarkdownDiagnostics?.errorMessage ?? null}
+          codeForRender={codeForRender}
+          svgMarkup={svgMarkup}
+          exportError={exportError}
+          hasBuildDocs={Boolean(activeBuildDoc?.text)}
+          onMarkdownScroll={handleMarkdownScroll}
+          onToggleFullScreen={onToggleFullScreen}
+        />
+      )}
     </div>
   );
 };

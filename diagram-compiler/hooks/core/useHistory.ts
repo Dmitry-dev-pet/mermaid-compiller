@@ -12,6 +12,7 @@ import {
   recordStep,
   renameSession,
   updateRevision,
+  updateRevisionWhiteboard,
   updateSessionSettings,
   deleteSession as removeSession,
 } from '../../services/history/store';
@@ -22,6 +23,7 @@ export type HistoryLoadResult = {
   messages: Message[];
   currentRevisionMermaid: string | null;
   currentRevisionDiagnostics?: Pick<MermaidState, 'isValid' | 'errorMessage' | 'errorLine'>;
+  currentRevisionWhiteboard: string | null;
 };
 
 export type DiagramMarker = {
@@ -72,6 +74,7 @@ export const useHistory = () => {
         messages,
         currentRevisionMermaid: currentRevision?.mermaid ?? null,
         currentRevisionDiagnostics: diagnostics,
+        currentRevisionWhiteboard: currentRevision?.whiteboard ?? null,
       };
     },
     []
@@ -172,6 +175,15 @@ export const useHistory = () => {
     [historySession?.currentRevisionId]
   );
 
+  const updateCurrentRevisionWhiteboard = useCallback(
+    async (whiteboard: string | null) => {
+      const revisionId = historySession?.currentRevisionId;
+      if (!revisionId) return null;
+      return updateRevisionWhiteboard(revisionId, whiteboard);
+    },
+    [historySession?.currentRevisionId]
+  );
+
   const diagramMarkers = useMemo<DiagramMarker[]>(() => {
     const out: DiagramMarker[] = [];
     let prevRevisionId: string | null = null;
@@ -230,6 +242,7 @@ export const useHistory = () => {
       session,
       messages: [],
       currentRevisionMermaid: null,
+      currentRevisionWhiteboard: null,
     });
     void refreshSessions();
     return session;
@@ -324,6 +337,7 @@ export const useHistory = () => {
     loadSession,
     appendTimeStep,
     updateCurrentRevision,
+    updateCurrentRevisionWhiteboard,
     selectDiagramStep,
     startNewSession,
     renameHistorySession,

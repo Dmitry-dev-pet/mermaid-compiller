@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Circle, Copy, Download, Layers, Link2, Maximize2, Minimize2, Moon, Palette, PenLine, Scan, SquarePen, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Circle, Copy, Download, Layers, Link2, Maximize2, Minimize2, Moon, Palette, PenLine, RefreshCw, Scan, SquarePen, ZoomIn, ZoomOut } from 'lucide-react';
 import { MermaidDirection } from '../../utils/inlineDirectionCommand';
 import { MermaidLook } from '../../utils/inlineLookCommand';
 import type { FlowchartEdgeStyle, FlowchartEdgeStyleUpdate } from '../../utils/flowchartArrowStyle';
@@ -12,6 +12,11 @@ interface PreviewHeaderControlsProps {
   title: string;
   isBuildDocsMode: boolean;
   isMarkdownMode: boolean;
+  showWhiteboardToggle: boolean;
+  isWhiteboardMode: boolean;
+  isWhiteboardDirty: boolean;
+  onToggleWhiteboard: () => void;
+  onWhiteboardSyncFromCode: () => void;
   markdownNavEnabled: boolean;
   markdownNavLabel: string;
   markdownPrevDisabled: boolean;
@@ -57,6 +62,11 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
   title,
   isBuildDocsMode,
   isMarkdownMode,
+  showWhiteboardToggle,
+  isWhiteboardMode,
+  isWhiteboardDirty,
+  onToggleWhiteboard,
+  onWhiteboardSyncFromCode,
   markdownNavEnabled,
   markdownNavLabel,
   markdownPrevDisabled,
@@ -197,7 +207,8 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
 
   const hasStyleControls =
     !isBuildDocsMode && (showThemeControl || showDirectionControl || showLookControl || showArrowControl);
-  const canZoomControls = !isBuildDocsMode && !isMarkdownMode;
+  const canZoomControls = !isBuildDocsMode && !isMarkdownMode && !isWhiteboardMode;
+  const canExportControls = !isBuildDocsMode && !isWhiteboardMode;
 
   return (
     <div
@@ -290,32 +301,69 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
               </div>
             )}
 
-            <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
-              <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
-                Export
-              </span>
-              <button
-                type="button"
-                onClick={onExportSvg}
-                disabled={!svgMarkup || isExporting || isMarkdownMode}
-                className={`${HEADER_CONTROL_BUTTON} ml-1`}
-                title="Export SVG"
-              >
-                <Download size={14} />
-                SVG
-              </button>
+            {canExportControls && (
+              <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
+                <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
+                  Export
+                </span>
+                <button
+                  type="button"
+                  onClick={onExportSvg}
+                  disabled={!svgMarkup || isExporting || isMarkdownMode}
+                  className={`${HEADER_CONTROL_BUTTON} ml-1`}
+                  title="Export SVG"
+                >
+                  <Download size={14} />
+                  SVG
+                </button>
 
-              <button
-                type="button"
-                onClick={onExportPng}
-                disabled={!svgMarkup || isExporting || isMarkdownMode}
-                className={HEADER_CONTROL_BUTTON}
-                title="Export PNG"
-              >
-                <Download size={14} />
-                PNG
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={onExportPng}
+                  disabled={!svgMarkup || isExporting || isMarkdownMode}
+                  className={HEADER_CONTROL_BUTTON}
+                  title="Export PNG"
+                >
+                  <Download size={14} />
+                  PNG
+                </button>
+              </div>
+            )}
+
+            {showWhiteboardToggle && (
+              <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
+                <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
+                  Mode
+                </span>
+                <button
+                  type="button"
+                  onClick={onToggleWhiteboard}
+                  className={`${HEADER_CONTROL_BUTTON} ml-1`}
+                  title={isWhiteboardMode ? 'Back to Mermaid preview' : 'Edit in whiteboard'}
+                  aria-label={isWhiteboardMode ? 'Back to preview' : 'Edit in whiteboard'}
+                >
+                  {isWhiteboardMode ? <Scan size={14} /> : <PenLine size={14} />}
+                  {isWhiteboardMode ? 'Preview' : 'Whiteboard'}
+                  {isWhiteboardMode && isWhiteboardDirty ? (
+                    <span className="ml-1 text-[10px] text-amber-600 dark:text-amber-300" title="Unsaved changes">
+                      •
+                    </span>
+                  ) : null}
+                </button>
+                {isWhiteboardMode && (
+                  <button
+                    type="button"
+                    onClick={onWhiteboardSyncFromCode}
+                    className={HEADER_CONTROL_BUTTON}
+                    title="Sync from Mermaid code (overwrites whiteboard)"
+                    aria-label="Sync from Mermaid code"
+                  >
+                    <RefreshCw size={14} />
+                    Sync
+                  </button>
+                )}
+              </div>
+            )}
 
             <button
               type="button"
