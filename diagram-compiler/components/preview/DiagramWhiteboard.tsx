@@ -3,6 +3,7 @@ import { CaptureUpdateAction, convertToExcalidrawElements, Excalidraw, serialize
 import { parseMermaidToExcalidraw } from '@excalidraw/mermaid-to-excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import './diagram-whiteboard.css';
+import { Code2, Copy, X } from 'lucide-react';
 import { extractFrontmatterThemeVariables } from '../../utils/mermaidFrontmatterThemeVariables';
 import { extractMermaidSvgBackgroundColor } from '../../utils/mermaidSvgBackground';
 import type {
@@ -1160,6 +1161,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const lastSavedJsonRef = useRef<string>(initialSceneJson ?? '');
   const pendingSaveRef = useRef<number | null>(null);
   const latestJsonRef = useRef<string>(initialSceneJson ?? '');
+  const [isSceneJsonOpen, setIsSceneJsonOpen] = useState(false);
+  const [sceneJsonForViewer, setSceneJsonForViewer] = useState<string>(initialSceneJson ?? '');
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const hasHadContentRef = useRef(false);
@@ -1243,6 +1246,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   useEffect(() => {
     lastSavedJsonRef.current = initialSceneJson ?? '';
     latestJsonRef.current = initialSceneJson ?? '';
+    setSceneJsonForViewer(initialSceneJson ?? '');
     onDirtyChange?.(false);
     isDirtyRef.current = false;
     const parsed = tryParseInitialScene(initialSceneJson);
@@ -1500,6 +1504,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
   const scheduleAutosave = useCallback((nextJson: string) => {
     latestJsonRef.current = nextJson;
+    setSceneJsonForViewer(nextJson);
     if (pendingSaveRef.current) {
       window.clearTimeout(pendingSaveRef.current);
       pendingSaveRef.current = null;
@@ -1581,6 +1586,30 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
   }, [api, effectiveBackgroundColor, sceneKey, scheduleAutosave, scheduleFitToContent]);
 
+  const handleCopySceneJson = useCallback(async () => {
+    const text = (latestJsonRef.current || sceneJsonForViewer || '').trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback for environments without clipboard permissions.
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.setAttribute('readonly', 'true');
+      el.style.position = 'fixed';
+      el.style.left = '-10000px';
+      el.style.top = '0';
+      document.body.appendChild(el);
+      el.select();
+      try {
+        document.execCommand('copy');
+      } catch {
+        // ignore
+      }
+      el.remove();
+    }
+  }, [sceneJsonForViewer]);
+
   const containerStyle = useMemo<React.CSSProperties>(() => {
     const style: React.CSSProperties = {
       // Disable the dark-theme canvas filter so Mermaid colors/background stay exact.
@@ -1631,6 +1660,55 @@ const DiagramWhiteboard: React.FC<Props> = ({
           },
         }}
       />
+
+      <div className="absolute top-2 right-2 z-50 flex items-center gap-2">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded border border-slate-300/40 bg-white/80 px-2 py-1 text-[12px] text-slate-700 shadow-sm backdrop-blur hover:bg-white dark:border-slate-600/50 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-900"
+          onClick={() => setIsSceneJsonOpen(true)}
+          title="Show Excalidraw scene JSON"
+        >
+          <Code2 className="h-3.5 w-3.5" />
+          JSON
+        </button>
+      </div>
+
+      {isSceneJsonOpen && (
+        <div className="absolute inset-0 z-[60] flex flex-col bg-white/85 backdrop-blur dark:bg-slate-950/70">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-300/50 px-3 py-2 text-sm text-slate-800 dark:border-slate-700/60 dark:text-slate-100">
+            <div className="flex items-center gap-2">
+              <Code2 className="h-4 w-4" />
+              <span>Excalidraw scene JSON</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded border border-slate-300/60 bg-white/70 px-2 py-1 text-xs text-slate-700 hover:bg-white dark:border-slate-700/70 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-900"
+                onClick={() => void handleCopySceneJson()}
+                title="Copy JSON"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copy
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded border border-slate-300/60 bg-white/70 px-2 py-1 text-xs text-slate-700 hover:bg-white dark:border-slate-700/70 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-900"
+                onClick={() => setIsSceneJsonOpen(false)}
+                title="Close"
+              >
+                <X className="h-3.5 w-3.5" />
+                Close
+              </button>
+            </div>
+          </div>
+          <textarea
+            className="flex-1 min-h-0 w-full resize-none bg-transparent p-3 font-mono text-[11px] leading-4 text-slate-800 outline-none dark:text-slate-100"
+            readOnly
+            value={(sceneJsonForViewer || latestJsonRef.current || '').trim()}
+          />
+        </div>
+      )}
+
       {debugEnabled && (
         <div className="pointer-events-none absolute top-2 left-2 z-50 rounded border border-slate-300/40 bg-white/80 px-2 py-1 text-[11px] text-slate-700 dark:border-slate-600/50 dark:bg-slate-900/70 dark:text-slate-200">
           <div>Whiteboard: {debugOverlay?.status ?? 'idle'}</div>
