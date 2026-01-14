@@ -14,6 +14,7 @@ import {
   buildContextEventForLog,
 } from './logContextUtils';
 import { toRunnerContextEvent } from './operationTracer';
+import { buildSelectionLine } from './selectionLine';
 
 export const createBuildHandler = (ctx: StudioContext) => {
   return async (text?: string) => {
@@ -210,6 +211,10 @@ export const createBuildHandler = (ctx: StudioContext) => {
       const buildContextEvent = buildContextEventForLog({
         phase: 'planning',
         contextScope: 'build',
+        selectionLine: buildSelectionLine({
+          diagramType: ctx.appState.diagramType,
+          allowedDiagramTypes: ctx.appState.diagramType === 'auto' ? ctx.appState.mainDiagramTypes : null,
+        }) || undefined,
         systemPrompt,
         messages: llmMessages,
         docsContext: docs,

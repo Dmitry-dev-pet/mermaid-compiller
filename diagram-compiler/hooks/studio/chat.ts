@@ -11,11 +11,11 @@ import { runStudioOperation } from './runStudioOperation';
 import { isDefaultSessionTitle } from '../../services/history/sessionTitle';
 import { createStudioOperationRunner } from './operationRunner';
 import { buildSystemPrompt } from '../../services/llm/prompts';
-import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
 import {
   buildContextEventForLog,
 } from './logContextUtils';
 import { toRunnerContextEvent } from './operationTracer';
+import { buildSelectionLine } from './selectionLine';
 
 export const createChatHandler = (ctx: StudioContext) => {
   return async (text: string) => {
@@ -148,16 +148,10 @@ export const createChatHandler = (ctx: StudioContext) => {
             docsContext: 'Documentation context redacted.',
             language,
           });
-          const selectionLine = (() => {
-            if (ctx.appState.diagramType && ctx.appState.diagramType !== 'auto') {
-              return `selection: ${getDiagramTypeShortLabel(ctx.appState.diagramType)}`;
-            }
-            if (allowedNotebookTypes?.length) {
-              const set = allowedNotebookTypes.map((t) => getDiagramTypeShortLabel(t)).join('/');
-              return `selection: ${set}`;
-            }
-            return '';
-          })();
+          const selectionLine = buildSelectionLine({
+            diagramType: ctx.appState.diagramType,
+            allowedDiagramTypes: allowedNotebookTypes,
+          });
           const contextEvent = buildContextEventForLog({
             phase: 'chat',
             contextScope: 'chat',

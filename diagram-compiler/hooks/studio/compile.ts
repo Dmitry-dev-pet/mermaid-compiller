@@ -9,7 +9,7 @@ import { generateDiagram, fixDiagram, analyzeDiagram } from '../../services/llmS
 import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { runAutoFixLoop } from './autoFix';
-import type { Message } from '../../types';
+import type { DiagramType, Message } from '../../types';
 import { TimeoutError } from '../../services/llmTimeout';
 import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMessageUtils';
 import { buildSystemPrompt } from '../../services/llm/prompts';
@@ -20,6 +20,7 @@ import { toRunnerContextEvent } from './operationTracer';
 import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
 import { runStudioOperation } from './runStudioOperation';
 import { createStudioOperationRunner } from './operationRunner';
+import { buildSelectionLine } from './selectionLine';
 
 export const createRecompileHandler = (ctx: StudioContext) => {
   return async () => {
@@ -483,6 +484,10 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
           const analyzeContextEvent = buildContextEventForLog({
             phase: 'analyze',
             contextScope: 'analyze',
+            selectionLine: buildSelectionLine({
+              diagramType: (detectedDiagramType ?? ctx.appState.diagramType) as DiagramType,
+              allowedDiagramTypes: ctx.appState.diagramType === 'auto' ? ctx.appState.mainDiagramTypes : null,
+            }) || undefined,
             systemPrompt,
             messages: [analyzeMessage],
             docsContext: docs,

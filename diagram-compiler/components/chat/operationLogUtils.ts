@@ -16,6 +16,7 @@ type LogRow = {
   key?: string;
   status?: 'ok' | 'err';
   diagramTypeLabel?: string;
+  contextMeta?: OperationEvent['contextMeta'];
   volumeTokens?: number;
   volumeLabel?: string;
   timeMs?: number;
@@ -306,6 +307,11 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
 
   const splitIndex = row.text.indexOf(' — ');
   const label = splitIndex > 0 ? row.text.slice(0, splitIndex) : 'Контекст';
+  const metaSelectionLine = row.contextMeta?.selectionLine?.trim() || '';
+  const metaInputsLine = row.contextMeta?.inputsLine?.trim() || '';
+  const metaDocsFiles = row.contextMeta?.docsFiles ?? null;
+  const useMeta = Boolean(metaSelectionLine || metaInputsLine || (metaDocsFiles && metaDocsFiles.length));
+
   const content = splitIndex > 0 ? row.text.slice(splitIndex + 3) : row.text;
   const normalizedContent = expandDocsListsInText(content);
   const lines = normalizedContent.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -317,7 +323,7 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
   let idx = 0;
   let hasHeaderRow = false;
 
-  const first = lines[0] ?? '';
+  const first = useMeta ? metaSelectionLine : (lines[0] ?? '');
   const isFirstMeta =
     /^messages:\s*/i.test(first)
     || /^docs:\s*$/i.test(first)
@@ -341,7 +347,12 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
     }
   }
 
-  const remaining = lines.slice(idx);
+  const remaining = useMeta
+    ? [
+        ...(metaInputsLine ? [metaInputsLine] : []),
+        ...(metaDocsFiles?.length ? ['docs:', ...metaDocsFiles] : []),
+      ]
+    : lines.slice(idx);
   const isSelectionLine = (line: string) => /^selection:\s*/i.test(line);
   const isDocsHeaderLine = (line: string) => /^docs:\s*$/i.test(line);
   const isDocsFileLine = (line: string) => /^[A-Za-z0-9_.-]+\.(?:md|mdx)\b/i.test(line);
@@ -725,6 +736,7 @@ export const buildOperationLogViewModel = (
       tooltipDocs: event.tooltipDocs ?? event.tooltip,
       eventKind: event.kind,
       contextScope: event.contextScope,
+      contextMeta: event.contextMeta,
     });
   }
 

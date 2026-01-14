@@ -198,6 +198,11 @@ export const buildContextEventForLog = (args: {
     title: 'Контекст',
     detail,
     metrics: totalTokens > 0 ? { tokens: totalTokens } : undefined,
+    contextMeta: {
+      selectionLine: args.selectionLine?.trim() || undefined,
+      inputsLine: messagesLine.trim() || undefined,
+      docsFiles: docsSummary.files.length ? docsSummary.files : undefined,
+    },
     tooltipMessages: buildContextTooltipForLog({
       systemPrompt: args.systemPrompt,
       selectionLine: args.selectionLine,

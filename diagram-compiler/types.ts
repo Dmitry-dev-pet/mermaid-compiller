@@ -102,6 +102,11 @@ export type OperationEvent = {
   tooltip?: string;
   tooltipMessages?: string;
   tooltipDocs?: string;
+  contextMeta?: {
+    selectionLine?: string;
+    inputsLine?: string;
+    docsFiles?: string[];
+  };
   kind?: 'context' | 'planner' | 'block' | 'attempt' | 'status';
   contextScope?: 'planner' | 'build' | 'block' | 'chat' | 'analyze' | 'fix' | 'summary';
   blockIndex?: number;

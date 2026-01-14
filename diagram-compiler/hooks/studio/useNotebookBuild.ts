@@ -24,7 +24,7 @@ import {
   summarizeMessagesForLog,
 } from './logContextUtils';
 import { toRunnerContextEvent } from './operationTracer';
-import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
+import { buildSelectionLine } from './selectionLine';
 
 const NOTEBOOK_STYLE_CONSTRAINT_EN = 'No styling directives or color instructions (no theme/look/init/colors).';
 const NOTEBOOK_STYLE_CONSTRAINT_RU = 'Без стилевых директив и цветовых инструкций (без theme/look/init/colors).';
@@ -617,11 +617,10 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
       const plannerContextEvent = buildContextEventForLog({
         phase: 'planning',
         contextScope: 'planner',
-        selectionLine: forcedDiagramType
-          ? `selection: ${getDiagramTypeShortLabel(forcedDiagramType)}`
-          : (allowedDiagramTypes?.length
-            ? `selection: ${allowedDiagramTypes.map((t) => getDiagramTypeShortLabel(t)).join('/')}`
-            : undefined),
+        selectionLine: buildSelectionLine({
+          diagramType: forcedDiagramType ?? deps.appState.diagramType,
+          allowedDiagramTypes,
+        }) || undefined,
         systemPrompt: plannerSystemPrompt,
         messages: [plannerMessage],
         docsContext: docs,
