@@ -618,9 +618,9 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         phase: 'planning',
         contextScope: 'planner',
         selectionLine: forcedDiagramType
-          ? `selection: ${getDiagramTypeShortLabel(forcedDiagramType)}`
+          ? `controller: type=${getDiagramTypeShortLabel(forcedDiagramType)}`
           : (allowedDiagramTypes?.length
-            ? `selection: ${allowedDiagramTypes.map((t) => getDiagramTypeShortLabel(t)).join('/')}`
+            ? `controller: types=${allowedDiagramTypes.map((t) => getDiagramTypeShortLabel(t)).join('/')}`
             : undefined),
         systemPrompt: plannerSystemPrompt,
         messages: [plannerMessage],
