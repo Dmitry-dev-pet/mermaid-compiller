@@ -57,24 +57,16 @@ const formatMessagesLineForLog = (messages: Message[], count: number) => {
   if (count === 2 && hasIntent && hasContext) {
     return 'intent + context';
   }
-  const labels: string[] = [];
+  const labelsSeq: string[] = [];
   for (const msg of messages) {
     if (msg.id === 'diagram-context') continue;
-    if (msg.id === 'diagram-intent') {
-      labels.push('intent');
-      continue;
-    }
-    labels.push(msg.role);
+    labelsSeq.push(msg.id === 'diagram-intent' ? 'intent' : msg.role);
   }
-  const counts = new Map<string, number>();
-  for (const label of labels) {
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-  const formatLabel = (label: string, n: number) => (n > 1 ? `${label}×${n}` : label);
-  const parts = Array.from(counts.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([label, n]) => formatLabel(label, n));
-  const base = parts.length ? parts.join(' + ') : `messages×${count}`;
+  const base = (() => {
+    if (labelsSeq.length === 0) return hasContext ? 'context' : `${count}`;
+    if (labelsSeq.length <= 3) return labelsSeq.join(' + ');
+    return `${labelsSeq[0]} + … (${labelsSeq.length})`;
+  })();
   return hasContext ? `${base} + context` : base;
 };
 
