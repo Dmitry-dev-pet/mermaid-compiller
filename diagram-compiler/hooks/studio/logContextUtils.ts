@@ -53,21 +53,30 @@ export const summarizeMessagesForLog = (messages: Message[]) => {
 const formatMessagesLineForLog = (messages: Message[], count: number) => {
   const ids = new Set(messages.map((msg) => msg.id));
   const hasIntent = ids.has('diagram-intent');
-  const hasContext = ids.has('diagram-context');
-  if (count === 2 && hasIntent && hasContext) {
-    return 'intent + context';
+  const hasDiagram = ids.has('diagram-context');
+  if (hasIntent) {
+    return hasDiagram ? 'intent + diagram' : 'intent';
   }
-  const labelsSeq: string[] = [];
-  for (const msg of messages) {
-    if (msg.id === 'diagram-context') continue;
-    labelsSeq.push(msg.id === 'diagram-intent' ? 'intent' : msg.role);
-  }
-  const base = (() => {
-    if (labelsSeq.length === 0) return hasContext ? 'context' : `${count}`;
-    if (labelsSeq.length <= 3) return labelsSeq.join(' + ');
-    return `${labelsSeq[0]} + … (${labelsSeq.length})`;
+
+  const nonDiagramMessages = messages.filter((msg) => msg.id !== 'diagram-context');
+  const lastUserIndex = (() => {
+    for (let i = nonDiagramMessages.length - 1; i >= 0; i -= 1) {
+      if (nonDiagramMessages[i]?.role === 'user') return i;
+    }
+    return -1;
   })();
-  return hasContext ? `${base} + context` : base;
+
+  const parts: string[] = [];
+  if (lastUserIndex >= 0) {
+    parts.push('prompt');
+    if (nonDiagramMessages.length > 1) parts.push('history');
+  } else if (nonDiagramMessages.length > 0) {
+    parts.push('history');
+  }
+  if (hasDiagram) parts.push('diagram');
+
+  if (parts.length) return parts.join(' + ');
+  return `msgs×${count}`;
 };
 
 export const formatDocsDetailForLog = (args: {
