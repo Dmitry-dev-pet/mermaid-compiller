@@ -30,7 +30,7 @@ type Props = {
 
 type MermaidDiagramTypeHint = 'flowchart' | 'er' | 'sequence' | 'unknown';
 
-type MermaidLanggraphSceneGenerator = 'unknown' | 'mermaid-to-excalidraw' | 'svg-vectors' | 'svg-image';
+type MermaidLanggraphSceneGenerator = 'unknown' | 'mermaid-to-excalidraw' | 'svg-image';
 
 type MermaidLanggraphSceneMeta = {
   v: 2;
@@ -405,14 +405,10 @@ const readSceneMeta = (record: Record<string, unknown>): MermaidLanggraphSceneMe
     return null;
   }
   if (typeof meta.mermaidHash !== 'number' || typeof meta.svgHash !== 'number') return null;
-  if (
-    meta.generator !== 'unknown'
-    && meta.generator !== 'mermaid-to-excalidraw'
-    && meta.generator !== 'svg-vectors'
-    && meta.generator !== 'svg-image'
-  ) {
-    return null;
-  }
+  // Migrate away from the legacy `svg-vectors` generator (it produced broken,
+  // non-editable scenes in our app). Treat it as invalid to force regeneration.
+  if ((meta as { generator?: unknown }).generator === 'svg-vectors') return null;
+  if (meta.generator !== 'unknown' && meta.generator !== 'mermaid-to-excalidraw' && meta.generator !== 'svg-image') return null;
   return meta as MermaidLanggraphSceneMeta;
 };
 
