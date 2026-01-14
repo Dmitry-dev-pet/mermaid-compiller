@@ -11,6 +11,8 @@ import {
 type LogRow = {
   id: string;
   text: string;
+  labelText?: string;
+  contentText?: string;
   blockIndex?: number;
   kind?: 'block' | 'block_attempt' | 'block_validation' | 'attempt';
   key?: string;
@@ -89,6 +91,11 @@ const resolveNotebookTypes = (events: OperationEvent[]) => {
 };
 
 const isContextRowText = (text: string) => text.includes('Контекст') || text.toLowerCase().includes('context');
+const isContextRow = (row: LogRow) => {
+  if (row.eventKind === 'context') return true;
+  if (row.labelText && isContextRowText(row.labelText)) return true;
+  return isContextRowText(row.text);
+};
 
 const formatCompactCount = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return '';
@@ -157,14 +164,16 @@ const resolveVolumeForEvent = (event: OperationEvent): { volumeTokens: number; v
 
 const stripDiagramTypeFromRows = (rows: LogRow[], isRunning: boolean) => {
   for (const row of rows) {
-    const typeLabel = resolveDiagramTypeShortLabelFromText(row.text);
-    const stripped = stripInnerBlockLabelFromContextText(stripDiagramTypeFromText(row.text));
-    row.text = stripped;
+    const sourceText = row.contentText ?? row.text;
+    const typeLabel = resolveDiagramTypeShortLabelFromText(sourceText);
+    const strippedContent = stripInnerBlockLabelFromContextText(stripDiagramTypeFromText(sourceText));
+    row.contentText = strippedContent;
+    row.text = row.labelText ? `${row.labelText} — ${strippedContent}` : strippedContent;
     if (typeLabel) {
       row.diagramTypeLabel = typeLabel;
     }
 
-    if (typeLabel && isContextRowText(stripped)) {
+    if (typeLabel && isContextRow(row)) {
       // Preserve countdown timers (mm:ss) if they were injected while running.
       const isCountdown = typeof row.timeLabel === 'string' && /^\d+:\d\d$/.test(row.timeLabel);
       if (!row.timeLabel || (!isCountdown && row.timeLabel.endsWith('s'))) {
@@ -240,17 +249,16 @@ const buildViewRows = (rows: LogRow[]): OperationLogRowView[] => {
     }
 
     const rawText = row.text ?? '';
-    const splitIndex = rawText.indexOf(' — ');
-    const hasLabel = splitIndex > 0;
-    let labelText = hasLabel ? rawText.slice(0, splitIndex) : '';
-    let contentText = hasLabel ? rawText.slice(splitIndex + 3) : rawText;
-    const isContextRow = rawText.includes('Контекст') || rawText.toLowerCase().includes('context');
+    let labelText = row.labelText ?? '';
+    let contentText = row.contentText ?? rawText;
+    const hasLabel = Boolean(labelText);
+    const isContextTextRow = isContextRow(row);
     const isTimeLabelCountdown =
       typeof row.timeLabel === 'string' && /^\d+:\d\d$/.test(row.timeLabel);
     const isTimeLabelDuration =
       typeof row.timeLabel === 'string' && /s$/.test(row.timeLabel);
     const isTimeLabelDiagramType =
-      Boolean(row.timeLabel) && isContextRow && !isTimeLabelCountdown && !isTimeLabelDuration;
+      Boolean(row.timeLabel) && isContextTextRow && !isTimeLabelCountdown && !isTimeLabelDuration;
     const isNumericLabel = /^\d+(?:\/\d+)?$/.test(labelText.trim());
     const isBlockRow =
       row.kind === 'block' || row.kind === 'block_attempt' || row.kind === 'block_validation';
@@ -258,14 +266,14 @@ const buildViewRows = (rows: LogRow[]): OperationLogRowView[] => {
       labelText = '';
       if (!hasLabel) contentText = rawText;
     }
-    if (!labelText && isContextRow && contentText.includes(' — ')) {
+    if (!labelText && isContextTextRow && contentText.includes(' — ')) {
       const innerSplit = contentText.indexOf(' — ');
       const innerLabel = contentText.slice(0, innerSplit).trim();
       if (innerLabel.toLowerCase() === 'контекст' || innerLabel.toLowerCase() === 'context') {
         contentText = contentText.slice(innerSplit + 3);
       }
     }
-    const baseLeftLabel = labelText || (isContextRow ? 'Контекст' : '');
+    const baseLeftLabel = labelText || (isContextTextRow ? 'Контекст' : '');
     const leftLabel = isTimeLabelDiagramType && row.timeLabel
       ? `${row.timeLabel} ${baseLeftLabel}`.trim()
       : baseLeftLabel;
@@ -296,7 +304,7 @@ const buildViewRows = (rows: LogRow[]): OperationLogRowView[] => {
 };
 
 const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
-  const isContext = row.eventKind === 'context' || row.text.startsWith('Контекст') || row.text.toLowerCase().startsWith('context');
+  const isContext = isContextRow(row);
   if (!isContext) return [row];
 
   const shouldCarryTime =
@@ -305,14 +313,13 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
   const carriedTimeLabel = shouldCarryTime ? row.timeLabel : undefined;
   const baseRow = shouldCarryTime ? { ...row, timeLabel: undefined } : row;
 
-  const splitIndex = row.text.indexOf(' — ');
-  const label = splitIndex > 0 ? row.text.slice(0, splitIndex) : 'Контекст';
+  const label = row.labelText ?? 'Контекст';
   const metaSelectionLine = row.contextMeta?.selectionLine?.trim() || '';
   const metaInputsLine = row.contextMeta?.inputsLine?.trim() || '';
   const metaDocsFiles = row.contextMeta?.docsFiles ?? null;
   const useMeta = Boolean(metaSelectionLine || metaInputsLine || (metaDocsFiles && metaDocsFiles.length));
 
-  const content = splitIndex > 0 ? row.text.slice(splitIndex + 3) : row.text;
+  const content = row.contentText ?? row.text;
   const normalizedContent = expandDocsListsInText(content);
   const lines = normalizedContent.split('\n').map((line) => line.trim()).filter(Boolean);
 
@@ -336,6 +343,8 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
     out.push({
       ...baseRow,
       id: `${row.id}-sel`,
+      labelText: label,
+      contentText: first,
       text: `${label} — ${first}`,
       volumeTokens: undefined,
       volumeLabel: undefined,
@@ -376,6 +385,8 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
     out.push({
       ...baseRow,
       id: `${row.id}-messages`,
+      labelText: hasHeaderRow ? '' : label,
+      contentText: displayMsgLine,
       text: hasHeaderRow ? displayMsgLine : `${label} — ${displayMsgLine}`,
       volumeTokens: messageTokens ?? undefined,
       volumeLabel: messageTokens ? `${formatCompactCount(messageTokens)}` : undefined,
@@ -395,6 +406,8 @@ const expandContextRowToVolumeRows = (row: LogRow): LogRow[] => {
       out.push({
         ...baseRow,
         id: `${row.id}-doc-${normalizedFile}`,
+        labelText: hasHeaderRow ? '' : label,
+        contentText: normalizedFile,
         text: hasHeaderRow ? normalizedFile : `${label} — ${normalizedFile}`,
         volumeTokens: tokens ?? undefined,
         volumeLabel: tokens ? `${formatCompactCount(tokens)}` : undefined,
@@ -422,8 +435,7 @@ const resolveTotalVolumeTokens = (rows: LogRow[]) => {
   return total;
 };
 
-const formatEvent = (event: OperationEvent) => {
-  const parts: string[] = [];
+const formatEventParts = (event: OperationEvent): { labelText: string; contentText: string; text: string } => {
   const isBlockEvent = event.title.startsWith('Block');
   const titleOverride =
     event.title === 'Notebook build'
@@ -433,21 +445,30 @@ const formatEvent = (event: OperationEvent) => {
         : event.title === 'Notebook'
           ? 'Ноутбук'
           : event.title;
-  const parsedDetail = event.detail ? parseBlockDetail(event.detail) : null;
-  if (typeof event.blockIndex === 'number' && parsedDetail) {
-    parts.push(parsedDetail.label);
-    parts.push(parsedDetail.rest);
+  const detail = event.detail?.trim() ?? '';
+
+  if (isBlockEvent) {
+    const parsedDetail = detail ? parseBlockDetail(detail) : null;
+    if (typeof event.blockIndex === 'number' && parsedDetail) {
+      const labelText = parsedDetail.label;
+      const contentText = parsedDetail.rest;
+      return { labelText, contentText, text: `${labelText} — ${contentText}` };
+    }
+    if (typeof event.blockIndex === 'number') {
+      const labelText = `${event.blockIndex + 1}`;
+      const contentText = detail || titleOverride;
+      return { labelText, contentText, text: `${labelText} — ${contentText}` };
+    }
+    return { labelText: '', contentText: detail || titleOverride, text: detail || titleOverride };
   }
-  if (parts.length === 0 && typeof event.blockIndex === 'number' && isBlockEvent) {
-    parts.push(`${event.blockIndex + 1}`);
+
+  if (detail) {
+    const labelText = titleOverride;
+    const contentText = detail;
+    return { labelText, contentText, text: `${labelText} — ${contentText}` };
   }
-  if (!isBlockEvent) {
-    parts.push(titleOverride);
-  }
-  if (!event.detail || parts.length === 0 || !parsedDetail) {
-    if (event.detail) parts.push(event.detail);
-  }
-  return parts.join(' — ');
+
+  return { labelText: '', contentText: titleOverride, text: titleOverride };
 };
 
 const formatAttemptIndicator = (attempt: OperationEvent['attempt']) => {
@@ -600,6 +621,8 @@ export const buildOperationLogViewModel = (
         const duration = nextReady.metrics?.durationMs ?? null;
         displayEvents.push({
           id: event.id,
+          labelText: '',
+          contentText: formatPlannerLine(count),
           text: formatPlannerLine(count),
           kind: 'attempt',
           timeMs: duration ?? undefined,
@@ -618,6 +641,8 @@ export const buildOperationLogViewModel = (
         if (existingIndex === -1) {
           displayEvents.push({
             id: event.id,
+            labelText: 'Итог',
+            contentText: 'generating',
             text: 'Итог — generating',
             key,
             kind: 'attempt',
@@ -632,6 +657,8 @@ export const buildOperationLogViewModel = (
           : `Итог — ${detail}`;
       const nextEntry: LogRow = {
         id: event.id,
+        labelText: 'Итог',
+        contentText: nextText.replace(/^Итог\s*—\s*/i, ''),
         text: nextText,
         key,
         kind: 'attempt',
@@ -692,16 +719,21 @@ export const buildOperationLogViewModel = (
     if (event.attempt) {
       const key = `${event.title}:${event.blockIndex ?? 'na'}`;
       const indicator = formatAttemptIndicator(event.attempt);
-      const baseText = formatEvent(event);
+      const base = formatEventParts(event);
       const attemptText = event.attempt.current > 1 && indicator
-        ? `${baseText} — ${indicator}`
-        : baseText;
+        ? `${base.text} — ${indicator}`
+        : base.text;
+      const attemptContentText = event.attempt.current > 1 && indicator
+        ? `${base.contentText} — ${indicator}`
+        : base.contentText;
       let updated = false;
       for (let j = displayEvents.length - 1; j >= 0; j -= 1) {
         const prev = displayEvents[j];
         if (prev.key !== key) continue;
         if (prev.kind !== 'attempt' && prev.kind !== 'block_attempt') continue;
         prev.text = attemptText;
+        prev.labelText = base.labelText;
+        prev.contentText = attemptContentText;
         updated = true;
         break;
       }
@@ -709,6 +741,8 @@ export const buildOperationLogViewModel = (
         displayEvents.push({
           id: event.id,
           text: attemptText,
+          labelText: base.labelText,
+          contentText: attemptContentText,
           blockIndex: event.blockIndex,
           kind: event.title === 'Block attempt' ? 'block_attempt' : 'attempt',
           key,
@@ -724,9 +758,12 @@ export const buildOperationLogViewModel = (
         : event.title === 'Block'
           ? 'block'
           : undefined;
+    const formatted = formatEventParts(event);
     displayEvents.push({
       id: event.id,
-      text: formatEvent(event),
+      text: formatted.text,
+      labelText: formatted.labelText,
+      contentText: formatted.contentText,
       blockIndex: event.blockIndex,
       kind,
       ...(resolveVolumeForEvent(event) ?? {}),
