@@ -32,7 +32,7 @@ type Props = {
 
 type MermaidDiagramTypeHint = 'flowchart' | 'er' | 'sequence' | 'unknown';
 
-type MermaidLanggraphSceneGenerator = 'unknown' | 'mermaid-to-excalidraw' | 'svg-image';
+type MermaidLanggraphSceneGenerator = 'unknown' | 'mermaid-to-excalidraw' | 'svg-vectors' | 'svg-image';
 
 type MermaidLanggraphSceneMeta = {
   v: 2;
@@ -428,10 +428,7 @@ const readSceneMeta = (record: Record<string, unknown>): MermaidLanggraphSceneMe
     return null;
   }
   if (typeof meta.mermaidHash !== 'number' || typeof meta.svgHash !== 'number') return null;
-  // Migrate away from the legacy `svg-vectors` generator (it produced broken,
-  // non-editable scenes in our app). Treat it as invalid to force regeneration.
-  if ((meta as { generator?: unknown }).generator === 'svg-vectors') return null;
-  if (meta.generator !== 'unknown' && meta.generator !== 'mermaid-to-excalidraw' && meta.generator !== 'svg-image') return null;
+  if (meta.generator !== 'unknown' && meta.generator !== 'mermaid-to-excalidraw' && meta.generator !== 'svg-vectors' && meta.generator !== 'svg-image') return null;
   return meta as MermaidLanggraphSceneMeta;
 };
 
@@ -458,8 +455,14 @@ const EDITABLE_APPSTATE: Partial<AppState> = {
 };
 
 const toSvgDataUrl = (svg: string): DataURL => {
-  // Prefer UTF-8 encoding to avoid base64/Unicode pitfalls.
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` as DataURL;
+  // Prefer base64 for maximum compatibility with Excalidraw imports.
+  try {
+    const decoded = unescape(encodeURIComponent(svg));
+    const base64 = btoa(decoded);
+    return `data:image/svg+xml;base64,${base64}` as DataURL;
+  } catch {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` as DataURL;
+  }
 };
 
 const parseViewBox = (svg: string) => {
@@ -1014,24 +1017,52 @@ const buildSceneFromMermaidCode = async (args: {
   backgroundColor: string | null;
   debug?: boolean;
 }): Promise<{ scene: ExcalidrawInitialDataState; generator: MermaidLanggraphSceneGenerator; mermaidToExcalidrawError?: string } | null> => {
-  try {
-    patchMermaidInitialize();
-    const themeVars = extractFrontmatterThemeVariables(args.mermaidCode);
-    const themeVariables = {
-      ...(themeVars ?? {}),
-      // Keep font size consistent and avoid huge labels.
-      fontSize: '16px',
-    };
-    const backgroundCandidate =
-      (args.backgroundColor?.trim() ?? '')
-      || (typeof themeVars?.background === 'string' ? themeVars.background.trim() : '')
-      || extractMermaidSvgBackgroundColor(args.svgMarkup)
-      || null;
+  patchMermaidInitialize();
+  const themeVars = extractFrontmatterThemeVariables(args.mermaidCode);
+  const themeVariables = {
+    ...(themeVars ?? {}),
+    // Keep font size consistent and avoid huge labels.
+    fontSize: '16px',
+  };
+  const backgroundCandidate =
+    (args.backgroundColor?.trim() ?? '')
+    || (typeof themeVars?.background === 'string' ? themeVars.background.trim() : '')
+    || extractMermaidSvgBackgroundColor(args.svgMarkup)
+    || null;
 
+  const trySvgVectors = async () => {
+    const svgVectors = await buildSceneFromSvgVectors({
+      svgMarkup: args.svgMarkup,
+      theme: args.theme,
+      backgroundColor: backgroundCandidate,
+    });
+    if (!svgVectors) return null;
+    const themed = applyMermaidThemeToExcalidrawElements((svgVectors.elements ?? []) as unknown[], {
+      backgroundColor: backgroundCandidate,
+      themeVariables: themeVars,
+      uiTheme: args.theme,
+    }) as unknown as ExcalidrawInitialDataState['elements'];
+    return {
+      scene: {
+        ...svgVectors,
+        elements: themed,
+        appState: {
+          ...(svgVectors.appState ?? {}),
+          theme: normalizeTheme(args.theme),
+          viewBackgroundColor: backgroundCandidate ?? undefined,
+        } as Partial<AppState>,
+      },
+      generator: 'svg-vectors' as const,
+    };
+  };
+
+  try {
     const preprocessed = preprocessMermaidForExcalidraw(args.mermaidCode);
+    // `parseMermaidToExcalidraw` does a full Mermaid render + DOM querying.
+    // The first call can take a few seconds; don't be too aggressive here.
     const { elements, files } = await withTimeout(
       parseMermaidToExcalidraw(preprocessed, { themeVariables }),
-      2000
+      12000
     );
     const normalizedSkeletons = normalizeMermaidToExcalidrawSkeletons(elements);
     const converted = convertToExcalidrawElements(normalizedSkeletons, { regenerateIds: true }).map((el) => ({ ...el, locked: false }));
@@ -1044,44 +1075,49 @@ const buildSceneFromMermaidCode = async (args: {
       return {
         generator: 'mermaid-to-excalidraw',
         scene: {
-        type: 'excalidraw',
-        version: 2,
-        source: 'mermaid-langgraph',
-        elements: themed,
-        files,
-        scrollToContent: true,
-        appState: {
-          theme: normalizeTheme(args.theme),
-          viewBackgroundColor: backgroundCandidate ?? undefined,
-        } as Partial<AppState>,
+          type: 'excalidraw',
+          version: 2,
+          source: 'mermaid-langgraph',
+          elements: themed,
+          files,
+          scrollToContent: true,
+          appState: {
+            theme: normalizeTheme(args.theme),
+            viewBackgroundColor: backgroundCandidate ?? undefined,
+          } as Partial<AppState>,
         },
       };
     }
     if (args.debug) {
       // eslint-disable-next-line no-console
-      console.warn('[whiteboard] mermaid-to-excalidraw returned 0 elements; falling back to svg');
+      console.warn('[whiteboard] mermaid-to-excalidraw returned 0 elements; falling back to svg-vectors');
     }
   } catch (error) {
-    if (args.debug) {
-      const message = error instanceof Error ? error.message : String(error);
-      // eslint-disable-next-line no-console
-      console.warn('[whiteboard] mermaid-to-excalidraw failed; falling back to svg', message);
-    }
-    // Fall back to SVG parsing/snapshot.
     const message = error instanceof Error ? error.message : String(error);
+    if (args.debug) {
+      // eslint-disable-next-line no-console
+      console.warn('[whiteboard] mermaid-to-excalidraw failed; falling back to svg-vectors', message);
+    }
+    const svgVectors = await trySvgVectors();
+    if (svgVectors) return { ...svgVectors, mermaidToExcalidrawError: message };
+    // Fall back to SVG snapshot.
     const svgImage = await buildSceneFromSvgMarkup({
       svgMarkup: args.svgMarkup,
       theme: args.theme,
-      backgroundColor: args.backgroundColor,
+      backgroundColor: backgroundCandidate,
     });
     return svgImage ? { scene: svgImage, generator: 'svg-image', mermaidToExcalidrawError: message } : null;
   }
 
-  // Fallback: import the rendered Mermaid SVG as a single image so it always stays visible.
+  // Fallback: parse the rendered Mermaid SVG into basic Excalidraw elements.
+  const svgVectors = await trySvgVectors();
+  if (svgVectors) return svgVectors;
+
+  // Last resort: import the rendered Mermaid SVG as a single image so it always stays visible.
   const svgImage = await buildSceneFromSvgMarkup({
     svgMarkup: args.svgMarkup,
     theme: args.theme,
-    backgroundColor: args.backgroundColor,
+    backgroundColor: backgroundCandidate,
   });
   return svgImage ? { scene: svgImage, generator: 'svg-image' } : null;
 };
@@ -1715,12 +1751,13 @@ const DiagramWhiteboard: React.FC<Props> = ({
       return { minX, minY, maxX, maxY };
     })();
 
-    const centeredElements = (() => {
+    const translatedElements = (() => {
       if (!bounds) return elements;
-      const cx = (bounds.minX + bounds.maxX) / 2;
-      const cy = (bounds.minY + bounds.maxY) / 2;
-      const dx = -cx;
-      const dy = -cy;
+      // Make the exported file visible on import even when scrollX/scrollY are reset.
+      // Keep everything in positive coordinates with a small padding.
+      const padding = 80;
+      const dx = padding - bounds.minX;
+      const dy = padding - bounds.minY;
 
       return (elements as unknown as Array<Record<string, unknown>>).map((el) => {
         if (!el || typeof el !== 'object') return el as unknown as OrderedExcalidrawElement;
@@ -1736,7 +1773,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     const files = (api.getFiles?.() ?? latestFilesRef.current ?? {}) as BinaryFiles;
     const appState = api.getAppState() as AppState;
     const rawJson = serializeAsJSON(
-      centeredElements as unknown as readonly ExcalidrawElement[],
+      translatedElements as unknown as readonly ExcalidrawElement[],
       {
         // Keep the exported file portable: don't persist viewport scroll/zoom,
         // otherwise Excalidraw.com may open it "blank" (content off-screen).
