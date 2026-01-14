@@ -23,6 +23,12 @@ describe('operationLogTextUtils', () => {
     expect(resolveDiagramTypeShortLabelFromText(input)).toBe('FC');
   });
 
+  test('extracts and strips type when text starts with it', () => {
+    const input = 'flowchart - Хронология службы ✅';
+    expect(resolveDiagramTypeShortLabelFromText(input)).toBe('FC');
+    expect(stripDiagramTypeFromText(input)).toBe('Хронология службы ✅');
+  });
+
   test('does nothing when type is absent', () => {
     const input = 'Итог — ready';
     expect(stripDiagramTypeFromText(input)).toBe(input);
@@ -30,4 +36,3 @@ describe('operationLogTextUtils', () => {
     expect(resolveDiagramTypeShortLabelFromText(input)).toBe(null);
   });
 });
-
