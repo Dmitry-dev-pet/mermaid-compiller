@@ -14,7 +14,10 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
-        }
+        },
+        // Prevent multiple copies of Mermaid (and React) from being bundled.
+        // This avoids runtime issues when dependencies import their own Mermaid version.
+        dedupe: ['react', 'react-dom', 'mermaid'],
       }
     };
 });
