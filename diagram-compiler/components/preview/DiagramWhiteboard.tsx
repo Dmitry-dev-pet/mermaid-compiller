@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { convertToExcalidrawElements, Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import type {
@@ -34,9 +34,8 @@ const pickAppStateForSave = (appState: AppState): Partial<AppState> => {
 const normalizeTheme = (theme: 'light' | 'dark') => theme;
 
 const toSvgDataUrl = (svg: string): DataURL => {
-  const decoded = unescape(encodeURIComponent(svg));
-  const base64 = btoa(decoded);
-  return `data:image/svg+xml;base64,${base64}` as DataURL;
+  // Prefer UTF-8 encoding to avoid base64/Unicode pitfalls.
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` as DataURL;
 };
 
 const parseViewBox = (svg: string) => {
@@ -48,6 +47,89 @@ const parseViewBox = (svg: string) => {
   return { width, height };
 };
 
+const convertForeignObjectsToText = (svgMarkup: string): string => {
+  if (!svgMarkup.includes('foreignObject')) return svgMarkup;
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgMarkup, 'image/svg+xml');
+    const svgEl = doc.querySelector('svg');
+    if (!svgEl) return svgMarkup;
+
+    const foreignObjects = Array.from(svgEl.querySelectorAll('foreignObject'));
+    for (const foreignObject of foreignObjects) {
+      const rawText = (foreignObject.textContent ?? '').replace(/\s+/g, ' ').trim();
+      if (!rawText) {
+        foreignObject.remove();
+        continue;
+      }
+
+      const x = Number(foreignObject.getAttribute('x') ?? '0');
+      const y = Number(foreignObject.getAttribute('y') ?? '0');
+      const width = Number(foreignObject.getAttribute('width') ?? '0');
+      const height = Number(foreignObject.getAttribute('height') ?? '0');
+      const cx = Number.isFinite(x) && Number.isFinite(width) ? x + width / 2 : 0;
+      const cy = Number.isFinite(y) && Number.isFinite(height) ? y + height / 2 : 0;
+
+      const text = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.textContent = rawText;
+      text.setAttribute('x', String(cx));
+      text.setAttribute('y', String(cy));
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('dominant-baseline', 'middle');
+      // Keep labels readable on dark fills; Mermaid styles can override via CSS.
+      text.setAttribute('fill', '#e7e7e7');
+      text.setAttribute('font-family', 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif');
+      text.setAttribute('font-size', '14');
+
+      foreignObject.parentNode?.insertBefore(text, foreignObject);
+      foreignObject.remove();
+    }
+
+    const serializer = new XMLSerializer();
+    return serializer.serializeToString(svgEl);
+  } catch {
+    // Fallback: keep the original markup if conversion fails.
+    return svgMarkup;
+  }
+};
+
+const rasterizeSvgToPngDataUrl = async (args: {
+  svgMarkup: string;
+  width: number;
+  height: number;
+}): Promise<DataURL | null> => {
+  try {
+    const svgBlob = new Blob([args.svgMarkup], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(svgBlob);
+
+    const img = new Image();
+    img.decoding = 'async';
+
+    const loaded = await new Promise<boolean>((resolve) => {
+      img.onload = () => resolve(true);
+      img.onerror = () => resolve(false);
+      img.src = url;
+    });
+
+    URL.revokeObjectURL(url);
+    if (!loaded) return null;
+
+    const canvas = document.createElement('canvas');
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.max(1, Math.floor(args.width * dpr));
+    canvas.height = Math.max(1, Math.floor(args.height * dpr));
+
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.drawImage(img, 0, 0, args.width, args.height);
+
+    return canvas.toDataURL('image/png') as DataURL;
+  } catch {
+    return null;
+  }
+};
+
 const tryParseInitialScene = (sceneJson: string | null): ExcalidrawInitialDataState | null => {
   if (!sceneJson?.trim()) return null;
   try {
@@ -56,6 +138,17 @@ const tryParseInitialScene = (sceneJson: string | null): ExcalidrawInitialDataSt
     const record = parsed as Record<string, unknown>;
     if (record.type !== 'excalidraw') return null;
     if (!Array.isArray(record.elements)) return null;
+    // Ignore blank scenes (common when initialData resolves before SVG is ready).
+    const elements = record.elements as unknown[];
+    const filesRaw = record.files;
+    const filesCount =
+      filesRaw && typeof filesRaw === 'object' ? Object.keys(filesRaw as Record<string, unknown>).length : 0;
+    if (elements.length === 0 && filesCount === 0) return null;
+    // If the scene contains image elements but no files payload, it will render
+    // as a placeholder; prefer regenerating from Mermaid instead.
+    if (filesCount === 0 && elements.some((el) => !!el && typeof el === 'object' && (el as { type?: unknown }).type === 'image')) {
+      return null;
+    }
     return parsed as ExcalidrawInitialDataState;
   } catch {
     return null;
@@ -95,11 +188,18 @@ const buildSceneFromSvgMarkup = async (args: {
   };
 
   const { width, height } = await measure();
+
+  // Excalidraw renders images onto a canvas. Mermaid SVGs often include
+  // <foreignObject> labels which are unreliable/non-renderable on a canvas,
+  // resulting in a blank image. Prefer a raster PNG snapshot for stability.
+  const svgForImage = svg.includes('foreignObject') ? convertForeignObjectsToText(svg) : svg;
+  const pngDataUrl = await rasterizeSvgToPngDataUrl({ svgMarkup: svgForImage, width, height });
+
   const fileId = `mermaid-svg-${Date.now()}` as BinaryFileData['id'];
   const file: BinaryFileData = {
-    mimeType: 'image/svg+xml',
+    mimeType: pngDataUrl ? 'image/png' : 'image/svg+xml',
     id: fileId,
-    dataURL: toSvgDataUrl(svg),
+    dataURL: (pngDataUrl ?? toSvgDataUrl(svgForImage)) as DataURL,
     created: Date.now(),
   };
   const files: BinaryFiles = {
@@ -114,8 +214,9 @@ const buildSceneFromSvgMarkup = async (args: {
       width,
       height,
       locked: true,
-    }], { regenerateIds: true }),
+    }], { regenerateIds: false }),
   ];
+
 
   return {
     type: 'excalidraw',
@@ -145,14 +246,17 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const lastSavedJsonRef = useRef<string>(initialSceneJson ?? '');
   const pendingSaveRef = useRef<number | null>(null);
   const latestJsonRef = useRef<string>(initialSceneJson ?? '');
-  const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const didInitialFitRef = useRef(false);
+  const hasHadContentRef = useRef(false);
 
   useEffect(() => {
     lastSavedJsonRef.current = initialSceneJson ?? '';
     latestJsonRef.current = initialSceneJson ?? '';
     onDirtyChange?.(false);
     didInitialFitRef.current = false;
+    const parsed = tryParseInitialScene(initialSceneJson);
+    hasHadContentRef.current = Boolean(parsed?.elements && Array.isArray(parsed.elements) && parsed.elements.length > 0);
   }, [initialSceneJson, onDirtyChange]);
 
   useEffect(() => {
@@ -189,7 +293,6 @@ const DiagramWhiteboard: React.FC<Props> = ({
   }, [backgroundColor, initialSceneJson, mermaidCode, svgMarkup, theme]);
 
   const fitToContentIfNeeded = useCallback((animate: boolean) => {
-    const api = apiRef.current;
     if (!api || didInitialFitRef.current) return;
 
     const elements = api.getSceneElements();
@@ -197,10 +300,9 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
     didInitialFitRef.current = true;
     api.scrollToContent(elements, { fitToContent: true, animate, duration: animate ? 250 : 0 });
-  }, []);
+  }, [api]);
 
   useEffect(() => {
-    const api = apiRef.current;
     if (!api) return;
 
     let cancelled = false;
@@ -222,7 +324,6 @@ const DiagramWhiteboard: React.FC<Props> = ({
   }, [fitToContentIfNeeded]);
 
   useEffect(() => {
-    const api = apiRef.current;
     if (!api) return;
     if (tryParseInitialScene(initialSceneJson)) return;
     if (!svgMarkup.trim()) return;
@@ -254,7 +355,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     return () => {
       cancelled = true;
     };
-  }, [backgroundColor, fitToContentIfNeeded, initialSceneJson, svgMarkup, theme]);
+  }, [api, backgroundColor, fitToContentIfNeeded, initialSceneJson, svgMarkup, theme]);
 
   const scheduleAutosave = useCallback((nextJson: string) => {
     latestJsonRef.current = nextJson;
@@ -286,9 +387,18 @@ const DiagramWhiteboard: React.FC<Props> = ({
     appState: AppState,
     files: BinaryFiles
   ) => {
-    const json = serializeAsJSON(elements as unknown as readonly ExcalidrawElement[], pickAppStateForSave(appState), files, 'database');
+    if (!hasHadContentRef.current && elements.length === 0) {
+      return;
+    }
+
+    if (elements.length > 0) {
+      hasHadContentRef.current = true;
+    }
+
+    const filesForSave = api?.getFiles?.() ?? files;
+    const json = serializeAsJSON(elements as unknown as readonly ExcalidrawElement[], pickAppStateForSave(appState), filesForSave, 'database');
     scheduleAutosave(json);
-  }, [scheduleAutosave]);
+  }, [api, scheduleAutosave]);
 
   return (
     <div className="flex-1 min-h-0">
@@ -296,7 +406,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         initialData={initialData}
         theme={normalizeTheme(theme)}
         excalidrawAPI={(api) => {
-          apiRef.current = api;
+          setApi(api);
           // Defer to the next frame so Excalidraw can finish initializing.
           requestAnimationFrame(() => fitToContentIfNeeded(false));
         }}
