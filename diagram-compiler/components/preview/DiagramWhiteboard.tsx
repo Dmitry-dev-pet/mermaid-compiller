@@ -279,7 +279,7 @@ const convertForeignObjectsToText = (svgMarkup: string, opts?: { fill?: string }
 
     const foreignObjects = Array.from(svgEl.querySelectorAll('foreignObject'));
     for (const foreignObject of foreignObjects) {
-      const rawText = (foreignObject.textContent ?? '').replace(/\s+/g, ' ').trim();
+      const rawText = (foreignObject.textContent ?? '').replace(/[ \t]+\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
       if (!rawText) {
         foreignObject.remove();
         continue;
@@ -293,7 +293,6 @@ const convertForeignObjectsToText = (svgMarkup: string, opts?: { fill?: string }
       const cy = Number.isFinite(y) && Number.isFinite(height) ? y + height / 2 : 0;
 
       const text = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
-      text.textContent = rawText;
       text.setAttribute('x', String(cx));
       text.setAttribute('y', String(cy));
       text.setAttribute('text-anchor', 'middle');
@@ -302,6 +301,23 @@ const convertForeignObjectsToText = (svgMarkup: string, opts?: { fill?: string }
       text.setAttribute('fill', opts?.fill ?? '#e7e7e7');
       text.setAttribute('font-family', 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif');
       text.setAttribute('font-size', '14');
+
+      // Support simple multi-line labels by emitting tspans.
+      const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      if (lines.length <= 1) {
+        text.textContent = rawText;
+      } else {
+        // Center the block around (cx,cy).
+        const lineHeight = 16;
+        const startDy = -((lines.length - 1) / 2) * lineHeight;
+        for (let i = 0; i < lines.length; i += 1) {
+          const tspan = doc.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+          tspan.textContent = lines[i]!;
+          tspan.setAttribute('x', String(cx));
+          tspan.setAttribute('dy', String(i === 0 ? startDy : lineHeight));
+          text.appendChild(tspan);
+        }
+      }
 
       foreignObject.parentNode?.insertBefore(text, foreignObject);
       foreignObject.remove();
@@ -313,6 +329,39 @@ const convertForeignObjectsToText = (svgMarkup: string, opts?: { fill?: string }
     // Fallback: keep the original markup if conversion fails.
     return svgMarkup;
   }
+};
+
+const wrapTextToWidth = (text: string, opts: { maxWidth: number; fontSize: number }): string => {
+  const raw = text.replace(/\r/g, '').trim();
+  if (!raw) return '';
+  const { maxWidth, fontSize } = opts;
+  if (!(maxWidth > 0) || !(fontSize > 0)) return raw;
+  const approxCharWidth = fontSize * 0.55;
+  const maxChars = Math.max(6, Math.floor(maxWidth / approxCharWidth));
+  if (raw.length <= maxChars) return raw;
+
+  const linesIn = raw.split('\n');
+  const out: string[] = [];
+  for (const line of linesIn) {
+    const words = line.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      out.push('');
+      continue;
+    }
+    let cur = words[0]!;
+    for (let i = 1; i < words.length; i += 1) {
+      const next = words[i]!;
+      const merged = `${cur} ${next}`;
+      if (merged.length <= maxChars) {
+        cur = merged;
+        continue;
+      }
+      out.push(cur);
+      cur = next;
+    }
+    out.push(cur);
+  }
+  return out.join('\n').trim();
 };
 
 const buildSceneFromSvgVectors = async (args: {
@@ -401,7 +450,15 @@ const buildSceneFromSvgVectors = async (args: {
     // foreignObject labels (common in Mermaid v11 flowchart-v2).
     const foreignObjects = Array.from(svgEl.querySelectorAll('foreignObject'));
     for (const foreignObjectEl of foreignObjects) {
-      const content = (foreignObjectEl.textContent ?? '').replace(/\s+/g, ' ').trim();
+      const html = (foreignObjectEl as unknown as { innerHTML?: unknown }).innerHTML;
+      const content = (() => {
+        if (typeof html === 'string' && html.trim()) {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = html;
+          return (tmp.innerText || tmp.textContent || '').trim();
+        }
+        return (foreignObjectEl.textContent ?? '').replace(/[ \t]+\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+      })();
       if (!content) continue;
       const bb = getBBoxSafe(foreignObjectEl) ?? (() => {
         const x = parseCssNumber(foreignObjectEl.getAttribute('x')) ?? 0;
@@ -412,12 +469,14 @@ const buildSceneFromSvgVectors = async (args: {
       })();
       if (!bb) continue;
       const p = svgToLocal({ x: bb.x, y: bb.y });
+      const fontSize = 16;
+      const wrapped = wrapTextToWidth(content, { maxWidth: bb.width, fontSize });
       elementsSkeleton.push({
         type: 'text',
-        text: content,
+        text: wrapped,
         x: p.x,
         y: p.y,
-        fontSize: 16,
+        fontSize,
         strokeColor: args.theme === 'dark' ? '#e5e7eb' : '#111827',
         locked: false,
       });
@@ -445,10 +504,11 @@ const buildSceneFromSvgVectors = async (args: {
         const anchorShift = anchor === 'middle' ? approxWidth / 2 : anchor === 'end' ? approxWidth : 0;
         return { x: local.x - anchorShift, y: local.y - fontSize };
       })();
+      const wrapped = bb ? wrapTextToWidth(content, { maxWidth: bb.width, fontSize }) : content;
 
       elementsSkeleton.push({
         type: 'text',
-        text: content,
+        text: wrapped,
         x: p.x,
         y: p.y,
         fontSize,
@@ -541,7 +601,8 @@ const buildSceneFromSvgVectors = async (args: {
 
     if (elementsSkeleton.length < 2) return null;
 
-    const elements = convertToExcalidrawElements(elementsSkeleton as unknown as any, { regenerateIds: true }).map((el) => ({
+    const skeleton = elementsSkeleton as unknown as Parameters<typeof convertToExcalidrawElements>[0];
+    const elements = convertToExcalidrawElements(skeleton, { regenerateIds: true }).map((el) => ({
       ...el,
       locked: false,
       groupIds: [] as unknown as typeof el.groupIds,
