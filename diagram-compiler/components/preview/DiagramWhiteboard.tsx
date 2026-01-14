@@ -52,6 +52,68 @@ const parseViewBox = (svg: string) => {
   return { width, height };
 };
 
+const parseCssNumber = (value: string | null | undefined): number | null => {
+  if (!value) return null;
+  const match = value.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const n = Number(match[0]);
+  return Number.isFinite(n) ? n : null;
+};
+
+const parseSvgStyleAttr = (style: string | null): Record<string, string> => {
+  if (!style) return {};
+  const out: Record<string, string> = {};
+  for (const raw of style.split(';')) {
+    const part = raw.trim();
+    if (!part) continue;
+    const idx = part.indexOf(':');
+    if (idx <= 0) continue;
+    const key = part.slice(0, idx).trim().toLowerCase();
+    const value = part.slice(idx + 1).trim();
+    if (!key || !value) continue;
+    out[key] = value;
+  }
+  return out;
+};
+
+const getSvgPaint = (el: Element, name: 'fill' | 'stroke'): string | null => {
+  const fromAttr = el.getAttribute(name);
+  if (fromAttr && fromAttr !== 'none') return fromAttr;
+  const style = parseSvgStyleAttr(el.getAttribute('style'));
+  const fromStyle = style[name];
+  if (fromStyle && fromStyle !== 'none') return fromStyle;
+  return null;
+};
+
+const getSvgStrokeWidth = (el: Element): number | null => {
+  const attr = parseCssNumber(el.getAttribute('stroke-width'));
+  if (attr !== null) return attr;
+  const style = parseSvgStyleAttr(el.getAttribute('style'));
+  const fromStyle = parseCssNumber(style['stroke-width']);
+  return fromStyle;
+};
+
+const getSvgTextFontSize = (el: Element): number | null => {
+  const attr = parseCssNumber(el.getAttribute('font-size'));
+  if (attr !== null) return attr;
+  const style = parseSvgStyleAttr(el.getAttribute('style'));
+  const fromStyle = parseCssNumber(style['font-size']);
+  return fromStyle;
+};
+
+const parseSvgPathNumbers = (d: string): Array<{ x: number; y: number }> => {
+  // Very small heuristic parser: extract all coordinate pairs from the path.
+  // For Mermaid ER/graph edges this is typically M/L commands.
+  const tokens = d.match(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi);
+  if (!tokens || tokens.length < 4) return [];
+  const nums = tokens.map((t) => Number(t)).filter((n) => Number.isFinite(n));
+  const points: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i + 1 < nums.length; i += 2) {
+    points.push({ x: nums[i]!, y: nums[i + 1]! });
+  }
+  return points;
+};
+
 const convertForeignObjectsToText = (svgMarkup: string): string => {
   if (!svgMarkup.includes('foreignObject')) return svgMarkup;
   try {
@@ -95,6 +157,158 @@ const convertForeignObjectsToText = (svgMarkup: string): string => {
   } catch {
     // Fallback: keep the original markup if conversion fails.
     return svgMarkup;
+  }
+};
+
+const buildSceneFromSvgVectors = async (args: {
+  svgMarkup: string;
+  theme: 'light' | 'dark';
+  backgroundColor: string | null;
+}): Promise<ExcalidrawInitialDataState | null> => {
+  const svg = args.svgMarkup.trim();
+  if (!svg) return null;
+
+  let container: HTMLDivElement | null = null;
+  try {
+    container = document.createElement('div');
+    container.setAttribute('style', 'opacity:0; position:fixed; left:-10000px; top:0; pointer-events:none;');
+    container.innerHTML = svg;
+    document.body.appendChild(container);
+
+    const svgEl = container.querySelector('svg');
+    if (!svgEl) {
+      container.remove();
+      return null;
+    }
+
+    // Wait one frame so layout/CTM are available.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    const svgRect = svgEl.getBoundingClientRect();
+    const width = Math.max(1, svgRect.width);
+    const height = Math.max(1, svgRect.height);
+
+    const toLocalPoint = (screenX: number, screenY: number) => ({
+      x: screenX - svgRect.left,
+      y: screenY - svgRect.top,
+    });
+
+    const elementsSkeleton: Array<Record<string, unknown>> = [];
+
+    // Rectangles (nodes/containers).
+    const rects = Array.from(svgEl.querySelectorAll('rect'));
+    for (const rectEl of rects) {
+      const bb = rectEl.getBoundingClientRect();
+      const w = bb.width;
+      const h = bb.height;
+      if (!(w > 6 && h > 6)) continue;
+      // Skip background-size rects.
+      if (w >= width * 0.95 && h >= height * 0.95) continue;
+
+      const p = toLocalPoint(bb.left, bb.top);
+      const stroke = getSvgPaint(rectEl, 'stroke') ?? '#1f2937';
+      const fill = getSvgPaint(rectEl, 'fill') ?? 'transparent';
+      const strokeWidth = getSvgStrokeWidth(rectEl) ?? 1;
+
+      elementsSkeleton.push({
+        type: 'rectangle',
+        x: p.x,
+        y: p.y,
+        width: w,
+        height: h,
+        strokeColor: stroke,
+        backgroundColor: fill === 'transparent' ? 'transparent' : fill,
+        strokeWidth,
+        locked: false,
+      });
+      if (elementsSkeleton.length > 2000) break;
+    }
+
+    // Text labels.
+    const texts = Array.from(svgEl.querySelectorAll('text'));
+    for (const textEl of texts) {
+      const content = (textEl.textContent ?? '').replace(/\s+/g, ' ').trim();
+      if (!content) continue;
+      const bb = textEl.getBoundingClientRect();
+      if (!(bb.width > 0 && bb.height > 0)) continue;
+      const p = toLocalPoint(bb.left, bb.top);
+      const fontSize = getSvgTextFontSize(textEl) ?? 16;
+      const stroke = getSvgPaint(textEl, 'fill') ?? '#111827';
+
+      elementsSkeleton.push({
+        type: 'text',
+        text: content,
+        x: p.x,
+        y: p.y,
+        fontSize,
+        strokeColor: stroke,
+        locked: false,
+      });
+      if (elementsSkeleton.length > 2000) break;
+    }
+
+    // Lines (edges/relations). Prefer paths with stroke and no fill.
+    const paths = Array.from(svgEl.querySelectorAll('path'));
+    for (const pathEl of paths) {
+      const d = pathEl.getAttribute('d') ?? '';
+      if (!d.trim()) continue;
+      const stroke = getSvgPaint(pathEl, 'stroke');
+      const fill = getSvgPaint(pathEl, 'fill');
+      if (!stroke || (fill && fill !== 'none')) continue;
+
+      const points = parseSvgPathNumbers(d);
+      if (points.length < 2) continue;
+
+      const m = (pathEl as unknown as SVGGraphicsElement).getScreenCTM?.();
+      if (!m) continue;
+      const toScreen = (pt: { x: number; y: number }) => {
+        const sp = new DOMPoint(pt.x, pt.y).matrixTransform(m);
+        return toLocalPoint(sp.x, sp.y);
+      };
+      const screenPoints = points.map(toScreen);
+      // Collapse to at most 20 points to keep the scene light.
+      const step = Math.max(1, Math.floor(screenPoints.length / 20));
+      const collapsed = screenPoints.filter((_, idx) => idx % step === 0);
+      const start = collapsed[0]!;
+      const rest = collapsed.slice(1);
+      if (!rest.length) continue;
+
+      elementsSkeleton.push({
+        type: 'line',
+        x: start.x,
+        y: start.y,
+        points: [[0, 0], ...rest.map((p) => [p.x - start.x, p.y - start.y])],
+        strokeColor: stroke,
+        strokeWidth: getSvgStrokeWidth(pathEl) ?? 1,
+        locked: false,
+      });
+      if (elementsSkeleton.length > 2000) break;
+    }
+
+    if (elementsSkeleton.length < 2) return null;
+
+    const elements = convertToExcalidrawElements(elementsSkeleton as unknown as any, { regenerateIds: true }).map((el) => ({
+      ...el,
+      locked: false,
+      groupIds: [] as unknown as typeof el.groupIds,
+    }));
+
+    return {
+      type: 'excalidraw',
+      version: 2,
+      source: 'mermaid-langgraph',
+      elements,
+      files: {},
+      scrollToContent: true,
+      appState: {
+        theme: normalizeTheme(args.theme),
+        viewBackgroundColor: args.backgroundColor ?? undefined,
+      } as Partial<AppState>,
+    };
+  } catch {
+    return null;
+  } finally {
+    container?.remove();
   }
 };
 
@@ -206,7 +420,25 @@ const buildSceneFromMermaidCode = async (args: {
           maxTextSize: 50000,
         })
       );
-      if (skeletons?.length) {
+      const isGraphImage =
+        skeletons?.length === 1
+        && !!skeletons[0]
+        && typeof skeletons[0] === 'object'
+        && (skeletons[0] as { type?: unknown }).type === 'image';
+
+      // For unsupported diagram types, the converter returns a single "image"
+      // element (graphImage). Prefer exploding Mermaid's SVG into vector
+      // elements so users can edit individual objects.
+      if (isGraphImage) {
+        const vectorScene = await buildSceneFromSvgVectors({
+          svgMarkup: args.svgMarkup,
+          theme: args.theme,
+          backgroundColor: args.backgroundColor,
+        });
+        if (vectorScene) return vectorScene;
+      }
+
+      if (skeletons?.length && !isGraphImage) {
         const elements = convertToExcalidrawElements(skeletons).map((element) => ({
           ...element,
           locked: false,
@@ -232,6 +464,13 @@ const buildSceneFromMermaidCode = async (args: {
       // Fall back to a rasterized SVG snapshot when conversion fails.
     }
   }
+
+  const vectorFallback = await buildSceneFromSvgVectors({
+    svgMarkup: args.svgMarkup,
+    theme: args.theme,
+    backgroundColor: args.backgroundColor,
+  });
+  if (vectorFallback) return vectorFallback;
 
   return buildSceneFromSvgMarkup({
     svgMarkup: args.svgMarkup,
