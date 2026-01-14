@@ -143,7 +143,7 @@ export const buildContextTooltipForLog = (args: {
   const messageBlocks = args.messages.map(formatMessageBlockForLog).join('\n\n');
   const docsBlock = args.docsDetail.trim().length > 0 ? args.docsDetail : '(none)';
   const selectionBlock = args.selectionLine?.trim().length
-    ? [`Selection:`, args.selectionLine.trim(), '']
+    ? [args.selectionLine.trim(), '']
     : [];
   return [
     'System prompt:',

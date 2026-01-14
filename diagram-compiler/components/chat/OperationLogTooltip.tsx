@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import OperationLogTooltipContent from './operationLogTooltipContent';
 
 type Props = {
   tooltipId: string;
@@ -20,73 +21,6 @@ const VIEWPORT_PADDING = 8;
 const TARGET_WIDTH_PX = 28 * 16; // 28rem
 const TARGET_MAX_HEIGHT_PX = 16 * 16; // 16rem
 const TOOLTIP_Z_INDEX = 2147483647;
-
-const DIAGRAM_TYPE_HIGHLIGHTS = [
-  'flowchart',
-  'sequence',
-  'er',
-  'class',
-  'state',
-  'journey',
-  'gantt',
-  'pie',
-  'mindmap',
-  'timeline',
-  'requirement',
-  'gitgraph',
-] as const;
-
-const renderHighlightedDiagramTypes = (line: string) => {
-  const re = new RegExp(`\\b(${DIAGRAM_TYPE_HIGHLIGHTS.join('|')})\\b`, 'gi');
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null = null;
-  while ((match = re.exec(line))) {
-    const start = match.index ?? 0;
-    const end = start + (match[0]?.length ?? 0);
-    if (start > lastIndex) parts.push(line.slice(lastIndex, start));
-    parts.push(
-      <span
-        key={`dt-${start}`}
-        className="font-mono text-[11px] text-blue-600 dark:text-blue-300"
-      >
-        {line.slice(start, end)}
-      </span>
-    );
-    lastIndex = end;
-  }
-  if (lastIndex < line.length) parts.push(line.slice(lastIndex));
-  return parts.length ? parts : line;
-};
-
-const renderTooltipContent = (content: string) => {
-  const lines = content.split(/\r?\n/);
-  return (
-    <>
-      {lines.map((line, index) => {
-        if (line.trim().length === 0) {
-          return <div key={`line-${index}`} className="h-3" />;
-        }
-        const selectionMatch = line.match(/^\s*selection\s*:\s*(.+)\s*$/i);
-        if (selectionMatch) {
-          return (
-            <div key={`line-${index}`} className="whitespace-pre-wrap">
-              <span className="text-[var(--control-muted-text)]">selection:</span>{' '}
-              <span className="font-mono text-[11px] text-blue-600 dark:text-blue-300">
-                {selectionMatch[1]}
-              </span>
-            </div>
-          );
-        }
-        return (
-          <div key={`line-${index}`} className="whitespace-pre-wrap">
-            {renderHighlightedDiagramTypes(line)}
-          </div>
-        );
-      })}
-    </>
-  );
-};
 
 const OperationLogTooltip: React.FC<Props> = ({
   tooltipId,
@@ -203,7 +137,7 @@ const OperationLogTooltip: React.FC<Props> = ({
               className="mt-1 overflow-auto overscroll-contain rounded border border-[var(--panel-border)] bg-[var(--menu-bg)] px-2 py-1 shadow-lg whitespace-pre-wrap"
               style={{ maxHeight: position.maxHeight }}
             >
-              {renderTooltipContent(content)}
+              <OperationLogTooltipContent content={content} />
             </div>
           ) : null}
         </div>,
