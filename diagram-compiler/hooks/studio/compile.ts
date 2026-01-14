@@ -13,7 +13,6 @@ import type { Message } from '../../types';
 import { TimeoutError } from '../../services/llmTimeout';
 import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMessageUtils';
 import { buildSystemPrompt } from '../../services/llm/prompts';
-import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
 import {
   buildContextEventForLog,
 } from './logContextUtils';
@@ -481,14 +480,9 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             docsContext: 'Documentation context redacted.',
             language,
           });
-          const controllerLine = (() => {
-            const label = detectedDiagramType ? getDiagramTypeShortLabel(detectedDiagramType) : '';
-            return label ? `controller: type=${label}` : 'controller: type=auto';
-          })();
           const analyzeContextEvent = buildContextEventForLog({
             phase: 'analyze',
             contextScope: 'analyze',
-            selectionLine: controllerLine,
             systemPrompt,
             messages: [analyzeMessage],
             docsContext: docs,

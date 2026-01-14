@@ -36,11 +36,6 @@ const OperationLogRowText: React.FC<Props> = ({
   setPinnedTooltip,
   onOpenBuildDocsFile,
 }) => {
-  const hasTooltip = Boolean(row.tooltipMessages || row.tooltipDocs);
-  if (!hasTooltip) {
-    return <div className="whitespace-pre-wrap">{row.text}</div>;
-  }
-
   const docsMode = resolveDocsMode(row);
 
   const renderFileButton = (label: string) => {
@@ -63,6 +58,17 @@ const OperationLogRowText: React.FC<Props> = ({
 
   const lines = row.text.split('\n');
   const renderLine = (line: string, index: number) => {
+    const selectionMatch = line.match(/^\s*(selection)\s*:\s*(.+)\s*$/i);
+    if (selectionMatch) {
+      const [, label, value] = selectionMatch;
+      return (
+        <span key={`line-${index}`} className="inline-flex items-center gap-1">
+          <span className="text-[var(--control-muted-text)]">{label}:</span>
+          <span className="font-mono text-[11px] text-blue-600 dark:text-blue-300">{value}</span>
+        </span>
+      );
+    }
+
     const messageMatch = row.tooltipMessages
       ? line.match(/^(.*?)(messages:\s.*)$/i)
       : null;

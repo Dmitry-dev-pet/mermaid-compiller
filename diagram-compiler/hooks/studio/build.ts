@@ -7,7 +7,6 @@ import { AUTO_FIX_MAX_ATTEMPTS, BUILD_MAX_ATTEMPTS } from '../../constants';
 import { runBuildPipeline } from './buildPipeline';
 import { normalizeSummaryText, sanitizeSummaryText } from '../../utils/buildSummary';
 import { buildSystemPrompt } from '../../services/llm/prompts';
-import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
 import { runStudioOperation } from './runStudioOperation';
 import { createStudioOperationRunner } from './operationRunner';
 import { buildOperationLogViewModel } from '../../components/chat/operationLogUtils';
@@ -208,19 +207,9 @@ export const createBuildHandler = (ctx: StudioContext) => {
         docsContext: 'Documentation context redacted.',
         language,
       });
-      const controllerLine = (() => {
-        if (ctx.appState.diagramType && ctx.appState.diagramType !== 'auto') {
-          return `controller: type=${getDiagramTypeShortLabel(ctx.appState.diagramType)}`;
-        }
-        const allowed = ctx.appState.mainDiagramTypes?.length
-          ? ctx.appState.mainDiagramTypes.map((t) => getDiagramTypeShortLabel(t)).join('/')
-          : '';
-        return allowed ? `controller: types=${allowed}` : 'controller: type=auto';
-      })();
       const buildContextEvent = buildContextEventForLog({
         phase: 'planning',
         contextScope: 'build',
-        selectionLine: controllerLine,
         systemPrompt,
         messages: llmMessages,
         docsContext: docs,

@@ -150,11 +150,11 @@ export const createChatHandler = (ctx: StudioContext) => {
           });
           const selectionLine = (() => {
             if (ctx.appState.diagramType && ctx.appState.diagramType !== 'auto') {
-              return `controller: type=${getDiagramTypeShortLabel(ctx.appState.diagramType)}`;
+              return `selection: ${getDiagramTypeShortLabel(ctx.appState.diagramType)}`;
             }
             if (allowedNotebookTypes?.length) {
               const set = allowedNotebookTypes.map((t) => getDiagramTypeShortLabel(t)).join('/');
-              return `controller: types=${set}`;
+              return `selection: ${set}`;
             }
             return '';
           })();
