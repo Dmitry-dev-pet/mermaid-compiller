@@ -252,11 +252,19 @@ export const initializeMermaid = (
   theme: MermaidThemeName | { theme: MermaidThemeName; themeVariables?: Record<string, unknown> } = 'default'
 ) => {
   const config = typeof theme === 'string' ? { theme } : theme;
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: 'loose',
-    ...config,
-  });
+  try {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'loose',
+      ...config,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Mermaid v11 can throw if a diagram type was already registered. This can
+    // happen when we re-initialize on theme/look changes; treat as harmless.
+    if (message.includes('already registered')) return;
+    throw error;
+  }
 };
 
 export const validateMermaid = async (
