@@ -189,6 +189,7 @@ describe('mermaidToExcalidrawService (integration)', () => {
   let warnSpy: ReturnType<typeof vi.spyOn> | null = null;
 
   beforeAll(() => {
+    if (process.env.DUMP_M2E === '1') return;
     // The upstream library can be noisy during parsing.
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -202,6 +203,33 @@ describe('mermaidToExcalidrawService (integration)', () => {
   installSvgBBoxPolyfill();
   patchMermaidInitialize();
 
+  const dump = (label: string, args: { skeletons: unknown[]; files: Record<string, unknown> }) => {
+    if (process.env.DUMP_M2E !== '1') return;
+    const counts = args.skeletons.reduce<Record<string, number>>((acc, el) => {
+      const t = typeof el === 'object' && el ? String((el as { type?: unknown }).type ?? 'unknown') : 'unknown';
+      acc[t] = (acc[t] ?? 0) + 1;
+      return acc;
+    }, {});
+    const filesSummary = Object.fromEntries(
+      Object.entries(args.files ?? {}).map(([id, file]) => {
+        const rec = file && typeof file === 'object' ? (file as Record<string, unknown>) : {};
+        const dataURL = typeof rec.dataURL === 'string' ? rec.dataURL : '';
+        return [
+          id,
+          {
+            mimeType: rec.mimeType,
+            dataURLChars: dataURL.length,
+            dataURLPrefix: dataURL.slice(0, 64),
+          },
+        ];
+      })
+    );
+    // eslint-disable-next-line no-console
+    console.log(`\\n--- ${label} ---`);
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify({ counts, skeletons: args.skeletons, files: filesSummary }, null, 2));
+  };
+
   it('converts flowchart to non-image skeletons', async () => {
     const code = `flowchart TD
   A[Start] --> B[End]
@@ -211,6 +239,7 @@ describe('mermaidToExcalidrawService (integration)', () => {
       diagramTypeHint: 'flowchart',
       timeoutMs: 20000,
     });
+    dump('flowchart', { skeletons, files: {} });
     expect(skeletons.length).toBeGreaterThan(0);
     expect(skeletons.every((s) => s.type === 'image')).toBe(false);
     expect(skeletons.some((s) => s.type === 'rectangle' || s.type === 'ellipse' || s.type === 'diamond')).toBe(true);
@@ -223,11 +252,12 @@ describe('mermaidToExcalidrawService (integration)', () => {
   participant B
   A->>B: hi
 `;
-    const { skeletons } = await parseMermaidToExcalidrawSkeletons({
+    const { skeletons, files } = await parseMermaidToExcalidrawSkeletons({
       mermaidCode: code,
       diagramTypeHint: 'sequence',
       timeoutMs: 20000,
     });
+    dump('sequence', { skeletons, files: files as unknown as Record<string, unknown> });
     expect(skeletons.length).toBeGreaterThan(0);
     expect(skeletons.every((s) => s.type === 'image')).toBe(false);
     expect(skeletons.some((s) => s.type === 'arrow')).toBe(true);
@@ -242,6 +272,7 @@ describe('mermaidToExcalidrawService (integration)', () => {
       diagramTypeHint: 'er',
       timeoutMs: 20000,
     });
+    dump('er', { skeletons, files: files as unknown as Record<string, unknown> });
     expect(skeletons.length).toBeGreaterThan(0);
     expect(skeletons.every((s) => s.type === 'image')).toBe(true);
     expect(Object.keys(files).length).toBeGreaterThan(0);
