@@ -270,6 +270,17 @@ describe('mermaidToExcalidrawService (integration)', () => {
       skeletons.some((s) => typeof (s as { label?: unknown }).label === 'object')
       || skeletons.some((s) => s.type === 'text' && typeof (s as { text?: unknown }).text === 'string' && ['Нет', 'Да'].includes((s as { text: string }).text));
     expect(hasLabel).toBe(true);
+
+    // Arrows should reference their start/end nodes (needed for bindings in the
+    // downstream Excalidraw conversion).
+    const arrows = skeletons.filter((s) => s.type === 'arrow') as Array<{
+      start?: unknown;
+      end?: unknown;
+      label?: unknown;
+    }>;
+    expect(arrows.length).toBeGreaterThanOrEqual(3);
+    expect(arrows.some((a) => typeof (a.start as any)?.id === 'string' && typeof (a.end as any)?.id === 'string')).toBe(true);
+    expect(arrows.some((a) => typeof (a.label as any)?.text === 'string' && ['Нет', 'Да'].includes(String((a.label as any).text)))).toBe(true);
   });
 
   it('converts sequence to non-image skeletons', async () => {

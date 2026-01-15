@@ -822,10 +822,13 @@ const tryParseInitialScene = (sceneJson: string | null): ExcalidrawInitialDataSt
     // snapshot of the Mermaid SVG. This is not editable; prefer regenerating
     // semantic elements from Mermaid code.
     const isImageOnly = elements.length > 0 && elements.every((el) => !!el && typeof el === 'object' && (el as { type?: unknown }).type === 'image');
-    const isAllLocked =
-      elements.length > 0
-      && elements.every((el) => !!el && typeof el === 'object' && (el as { locked?: unknown }).locked === true);
-    if (filesCount > 0 && isImageOnly && isAllLocked) return null;
+    if (filesCount > 0 && isImageOnly) {
+      const meta = readSceneMeta(record);
+      // For ER diagrams Excalidraw elements are not always available yet; keep
+      // image-only scenes stable to avoid regenerating on every load.
+      if (meta?.diagramType === 'er') return parsed as ExcalidrawInitialDataState;
+      return null;
+    }
     return parsed as ExcalidrawInitialDataState;
   } catch {
     return null;
