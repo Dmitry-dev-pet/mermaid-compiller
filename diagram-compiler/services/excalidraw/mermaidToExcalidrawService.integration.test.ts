@@ -1,0 +1,249 @@
+// @vitest-environment jsdom
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import mermaid from 'mermaid';
+
+import { parseMermaidToExcalidrawSkeletons } from './mermaidToExcalidrawService';
+
+type BBox = { x: number; y: number; width: number; height: number };
+
+const parseTranslate = (transform: string | null): { x: number; y: number } => {
+  if (!transform) return { x: 0, y: 0 };
+  const m = transform.match(/translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
+  if (!m) return { x: 0, y: 0 };
+  return { x: Number(m[1]) || 0, y: Number(m[2]) || 0 };
+};
+
+const toNumber = (v: string | null, fallback = 0): number => {
+  if (!v) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const bboxUnion = (a: BBox | null, b: BBox | null): BBox | null => {
+  if (!a) return b;
+  if (!b) return a;
+  const minX = Math.min(a.x, b.x);
+  const minY = Math.min(a.y, b.y);
+  const maxX = Math.max(a.x + a.width, b.x + b.width);
+  const maxY = Math.max(a.y + a.height, b.y + b.height);
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+};
+
+const bboxFromPoints = (points: string): BBox | null => {
+  const nums = points
+    .trim()
+    .split(/[\s,]+/)
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n));
+  if (nums.length < 4) return null;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i + 1 < nums.length; i += 2) {
+    const x = nums[i]!;
+    const y = nums[i + 1]!;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+};
+
+const bboxFromPath = (d: string): BBox | null => {
+  const tokens = d.match(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi);
+  if (!tokens || tokens.length < 4) return null;
+  const nums = tokens.map((t) => Number(t)).filter((n) => Number.isFinite(n));
+  if (nums.length < 4) return null;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i + 1 < nums.length; i += 2) {
+    const x = nums[i]!;
+    const y = nums[i + 1]!;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+};
+
+const computeBBox = (el: Element): BBox => {
+  const tag = el.tagName.toLowerCase();
+  const { x: tx, y: ty } = parseTranslate(el.getAttribute('transform'));
+
+  if (tag === 'rect' || tag === 'foreignobject') {
+    const x = toNumber(el.getAttribute('x')) + tx;
+    const y = toNumber(el.getAttribute('y')) + ty;
+    const width = toNumber(el.getAttribute('width'));
+    const height = toNumber(el.getAttribute('height'));
+    return { x, y, width, height };
+  }
+
+  if (tag === 'circle') {
+    const cx = toNumber(el.getAttribute('cx')) + tx;
+    const cy = toNumber(el.getAttribute('cy')) + ty;
+    const r = toNumber(el.getAttribute('r'));
+    return { x: cx - r, y: cy - r, width: r * 2, height: r * 2 };
+  }
+
+  if (tag === 'ellipse') {
+    const cx = toNumber(el.getAttribute('cx')) + tx;
+    const cy = toNumber(el.getAttribute('cy')) + ty;
+    const rx = toNumber(el.getAttribute('rx'));
+    const ry = toNumber(el.getAttribute('ry'));
+    return { x: cx - rx, y: cy - ry, width: rx * 2, height: ry * 2 };
+  }
+
+  if (tag === 'line') {
+    const x1 = toNumber(el.getAttribute('x1')) + tx;
+    const y1 = toNumber(el.getAttribute('y1')) + ty;
+    const x2 = toNumber(el.getAttribute('x2')) + tx;
+    const y2 = toNumber(el.getAttribute('y2')) + ty;
+    const minX = Math.min(x1, x2);
+    const minY = Math.min(y1, y2);
+    const maxX = Math.max(x1, x2);
+    const maxY = Math.max(y1, y2);
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
+  if (tag === 'polygon' || tag === 'polyline') {
+    const from = bboxFromPoints(el.getAttribute('points') ?? '') ?? { x: 0, y: 0, width: 0, height: 0 };
+    return { x: from.x + tx, y: from.y + ty, width: from.width, height: from.height };
+  }
+
+  if (tag === 'path') {
+    const from = bboxFromPath(el.getAttribute('d') ?? '') ?? { x: 0, y: 0, width: 0, height: 0 };
+    return { x: from.x + tx, y: from.y + ty, width: from.width, height: from.height };
+  }
+
+  if (tag === 'text') {
+    const x = toNumber(el.getAttribute('x')) + tx;
+    const y = toNumber(el.getAttribute('y')) + ty;
+    const fontSize = Number.parseInt(getComputedStyle(el).fontSize || '', 10) || 16;
+    const text = (el.textContent ?? '').trim();
+    // Rough estimate is good enough for tests.
+    const width = Math.max(1, text.length) * fontSize * 0.6;
+    const height = fontSize * 1.1;
+    return { x: x - width / 2, y: y - height, width, height };
+  }
+
+  // <g> or unknown: union children.
+  let union: BBox | null = null;
+  for (const child of Array.from(el.children)) {
+    union = bboxUnion(union, computeBBox(child));
+  }
+  const resolved = union ?? { x: 0, y: 0, width: 0, height: 0 };
+  return { x: resolved.x + tx, y: resolved.y + ty, width: resolved.width, height: resolved.height };
+};
+
+const installSvgBBoxPolyfill = () => {
+  const proto = (globalThis as unknown as { SVGElement?: unknown }).SVGElement
+    ? (SVGElement.prototype as unknown as Record<string, unknown>)
+    : null;
+  if (!proto) return;
+
+  if (typeof proto.getBBox !== 'function') {
+    proto.getBBox = function getBBoxPolyfill(this: Element): BBox {
+      return computeBBox(this);
+    };
+  }
+
+  // Some fallback paths use getBoundingClientRect; map it to bbox.
+  if (typeof proto.getBoundingClientRect !== 'function') {
+    proto.getBoundingClientRect = function getBoundingClientRectPolyfill(this: Element) {
+      const bb = computeBBox(this);
+      return {
+        x: bb.x,
+        y: bb.y,
+        width: bb.width,
+        height: bb.height,
+        top: bb.y,
+        left: bb.x,
+        right: bb.x + bb.width,
+        bottom: bb.y + bb.height,
+        toJSON: () => ({}),
+      };
+    };
+  }
+};
+
+const patchMermaidInitialize = () => {
+  const original = mermaid.initialize.bind(mermaid);
+  mermaid.initialize = ((config: unknown) => {
+    try {
+      return original(config as any);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('already registered')) return;
+      throw error;
+    }
+  }) as typeof mermaid.initialize;
+};
+
+describe('mermaidToExcalidrawService (integration)', () => {
+  let logSpy: ReturnType<typeof vi.spyOn> | null = null;
+  let warnSpy: ReturnType<typeof vi.spyOn> | null = null;
+
+  beforeAll(() => {
+    // The upstream library can be noisy during parsing.
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterAll(() => {
+    logSpy?.mockRestore();
+    warnSpy?.mockRestore();
+  });
+
+  installSvgBBoxPolyfill();
+  patchMermaidInitialize();
+
+  it('converts flowchart to non-image skeletons', async () => {
+    const code = `flowchart TD
+  A[Start] --> B[End]
+`;
+    const { skeletons } = await parseMermaidToExcalidrawSkeletons({
+      mermaidCode: code,
+      diagramTypeHint: 'flowchart',
+      timeoutMs: 20000,
+    });
+    expect(skeletons.length).toBeGreaterThan(0);
+    expect(skeletons.every((s) => s.type === 'image')).toBe(false);
+    expect(skeletons.some((s) => s.type === 'rectangle' || s.type === 'ellipse' || s.type === 'diamond')).toBe(true);
+    expect(skeletons.some((s) => s.type === 'arrow' || s.type === 'line')).toBe(true);
+  });
+
+  it('converts sequence to non-image skeletons', async () => {
+    const code = `sequenceDiagram
+  participant A
+  participant B
+  A->>B: hi
+`;
+    const { skeletons } = await parseMermaidToExcalidrawSkeletons({
+      mermaidCode: code,
+      diagramTypeHint: 'sequence',
+      timeoutMs: 20000,
+    });
+    expect(skeletons.length).toBeGreaterThan(0);
+    expect(skeletons.every((s) => s.type === 'image')).toBe(false);
+    expect(skeletons.some((s) => s.type === 'arrow')).toBe(true);
+  });
+
+  it('falls back to graphImage for unsupported ER diagrams', async () => {
+    const code = `erDiagram
+  A ||--|| B : rel
+`;
+    const { skeletons, files } = await parseMermaidToExcalidrawSkeletons({
+      mermaidCode: code,
+      diagramTypeHint: 'er',
+      timeoutMs: 20000,
+    });
+    expect(skeletons.length).toBeGreaterThan(0);
+    expect(skeletons.every((s) => s.type === 'image')).toBe(true);
+    expect(Object.keys(files).length).toBeGreaterThan(0);
+  });
+});
