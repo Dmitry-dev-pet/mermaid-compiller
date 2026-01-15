@@ -538,6 +538,31 @@ const buildSceneFromSvgVectors = async (args: {
       }
     };
 
+    const applyCtmToBBox = (
+      el: Element,
+      bb: { x: number; y: number; width: number; height: number }
+    ): { x: number; y: number; width: number; height: number } => {
+      const m = (el as unknown as SVGGraphicsElement).getCTM?.();
+      if (!m) return bb;
+      try {
+        const points = [
+          new DOMPoint(bb.x, bb.y).matrixTransform(m),
+          new DOMPoint(bb.x + bb.width, bb.y).matrixTransform(m),
+          new DOMPoint(bb.x, bb.y + bb.height).matrixTransform(m),
+          new DOMPoint(bb.x + bb.width, bb.y + bb.height).matrixTransform(m),
+        ];
+        const xs = points.map((p) => p.x);
+        const ys = points.map((p) => p.y);
+        const minX = Math.min(...xs);
+        const minY = Math.min(...ys);
+        const maxX = Math.max(...xs);
+        const maxY = Math.max(...ys);
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+      } catch {
+        return bb;
+      }
+    };
+
     const elementsSkeleton: Array<Record<string, unknown>> = [];
     const seenTextKeys = new Set<string>();
     const shouldSkipText = (args: { text: string; x: number; y: number }) => {
@@ -550,8 +575,9 @@ const buildSceneFromSvgVectors = async (args: {
     // Rectangles (nodes/containers).
     const rects = Array.from(svgEl.querySelectorAll('rect'));
     for (const rectEl of rects) {
-      const bb = getBBoxSafe(rectEl);
-      if (!bb) continue;
+      const bbRaw = getBBoxSafe(rectEl);
+      if (!bbRaw) continue;
+      const bb = applyCtmToBBox(rectEl, bbRaw);
       const w = bb.width;
       const h = bb.height;
       if (!(w > 6 && h > 6)) continue;
@@ -590,14 +616,15 @@ const buildSceneFromSvgVectors = async (args: {
         return (foreignObjectEl.textContent ?? '').replace(/[ \t]+\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
       })();
       if (!content) continue;
-      const bb = getBBoxSafe(foreignObjectEl) ?? (() => {
+      const bbRaw = getBBoxSafe(foreignObjectEl) ?? (() => {
         const x = parseCssNumber(foreignObjectEl.getAttribute('x')) ?? 0;
         const y = parseCssNumber(foreignObjectEl.getAttribute('y')) ?? 0;
         const w = parseCssNumber(foreignObjectEl.getAttribute('width')) ?? 0;
         const h = parseCssNumber(foreignObjectEl.getAttribute('height')) ?? 0;
         return w > 0 && h > 0 ? ({ x, y, width: w, height: h } as const) : null;
       })();
-      if (!bb) continue;
+      if (!bbRaw) continue;
+      const bb = applyCtmToBBox(foreignObjectEl, bbRaw);
       const p = svgToLocal({ x: bb.x, y: bb.y });
       const fontSize = 16;
       const wrapped = wrapTextToWidth(content, { maxWidth: bb.width, fontSize });
@@ -622,7 +649,11 @@ const buildSceneFromSvgVectors = async (args: {
       const fontSize = getSvgTextFontSize(textEl) ?? 16;
       const stroke = getSvgPaint(textEl, 'fill') ?? '#111827';
 
-      const bb = getBBoxSafe(textEl);
+      const bb = (() => {
+        const bbRaw = getBBoxSafe(textEl);
+        if (!bbRaw) return null;
+        return applyCtmToBBox(textEl, bbRaw);
+      })();
       const p = (() => {
         if (bb) return svgToLocal({ x: bb.x, y: bb.y });
         const x = parseCssNumber(textEl.getAttribute('x')) ?? 0;
