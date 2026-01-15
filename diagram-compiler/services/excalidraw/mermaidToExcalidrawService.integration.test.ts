@@ -246,6 +246,31 @@ describe('mermaidToExcalidrawService (integration)', () => {
     expect(skeletons.some((s) => s.type === 'arrow' || s.type === 'line')).toBe(true);
   });
 
+  it('converts labeled flowchart (Cyrillic + edge labels) to non-image skeletons', async () => {
+    const code = `flowchart TD
+    A[Вербовка] --> B{Симуляция болезни?}
+    B -->|Нет| C[Отправка на фронт]
+    B -->|Да| D[Лазарет]
+    D --> C
+`;
+    const { skeletons } = await parseMermaidToExcalidrawSkeletons({
+      mermaidCode: code,
+      diagramTypeHint: 'flowchart',
+      timeoutMs: 20000,
+    });
+    dump('flowchart-cyrillic', { skeletons, files: {} });
+    expect(skeletons.length).toBeGreaterThan(0);
+    expect(skeletons.every((s) => s.type === 'image')).toBe(false);
+    // Nodes + edges.
+    expect(skeletons.some((s) => s.type === 'rectangle' || s.type === 'ellipse' || s.type === 'diamond')).toBe(true);
+    expect(skeletons.some((s) => s.type === 'arrow' || s.type === 'line')).toBe(true);
+    // Edge labels should exist either as arrow.label or separate text elements.
+    const hasLabel =
+      skeletons.some((s) => typeof (s as { label?: unknown }).label === 'object')
+      || skeletons.some((s) => s.type === 'text' && typeof (s as { text?: unknown }).text === 'string' && ['Нет', 'Да'].includes((s as { text: string }).text));
+    expect(hasLabel).toBe(true);
+  });
+
   it('converts sequence to non-image skeletons', async () => {
     const code = `sequenceDiagram
   participant A
