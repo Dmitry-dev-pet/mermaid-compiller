@@ -7,7 +7,8 @@ export type ExcalidrawElementSkeleton = Record<string, unknown>;
 
 export const detectMermaidDiagramTypeHint = (code: string): MermaidDiagramTypeHint => {
   if (!code.trim()) return 'unknown';
-  const lines = code.split(/\r?\n/);
+  const normalized = stripYamlFrontmatter(code);
+  const lines = normalized.split(/\r?\n/);
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -72,6 +73,20 @@ export const normalizeMermaidToExcalidrawSkeletons = (raw: unknown): ExcalidrawE
   if (!Array.isArray(raw)) return [];
   const out: ExcalidrawElementSkeleton[] = [];
 
+  const normalizeLabel = (value: unknown): Record<string, unknown> | undefined => {
+    if (!isRecord(value)) return undefined;
+    const text = asString(value.text);
+    if (!text?.trim()) return undefined;
+    return { ...value, text };
+  };
+
+  const normalizePoints = (pointsRaw: unknown): Array<[number, number]> => {
+    if (!Array.isArray(pointsRaw)) return [];
+    return pointsRaw
+      .map((p) => (Array.isArray(p) && p.length === 2 ? [Number(p[0]), Number(p[1])] : null))
+      .filter((p): p is [number, number] => Boolean(p) && p.every((n) => Number.isFinite(n)));
+  };
+
   for (const item of raw) {
     if (!isRecord(item)) continue;
     const type = asString(item.type);
@@ -80,38 +95,23 @@ export const normalizeMermaidToExcalidrawSkeletons = (raw: unknown): ExcalidrawE
     if (type === 'line' || type === 'arrow') {
       const x = asNumber(item.x);
       const y = asNumber(item.y);
-      const pointsRaw = item.points;
-      const points =
-        Array.isArray(pointsRaw)
-          ? pointsRaw
-            .map((p) => (Array.isArray(p) && p.length === 2 ? [Number(p[0]), Number(p[1])] : null))
-            .filter((p): p is [number, number] => Boolean(p) && p.every((n) => Number.isFinite(n)))
-          : [];
-      if (x !== null && y !== null && points.length >= 2) {
-        const labelRaw = isRecord(item.label) ? item.label : null;
-        const labelText = labelRaw ? asString(labelRaw.text) : null;
-        const labelFontSize = labelRaw ? asNumber(labelRaw.fontSize) : null;
-        const label =
-          labelText && labelText.trim()
-            ? {
-              text: labelText,
-              ...(labelFontSize ? { fontSize: labelFontSize } : {}),
-            }
-            : undefined;
+      const points = normalizePoints(item.points);
 
+      // Pass-through the modern skeleton format when possible.
+      if (x !== null && y !== null && points.length >= 2) {
         out.push({
+          ...item,
           type,
           x,
           y,
           points,
-          ...(asString(item.strokeColor) ? { strokeColor: String(item.strokeColor) } : {}),
-          ...(asNumber(item.strokeWidth) !== null ? { strokeWidth: Number(item.strokeWidth) } : {}),
           ...(asStrokeStyle(item.strokeStyle) ? { strokeStyle: asStrokeStyle(item.strokeStyle) } : {}),
-          ...(label ? { label } : {}),
+          ...(normalizeLabel(item.label) ? { label: normalizeLabel(item.label) } : {}),
         });
         continue;
       }
 
+      // Legacy skeleton format (startX/startY/endX/endY).
       const startX = asNumber(item.startX);
       const startY = asNumber(item.startY);
       const endX = asNumber(item.endX);
@@ -119,67 +119,33 @@ export const normalizeMermaidToExcalidrawSkeletons = (raw: unknown): ExcalidrawE
       if (startX === null || startY === null || endX === null || endY === null) continue;
       const fallbackPoints = [[0, 0], [endX - startX, endY - startY]] as const;
 
-      const strokeColor = asString(item.strokeColor);
-      const strokeWidth = asNumber(item.strokeWidth);
-      const strokeStyle = asStrokeStyle(item.strokeStyle);
-
-      const labelRaw = isRecord(item.label) ? item.label : null;
-      const labelText = labelRaw ? asString(labelRaw.text) : null;
-      const labelFontSize = labelRaw ? asNumber(labelRaw.fontSize) : null;
-      const label =
-        labelText && labelText.trim()
-          ? {
-            text: labelText,
-            ...(labelFontSize ? { fontSize: labelFontSize } : {}),
-          }
-          : undefined;
-
       out.push({
+        ...item,
         type,
         x: startX,
         y: startY,
         points: fallbackPoints,
-        ...(strokeColor ? { strokeColor } : {}),
-        ...(strokeWidth !== null ? { strokeWidth } : {}),
-        ...(strokeStyle ? { strokeStyle } : {}),
-        ...(label ? { label } : {}),
+        ...(asStrokeStyle(item.strokeStyle) ? { strokeStyle: asStrokeStyle(item.strokeStyle) } : {}),
+        ...(normalizeLabel(item.label) ? { label: normalizeLabel(item.label) } : {}),
       });
       continue;
     }
 
-    if (type === 'rectangle' || type === 'ellipse') {
+    if (type === 'rectangle' || type === 'ellipse' || type === 'diamond') {
       const x = asNumber(item.x);
       const y = asNumber(item.y);
       if (x === null || y === null) continue;
       const width = asNumber(item.width);
       const height = asNumber(item.height);
-      const strokeColor = asString(item.strokeColor);
-      const strokeWidth = asNumber(item.strokeWidth);
-      const strokeStyle = asStrokeStyle(item.strokeStyle);
-      const backgroundColor = asString(item.backgroundColor) ?? asString(item.bgColor);
-
-      const labelRaw = isRecord(item.label) ? item.label : null;
-      const labelText = labelRaw ? asString(labelRaw.text) : null;
-      const labelFontSize = labelRaw ? asNumber(labelRaw.fontSize) : null;
-      const label =
-        labelText && labelText.trim()
-          ? {
-            text: labelText,
-            ...(labelFontSize ? { fontSize: labelFontSize } : {}),
-          }
-          : undefined;
-
       out.push({
+        ...item,
         type,
         x,
         y,
         ...(width !== null ? { width } : {}),
         ...(height !== null ? { height } : {}),
-        ...(strokeColor ? { strokeColor } : {}),
-        ...(strokeWidth !== null ? { strokeWidth } : {}),
-        ...(strokeStyle ? { strokeStyle } : {}),
-        ...(backgroundColor ? { backgroundColor } : {}),
-        ...(label ? { label } : {}),
+        ...(asStrokeStyle(item.strokeStyle) ? { strokeStyle: asStrokeStyle(item.strokeStyle) } : {}),
+        ...(normalizeLabel(item.label) ? { label: normalizeLabel(item.label) } : {}),
       });
       continue;
     }
@@ -192,8 +158,8 @@ export const normalizeMermaidToExcalidrawSkeletons = (raw: unknown): ExcalidrawE
       const width = asNumber(item.width);
       const height = asNumber(item.height);
       const fontSize = asNumber(item.fontSize);
-      const strokeColor = asString(item.strokeColor) ?? asString(item.color);
       out.push({
+        ...item,
         type,
         text,
         x,
@@ -201,7 +167,6 @@ export const normalizeMermaidToExcalidrawSkeletons = (raw: unknown): ExcalidrawE
         ...(width !== null ? { width } : {}),
         ...(height !== null ? { height } : {}),
         ...(fontSize !== null ? { fontSize } : {}),
-        ...(strokeColor ? { strokeColor } : {}),
       });
       continue;
     }
@@ -262,4 +227,3 @@ export const parseMermaidToExcalidrawSkeletons = async (args: {
 
   return { skeletons, files: (files ?? {}) as BinaryFiles };
 };
-

@@ -263,6 +263,7 @@ describe('mermaidToExcalidrawService (integration)', () => {
     expect(skeletons.every((s) => s.type === 'image')).toBe(false);
     // Nodes + edges.
     expect(skeletons.some((s) => s.type === 'rectangle' || s.type === 'ellipse' || s.type === 'diamond')).toBe(true);
+    expect(skeletons.some((s) => s.type === 'diamond')).toBe(true);
     expect(skeletons.some((s) => s.type === 'arrow' || s.type === 'line')).toBe(true);
     // Edge labels should exist either as arrow.label or separate text elements.
     const hasLabel =
