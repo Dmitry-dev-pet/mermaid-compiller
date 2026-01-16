@@ -15,7 +15,7 @@ type ManualEditRecorderArgs = {
     meta?: Record<string, unknown>;
     nextMermaid?: Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'> | null;
     setCurrentRevisionId?: string | null;
-  }) => Promise<void>;
+  }) => Promise<unknown>;
   updateCurrentRevision: (nextMermaid: Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'>) => Promise<unknown>;
 };
 

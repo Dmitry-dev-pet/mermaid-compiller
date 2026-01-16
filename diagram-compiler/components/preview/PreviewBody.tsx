@@ -1,4 +1,5 @@
 import React from 'react';
+import { Maximize, Minus, Plus } from 'lucide-react';
 import { MermaidState } from '../../types';
 
 interface PreviewBodyProps {
@@ -19,6 +20,11 @@ interface PreviewBodyProps {
   hasBuildDocs: boolean;
   onMarkdownScroll?: () => void;
   onToggleFullScreen: () => void;
+  zoomPercent: number;
+  showZoomControls: boolean;
+  onZoomOut: () => void;
+  onZoomIn: () => void;
+  onFitToViewport: () => void;
 }
 
 const PreviewBody: React.FC<PreviewBodyProps> = ({
@@ -39,6 +45,11 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
   hasBuildDocs,
   onMarkdownScroll,
   onToggleFullScreen,
+  zoomPercent,
+  showZoomControls,
+  onZoomOut,
+  onZoomIn,
+  onFitToViewport,
 }) => {
   return (
     <div
@@ -112,6 +123,40 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
             onToggleFullScreen();
           }}
         />
+      )}
+      {showZoomControls && !isBuildDocsMode && svgMarkup && !isMarkdownMode && (
+        <div className="absolute bottom-3 right-3 z-20 flex flex-col items-center gap-1 rounded-lg border border-slate-200/70 dark:border-slate-700/70 bg-white/90 dark:bg-slate-900/90 shadow-sm px-1.5 py-1.5">
+          <button
+            type="button"
+            onClick={onZoomIn}
+            className="h-7 w-7 rounded-md border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+            title="Zoom in"
+            aria-label="Zoom in"
+          >
+            <Plus size={14} className="mx-auto" />
+          </button>
+          <div className="text-[11px] font-mono text-slate-700 dark:text-slate-200 select-none">
+            {`${zoomPercent}%`}
+          </div>
+          <button
+            type="button"
+            onClick={onZoomOut}
+            className="h-7 w-7 rounded-md border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+            title="Zoom out"
+            aria-label="Zoom out"
+          >
+            <Minus size={14} className="mx-auto" />
+          </button>
+          <button
+            type="button"
+            onClick={onFitToViewport}
+            className="mt-1 h-7 w-7 rounded-md border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+            title="Fit"
+            aria-label="Fit"
+          >
+            <Maximize size={14} className="mx-auto" />
+          </button>
+        </div>
       )}
       {!isBuildDocsMode && isMarkdownMode && (
         <div

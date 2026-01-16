@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Circle, Copy, Download, Layers, Link2, Maximize2, Minimize2, Moon, Palette, PenLine, RefreshCw, Scan, SquarePen, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Circle, Copy, Download, Layers, Link2, Maximize, Maximize2, Minimize2, Moon, Palette, PenLine, RefreshCw, SquarePen } from 'lucide-react';
 import { MermaidDirection } from '../../utils/inlineDirectionCommand';
 import { MermaidLook } from '../../utils/inlineLookCommand';
 import type { FlowchartEdgeStyle, FlowchartEdgeStyleUpdate } from '../../utils/flowchartArrowStyle';
@@ -12,11 +12,16 @@ interface PreviewHeaderControlsProps {
   title: string;
   isBuildDocsMode: boolean;
   isMarkdownMode: boolean;
+  showNotebookExcalidrawToggle: boolean;
+  isNotebookExcalidrawMode: boolean;
+  onToggleNotebookExcalidraw: () => void;
   showWhiteboardToggle: boolean;
   isWhiteboardMode: boolean;
   isWhiteboardDirty: boolean;
+  isWhiteboardAutoSync: boolean;
   onToggleWhiteboard: () => void;
   onWhiteboardSyncFromCode: () => void;
+  onToggleWhiteboardAutoSync: () => void;
   markdownNavEnabled: boolean;
   markdownNavLabel: string;
   markdownPrevDisabled: boolean;
@@ -62,11 +67,16 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
   title,
   isBuildDocsMode,
   isMarkdownMode,
+  showNotebookExcalidrawToggle,
+  isNotebookExcalidrawMode,
+  onToggleNotebookExcalidraw,
   showWhiteboardToggle,
   isWhiteboardMode,
   isWhiteboardDirty,
+  isWhiteboardAutoSync,
   onToggleWhiteboard,
   onWhiteboardSyncFromCode,
+  onToggleWhiteboardAutoSync,
   markdownNavEnabled,
   markdownNavLabel,
   markdownPrevDisabled,
@@ -209,6 +219,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
     !isBuildDocsMode && (showThemeControl || showDirectionControl || showLookControl || showArrowControl);
   const canZoomControls = !isBuildDocsMode && !isMarkdownMode && !isWhiteboardMode;
   const canExportControls = !isBuildDocsMode && !isWhiteboardMode;
+  const canNotebookExcalidrawToggle = !isBuildDocsMode && isMarkdownMode && showNotebookExcalidrawToggle;
 
   return (
     <div
@@ -257,49 +268,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
 
         {!isBuildDocsMode && (
           <div className="flex items-center gap-2 normal-case tracking-normal">
-            {canZoomControls && (
-              <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
-                <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
-                  View
-                </span>
-                <button
-                  type="button"
-                  onClick={onZoomOut}
-                  disabled={!svgMarkup}
-                  className={`${HEADER_CONTROL_BUTTON} ml-1`}
-                  title="Zoom out"
-                  aria-label="Zoom out"
-                >
-                  <ZoomOut size={14} />
-                  -
-                </button>
-                <button
-                  type="button"
-                  onClick={onFitToViewport}
-                  disabled={!svgMarkup}
-                  className={HEADER_CONTROL_BUTTON}
-                  title="Fit (center & maximize)"
-                  aria-label="Fit (center & maximize)"
-                >
-                  <Scan size={14} />
-                  Fit
-                </button>
-                <span className="text-[11px] text-[var(--control-text)] font-mono w-12 text-center select-none">
-                  {svgMarkup ? `${zoomPercent}%` : '--%'}
-                </span>
-                <button
-                  type="button"
-                  onClick={onZoomIn}
-                  disabled={!svgMarkup}
-                  className={HEADER_CONTROL_BUTTON}
-                  title="Zoom in"
-                  aria-label="Zoom in"
-                >
-                  <ZoomIn size={14} />
-                  +
-                </button>
-              </div>
-            )}
+            {canZoomControls ? null : null}
 
             {canExportControls && (
               <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
@@ -330,6 +299,25 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
               </div>
             )}
 
+            {canNotebookExcalidrawToggle && (
+              <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
+                <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
+                  View
+                </span>
+                <button
+                  type="button"
+                  onClick={onToggleNotebookExcalidraw}
+                  className={`${HEADER_CONTROL_BUTTON} ml-1`}
+                  title={isNotebookExcalidrawMode ? 'Back to notebook preview' : 'Render active diagram in Excalidraw'}
+                  aria-label={isNotebookExcalidrawMode ? 'Back to notebook preview' : 'Render active diagram in Excalidraw'}
+                  aria-pressed={isNotebookExcalidrawMode}
+                >
+                  {isNotebookExcalidrawMode ? <Maximize size={14} /> : <SquarePen size={14} />}
+                  {isNotebookExcalidrawMode ? 'Notebook' : 'ED'}
+                </button>
+              </div>
+            )}
+
             {showWhiteboardToggle && (
               <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
                 <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
@@ -342,12 +330,18 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                   title={isWhiteboardMode ? 'Back to Mermaid preview' : 'Edit in whiteboard'}
                   aria-label={isWhiteboardMode ? 'Back to preview' : 'Edit in whiteboard'}
                 >
-                  {isWhiteboardMode ? <Scan size={14} /> : <PenLine size={14} />}
+                  {isWhiteboardMode ? <Maximize size={14} /> : <PenLine size={14} />}
                   {isWhiteboardMode ? 'Preview' : 'Whiteboard'}
-                  {isWhiteboardMode && isWhiteboardDirty ? (
-                    <span className="ml-1 text-[10px] text-amber-600 dark:text-amber-300" title="Unsaved changes">
-                      •
-                    </span>
+                  {isWhiteboardMode ? (
+                    <span
+                      className={`ml-2 inline-flex h-2 w-2 rounded-full ${
+                        isWhiteboardDirty
+                          ? 'bg-amber-500 dark:bg-amber-300'
+                          : 'bg-emerald-500/70 dark:bg-emerald-300/70'
+                      }`}
+                      title={isWhiteboardDirty ? 'Unsaved changes' : 'Saved'}
+                      aria-label={isWhiteboardDirty ? 'Unsaved changes' : 'Saved'}
+                    />
                   ) : null}
                 </button>
                 {isWhiteboardMode && (
@@ -360,6 +354,23 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                   >
                     <RefreshCw size={14} />
                     Sync
+                  </button>
+                )}
+                {isWhiteboardMode && (
+                  <button
+                    type="button"
+                    onClick={onToggleWhiteboardAutoSync}
+                    className={`${HEADER_CONTROL_BUTTON} ${
+                      isWhiteboardAutoSync
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
+                        : ''
+                    }`}
+                    title={isWhiteboardAutoSync ? 'Disable auto sync from code' : 'Enable auto sync from code'}
+                    aria-label={isWhiteboardAutoSync ? 'Disable auto sync from code' : 'Enable auto sync from code'}
+                    aria-pressed={isWhiteboardAutoSync}
+                  >
+                    <Link2 size={14} />
+                    Auto
                   </button>
                 )}
               </div>

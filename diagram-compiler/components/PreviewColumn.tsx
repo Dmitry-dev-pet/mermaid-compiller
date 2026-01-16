@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import svgPanZoom from 'svg-pan-zoom';
-import { EditorTab, MermaidState } from '../types';
+import type { ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types';
+import { DiagramType, EditorTab, MermaidState } from '../types';
 import { useDiagramExport } from '../hooks/studio/useDiagramExport';
 import { MermaidThemeName } from '../utils/inlineThemeCommand';
 import { extractInlineDirectionCommand, MermaidDirection } from '../utils/inlineDirectionCommand';
@@ -14,7 +15,12 @@ import {
 import { extractFlowchartLinkStylePreset, FlowchartLinkStylePresetId } from '../utils/flowchartLinkStyle';
 import { extractFlowchartCurve, FlowchartCurve } from '../utils/flowchartCurveConfig';
 import { extractFrontmatterThemeVariables } from '../utils/mermaidFrontmatterThemeVariables';
-import { extractMermaidThemePreset, getMermaidThemePresetPanelBackground, MermaidThemePresetId } from '../utils/mermaidThemePreset';
+import {
+  extractMermaidThemePreset,
+  getMermaidThemePresetPanelBackground,
+  MermaidThemePresetId,
+  MERMAID_THEME_PRESETS,
+} from '../utils/mermaidThemePreset';
 import { extractMermaidSvgBackgroundColor } from '../utils/mermaidSvgBackground';
 import {
   applyInlineMermaidDirectives,
@@ -23,6 +29,7 @@ import {
   MermaidMarkdownBlock,
   validateMermaidDiagramCode,
 } from '../services/mermaidService';
+import { initializeMermaid } from '../services/mermaidService';
 import { ScrollSyncMeasure, ScrollSyncPayload, useScrollSync } from '../hooks/studio/useScrollSync';
 import { useMarkdownMermaidBlockState } from '../hooks/markdown/useMarkdownMermaidBlockState';
 import { useMarkdownPreview } from '../hooks/preview/useMarkdownPreview';
@@ -34,10 +41,12 @@ import {
   getInlineDirectionOptions,
 } from '../utils/diagramTypeMeta';
 import { getSystemPromptModeFromPath, isSystemPromptPath } from '../utils/systemPrompts';
+import { buildNotebookExcalidrawScene } from '../services/excalidraw/notebookRibbonBuilder';
 import PreviewHeaderControls from './preview/PreviewHeaderControls';
 import PreviewBody from './preview/PreviewBody';
 import DiagramWhiteboard from './preview/DiagramWhiteboard';
 import './markdown-preview.css';
+import { parseSvgViewBox } from '../utils/svgViewBox';
 
 interface PreviewColumnProps {
   mermaidState: MermaidState;
@@ -69,25 +78,21 @@ interface PreviewColumnProps {
   onHoverMarkdownIndex: (index: number | null) => void;
   historyRevisionId: string | null;
   whiteboardSceneJson: string | null;
+  whiteboardBundleJson: string | null;
   onSaveWhiteboardSceneJson: (sceneJson: string | null) => Promise<unknown> | unknown;
 }
 
-type ViewBox = { x: number; y: number; width: number; height: number };
-
 const FIT_PADDING_RATIO = 0.05;
 
-const parseViewBoxAttr = (value: string | null): ViewBox | null => {
-  if (!value) return null;
-  const parts = value
-    .trim()
-    .split(/[\s,]+/)
-    .map((p) => Number(p));
-  if (parts.length !== 4) return null;
-  const [x, y, width, height] = parts;
-  if (![x, y, width, height].every((n) => Number.isFinite(n))) return null;
-  if (!(width > 0 && height > 0)) return null;
-  return { x, y, width, height };
+const hashString = (s: string): number => {
+  // djb2
+  let hash = 5381;
+  for (let i = 0; i < s.length; i += 1) {
+    hash = (hash << 5) + hash + s.charCodeAt(i);
+  }
+  return hash >>> 0;
 };
+
 
 const PreviewColumn: React.FC<PreviewColumnProps> = ({
   mermaidState,
@@ -119,16 +124,26 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   onHoverMarkdownIndex,
   historyRevisionId,
   whiteboardSceneJson,
+  whiteboardBundleJson,
   onSaveWhiteboardSceneJson,
 }) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const svgMountRef = useRef<HTMLDivElement>(null);
   const markdownMountRef = useRef<HTMLDivElement>(null);
   const docsMountRef = useRef<HTMLDivElement>(null);
+  const WHITEBOARD_SUPPORTED_TYPES = useMemo<Set<DiagramType>>(() => new Set(['flowchart', 'sequence', 'class']), []);
   const [previewMode, setPreviewMode] = useState<'preview' | 'whiteboard'>('preview');
   const [whiteboardResetKey, setWhiteboardResetKey] = useState(0);
   const [isWhiteboardDirty, setIsWhiteboardDirty] = useState(false);
   const [whiteboardInitialSceneOverride, setWhiteboardInitialSceneOverride] = useState<string | null | undefined>(undefined);
+  const [isWhiteboardAutoSync, setIsWhiteboardAutoSync] = useState(false);
+  const [whiteboardZoomPercent, setWhiteboardZoomPercent] = useState(100);
+  const [isNotebookExcalidrawMode, setIsNotebookExcalidrawMode] = useState(false);
+  const [notebookExcalidrawScene, setNotebookExcalidrawScene] = useState<ExcalidrawInitialDataState | null>(null);
+  const lastNotebookExcalidrawSignatureRef = useRef<string>('');
+  const inFlightNotebookExcalidrawSignatureRef = useRef<string>('');
+  const pendingPreviewZoomRef = useRef<number | null>(null);
+  const lastWhiteboardSourceRef = useRef<{ code: string; svg: string } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const bindFunctionsRef = useRef<((element: Element) => void) | null>(null);
   const panZoomRef = useRef<ReturnType<typeof svgPanZoom> | null>(null);
@@ -150,6 +165,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     activeIndex: markdownMermaidActiveIndex,
     activeTab: activeEditorTab,
   });
+
   const codeForRender = isMarkdownMermaidMode ? activeMarkdownBlock?.code ?? '' : mermaidState.code;
   const activeDiagramType = useMemo(() => {
     if (isMarkdownMermaidMode) {
@@ -392,19 +408,30 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     updateZoomPercent(instance.getZoom());
   }, [updateZoomPercent]);
 
-  const zoomIn = useCallback(() => {
+  const clampPreviewZoom = useCallback((percent: number) => Math.min(600, Math.max(15, percent)), []);
+  const snapPreviewZoom = useCallback((percent: number) => Math.round(percent / 10) * 10, []);
+
+  const applyPreviewZoom = useCallback((nextPercent: number) => {
     const instance = panZoomRef.current;
     if (!instance) return;
-    instance.zoomIn();
-    updateZoomPercent();
-  }, [updateZoomPercent]);
+    const percent = clampPreviewZoom(snapPreviewZoom(nextPercent));
+    const scale = percent / 100;
+    try {
+      instance.zoom(scale);
+      instance.center();
+      updateZoomPercent(scale);
+    } catch {
+      // Ignore zoom errors from svg-pan-zoom.
+    }
+  }, [clampPreviewZoom, snapPreviewZoom, updateZoomPercent]);
+
+  const zoomIn = useCallback(() => {
+    applyPreviewZoom(zoomPercent + 10);
+  }, [applyPreviewZoom, zoomPercent]);
 
   const zoomOut = useCallback(() => {
-    const instance = panZoomRef.current;
-    if (!instance) return;
-    instance.zoomOut();
-    updateZoomPercent();
-  }, [updateZoomPercent]);
+    applyPreviewZoom(zoomPercent - 10);
+  }, [applyPreviewZoom, zoomPercent]);
 
   useEffect(() => {
     if (isBuildDocsMode) return;
@@ -424,6 +451,26 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     panZoomRef.current = null;
     setZoomPercent(100);
   }, [codeForRender, isBuildDocsMode, isMarkdownMermaidMode, isMarkdownMode]);
+
+  useEffect(() => {
+    if (isBuildDocsMode) return;
+    if (previewMode !== 'preview') return;
+    if (isNotebookExcalidrawMode) return;
+
+    // Whiteboard conversion can re-initialize Mermaid with a different theme/look.
+    // When returning to preview (esp. markdown/notebook), re-apply the app-level
+    // Mermaid preset so SVG rendering colors are consistent without reload.
+    const mermaidPreset = MERMAID_THEME_PRESETS.find((p) => p.id === appThemePresetId);
+    if (mermaidPreset?.themeVariables) {
+      initializeMermaid({ theme: 'base', themeVariables: mermaidPreset.themeVariables as Record<string, unknown> });
+      return;
+    }
+    if (mermaidPreset) {
+      initializeMermaid(mermaidPreset.theme);
+      return;
+    }
+    initializeMermaid('default');
+  }, [appThemePresetId, isBuildDocsMode, isNotebookExcalidrawMode, previewMode]);
 
   useEffect(() => {
     if (isMarkdownMode) return;
@@ -491,7 +538,9 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
 
   useEffect(() => {
     if (isBuildDocsMode) return;
+    if (previewMode !== 'preview') return;
     if (!isMarkdownMode) return;
+    if (isNotebookExcalidrawMode) return;
     const mount = markdownMountRef.current;
     if (!mount) return;
     renderMarkdown(mount);
@@ -575,6 +624,8 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     markdownMermaidDiagnostics,
     handleHoverSync,
     onHoverMarkdownIndex,
+    isNotebookExcalidrawMode,
+    previewMode,
     renderMarkdown,
     setMarkdownIndexFromPreview,
     refreshPreviewOffsets,
@@ -674,11 +725,12 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     let didInit = false;
     let attempts = 0;
     let isActive = true;
+    let removeWheelListener: (() => void) | null = null;
     const ensureViewBoxAndInit = () => {
       if (didInit) return;
       attempts += 1;
 
-      const initialViewBox = parseViewBoxAttr(svgEl.getAttribute('viewBox'));
+      const initialViewBox = parseSvgViewBox(svgEl.getAttribute('viewBox'));
       if (!initialViewBox) {
         const vb = computeFitViewBoxFromBBox();
         if (vb) {
@@ -686,7 +738,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         }
       }
 
-      const viewBoxAfter = parseViewBoxAttr(svgEl.getAttribute('viewBox'));
+      const viewBoxAfter = parseSvgViewBox(svgEl.getAttribute('viewBox'));
       if (viewBoxAfter) {
         didInit = true;
         const instance = svgPanZoom(svgEl as unknown as SVGSVGElement, {
@@ -696,7 +748,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
           center: true,
           controlIconsEnabled: false,
           dblClickZoomEnabled: false,
-          mouseWheelZoomEnabled: true,
+          mouseWheelZoomEnabled: false,
           preventMouseEventsDefault: false,
           minZoom: 0.15,
           maxZoom: 6,
@@ -714,7 +766,26 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
           updateZoomPercent(instance.getZoom());
         });
 
-        return;
+        const handleWheel = (event: WheelEvent) => {
+          if (!panZoomRef.current) return;
+          const isZoomGesture = event.ctrlKey || event.metaKey;
+          if (!isZoomGesture) {
+            event.preventDefault();
+            panZoomRef.current.panBy({ x: -event.deltaX, y: -event.deltaY });
+            return;
+          }
+
+          event.preventDefault();
+          const rect = svgEl.getBoundingClientRect();
+          const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+          const step = 1.1;
+          const scale = event.deltaY < 0 ? step : 1 / step;
+          panZoomRef.current.zoomAtPointBy(scale, point);
+          updateZoomPercent(panZoomRef.current.getZoom());
+        };
+
+        svgEl.addEventListener('wheel', handleWheel, { passive: false });
+        removeWheelListener = () => svgEl.removeEventListener('wheel', handleWheel);
       }
 
       if (attempts < 30) rafId = requestAnimationFrame(ensureViewBoxAndInit);
@@ -724,6 +795,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     return () => {
       isActive = false;
       cancelAnimationFrame(rafId);
+      removeWheelListener?.();
       panZoomRef.current?.destroy();
       panZoomRef.current = null;
     };
@@ -739,6 +811,26 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     });
     return () => cancelAnimationFrame(rafId);
   }, [fitToViewport, isFullScreen, isBuildDocsMode, previewMode, svgMarkup]);
+
+  useEffect(() => {
+    if (previewMode !== 'preview') return;
+    const target = pendingPreviewZoomRef.current;
+    if (target === null) return;
+    const instance = panZoomRef.current;
+    if (!instance) return;
+    const nextZoom = target / 100;
+    try {
+      const currentZoom = instance.getZoom();
+      if (Math.abs(currentZoom - nextZoom) > 0.01) {
+        instance.zoom(nextZoom);
+        updateZoomPercent(nextZoom);
+        instance.center();
+      }
+    } catch {
+      // Ignore zoom sync errors from svg-pan-zoom.
+    }
+    pendingPreviewZoomRef.current = null;
+  }, [previewMode, svgMarkup, updateZoomPercent]);
 
   const previewBackgroundColor = useMemo(() => {
     if (isBuildDocsMode) return null;
@@ -759,12 +851,26 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     return getMermaidThemePresetPanelBackground(null, appThemePresetId);
   }, [appThemePresetId, codeForRender, isBuildDocsMode, isMarkdownMode, isThemePresetMixed, selectedThemePreset, svgMarkup]);
 
+  const isWhiteboardSupported = Boolean(activeDiagramType && WHITEBOARD_SUPPORTED_TYPES.has(activeDiagramType));
   const canWhiteboard = Boolean(
     !isBuildDocsMode
     && !isMarkdownMode
+    && isWhiteboardSupported
     && svgMarkup.trim().length > 0
     && historyRevisionId
   );
+
+  const canNotebookExcalidraw = Boolean(
+    !isBuildDocsMode
+    && isMarkdownMode
+    && markdownMermaidBlocks.length > 0
+  );
+
+  useEffect(() => {
+    if (isNotebookExcalidrawMode && !canNotebookExcalidraw) {
+      setIsNotebookExcalidrawMode(false);
+    }
+  }, [canNotebookExcalidraw, isNotebookExcalidrawMode]);
 
   useEffect(() => {
     // Whiteboard mode is only for single Mermaid SVG preview.
@@ -773,10 +879,87 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     }
   }, [canWhiteboard, previewMode]);
 
+  useEffect(() => {
+    if (!isNotebookExcalidrawMode) {
+      setNotebookExcalidrawScene(null);
+      lastNotebookExcalidrawSignatureRef.current = '';
+      inFlightNotebookExcalidrawSignatureRef.current = '';
+      return;
+    }
+    if (!isMarkdownMode || isBuildDocsMode) return;
+    if (!markdownMermaidBlocks.length) {
+      setNotebookExcalidrawScene(null);
+      return;
+    }
+
+    let cancelled = false;
+    const blocksHash = hashString(markdownMermaidBlocks.map((b) => b.code.trim()).join('\n---\n'));
+    const whiteboardHash = hashString(whiteboardBundleJson?.trim() ?? '');
+    const basePresetId = (!isThemePresetMixed && selectedThemePreset) ? selectedThemePreset : appThemePresetId;
+    const signature = `${theme}:${previewBackgroundColor ?? ''}:${String(basePresetId)}:${blocksHash}:${whiteboardHash}`;
+    if (signature === lastNotebookExcalidrawSignatureRef.current) return;
+    if (signature === inFlightNotebookExcalidrawSignatureRef.current) return;
+    inFlightNotebookExcalidrawSignatureRef.current = signature;
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const nextScene = await buildNotebookExcalidrawScene({
+          mermaidCode: mermaidState.code,
+          markdownBlocks: markdownMermaidBlocks,
+          theme,
+          basePresetId,
+          previewBackgroundColor,
+          whiteboardBundleJson,
+          shouldCancel: () => cancelled,
+        });
+        if (cancelled) return;
+        if (!nextScene) {
+          setNotebookExcalidrawScene(null);
+          return;
+        }
+
+        setNotebookExcalidrawScene(nextScene);
+        lastNotebookExcalidrawSignatureRef.current = signature;
+        inFlightNotebookExcalidrawSignatureRef.current = '';
+      })();
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      if (inFlightNotebookExcalidrawSignatureRef.current === signature) {
+        inFlightNotebookExcalidrawSignatureRef.current = '';
+      }
+    };
+  }, [
+    isBuildDocsMode,
+    isMarkdownMode,
+    isNotebookExcalidrawMode,
+    isThemePresetMixed,
+    markdownMermaidBlocks,
+    previewBackgroundColor,
+    selectedThemePreset,
+    appThemePresetId,
+    theme,
+    whiteboardBundleJson,
+  ]);
+
   const handleToggleWhiteboard = useCallback(() => {
     setIsWhiteboardDirty(false);
     setWhiteboardInitialSceneOverride(undefined);
-    setPreviewMode((prev) => (prev === 'whiteboard' ? 'preview' : 'whiteboard'));
+    setPreviewMode((prev) => {
+      if (prev === 'whiteboard') {
+        pendingPreviewZoomRef.current = whiteboardZoomPercent;
+        setZoomPercent(whiteboardZoomPercent);
+        return 'preview';
+      }
+      setWhiteboardZoomPercent(zoomPercent);
+      return 'whiteboard';
+    });
+  }, [whiteboardZoomPercent, zoomPercent]);
+
+  const handleToggleNotebookExcalidraw = useCallback(() => {
+    setIsNotebookExcalidrawMode((value) => !value);
   }, []);
 
   const handleWhiteboardSyncFromCode = useCallback(() => {
@@ -789,17 +972,39 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     setWhiteboardResetKey((v) => v + 1);
   }, [canWhiteboard, onSaveWhiteboardSceneJson]);
 
+  useEffect(() => {
+    const snapshot = { code: codeForRender, svg: svgMarkup };
+    const prev = lastWhiteboardSourceRef.current;
+    lastWhiteboardSourceRef.current = snapshot;
+
+    if (!isWhiteboardAutoSync) return;
+    if (!canWhiteboard || previewMode !== 'whiteboard') return;
+    if (!prev) return;
+    if (prev.code === snapshot.code && prev.svg === snapshot.svg) return;
+    if (!snapshot.svg.trim()) return;
+
+    setIsWhiteboardDirty(false);
+    setWhiteboardInitialSceneOverride(null);
+    void Promise.resolve(onSaveWhiteboardSceneJson(null)).catch(() => {});
+    setWhiteboardResetKey((v) => v + 1);
+  }, [canWhiteboard, codeForRender, isWhiteboardAutoSync, previewMode, svgMarkup]);
+
   return (
     <div className="h-full flex flex-col bg-transparent" style={previewBackgroundColor ? { backgroundColor: previewBackgroundColor } : undefined}>
       <PreviewHeaderControls
         title={isBuildDocsMode ? 'Build Docs' : 'Preview'}
         isBuildDocsMode={isBuildDocsMode}
         isMarkdownMode={isMarkdownMode}
+        showNotebookExcalidrawToggle={canNotebookExcalidraw}
+        isNotebookExcalidrawMode={isNotebookExcalidrawMode}
+        onToggleNotebookExcalidraw={handleToggleNotebookExcalidraw}
         showWhiteboardToggle={canWhiteboard}
         isWhiteboardMode={previewMode === 'whiteboard'}
         isWhiteboardDirty={isWhiteboardDirty}
+        isWhiteboardAutoSync={isWhiteboardAutoSync}
         onToggleWhiteboard={handleToggleWhiteboard}
         onWhiteboardSyncFromCode={handleWhiteboardSyncFromCode}
+        onToggleWhiteboardAutoSync={() => setIsWhiteboardAutoSync((value) => !value)}
         markdownNavEnabled={markdownNavEnabled}
         markdownNavLabel={markdownNavLabel}
         markdownPrevDisabled={markdownMermaidActiveIndex <= 0}
@@ -839,7 +1044,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         isExporting={isExporting}
         onExportSvg={exportSvg}
         onExportPng={exportPng}
-        zoomPercent={zoomPercent}
+        zoomPercent={previewMode === 'whiteboard' ? whiteboardZoomPercent : zoomPercent}
         onZoomOut={zoomOut}
         onZoomIn={zoomIn}
         onFitToViewport={fitToViewport}
@@ -853,8 +1058,30 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
           mermaidCode={codeForRender}
           svgMarkup={svgMarkup}
           initialSceneJson={whiteboardInitialSceneOverride !== undefined ? whiteboardInitialSceneOverride : whiteboardSceneJson}
+          zoomPercent={whiteboardZoomPercent}
+          onZoomPercentChange={setWhiteboardZoomPercent}
           onAutosave={(sceneJson) => onSaveWhiteboardSceneJson(sceneJson)}
           onDirtyChange={setIsWhiteboardDirty}
+        />
+      ) : isMarkdownMode && isNotebookExcalidrawMode ? (
+        <DiagramWhiteboard
+          key={`notebook-ed:tiles`}
+          theme={theme}
+          backgroundColor={previewBackgroundColor}
+          mermaidCode=""
+          svgMarkup=""
+          initialSceneJson={null}
+          initialDataOverride={notebookExcalidrawScene}
+          zoomPercent={100}
+          onAutosave={() => {}}
+          mode="view"
+          zoomMode="auto"
+          fitMode="width"
+          scrollMode="vertical"
+          onNotebookDiagramClick={(index) => {
+            setIsNotebookExcalidrawMode(false);
+            setMarkdownIndexFromPreview(index);
+          }}
         />
       ) : (
         <PreviewBody
@@ -875,6 +1102,11 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
           hasBuildDocs={Boolean(activeBuildDoc?.text)}
           onMarkdownScroll={handleMarkdownScroll}
           onToggleFullScreen={onToggleFullScreen}
+          zoomPercent={previewMode === 'whiteboard' ? whiteboardZoomPercent : zoomPercent}
+          showZoomControls={!isMarkdownMode && previewMode === 'preview' && Boolean(svgMarkup)}
+          onZoomOut={zoomOut}
+          onZoomIn={zoomIn}
+          onFitToViewport={fitToViewport}
         />
       )}
     </div>

@@ -1,16 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CaptureUpdateAction, convertToExcalidrawElements, Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
-import mermaid from 'mermaid';
-import '@excalidraw/excalidraw/index.css';
+import {
+  CaptureUpdateAction,
+  convertToExcalidrawElements,
+  serializeAsJSON,
+} from '@excalidraw/excalidraw';
 import './diagram-whiteboard.css';
-import { Code2, Copy, Download, X } from 'lucide-react';
 import { extractFrontmatterThemeVariables } from '../../utils/mermaidFrontmatterThemeVariables';
 import { extractMermaidSvgBackgroundColor } from '../../utils/mermaidSvgBackground';
 import {
   detectMermaidDiagramTypeHint,
-  parseMermaidToExcalidrawSkeletons,
   type MermaidDiagramTypeHint,
 } from '../../services/excalidraw/mermaidToExcalidrawService';
+import { renderMermaidToExcalidrawElements } from '../../services/excalidraw/mermaidToExcalidrawRenderer';
 import type {
   AppState,
   BinaryFileData,
@@ -20,6 +21,15 @@ import type {
   ExcalidrawInitialDataState,
 } from '@excalidraw/excalidraw/types';
 import type { ExcalidrawElement, OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
+import { useWhiteboardViewLock, type WhiteboardDebugRuntime } from './useWhiteboardViewLock';
+import DiagramWhiteboardCanvas from './DiagramWhiteboardCanvas';
+import WhiteboardDebugOverlay, { type WhiteboardFitCalc } from './WhiteboardDebugOverlay';
+import {
+  buildWhiteboardAppState,
+  buildWhiteboardInitialData,
+  clampWhiteboardZoom,
+  WHITEBOARD_EDITABLE_APPSTATE,
+} from './whiteboardAppState';
 
 type ExcalidrawElementSkeletonList = NonNullable<Parameters<typeof convertToExcalidrawElements>[0]>;
 type ExcalidrawElementSkeleton = ExcalidrawElementSkeletonList[number];
@@ -30,7 +40,15 @@ type Props = {
   mermaidCode: string;
   svgMarkup: string;
   initialSceneJson: string | null;
-  onAutosave: (sceneJson: string) => void;
+  initialDataOverride?: ExcalidrawInitialDataState | null;
+  zoomPercent: number;
+  mode?: 'edit' | 'view';
+  zoomMode?: 'controlled' | 'auto';
+  fitMode?: 'content' | 'width';
+  scrollMode?: 'none' | 'vertical';
+  onNotebookDiagramClick?: (index: number) => void;
+  onZoomPercentChange?: (nextZoomPercent: number) => void;
+  onAutosave: (sceneJson: string) => Promise<unknown> | unknown;
   onDirtyChange?: (dirty: boolean) => void;
 };
 
@@ -45,27 +63,6 @@ type MermaidLanggraphSceneMeta = {
 };
 
 const MLG_META_KEY = '__mermaidLanggraph' as const;
-
-// Mermaid v11 can throw when re-initialized while diagrams are already registered
-// (e.g. "Diagram flowchart-v2 already registered."). Our app re-initializes
-// Mermaid on theme/look changes; `@excalidraw/mermaid-to-excalidraw` calls
-// `mermaid.initialize()` internally and doesn't swallow the error.
-// Patch once per page-load so conversion doesn't always fall back to svg-image.
-let mermaidInitializePatched = false;
-const patchMermaidInitialize = () => {
-  if (mermaidInitializePatched) return;
-  mermaidInitializePatched = true;
-  const original = mermaid.initialize.bind(mermaid);
-  mermaid.initialize = ((config: unknown) => {
-    try {
-      return original(config as any);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes('already registered')) return;
-      throw error;
-    }
-  }) as typeof mermaid.initialize;
-};
 
 const pickAppStateForSave = (appState: AppState): Partial<AppState> => {
   return {
@@ -215,7 +212,13 @@ const readSceneMeta = (record: Record<string, unknown>): MermaidLanggraphSceneMe
   if (!raw || typeof raw !== 'object') return null;
   const meta = raw as Partial<MermaidLanggraphSceneMeta>;
   if (meta.v !== 2) return null;
-  if (meta.diagramType !== 'flowchart' && meta.diagramType !== 'er' && meta.diagramType !== 'sequence' && meta.diagramType !== 'unknown') {
+  if (
+    meta.diagramType !== 'flowchart'
+    && meta.diagramType !== 'er'
+    && meta.diagramType !== 'sequence'
+    && meta.diagramType !== 'class'
+    && meta.diagramType !== 'unknown'
+  ) {
     return null;
   }
   if (typeof meta.mermaidHash !== 'number' || typeof meta.svgHash !== 'number') return null;
@@ -235,15 +238,6 @@ const countElementTypes = (elements: unknown[] | undefined): Record<string, numb
   }, {});
 };
 
-const EDITABLE_APPSTATE: Partial<AppState> = {
-  viewModeEnabled: false,
-  zenModeEnabled: false,
-  activeTool: {
-    type: 'selection',
-    lastActiveTool: null,
-    locked: false,
-  } as AppState['activeTool'],
-};
 
 const toSvgDataUrl = (svg: string): DataURL => {
   // Prefer base64 for maximum compatibility with Excalidraw imports.
@@ -563,12 +557,70 @@ const buildSceneFromSvgVectors = async (args: {
       }
     };
 
-    const elementsSkeleton: Array<Record<string, unknown>> = [];
+    type NodeCandidate = {
+      id: string;
+      type: 'rectangle' | 'ellipse' | 'diamond';
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      strokeColor: string;
+      backgroundColor: string;
+      strokeWidth: number;
+      label?: { text: string; fontSize: number };
+    };
+    type EdgeCandidate = {
+      id: string;
+      x: number;
+      y: number;
+      points: Array<[number, number]>;
+      strokeColor: string;
+      strokeWidth: number;
+      startArrowhead?: 'arrow' | 'dot' | 'triangle' | null;
+      endArrowhead?: 'arrow' | 'dot' | 'triangle' | null;
+      label?: { text: string; fontSize: number };
+      start?: { id: string };
+      end?: { id: string };
+    };
+    type TextCandidate = {
+      text: string;
+      x: number;
+      y: number;
+      fontSize: number;
+      strokeColor: string;
+      width?: number;
+      height?: number;
+    };
+
+    const nodes: NodeCandidate[] = [];
+    const edges: EdgeCandidate[] = [];
+    const texts: TextCandidate[] = [];
+    const nodeDedup = new Set<string>();
+    let nodeSeq = 0;
+    let edgeSeq = 0;
+
     const seenTextKeys = new Set<string>();
     const shouldSkipText = (args: { text: string; x: number; y: number }) => {
       const key = `${Math.round(args.x)}:${Math.round(args.y)}:${args.text}`;
       if (seenTextKeys.has(key)) return true;
       seenTextKeys.add(key);
+      return false;
+    };
+
+    const registerNode = (node: Omit<NodeCandidate, 'id'>) => {
+      const key = `${node.type}:${Math.round(node.x)}:${Math.round(node.y)}:${Math.round(node.width)}:${Math.round(node.height)}`;
+      if (nodeDedup.has(key)) return;
+      nodeDedup.add(key);
+      nodes.push({ ...node, id: `node-${nodeSeq++}` });
+    };
+
+    const hasAncestorClassFragment = (el: Element, fragments: string[]): boolean => {
+      let cur: Element | null = el;
+      while (cur) {
+        const cls = (cur.getAttribute('class') ?? '').toLowerCase();
+        if (fragments.some((f) => cls.includes(f))) return true;
+        cur = cur.parentElement;
+      }
       return false;
     };
 
@@ -589,7 +641,7 @@ const buildSceneFromSvgVectors = async (args: {
       const fill = getSvgPaint(rectEl, 'fill') ?? 'transparent';
       const strokeWidth = getSvgStrokeWidth(rectEl) ?? 1;
 
-      elementsSkeleton.push({
+      registerNode({
         type: 'rectangle',
         x: p.x,
         y: p.y,
@@ -598,9 +650,63 @@ const buildSceneFromSvgVectors = async (args: {
         strokeColor: stroke,
         backgroundColor: fill === 'transparent' ? 'transparent' : fill,
         strokeWidth,
-        locked: false,
       });
-      if (elementsSkeleton.length > 2000) break;
+      if (nodes.length + edges.length + texts.length > 2000) break;
+    }
+
+    // Ellipses (rounded nodes).
+    const ellipses = Array.from(svgEl.querySelectorAll('ellipse'));
+    for (const ellipseEl of ellipses) {
+      const bbRaw = getBBoxSafe(ellipseEl);
+      if (!bbRaw) continue;
+      const bb = applyCtmToBBox(ellipseEl, bbRaw);
+      const w = bb.width;
+      const h = bb.height;
+      if (!(w > 6 && h > 6)) continue;
+      if (w >= width * 0.95 && h >= height * 0.95) continue;
+      const p = svgToLocal({ x: bb.x, y: bb.y });
+      const stroke = getSvgPaint(ellipseEl, 'stroke') ?? '#1f2937';
+      const fill = getSvgPaint(ellipseEl, 'fill') ?? 'transparent';
+      const strokeWidth = getSvgStrokeWidth(ellipseEl) ?? 1;
+      registerNode({
+        type: 'ellipse',
+        x: p.x,
+        y: p.y,
+        width: w,
+        height: h,
+        strokeColor: stroke,
+        backgroundColor: fill === 'transparent' ? 'transparent' : fill,
+        strokeWidth,
+      });
+      if (nodes.length + edges.length + texts.length > 2000) break;
+    }
+
+    // Polygons (diamond/decision nodes).
+    const polygons = Array.from(svgEl.querySelectorAll('polygon'));
+    for (const polyEl of polygons) {
+      if (!hasAncestorClassFragment(polyEl, ['node', 'vertex'])) continue;
+      const bbRaw = getBBoxSafe(polyEl);
+      if (!bbRaw) continue;
+      const bb = applyCtmToBBox(polyEl, bbRaw);
+      const w = bb.width;
+      const h = bb.height;
+      if (!(w > 6 && h > 6)) continue;
+      if (w >= width * 0.95 && h >= height * 0.95) continue;
+      const p = svgToLocal({ x: bb.x, y: bb.y });
+      const stroke = getSvgPaint(polyEl, 'stroke') ?? '#1f2937';
+      const fill = getSvgPaint(polyEl, 'fill') ?? 'transparent';
+      const strokeWidth = getSvgStrokeWidth(polyEl) ?? 1;
+      registerNode({
+        type: 'diamond',
+        x: p.x,
+        y: p.y,
+        width: w,
+        height: h,
+        strokeColor: stroke,
+        backgroundColor: fill === 'transparent' ? 'transparent' : fill,
+        strokeWidth,
+      });
+      if (nodes.length + edges.length + texts.length > 2000) break;
     }
 
     // foreignObject labels (common in Mermaid v11 flowchart-v2).
@@ -629,21 +735,21 @@ const buildSceneFromSvgVectors = async (args: {
       const fontSize = 16;
       const wrapped = wrapTextToWidth(content, { maxWidth: bb.width, fontSize });
       if (shouldSkipText({ text: wrapped, x: p.x, y: p.y })) continue;
-      elementsSkeleton.push({
-        type: 'text',
+      texts.push({
         text: wrapped,
         x: p.x,
         y: p.y,
         fontSize,
         strokeColor: args.theme === 'dark' ? '#e5e7eb' : '#111827',
-        locked: false,
+        width: bb.width,
+        height: bb.height,
       });
-      if (elementsSkeleton.length > 2000) break;
+      if (nodes.length + edges.length + texts.length > 2000) break;
     }
 
     // Text labels.
-    const texts = Array.from(svgEl.querySelectorAll('text'));
-    for (const textEl of texts) {
+    const textNodes = Array.from(svgEl.querySelectorAll('text'));
+    for (const textEl of textNodes) {
       const content = (textEl.textContent ?? '').replace(/\s+/g, ' ').trim();
       if (!content) continue;
       const fontSize = getSvgTextFontSize(textEl) ?? 16;
@@ -669,27 +775,17 @@ const buildSceneFromSvgVectors = async (args: {
       const wrapped = bb ? wrapTextToWidth(content, { maxWidth: bb.width, fontSize }) : content;
       if (shouldSkipText({ text: wrapped, x: p.x, y: p.y })) continue;
 
-      elementsSkeleton.push({
-        type: 'text',
+      texts.push({
         text: wrapped,
         x: p.x,
         y: p.y,
         fontSize,
         strokeColor: stroke,
-        locked: false,
+        width: bb?.width,
+        height: bb?.height,
       });
-      if (elementsSkeleton.length > 2000) break;
+      if (nodes.length + edges.length + texts.length > 2000) break;
     }
-
-    const hasAncestorClassFragment = (el: Element, fragments: string[]): boolean => {
-      let cur: Element | null = el;
-      while (cur) {
-        const cls = (cur.getAttribute('class') ?? '').toLowerCase();
-        if (fragments.some((f) => cls.includes(f))) return true;
-        cur = cur.parentElement;
-      }
-      return false;
-    };
 
     // Lines (edges/relations). Prefer paths with stroke and no fill.
     const paths = Array.from(svgEl.querySelectorAll('path'));
@@ -724,16 +820,17 @@ const buildSceneFromSvgVectors = async (args: {
       const rest = collapsed.slice(1);
       if (!rest.length) continue;
 
-      elementsSkeleton.push({
-        type: 'line',
+      edges.push({
+        id: `edge-${edgeSeq++}`,
         x: start.x,
         y: start.y,
-        points: [[0, 0], ...rest.map((p) => [p.x - start.x, p.y - start.y])],
+        points: [[0, 0], ...rest.map((p): [number, number] => [p.x - start.x, p.y - start.y])],
         strokeColor: stroke,
         strokeWidth: getSvgStrokeWidth(pathEl) ?? 1,
-        locked: false,
+        startArrowhead: pathEl.getAttribute('marker-start') ? 'arrow' : null,
+        endArrowhead: pathEl.getAttribute('marker-end') ? 'arrow' : null,
       });
-      if (elementsSkeleton.length > 2000) break;
+      if (nodes.length + edges.length + texts.length > 2000) break;
     }
 
     // Simple <line> edges.
@@ -750,22 +847,143 @@ const buildSceneFromSvgVectors = async (args: {
       const p2Svg = m ? new DOMPoint(x2, y2).matrixTransform(m) : new DOMPoint(x2, y2);
       const p1 = svgToLocal({ x: p1Svg.x, y: p1Svg.y });
       const p2 = svgToLocal({ x: p2Svg.x, y: p2Svg.y });
-      elementsSkeleton.push({
-        type: 'line',
+      edges.push({
+        id: `edge-${edgeSeq++}`,
         x: p1.x,
         y: p1.y,
         points: [[0, 0], [p2.x - p1.x, p2.y - p1.y]],
         strokeColor: stroke,
         strokeWidth: getSvgStrokeWidth(lineEl) ?? 1,
-        locked: false,
+        startArrowhead: lineEl.getAttribute('marker-start') ? 'arrow' : null,
+        endArrowhead: lineEl.getAttribute('marker-end') ? 'arrow' : null,
       });
-      if (elementsSkeleton.length > 2000) break;
+      if (nodes.length + edges.length + texts.length > 2000) break;
     }
 
-    if (elementsSkeleton.length < 2) return null;
+    if (nodes.length + edges.length + texts.length < 2) return null;
+
+    const distancePointToRect = (pt: { x: number; y: number }, node: NodeCandidate) => {
+      const dx = Math.max(node.x - pt.x, 0, pt.x - (node.x + node.width));
+      const dy = Math.max(node.y - pt.y, 0, pt.y - (node.y + node.height));
+      return Math.hypot(dx, dy);
+    };
+
+    const findNearestNode = (pt: { x: number; y: number }, maxDistance: number) => {
+      let best: { node: NodeCandidate; dist: number } | null = null;
+      for (const node of nodes) {
+        const dist = distancePointToRect(pt, node);
+        if (!best || dist < best.dist) best = { node, dist };
+      }
+      if (!best || best.dist > maxDistance) return null;
+      return best.node;
+    };
+
+    const distancePointToSegment = (p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      if (dx === 0 && dy === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+      const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+      const clamped = Math.max(0, Math.min(1, t));
+      const x = a.x + clamped * dx;
+      const y = a.y + clamped * dy;
+      return Math.hypot(p.x - x, p.y - y);
+    };
+
+    const distancePointToPolyline = (p: { x: number; y: number }, points: Array<[number, number]>, origin: { x: number; y: number }) => {
+      let best = Number.POSITIVE_INFINITY;
+      for (let i = 0; i + 1 < points.length; i += 1) {
+        const a = { x: origin.x + points[i]![0], y: origin.y + points[i]![1] };
+        const b = { x: origin.x + points[i + 1]![0], y: origin.y + points[i + 1]![1] };
+        best = Math.min(best, distancePointToSegment(p, a, b));
+      }
+      return best;
+    };
+
+    const assignedTexts = new Set<TextCandidate>();
+
+    for (const text of texts) {
+      const cx = text.x + (text.width ?? 0) / 2;
+      const cy = text.y + (text.height ?? text.fontSize) / 2;
+      const containing = nodes
+        .filter((node) => cx >= node.x && cx <= node.x + node.width && cy >= node.y && cy <= node.y + node.height)
+        .sort((a, b) => (a.width * a.height) - (b.width * b.height))[0];
+      if (containing && !containing.label) {
+        containing.label = { text: text.text, fontSize: text.fontSize };
+        assignedTexts.add(text);
+      }
+    }
+
+    for (const text of texts) {
+      if (assignedTexts.has(text)) continue;
+      const cx = text.x + (text.width ?? 0) / 2;
+      const cy = text.y + (text.height ?? text.fontSize) / 2;
+      const pt = { x: cx, y: cy };
+      let best: { edge: EdgeCandidate; dist: number } | null = null;
+      for (const edge of edges) {
+        const dist = distancePointToPolyline(pt, edge.points, { x: edge.x, y: edge.y });
+        if (!best || dist < best.dist) best = { edge, dist };
+      }
+      if (best && best.dist < 24 && !best.edge.label) {
+        best.edge.label = { text: text.text, fontSize: text.fontSize };
+        assignedTexts.add(text);
+      }
+    }
+
+    for (const edge of edges) {
+      const start = edge.points[0] ? { x: edge.x + edge.points[0][0], y: edge.y + edge.points[0][1] } : { x: edge.x, y: edge.y };
+      const endOffset = edge.points[edge.points.length - 1] ?? [0, 0];
+      const end = { x: edge.x + endOffset[0], y: edge.y + endOffset[1] };
+      const startNode = findNearestNode(start, 48);
+      const endNode = findNearestNode(end, 48);
+      if (startNode) edge.start = { id: startNode.id };
+      if (endNode) edge.end = { id: endNode.id };
+    }
+
+    const elementsSkeleton: Array<Record<string, unknown>> = [];
+    for (const node of nodes) {
+      elementsSkeleton.push({
+        type: node.type,
+        id: node.id,
+        x: node.x,
+        y: node.y,
+        width: node.width,
+        height: node.height,
+        strokeColor: node.strokeColor,
+        backgroundColor: node.backgroundColor,
+        strokeWidth: node.strokeWidth,
+        ...(node.label ? { label: node.label } : {}),
+      });
+    }
+    for (const edge of edges) {
+      elementsSkeleton.push({
+        type: 'arrow',
+        id: edge.id,
+        x: edge.x,
+        y: edge.y,
+        points: edge.points,
+        strokeColor: edge.strokeColor,
+        strokeWidth: edge.strokeWidth,
+        startArrowhead: edge.startArrowhead ?? null,
+        endArrowhead: edge.endArrowhead ?? null,
+        ...(edge.start ? { start: edge.start } : {}),
+        ...(edge.end ? { end: edge.end } : {}),
+        ...(edge.label ? { label: edge.label } : {}),
+      });
+    }
+    for (const text of texts) {
+      if (assignedTexts.has(text)) continue;
+      elementsSkeleton.push({
+        type: 'text',
+        text: text.text,
+        x: text.x,
+        y: text.y,
+        fontSize: text.fontSize,
+        strokeColor: text.strokeColor,
+      });
+    }
 
     const skeleton = elementsSkeleton as unknown as Parameters<typeof convertToExcalidrawElements>[0];
-    const elements = convertToExcalidrawElements(skeleton, { regenerateIds: true }).map((el) => ({ ...el, locked: false }));
+    const elements = convertToExcalidrawElements(skeleton, { regenerateIds: false }).map((el) => ({ ...el, locked: false }));
 
     return {
       type: 'excalidraw',
@@ -842,7 +1060,6 @@ const buildSceneFromMermaidCode = async (args: {
   backgroundColor: string | null;
   debug?: boolean;
 }): Promise<{ scene: ExcalidrawInitialDataState; generator: MermaidLanggraphSceneGenerator; mermaidToExcalidrawError?: string } | null> => {
-  patchMermaidInitialize();
   const themeVars = extractFrontmatterThemeVariables(args.mermaidCode);
   const themeVariables = {
     ...(themeVars ?? {}),
@@ -884,16 +1101,12 @@ const buildSceneFromMermaidCode = async (args: {
   const diagramTypeHintLocal = detectMermaidDiagramTypeHint(args.mermaidCode);
 
   try {
-    const { skeletons, files } = await parseMermaidToExcalidrawSkeletons({
+    const { elements: converted, files } = await renderMermaidToExcalidrawElements({
       mermaidCode: args.mermaidCode,
       diagramTypeHint: diagramTypeHintLocal,
       themeVariables,
       timeoutMs: 12000,
     });
-    const converted = convertToExcalidrawElements(
-      skeletons as unknown as Parameters<typeof convertToExcalidrawElements>[0],
-      { regenerateIds: true }
-    ).map((el) => ({ ...el, locked: false }));
     const themed = applyMermaidThemeToExcalidrawElements(converted, {
       backgroundColor: backgroundCandidate,
       themeVariables: themeVars,
@@ -1023,9 +1236,20 @@ const DiagramWhiteboard: React.FC<Props> = ({
   mermaidCode,
   svgMarkup,
   initialSceneJson,
+  initialDataOverride,
+  zoomPercent,
+  mode = 'edit',
+  zoomMode = 'controlled',
+  fitMode = 'content',
+  scrollMode = 'none',
+  onNotebookDiagramClick,
+  onZoomPercentChange,
   onAutosave,
   onDirtyChange,
 }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const isViewMode = mode === 'view';
+  const isAutoZoom = zoomMode === 'auto';
   const debugEnabled = useMemo(() => {
     try {
       return new URLSearchParams(window.location.search).has('wbDebug');
@@ -1056,9 +1280,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const lastSavedJsonRef = useRef<string>(initialSceneJson ?? '');
   const pendingSaveRef = useRef<number | null>(null);
   const latestJsonRef = useRef<string>(initialSceneJson ?? '');
-  const [isSceneJsonOpen, setIsSceneJsonOpen] = useState(false);
-  const [sceneJsonForViewer, setSceneJsonForViewer] = useState<string>(initialSceneJson ?? '');
   const latestFilesRef = useRef<BinaryFiles>({});
+  const lastZoomPercentRef = useRef<number>(zoomPercent);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const hasHadContentRef = useRef(false);
@@ -1073,52 +1296,42 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const inFlightSignatureRef = useRef<string>('');
   const buildRunIdRef = useRef(0);
   const sceneMetaForSaveRef = useRef<MermaidLanggraphSceneMeta>(sceneMeta);
-  const pendingFitSceneKeyRef = useRef<number | null>(null);
   const lastSerializedSignatureRef = useRef<string>('');
+  const [debugRuntime, setDebugRuntime] = useState<WhiteboardDebugRuntime | null>(null);
 
-  const scheduleFitToContent = useCallback((
-    api: ExcalidrawImperativeAPI,
-    targetSceneKey: number
-  ) => {
-    // The Excalidraw API instance is recreated when we bump `sceneKey` (key prop).
-    // Fit-to-content must run after the new scene is actually loaded.
-    if (pendingFitSceneKeyRef.current !== targetSceneKey) return;
+  const VIEW_MODE_APPSTATE_PATCH = useMemo(() => {
+    if (!isViewMode) return null;
+    return {
+      openSidebar: null,
+      openMenu: null,
+      openDialog: null,
+      openPopup: null,
+      defaultSidebarDockedPreference: false,
+    } as Partial<AppState>;
+  }, [isViewMode]);
 
-    let attempts = 0;
-    const maxAttempts = 600;
-    const tick = () => {
-      if (pendingFitSceneKeyRef.current !== targetSceneKey) return;
-      attempts += 1;
-      const elements = api.getSceneElements();
-      const appState = api.getAppState() as AppState;
-      // `isLoading` is not present in all Excalidraw versions; treat `undefined`
-      // as "not loading" to avoid permanently skipping fit-to-content.
-      const isLoading = (appState as unknown as { isLoading?: unknown }).isLoading === true;
-      const viewportReady =
-        typeof (appState as unknown as { width?: unknown }).width === 'number'
-        && (appState as unknown as { width: number }).width > 0
-        && typeof (appState as unknown as { height?: unknown }).height === 'number'
-        && (appState as unknown as { height: number }).height > 0;
-      if (elements?.length && !isLoading && viewportReady) {
-        try {
-          api.scrollToContent(elements, { fitToViewport: true, viewportZoomFactor: 0.92 });
-          pendingFitSceneKeyRef.current = null;
-          api.refresh();
-          return;
-        } catch (error) {
-          // Keep retrying until it succeeds (Excalidraw can throw during early mount).
-          if (debugEnabled) {
-            // eslint-disable-next-line no-console
-            console.warn('[whiteboard] scrollToContent failed; retrying', error);
-          }
-        }
-      }
-      if (attempts >= maxAttempts) return;
-      requestAnimationFrame(tick);
-    };
-
-    requestAnimationFrame(tick);
-  }, [debugEnabled]);
+  const {
+    lockedScrollXRef,
+    pendingFitSceneKeyRef,
+    lastFitCalcRef,
+    scheduleFitToContent,
+    scheduleClampScroll,
+    handleWheel,
+    handleScrollChange,
+  } = useWhiteboardViewLock({
+    apiRef,
+    containerRef,
+    sceneKey,
+    isViewMode,
+    isAutoZoom,
+    fitMode,
+    scrollMode,
+    viewModeAppStatePatch: VIEW_MODE_APPSTATE_PATCH,
+    editableAppState: WHITEBOARD_EDITABLE_APPSTATE,
+    debugEnabled,
+    clampZoom: clampWhiteboardZoom,
+    setDebugRuntime,
+  });
 
   const prepareInitialData = useCallback((scene: ExcalidrawInitialDataState): ExcalidrawInitialDataState => {
     const sceneAppState = (scene.appState ?? {}) as Partial<AppState>;
@@ -1128,31 +1341,55 @@ const DiagramWhiteboard: React.FC<Props> = ({
       themeVariables: themeVars,
       uiTheme: theme,
     }) as unknown as ExcalidrawInitialDataState['elements'];
+    const targetZoom = clampWhiteboardZoom(zoomPercent / 100);
     return {
       ...scene,
       elements: themedElements,
-      appState: {
-        ...sceneAppState,
-        ...EDITABLE_APPSTATE,
-        theme: normalizeTheme(theme),
-        viewBackgroundColor: effectiveBackgroundColor ?? sceneAppState.viewBackgroundColor,
-      },
+      appState: buildWhiteboardAppState({
+        sceneAppState,
+        uiTheme: normalizeTheme(theme),
+        viewMode: isViewMode,
+        backgroundColor: effectiveBackgroundColor ?? sceneAppState.viewBackgroundColor ?? undefined,
+        zoomPercent: targetZoom * 100,
+        viewModePatch: VIEW_MODE_APPSTATE_PATCH,
+      }),
     };
-  }, [effectiveBackgroundColor, mermaidCode, theme]);
+  }, [VIEW_MODE_APPSTATE_PATCH, effectiveBackgroundColor, isViewMode, mermaidCode, theme, zoomPercent]);
 
-  useEffect(() => {
-    patchMermaidInitialize();
-  }, []);
+  const handlePointerUp = useCallback((_: AppState['activeTool'], pointerDownState: any) => {
+    if (!isViewMode) return;
+    if (!onNotebookDiagramClick) return;
+    if (!pointerDownState || pointerDownState.drag?.hasOccurred) return;
+    const hit = pointerDownState.hit?.element as unknown as ExcalidrawElement | null;
+    if (!hit) return;
+    const customData = (hit as any).customData as Record<string, unknown> | undefined;
+    const index = customData && typeof customData.__mlgNotebookIndex === 'number' ? customData.__mlgNotebookIndex : null;
+    if (typeof index === 'number') onNotebookDiagramClick(index);
+  }, [isViewMode, onNotebookDiagramClick]);
 
   useEffect(() => {
     lastSavedJsonRef.current = initialSceneJson ?? '';
     latestJsonRef.current = initialSceneJson ?? '';
-    setSceneJsonForViewer(initialSceneJson ?? '');
     onDirtyChange?.(false);
     isDirtyRef.current = false;
     const parsed = tryParseInitialScene(initialSceneJson);
     hasHadContentRef.current = Boolean(parsed?.elements && Array.isArray(parsed.elements) && parsed.elements.length > 0);
   }, [initialSceneJson, onDirtyChange]);
+
+  useEffect(() => {
+    if (!initialDataOverride) return;
+    defer(() => {
+      lockedScrollXRef.current = null;
+      setIsSceneBuilding(false);
+      setBuildError(null);
+      setInitialDataState(prepareInitialData(initialDataOverride));
+      setSceneKey((k) => {
+        const next = k + 1;
+        pendingFitSceneKeyRef.current = next;
+        return next;
+      });
+    });
+  }, [initialDataOverride, prepareInitialData]);
 
   useEffect(() => {
     return () => {
@@ -1168,6 +1405,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   }, [onAutosave]);
 
   useEffect(() => {
+    if (initialDataOverride) return;
     if (!svgMarkup.trim()) return;
     if (initialDataState) return;
     if (isDirtyRef.current) return;
@@ -1264,6 +1502,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   }, [
     diagramTypeHint,
     effectiveBackgroundColor,
+    initialDataOverride,
     initialDataState,
     initialSceneJson,
     mermaidCode,
@@ -1375,20 +1614,22 @@ const DiagramWhiteboard: React.FC<Props> = ({
     if (!api) return;
     const nextTheme = normalizeTheme(theme);
     const nextBackground = effectiveBackgroundColor ?? undefined;
+    const expectedViewModeEnabled = isViewMode;
     const apply = () => {
       const current = api.getAppState();
       if (
         current.theme === nextTheme
         && current.viewBackgroundColor === nextBackground
-        && current.viewModeEnabled === false
+        && current.viewModeEnabled === expectedViewModeEnabled
         && current.zenModeEnabled === false
       ) return;
       api.updateScene({
-        appState: {
-          ...EDITABLE_APPSTATE,
-          theme: nextTheme,
-          viewBackgroundColor: nextBackground,
-        },
+        appState: buildWhiteboardAppState({
+          uiTheme: nextTheme,
+          viewMode: expectedViewModeEnabled,
+          backgroundColor: nextBackground ?? undefined,
+          zoomPercent: Math.round(((current.zoom as any)?.value ?? current.zoom ?? 1) * 100),
+        }),
         captureUpdate: CaptureUpdateAction.NEVER,
       });
       api.refresh();
@@ -1407,11 +1648,31 @@ const DiagramWhiteboard: React.FC<Props> = ({
       if (raf1) cancelAnimationFrame(raf1);
       if (raf2) cancelAnimationFrame(raf2);
     };
-  }, [api, effectiveBackgroundColor, theme]);
+  }, [api, effectiveBackgroundColor, isViewMode, theme]);
+
+  useEffect(() => {
+    if (!api) return;
+    if (isAutoZoom) return;
+    const targetZoom = clampWhiteboardZoom(zoomPercent / 100);
+    const current = api.getAppState() as AppState;
+    const currentZoom = (current.zoom as { value?: number } | number | undefined);
+    const currentValue = typeof currentZoom === 'number' ? currentZoom : currentZoom?.value;
+    if (typeof currentValue === 'number' && Math.abs(currentValue - targetZoom) < 0.01) return;
+    api.updateScene({
+      appState: {
+        ...current,
+        ...WHITEBOARD_EDITABLE_APPSTATE,
+        viewModeEnabled: isViewMode,
+        zoom: { value: targetZoom } as AppState['zoom'],
+      },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    api.refresh();
+  }, [api, isAutoZoom, isViewMode, zoomPercent]);
 
   const scheduleAutosave = useCallback((nextJson: string) => {
+    if (isViewMode) return;
     latestJsonRef.current = nextJson;
-    setSceneJsonForViewer(nextJson);
     if (pendingSaveRef.current) {
       window.clearTimeout(pendingSaveRef.current);
       pendingSaveRef.current = null;
@@ -1426,15 +1687,42 @@ const DiagramWhiteboard: React.FC<Props> = ({
           onDirtyChange?.(false);
           return;
         }
-        onAutosave(latest);
-        lastSavedJsonRef.current = latest;
-        onDirtyChange?.(false);
+        void Promise.resolve(onAutosave(latest))
+          .then(() => {
+            lastSavedJsonRef.current = latest;
+            onDirtyChange?.(false);
+          })
+          .catch(() => {
+            onDirtyChange?.(true);
+          });
       }, AUTOSAVE_DEBOUNCE_MS);
     } else {
       onDirtyChange?.(false);
       isDirtyRef.current = false;
     }
-  }, [onAutosave, onDirtyChange]);
+  }, [isViewMode, onAutosave, onDirtyChange]);
+
+  useEffect(() => {
+    // If the user switches back to the Mermaid preview quickly after edits,
+    // flush the latest scene instead of dropping the debounced save.
+    return () => {
+      if (isViewMode) return;
+      if (pendingSaveRef.current) {
+        window.clearTimeout(pendingSaveRef.current);
+        pendingSaveRef.current = null;
+      }
+      const latest = latestJsonRef.current;
+      if (!latest || latest === lastSavedJsonRef.current) return;
+      try {
+        void Promise.resolve(onAutosave(latest)).then(() => {
+          lastSavedJsonRef.current = latest;
+          onDirtyChange?.(false);
+        });
+      } catch {
+        // ignore
+      }
+    };
+  }, [isViewMode, onAutosave, onDirtyChange]);
 
   useEffect(() => {
     lastSerializedSignatureRef.current = '';
@@ -1465,11 +1753,40 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
 
     const expectedBackground = effectiveBackgroundColor?.trim() ?? '';
+    const nextZoom = appState.zoom as { value?: number } | number | undefined;
+    const nextZoomValue = typeof nextZoom === 'number' ? nextZoom : nextZoom?.value;
+    if (typeof nextZoomValue === 'number') {
+      const nextPercent = Math.round(nextZoomValue * 100);
+      if (nextPercent !== lastZoomPercentRef.current) {
+        lastZoomPercentRef.current = nextPercent;
+        onZoomPercentChange?.(nextPercent);
+      }
+    }
+
+    if (isViewMode) {
+      if (scrollMode === 'vertical') {
+        const lockX = lockedScrollXRef.current;
+        if (lockX !== null) scheduleClampScroll(appState.scrollY);
+      }
+      return;
+    }
 
     // Excalidraw calls onChange for selection/appState changes; don’t pay the
     // cost of serialization unless elements/files actually changed.
     const elementsVersion = elements.reduce((acc, el) => acc + (el?.version ?? 0), 0);
-    const signature = `${elements.length}:${elementsVersion}:${Object.keys(files ?? {}).length}`;
+    const layoutSignature = Math.round(
+      elements.reduce((acc, el) => {
+        if (!el) return acc;
+        const next =
+          (el.x ?? 0)
+          + (el.y ?? 0)
+          + (el.width ?? 0)
+          + (el.height ?? 0)
+          + (el.angle ?? 0);
+        return acc + next;
+      }, 0) * 100
+    );
+    const signature = `${elements.length}:${elementsVersion}:${Object.keys(files ?? {}).length}:${layoutSignature}`;
     if (signature === lastSerializedSignatureRef.current) return;
 
     try {
@@ -1479,7 +1796,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         elements as unknown as readonly ExcalidrawElement[],
         pickAppStateForSave({
           ...appState,
-          ...EDITABLE_APPSTATE,
+          ...WHITEBOARD_EDITABLE_APPSTATE,
           viewBackgroundColor: expectedBackground || appState.viewBackgroundColor,
         }),
         filesForSave,
@@ -1494,268 +1811,81 @@ const DiagramWhiteboard: React.FC<Props> = ({
     } catch {
       // Never throw from Excalidraw onChange — it can break interactions (selection/dragging).
     }
-  }, [api, effectiveBackgroundColor, sceneKey, scheduleAutosave, scheduleFitToContent]);
-
-  const handleCopySceneJson = useCallback(async () => {
-    const text = (latestJsonRef.current || sceneJsonForViewer || '').trim();
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // Fallback for environments without clipboard permissions.
-      const el = document.createElement('textarea');
-      el.value = text;
-      el.setAttribute('readonly', 'true');
-      el.style.position = 'fixed';
-      el.style.left = '-10000px';
-      el.style.top = '0';
-      document.body.appendChild(el);
-      el.select();
-      try {
-        document.execCommand('copy');
-      } catch {
-        // ignore
-      }
-      el.remove();
-    }
-  }, [sceneJsonForViewer]);
-
-  const handleDownloadSceneFile = useCallback(() => {
-    const api = apiRef.current;
-    if (!api) return;
-    const elements = api.getSceneElements();
-    if (!elements?.length) return;
-
-    const bounds = (() => {
-      let minX = Number.POSITIVE_INFINITY;
-      let minY = Number.POSITIVE_INFINITY;
-      let maxX = Number.NEGATIVE_INFINITY;
-      let maxY = Number.NEGATIVE_INFINITY;
-      let seen = 0;
-
-      for (const el of elements as unknown as Array<Record<string, unknown>>) {
-        if (!el || typeof el !== 'object') continue;
-        if (el.isDeleted === true) continue;
-        const x = typeof el.x === 'number' ? el.x : null;
-        const y = typeof el.y === 'number' ? el.y : null;
-        if (x === null || y === null) continue;
-
-        const width = typeof el.width === 'number' ? el.width : null;
-        const height = typeof el.height === 'number' ? el.height : null;
-        if (width !== null && height !== null) {
-          minX = Math.min(minX, x);
-          minY = Math.min(minY, y);
-          maxX = Math.max(maxX, x + width);
-          maxY = Math.max(maxY, y + height);
-          seen += 1;
-          continue;
-        }
-
-        const pointsRaw = el.points;
-        if (Array.isArray(pointsRaw)) {
-          let pMinX = Number.POSITIVE_INFINITY;
-          let pMinY = Number.POSITIVE_INFINITY;
-          let pMaxX = Number.NEGATIVE_INFINITY;
-          let pMaxY = Number.NEGATIVE_INFINITY;
-          let pSeen = 0;
-          for (const p of pointsRaw) {
-            if (!Array.isArray(p) || p.length !== 2) continue;
-            const px = typeof p[0] === 'number' ? p[0] : Number(p[0]);
-            const py = typeof p[1] === 'number' ? p[1] : Number(p[1]);
-            if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
-            pMinX = Math.min(pMinX, px);
-            pMinY = Math.min(pMinY, py);
-            pMaxX = Math.max(pMaxX, px);
-            pMaxY = Math.max(pMaxY, py);
-            pSeen += 1;
-          }
-          if (pSeen > 0) {
-            minX = Math.min(minX, x + pMinX);
-            minY = Math.min(minY, y + pMinY);
-            maxX = Math.max(maxX, x + pMaxX);
-            maxY = Math.max(maxY, y + pMaxY);
-            seen += 1;
-          }
-        }
-      }
-
-      if (seen === 0) return null;
-      return { minX, minY, maxX, maxY };
-    })();
-
-    const translatedElements = (() => {
-      if (!bounds) return elements;
-      // Make the exported file visible on import even when scrollX/scrollY are reset.
-      // Keep everything in positive coordinates with a small padding.
-      const padding = 80;
-      const dx = padding - bounds.minX;
-      const dy = padding - bounds.minY;
-
-      return (elements as unknown as Array<Record<string, unknown>>).map((el) => {
-        if (!el || typeof el !== 'object') return el as unknown as OrderedExcalidrawElement;
-        if (el.isDeleted === true) return el as unknown as OrderedExcalidrawElement;
-        const x = typeof el.x === 'number' ? el.x : null;
-        const y = typeof el.y === 'number' ? el.y : null;
-        if (x === null || y === null) return el as unknown as OrderedExcalidrawElement;
-        return { ...el, x: x + dx, y: y + dy } as unknown as OrderedExcalidrawElement;
-      });
-    })();
-
-    // For Excalidraw.com import we need the "local" JSON format, not "database".
-    const files = (api.getFiles?.() ?? latestFilesRef.current ?? {}) as BinaryFiles;
-    const appState = api.getAppState() as AppState;
-    const rawJson = serializeAsJSON(
-      translatedElements as unknown as readonly ExcalidrawElement[],
-      {
-        // Keep the exported file portable: don't persist viewport scroll/zoom,
-        // otherwise Excalidraw.com may open it "blank" (content off-screen).
-        theme: appState.theme,
-        viewBackgroundColor: effectiveBackgroundColor?.trim() || appState.viewBackgroundColor,
-      },
-      files,
-      'local'
-    );
-
-    const safeType = diagramTypeHint === 'unknown' ? 'diagram' : diagramTypeHint;
-    const fileName = `${safeType}-${sceneMeta.mermaidHash}.excalidraw`;
-    try {
-      const blob = new Blob([rawJson], { type: 'application/json;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch {
-      // ignore
-    }
-  }, [diagramTypeHint, effectiveBackgroundColor, sceneMeta.mermaidHash]);
+  }, [
+    api,
+    effectiveBackgroundColor,
+    isViewMode,
+    onZoomPercentChange,
+    sceneKey,
+    scheduleAutosave,
+    scheduleClampScroll,
+    scheduleFitToContent,
+    scrollMode,
+  ]);
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
-    const style: React.CSSProperties = {
-      // Disable the dark-theme canvas filter so Mermaid colors/background stay exact.
-      ['--theme-filter' as keyof React.CSSProperties]: 'none',
-    };
+    const style: React.CSSProperties = {};
+    const resolvedBackground = effectiveBackgroundColor ?? 'transparent';
+    style['--whiteboard-bg' as keyof React.CSSProperties] = resolvedBackground;
     if (effectiveBackgroundColor) {
       style.backgroundColor = effectiveBackgroundColor;
     }
     return style;
   }, [effectiveBackgroundColor]);
 
+  const fallbackInitialData = useMemo(() => {
+    if (initialDataState) return initialDataState;
+    return buildWhiteboardInitialData({
+      scene: null,
+      sceneMeta,
+      uiTheme: normalizeTheme(theme),
+      viewMode: isViewMode,
+      backgroundColor: effectiveBackgroundColor ?? undefined,
+      zoomPercent,
+    });
+  }, [effectiveBackgroundColor, initialDataState, isViewMode, sceneMeta, theme, zoomPercent]);
+
   return (
-    <div className="diagram-whiteboard relative flex-1 min-h-0" style={containerStyle}>
-      <Excalidraw
-        key={sceneKey}
-        initialData={initialDataState ?? ({
-          type: 'excalidraw',
-          version: 2,
-          source: 'mermaid-langgraph',
-          elements: [],
-          files: {},
-          appState: {
-            ...EDITABLE_APPSTATE,
-            theme: normalizeTheme(theme),
-            viewBackgroundColor: effectiveBackgroundColor ?? undefined,
-          } as Partial<AppState>,
-          scrollToContent: false,
-          [MLG_META_KEY]: sceneMeta,
-        } as unknown as ExcalidrawInitialDataState)}
+    <div
+      ref={containerRef}
+      className="diagram-whiteboard relative flex-1 min-h-0"
+      style={containerStyle}
+      onWheel={handleWheel}
+    >
+      <DiagramWhiteboardCanvas
+        sceneKey={sceneKey}
+        initialData={fallbackInitialData}
         theme={normalizeTheme(theme)}
-        viewModeEnabled={false}
-        zenModeEnabled={false}
-        excalidrawAPI={(api) => {
+        viewModeEnabled={isViewMode}
+        onApiReady={(api) => {
           apiRef.current = api;
           setApi(api);
-          if (api && pendingFitSceneKeyRef.current === sceneKey) {
+          if (pendingFitSceneKeyRef.current === sceneKey) {
             scheduleFitToContent(api, sceneKey);
           }
         }}
         onChange={handleChange}
-        UIOptions={{
-          canvasActions: {
-            changeViewBackgroundColor: false,
-            loadScene: false,
-            saveAsImage: false,
-            saveToActiveFile: false,
-            export: false,
-          },
-        }}
+        onPointerUp={handlePointerUp}
+        onScrollChange={handleScrollChange}
       />
 
-      <div className="absolute top-2 right-2 z-50 flex items-center gap-2">
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 rounded border border-slate-300/40 bg-white/80 px-2 py-1 text-[12px] text-slate-700 shadow-sm backdrop-blur hover:bg-white dark:border-slate-600/50 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-900"
-          onClick={() => setIsSceneJsonOpen(true)}
-          title="Show Excalidraw scene JSON"
-        >
-          <Code2 className="h-3.5 w-3.5" />
-          JSON
-        </button>
-      </div>
-
-      {isSceneJsonOpen && (
-        <div className="absolute inset-0 z-[60] flex flex-col bg-white/85 backdrop-blur dark:bg-slate-950/70">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-300/50 px-3 py-2 text-sm text-slate-800 dark:border-slate-700/60 dark:text-slate-100">
-            <div className="flex items-center gap-2">
-              <Code2 className="h-4 w-4" />
-              <span>Excalidraw scene JSON</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded border border-slate-300/60 bg-white/70 px-2 py-1 text-xs text-slate-700 hover:bg-white dark:border-slate-700/70 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-900"
-                onClick={() => void handleCopySceneJson()}
-                title="Copy JSON"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                Copy
-              </button>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded border border-slate-300/60 bg-white/70 px-2 py-1 text-xs text-slate-700 hover:bg-white dark:border-slate-700/70 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-900"
-                onClick={handleDownloadSceneFile}
-                title="Download .excalidraw"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Save
-              </button>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded border border-slate-300/60 bg-white/70 px-2 py-1 text-xs text-slate-700 hover:bg-white dark:border-slate-700/70 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-900"
-                onClick={() => setIsSceneJsonOpen(false)}
-                title="Close"
-              >
-                <X className="h-3.5 w-3.5" />
-                Close
-              </button>
-            </div>
-          </div>
-          <textarea
-            className="flex-1 min-h-0 w-full resize-none bg-transparent p-3 font-mono text-[11px] leading-4 text-slate-800 outline-none dark:text-slate-100"
-            readOnly
-            value={(sceneJsonForViewer || latestJsonRef.current || '').trim()}
-          />
-        </div>
-      )}
-
-      {debugEnabled && (
-        <div className="pointer-events-none absolute top-2 left-2 z-50 rounded border border-slate-300/40 bg-white/80 px-2 py-1 text-[11px] text-slate-700 dark:border-slate-600/50 dark:bg-slate-900/70 dark:text-slate-200">
-          <div>Whiteboard: {debugOverlay?.status ?? 'idle'}</div>
-          <div>sceneKey: {debugOverlay?.sceneKey ?? sceneKey} (pendingFit: {debugOverlay?.pendingFitKey ?? 'null'})</div>
-          <div>type: {debugOverlay?.diagramTypeHint ?? diagramTypeHint}</div>
-          <div>generator: {debugOverlay?.generator ?? lastGenerator}</div>
-          <div>svg: {debugOverlay?.svgChars ? `${debugOverlay.svgChars} chars` : 'empty'}</div>
-          {debugOverlay?.mermaidToExcalidrawError ? <div>m2e: {debugOverlay.mermaidToExcalidrawError}</div> : null}
-          {debugOverlay?.error ? <div>error: {debugOverlay.error}</div> : null}
-          {debugOverlay?.builtCounts ? <div>built: {JSON.stringify(debugOverlay.builtCounts)}</div> : null}
-          {debugOverlay?.bounds ? <div>bounds: {JSON.stringify(debugOverlay.bounds)}</div> : null}
-          {debugOverlay?.sampleRect ? <div>rect: {JSON.stringify(debugOverlay.sampleRect)}</div> : null}
-          {debugOverlay?.sampleText ? <div>text: {JSON.stringify(debugOverlay.sampleText)}</div> : null}
-        </div>
-      )}
+      <WhiteboardDebugOverlay
+        enabled={debugEnabled}
+        debugOverlay={debugOverlay}
+        debugRuntime={debugRuntime}
+        lastFitCalc={lastFitCalcRef.current as WhiteboardFitCalc | null}
+        sceneKey={sceneKey}
+        diagramTypeHint={diagramTypeHint}
+        lastGenerator={lastGenerator}
+        fitMode={fitMode}
+        scrollMode={scrollMode}
+        zoomMode={zoomMode}
+        isViewMode={isViewMode}
+        pendingFitSceneKey={pendingFitSceneKeyRef.current}
+        lockedScrollX={lockedScrollXRef.current}
+        apiRef={apiRef}
+        effectiveBackgroundColor={effectiveBackgroundColor}
+      />
     </div>
   );
 };

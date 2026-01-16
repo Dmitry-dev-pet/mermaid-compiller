@@ -20,6 +20,7 @@ describe('mermaidToExcalidrawService', () => {
     expect(detectMermaidDiagramTypeHint('flowchart TD\nA-->B')).toBe('flowchart');
     expect(detectMermaidDiagramTypeHint('graph TD\nA-->B')).toBe('flowchart');
     expect(detectMermaidDiagramTypeHint('erDiagram\nA ||--|| B : rel')).toBe('er');
+    expect(detectMermaidDiagramTypeHint('classDiagram\nA <|-- B')).toBe('class');
     expect(detectMermaidDiagramTypeHint('sequenceDiagram\nA->>B: hi')).toBe('sequence');
     expect(detectMermaidDiagramTypeHint('---\nconfig:\n  theme: base\n---\nflowchart TD\nA-->B')).toBe('flowchart');
     expect(detectMermaidDiagramTypeHint('')).toBe('unknown');

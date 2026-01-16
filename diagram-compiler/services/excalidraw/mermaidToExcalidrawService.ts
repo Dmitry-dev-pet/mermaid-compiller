@@ -1,7 +1,7 @@
 import { parseMermaidToExcalidraw } from '@excalidraw/mermaid-to-excalidraw';
 import type { BinaryFiles } from '@excalidraw/excalidraw/types';
 
-export type MermaidDiagramTypeHint = 'flowchart' | 'er' | 'sequence' | 'unknown';
+export type MermaidDiagramTypeHint = 'flowchart' | 'er' | 'sequence' | 'class' | 'unknown';
 
 export type ExcalidrawElementSkeleton = Record<string, unknown>;
 
@@ -16,6 +16,7 @@ export const detectMermaidDiagramTypeHint = (code: string): MermaidDiagramTypeHi
     const lower = trimmed.toLowerCase();
     if (lower.startsWith('flowchart') || lower.startsWith('graph')) return 'flowchart';
     if (lower.startsWith('erdiagram')) return 'er';
+    if (lower.startsWith('classdiagram')) return 'class';
     if (lower.startsWith('sequencediagram')) return 'sequence';
     return 'unknown';
   }
@@ -208,6 +209,23 @@ const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T> => {
   });
 };
 
+const withSilencedConsoleLogs = async <T,>(fn: () => Promise<T>): Promise<T> => {
+  const originalLog = console.log;
+  const originalDebug = console.debug;
+  const originalInfo = console.info;
+
+  try {
+    (console as unknown as { log: (...args: unknown[]) => void }).log = () => {};
+    (console as unknown as { debug: (...args: unknown[]) => void }).debug = () => {};
+    (console as unknown as { info: (...args: unknown[]) => void }).info = () => {};
+    return await fn();
+  } finally {
+    (console as unknown as { log: (...args: unknown[]) => void }).log = originalLog;
+    (console as unknown as { debug: (...args: unknown[]) => void }).debug = originalDebug;
+    (console as unknown as { info: (...args: unknown[]) => void }).info = originalInfo;
+  }
+};
+
 export const parseMermaidToExcalidrawSkeletons = async (args: {
   mermaidCode: string;
   diagramTypeHint: MermaidDiagramTypeHint;
@@ -215,15 +233,36 @@ export const parseMermaidToExcalidrawSkeletons = async (args: {
   timeoutMs?: number;
 }): Promise<{ skeletons: ExcalidrawElementSkeleton[]; files: BinaryFiles }> => {
   const preprocessed = preprocessMermaidForExcalidraw(args.mermaidCode);
-  const { elements, files } = await withTimeout(
-    parseMermaidToExcalidraw(preprocessed, { themeVariables: args.themeVariables }),
-    args.timeoutMs ?? 12000
-  );
+  const { elements, files } = await withSilencedConsoleLogs(async () => {
+    return await withTimeout(
+      parseMermaidToExcalidraw(preprocessed, { themeVariables: args.themeVariables }),
+      args.timeoutMs ?? 12000
+    );
+  });
   const skeletons = normalizeMermaidToExcalidrawSkeletons(elements);
 
-  if (isImageOnlySkeletons(skeletons) && (args.diagramTypeHint === 'flowchart' || args.diagramTypeHint === 'sequence')) {
-    throw new Error('mermaid-to-excalidraw returned graphImage (image-only) for flowchart/sequence');
+  if (
+    isImageOnlySkeletons(skeletons)
+    && (args.diagramTypeHint === 'flowchart' || args.diagramTypeHint === 'sequence' || args.diagramTypeHint === 'class')
+  ) {
+    throw new Error('mermaid-to-excalidraw returned graphImage (image-only) for flowchart/sequence/class');
   }
 
+  return { skeletons, files: (files ?? {}) as BinaryFiles };
+};
+
+export const parseMermaidToExcalidrawSkeletonsLenient = async (args: {
+  mermaidCode: string;
+  themeVariables?: Record<string, string | number | boolean>;
+  timeoutMs?: number;
+}): Promise<{ skeletons: ExcalidrawElementSkeleton[]; files: BinaryFiles }> => {
+  const preprocessed = preprocessMermaidForExcalidraw(args.mermaidCode);
+  const { elements, files } = await withSilencedConsoleLogs(async () => {
+    return await withTimeout(
+      parseMermaidToExcalidraw(preprocessed, { themeVariables: args.themeVariables }),
+      args.timeoutMs ?? 12000
+    );
+  });
+  const skeletons = normalizeMermaidToExcalidrawSkeletons(elements);
   return { skeletons, files: (files ?? {}) as BinaryFiles };
 };

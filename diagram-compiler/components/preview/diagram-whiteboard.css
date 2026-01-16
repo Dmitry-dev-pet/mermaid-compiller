@@ -1,9 +1,8 @@
-.diagram-whiteboard .excalidraw.theme--dark {
-  /* Ensure Mermaid-derived colors/background stay exact. */
-  --theme-filter: none !important;
-}
-
 .diagram-whiteboard .excalidraw.theme--dark canvas {
   filter: none !important;
 }
 
+.diagram-whiteboard .excalidraw__canvas-wrapper,
+.diagram-whiteboard .excalidraw__canvas.static {
+  background-color: var(--whiteboard-bg, transparent) !important;
+}

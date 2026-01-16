@@ -171,6 +171,81 @@ const installSvgBBoxPolyfill = () => {
   }
 };
 
+const installSvgPathLengthPolyfill = () => {
+  const proto =
+    ((globalThis as unknown as { SVGPathElement?: unknown }).SVGPathElement
+      ? (SVGPathElement.prototype as unknown as Record<string, unknown>)
+      : null)
+    ?? ((globalThis as unknown as { SVGElement?: unknown }).SVGElement
+      ? (SVGElement.prototype as unknown as Record<string, unknown>)
+      : null);
+  if (!proto) return;
+
+  if (typeof proto.getTotalLength !== 'function') {
+    const parsePathPoints = (el: Element) => {
+      const d = el.getAttribute('d') ?? '';
+      const tokens = d.match(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi);
+      if (!tokens || tokens.length < 2) return [] as Array<{ x: number; y: number }>;
+      const nums = tokens.map((t) => Number(t)).filter((n) => Number.isFinite(n));
+      if (nums.length < 2) return [] as Array<{ x: number; y: number }>;
+      const points: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i + 1 < nums.length; i += 2) {
+        points.push({ x: nums[i]!, y: nums[i + 1]! });
+      }
+      return points;
+    };
+
+    proto.getTotalLength = function getTotalLengthPolyfill(this: Element): number {
+      const points = parsePathPoints(this);
+      if (points.length < 2) return 1;
+      const d = this.getAttribute('d') ?? '';
+      const tokens = d.match(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi);
+      if (!tokens || tokens.length < 4) return 1;
+      const nums = tokens.map((t) => Number(t)).filter((n) => Number.isFinite(n));
+      if (nums.length < 4) return 1;
+      let length = 0;
+      for (let i = 0; i + 3 < nums.length; i += 2) {
+        const x1 = nums[i]!;
+        const y1 = nums[i + 1]!;
+        const x2 = nums[i + 2]!;
+        const y2 = nums[i + 3]!;
+        length += Math.hypot(x2 - x1, y2 - y1);
+      }
+      return length || 1;
+    };
+  }
+
+  if (typeof proto.getPointAtLength !== 'function') {
+    proto.getPointAtLength = function getPointAtLengthPolyfill(this: Element, len: number) {
+      const d = this.getAttribute('d') ?? '';
+      const tokens = d.match(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi);
+      if (!tokens || tokens.length < 2) return { x: 0, y: 0 };
+      const nums = tokens.map((t) => Number(t)).filter((n) => Number.isFinite(n));
+      if (nums.length < 2) return { x: 0, y: 0 };
+      const points: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i + 1 < nums.length; i += 2) {
+        points.push({ x: nums[i]!, y: nums[i + 1]! });
+      }
+      if (points.length === 1) return points[0];
+      let remaining = Math.max(0, Number(len) || 0);
+      for (let i = 0; i + 1 < points.length; i += 1) {
+        const p1 = points[i]!;
+        const p2 = points[i + 1]!;
+        const segment = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (remaining <= segment) {
+          const t = segment === 0 ? 0 : remaining / segment;
+          return {
+            x: p1.x + (p2.x - p1.x) * t,
+            y: p1.y + (p2.y - p1.y) * t,
+          };
+        }
+        remaining -= segment;
+      }
+      return points[points.length - 1]!;
+    };
+  }
+};
+
 const patchMermaidInitialize = () => {
   const original = mermaid.initialize.bind(mermaid);
   mermaid.initialize = ((config: unknown) => {
@@ -201,6 +276,7 @@ describe('mermaidToExcalidrawService (integration)', () => {
   });
 
   installSvgBBoxPolyfill();
+  installSvgPathLengthPolyfill();
   patchMermaidInitialize();
 
   const dump = (label: string, args: { skeletons: unknown[]; files: Record<string, unknown> }) => {

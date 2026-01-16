@@ -148,7 +148,7 @@ export const useHistory = () => {
     }) => {
       const sessionId = sessionIdRef.current ?? (await ensureActiveSession()).id;
       sessionIdRef.current = sessionId;
-      const { session, step } = await recordStep({
+      const { session, step, revision } = await recordStep({
         sessionId,
         type: args.type,
         messages: args.messages,
@@ -162,6 +162,7 @@ export const useHistory = () => {
         const next = prev.map((item) => (item.id === session.id ? session : item));
         return sortSessions(next);
       });
+      return { session, step, revision };
     },
     [sortSessions]
   );
@@ -176,10 +177,10 @@ export const useHistory = () => {
   );
 
   const updateCurrentRevisionWhiteboard = useCallback(
-    async (whiteboard: string | null) => {
-      const revisionId = historySession?.currentRevisionId;
-      if (!revisionId) return null;
-      return updateRevisionWhiteboard(revisionId, whiteboard);
+    async (whiteboard: string | null, revisionId?: string | null) => {
+      const targetRevisionId = revisionId ?? historySession?.currentRevisionId;
+      if (!targetRevisionId) return null;
+      return updateRevisionWhiteboard(targetRevisionId, whiteboard);
     },
     [historySession?.currentRevisionId]
   );

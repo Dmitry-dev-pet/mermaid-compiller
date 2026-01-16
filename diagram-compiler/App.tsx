@@ -107,6 +107,7 @@ function App() {
     activeOperationKind,
     historySessionCurrentRevisionId,
     whiteboardSceneJson,
+    whiteboardBundleJson,
     saveWhiteboardForCurrentRevision,
   } = useDiagramStudio();
   const buildDocsSystemPrompts = {
@@ -447,6 +448,7 @@ function App() {
 
             historyRevisionId={historySessionCurrentRevisionId}
             whiteboardSceneJson={whiteboardSceneJson}
+            whiteboardBundleJson={whiteboardBundleJson}
             onSaveWhiteboardSceneJson={isProjectPreview ? async () => null : saveWhiteboardForCurrentRevision}
           />
         </div>
