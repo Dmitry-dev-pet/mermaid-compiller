@@ -31,6 +31,24 @@ import {
   clampWhiteboardZoom,
   WHITEBOARD_EDITABLE_APPSTATE,
 } from './whiteboardAppState';
+import {
+  applyMermaidThemeToExcalidrawElements,
+  CANVAS_BG_DARK,
+  CANVAS_BG_LIGHT,
+  isDarkColor,
+} from '../../services/excalidraw/excalidrawTheme';
+import {
+  buildSceneMeta,
+  hashString,
+  injectSceneMetaJson,
+  type MermaidLanggraphSceneGenerator,
+  type MermaidLanggraphSceneMeta,
+  normalizeTheme,
+  pickAppStateForSave,
+  readSceneMeta,
+} from '../../services/excalidraw/whiteboardSceneMeta';
+import { buildSceneFromMermaidCode } from '../../services/excalidraw/whiteboardSceneBuilder';
+import { tryParseInitialScene } from '../../services/excalidraw/whiteboardSceneParse';
 
 type ExcalidrawElementSkeletonList = NonNullable<Parameters<typeof convertToExcalidrawElements>[0]>;
 type ExcalidrawElementSkeleton = ExcalidrawElementSkeletonList[number];
@@ -54,39 +72,6 @@ type Props = {
   onAutosave: (sceneJson: string) => Promise<unknown> | unknown;
   onDirtyChange?: (dirty: boolean) => void;
   onThemeChange?: (nextTheme: 'light' | 'dark') => void;
-};
-
-type MermaidLanggraphSceneGenerator = 'unknown' | 'mermaid-to-excalidraw' | 'svg-vectors' | 'svg-image';
-
-type MermaidLanggraphSceneMeta = {
-  v: 2;
-  diagramType: MermaidDiagramTypeHint;
-  mermaidHash: number;
-  svgHash: number;
-  generator: MermaidLanggraphSceneGenerator;
-};
-
-const MLG_META_KEY = '__mermaidLanggraph' as const;
-
-const pickAppStateForSave = (appState: AppState): Partial<AppState> => {
-  return {
-    theme: appState.theme,
-    viewBackgroundColor: appState.viewBackgroundColor,
-    scrollX: appState.scrollX,
-    scrollY: appState.scrollY,
-    zoom: appState.zoom,
-  };
-};
-
-const normalizeTheme = (theme: 'light' | 'dark') => theme;
-
-const hashString = (s: string): number => {
-  // djb2, matches Excalidraw internal helper.
-  let hash = 5381;
-  for (let i = 0; i < s.length; i += 1) {
-    hash = (hash << 5) + hash + s.charCodeAt(i);
-  }
-  return hash >>> 0;
 };
 
 const computeFlowchartStructureSignature = (code: string): string => {
@@ -128,163 +113,6 @@ const computeDiagramStructureSignature = (diagramType: MermaidDiagramTypeHint, c
 
   // Fallback: treat any change as structural.
   return String(hashString(stripped.trim()));
-};
-
-const parseHexColor = (color: string): { r: number; g: number; b: number } | null => {
-  const raw = color.trim();
-  const hex = raw.startsWith('#') ? raw.slice(1) : raw;
-  if (![3, 6].includes(hex.length)) return null;
-  const full = hex.length === 3 ? hex.split('').map((c) => `${c}${c}`).join('') : hex;
-  const int = Number.parseInt(full, 16);
-  if (!Number.isFinite(int)) return null;
-  return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
-};
-
-const parseRgbColor = (color: string): { r: number; g: number; b: number } | null => {
-  const m = color.trim().match(/^rgba?\(\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)(?:\s*,\s*([0-9.]+)\s*)?\)$/i);
-  if (!m) return null;
-  const r = Number(m[1]);
-  const g = Number(m[2]);
-  const b = Number(m[3]);
-  if (![r, g, b].every((n) => Number.isFinite(n) && n >= 0 && n <= 255)) return null;
-  return { r, g, b };
-};
-
-const isDarkColor = (color: string): boolean | null => {
-  const rgb = parseHexColor(color) ?? parseRgbColor(color);
-  if (!rgb) return null;
-  // Perceived luminance (0..255).
-  const l = 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
-  return l < 128;
-};
-
-const CANVAS_BG_DARK = '#1e1e1e';
-const CANVAS_BG_LIGHT = '#ffffff';
-
-const applyMermaidThemeToExcalidrawElements = <T,>(
-  raw: readonly T[],
-  opts: {
-    backgroundColor: string | null;
-    themeVariables: Record<string, string | number | boolean> | null;
-    uiTheme: 'light' | 'dark';
-    forceTheme?: boolean;
-  }
-): T[] => {
-  const elements = Array.isArray(raw) ? [...raw] : [];
-  const vars = opts.themeVariables ?? null;
-  const fromVarsBackground = typeof vars?.background === 'string' ? vars.background.trim() : '';
-  const bg = (opts.backgroundColor?.trim() ?? '') || fromVarsBackground;
-  const darkModeVar = typeof vars?.darkMode === 'boolean' ? vars.darkMode : null;
-  const bgDark = (bg ? isDarkColor(bg) : null) ?? darkModeVar ?? (opts.uiTheme === 'dark');
-
-  const defaults = bgDark
-    ? { line: '#cbd5e1', text: '#e5e7eb', fill: 'transparent' }
-    : { line: '#0f172a', text: '#0f172a', fill: 'transparent' };
-
-  const lineColor =
-    opts.forceTheme
-      ? defaults.line
-      : (typeof vars?.lineColor === 'string' && vars.lineColor.trim()) ? String(vars.lineColor).trim()
-        : defaults.line;
-  const textColor =
-    opts.forceTheme
-      ? defaults.text
-      : (typeof vars?.primaryTextColor === 'string' && vars.primaryTextColor.trim()) ? String(vars.primaryTextColor).trim()
-        : defaults.text;
-  const nodeFill =
-    opts.forceTheme
-      ? defaults.fill
-      : (typeof vars?.primaryColor === 'string' && vars.primaryColor.trim()) ? String(vars.primaryColor).trim()
-        : defaults.fill;
-
-  const isRecord = (value: unknown): value is Record<string, unknown> =>
-    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
-  const shouldFixContrast = (color: unknown): boolean => {
-    if (typeof color !== 'string') return true;
-    const trimmed = color.trim();
-    if (!trimmed) return true;
-    const dark = isDarkColor(trimmed);
-    if (dark === null) return false;
-    return bgDark ? dark : !dark;
-  };
-
-  return elements.map((el) => {
-    if (!isRecord(el)) return el;
-    const type = typeof el.type === 'string' ? el.type : '';
-    if (!type) return el;
-
-    // Keep images untouched.
-    if (type === 'image') return el;
-
-    const next: Record<string, unknown> = { ...el, locked: false };
-    if (type === 'text') {
-      if (opts.forceTheme || shouldFixContrast(el.strokeColor)) {
-        next.strokeColor = textColor;
-      }
-      return next as T;
-    }
-
-    if (type === 'rectangle' || type === 'diamond' || type === 'ellipse') {
-      if (opts.forceTheme || shouldFixContrast(el.strokeColor)) {
-        next.strokeColor = lineColor;
-      }
-      if (opts.forceTheme || typeof el.backgroundColor !== 'string' || el.backgroundColor === 'transparent') {
-        next.backgroundColor = nodeFill;
-      }
-      return next as T;
-    }
-
-    if (type === 'line' || type === 'arrow') {
-      if (opts.forceTheme || shouldFixContrast(el.strokeColor)) {
-        next.strokeColor = lineColor;
-      }
-      return next as T;
-    }
-
-    return next as T;
-  });
-};
-
-const buildSceneMeta = (args: { mermaidCode: string; svgMarkup: string }): MermaidLanggraphSceneMeta => {
-  return {
-    v: 2,
-    diagramType: detectMermaidDiagramTypeHint(args.mermaidCode),
-    mermaidHash: hashString(args.mermaidCode.trim()),
-    svgHash: hashString(args.svgMarkup.trim()),
-    generator: 'unknown',
-  };
-};
-
-const injectSceneMetaJson = (sceneJson: string, meta: MermaidLanggraphSceneMeta): string => {
-  try {
-    const parsed = JSON.parse(sceneJson) as unknown;
-    if (!parsed || typeof parsed !== 'object') return sceneJson;
-    const record = parsed as Record<string, unknown>;
-    record[MLG_META_KEY] = meta;
-    return JSON.stringify(record, null, 2);
-  } catch {
-    return sceneJson;
-  }
-};
-
-const readSceneMeta = (record: Record<string, unknown>): MermaidLanggraphSceneMeta | null => {
-  const raw = record[MLG_META_KEY];
-  if (!raw || typeof raw !== 'object') return null;
-  const meta = raw as Partial<MermaidLanggraphSceneMeta>;
-  if (meta.v !== 2) return null;
-  if (
-    meta.diagramType !== 'flowchart'
-    && meta.diagramType !== 'er'
-    && meta.diagramType !== 'sequence'
-    && meta.diagramType !== 'class'
-    && meta.diagramType !== 'unknown'
-  ) {
-    return null;
-  }
-  if (typeof meta.mermaidHash !== 'number' || typeof meta.svgHash !== 'number') return null;
-  if (meta.generator !== 'unknown' && meta.generator !== 'mermaid-to-excalidraw' && meta.generator !== 'svg-vectors' && meta.generator !== 'svg-image') return null;
-  return meta as MermaidLanggraphSceneMeta;
 };
 
 const countElementTypes = (elements: unknown[] | undefined): Record<string, number> => {
@@ -1065,166 +893,6 @@ const buildSceneFromSvgVectors = async (args: {
   }
 };
 
-const tryParseInitialScene = (sceneJson: string | null): ExcalidrawInitialDataState | null => {
-  if (!sceneJson?.trim()) return null;
-  try {
-    const parsed = JSON.parse(sceneJson) as unknown;
-    if (!parsed || typeof parsed !== 'object') return null;
-    const record = parsed as Record<string, unknown>;
-    if (record.type !== 'excalidraw') return null;
-    if (!Array.isArray(record.elements)) return null;
-    // Ignore blank scenes (common when initialData resolves before SVG is ready).
-    const elements = record.elements as unknown[];
-    const filesRaw = record.files;
-    const filesCount =
-      filesRaw && typeof filesRaw === 'object' ? Object.keys(filesRaw as Record<string, unknown>).length : 0;
-    const nonDeletedElements = elements.filter((el) => {
-      if (!el || typeof el !== 'object') return false;
-      return (el as { isDeleted?: unknown }).isDeleted !== true;
-    });
-    // If the stored scene has no visible elements, treat it as empty (regenerate).
-    if (nonDeletedElements.length === 0) return null;
-    // Guard: if the stored scene looks like a partial import (e.g. only boxes,
-    // no labels/edges), regenerate from Mermaid so the result is editable.
-    const elementTypes = nonDeletedElements
-      .map((el) => String((el as { type?: unknown }).type ?? ''));
-    const hasImage = elementTypes.some((t) => t === 'image');
-    const hasText = elementTypes.some((t) => t === 'text');
-    const hasLines = elementTypes.some((t) => t === 'line' || t === 'arrow');
-    if (!hasImage && !hasText && !hasLines && elements.length > 0) return null;
-    // If the scene contains image elements but no files payload, it will render
-    // as a placeholder; prefer regenerating from Mermaid instead.
-    if (filesCount === 0 && elements.some((el) => !!el && typeof el === 'object' && (el as { type?: unknown }).type === 'image')) {
-      return null;
-    }
-    // Migration: older whiteboard scenes were stored as a single locked image
-    // snapshot of the Mermaid SVG. This is not editable; prefer regenerating
-    // semantic elements from Mermaid code.
-    const isImageOnly = elements.length > 0 && elements.every((el) => !!el && typeof el === 'object' && (el as { type?: unknown }).type === 'image');
-    if (filesCount > 0 && isImageOnly) {
-      const meta = readSceneMeta(record);
-      // For ER diagrams Excalidraw elements are not always available yet; keep
-      // image-only scenes stable to avoid regenerating on every load.
-      if (meta?.diagramType === 'er') return parsed as ExcalidrawInitialDataState;
-      return null;
-    }
-    return parsed as ExcalidrawInitialDataState;
-  } catch {
-    return null;
-  }
-};
-
-const buildSceneFromMermaidCode = async (args: {
-  mermaidCode: string;
-  svgMarkup: string;
-  theme: 'light' | 'dark';
-  backgroundColor: string | null;
-  debug?: boolean;
-}): Promise<{ scene: ExcalidrawInitialDataState; generator: MermaidLanggraphSceneGenerator; mermaidToExcalidrawError?: string } | null> => {
-  const themeVars = extractFrontmatterThemeVariables(args.mermaidCode);
-  const themeVariables = {
-    ...(themeVars ?? {}),
-    // Keep font size consistent and avoid huge labels.
-    fontSize: '16px',
-  };
-  const backgroundCandidate =
-    (args.backgroundColor?.trim() ?? '')
-    || (typeof themeVars?.background === 'string' ? themeVars.background.trim() : '')
-    || extractMermaidSvgBackgroundColor(args.svgMarkup)
-    || null;
-
-  const trySvgVectors = async () => {
-    const svgVectors = await buildSceneFromSvgVectors({
-      svgMarkup: args.svgMarkup,
-      theme: args.theme,
-      backgroundColor: backgroundCandidate,
-    });
-    if (!svgVectors) return null;
-    const themed = applyMermaidThemeToExcalidrawElements((svgVectors.elements ?? []) as unknown[], {
-      backgroundColor: backgroundCandidate,
-      themeVariables: themeVars,
-      uiTheme: args.theme,
-    }) as unknown as ExcalidrawInitialDataState['elements'];
-    return {
-      scene: {
-        ...svgVectors,
-        elements: themed,
-        appState: {
-          ...(svgVectors.appState ?? {}),
-          theme: normalizeTheme(args.theme),
-          viewBackgroundColor: backgroundCandidate ?? undefined,
-        } as Partial<AppState>,
-      },
-      generator: 'svg-vectors' as const,
-    };
-  };
-
-  const diagramTypeHintLocal = detectMermaidDiagramTypeHint(args.mermaidCode);
-
-  try {
-    const { elements: converted, files } = await renderMermaidToExcalidrawElements({
-      mermaidCode: args.mermaidCode,
-      diagramTypeHint: diagramTypeHintLocal,
-      themeVariables,
-      timeoutMs: 12000,
-    });
-    const themed = applyMermaidThemeToExcalidrawElements(converted, {
-      backgroundColor: backgroundCandidate,
-      themeVariables: themeVars,
-      uiTheme: args.theme,
-    });
-
-    if (themed.length > 0) {
-      return {
-        generator: 'mermaid-to-excalidraw',
-        scene: {
-          type: 'excalidraw',
-          version: 2,
-          source: 'mermaid-langgraph',
-          elements: themed,
-          files,
-          scrollToContent: true,
-          appState: {
-            theme: normalizeTheme(args.theme),
-            viewBackgroundColor: backgroundCandidate ?? undefined,
-          } as Partial<AppState>,
-        },
-      };
-    }
-    if (args.debug) {
-      // eslint-disable-next-line no-console
-      console.warn('[whiteboard] mermaid-to-excalidraw returned 0 elements; falling back to svg-vectors');
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (args.debug) {
-      // eslint-disable-next-line no-console
-      console.warn('[whiteboard] mermaid-to-excalidraw failed; falling back to svg-vectors', message);
-    }
-    const svgVectors = await trySvgVectors();
-    if (svgVectors) return { ...svgVectors, mermaidToExcalidrawError: message };
-    // Fall back to SVG snapshot.
-    const svgImage = await buildSceneFromSvgMarkup({
-      svgMarkup: args.svgMarkup,
-      theme: args.theme,
-      backgroundColor: backgroundCandidate,
-    });
-    return svgImage ? { scene: svgImage, generator: 'svg-image', mermaidToExcalidrawError: message } : null;
-  }
-
-  // Fallback: parse the rendered Mermaid SVG into basic Excalidraw elements.
-  const svgVectors = await trySvgVectors();
-  if (svgVectors) return svgVectors;
-
-  // Last resort: import the rendered Mermaid SVG as a single image so it always stays visible.
-  const svgImage = await buildSceneFromSvgMarkup({
-    svgMarkup: args.svgMarkup,
-    theme: args.theme,
-    backgroundColor: backgroundCandidate,
-  });
-  return svgImage ? { scene: svgImage, generator: 'svg-image' } : null;
-};
-
 const buildSceneFromSvgMarkup = async (args: {
   svgMarkup: string;
   theme: 'light' | 'dark';
@@ -1667,6 +1335,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
       theme,
       backgroundColor: buildBackground ?? null,
       debug: debugEnabled,
+      buildSceneFromSvgVectors,
+      buildSceneFromSvgMarkup,
     }).then((result) => {
       if (cancelled) return;
       if (buildId !== buildRunIdRef.current) return;
