@@ -1500,8 +1500,19 @@ const DiagramWhiteboard: React.FC<Props> = ({
         const prevTheme = current.theme === 'dark' || current.theme === 'light' ? current.theme : nextTheme;
         const prevDefault = prevTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
         const nextDefault = nextTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
-        const shouldFollowTheme = !currentBg || (!hasUserCanvasBackgroundRef.current && currentBg === prevDefault);
-        const resolved = shouldFollowTheme ? (mermaidBackgroundCandidate ?? nextDefault) : currentBg;
+        const mermaidBg = typeof mermaidBackgroundCandidate === 'string' ? mermaidBackgroundCandidate.trim() : '';
+        const shouldFollowTheme = !currentBg || (!hasUserCanvasBackgroundRef.current && (
+          currentBg === prevDefault
+          || (mermaidBg && currentBg === mermaidBg)
+        ));
+        const autoBg = (() => {
+          if (!mermaidBg) return nextDefault;
+          const dark = isDarkColor(mermaidBg);
+          if (dark === null) return mermaidBg;
+          const wantsDark = nextTheme === 'dark';
+          return wantsDark === dark ? mermaidBg : nextDefault;
+        })();
+        const resolved = shouldFollowTheme ? autoBg : currentBg;
         if (resolved !== lastCanvasBackgroundRef.current) {
           lastCanvasBackgroundRef.current = resolved;
           setCanvasBackground(resolved);
@@ -1686,17 +1697,19 @@ const DiagramWhiteboard: React.FC<Props> = ({
     if (themeFromAppState && themeFromAppState !== normalizeTheme(theme)) {
       onThemeChange?.(themeFromAppState);
     }
-    if (skipNextChangeRef.current > 0) {
-      skipNextChangeRef.current -= 1;
-      return;
-    }
     if (backgroundMode === 'excalidraw') {
       const nextBg = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor : null;
       if (nextBg !== lastCanvasBackgroundRef.current) {
-        hasUserCanvasBackgroundRef.current = true;
+        if (skipNextChangeRef.current === 0) {
+          hasUserCanvasBackgroundRef.current = true;
+        }
         lastCanvasBackgroundRef.current = nextBg;
         setCanvasBackground(nextBg);
       }
+    }
+    if (skipNextChangeRef.current > 0) {
+      skipNextChangeRef.current -= 1;
+      return;
     }
     if (!hasHadContentRef.current && elements.length === 0) {
       return;
