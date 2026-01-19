@@ -13,6 +13,9 @@ export type MermaidLanggraphSceneMeta = {
 };
 
 export const MLG_META_KEY = '__mermaidLanggraph' as const;
+export const MLG_CANVAS_BG_BY_THEME_KEY = '__mlgCanvasBackgroundByTheme' as const;
+
+export type CanvasBackgroundByTheme = Partial<Record<'light' | 'dark', string>>;
 
 export const pickAppStateForSave = (appState: AppState): Partial<AppState> => {
   return {
@@ -57,6 +60,41 @@ export const injectSceneMetaJson = (sceneJson: string, meta: MermaidLanggraphSce
   }
 };
 
+export const injectCanvasBackgroundByThemeJson = (
+  sceneJson: string,
+  backgrounds: CanvasBackgroundByTheme | null | undefined
+): string => {
+  const next = backgrounds ?? null;
+  const light = typeof next?.light === 'string' ? next.light.trim() : '';
+  const dark = typeof next?.dark === 'string' ? next.dark.trim() : '';
+  if (!light && !dark) return sceneJson;
+  try {
+    const parsed = JSON.parse(sceneJson) as unknown;
+    if (!parsed || typeof parsed !== 'object') return sceneJson;
+    const record = parsed as Record<string, unknown>;
+    record[MLG_CANVAS_BG_BY_THEME_KEY] = {
+      ...(light ? { light } : {}),
+      ...(dark ? { dark } : {}),
+    };
+    return JSON.stringify(record, null, 2);
+  } catch {
+    return sceneJson;
+  }
+};
+
+export const readCanvasBackgroundByTheme = (record: Record<string, unknown>): CanvasBackgroundByTheme | null => {
+  const raw = record[MLG_CANVAS_BG_BY_THEME_KEY];
+  if (!raw || typeof raw !== 'object') return null;
+  const rec = raw as Record<string, unknown>;
+  const light = typeof rec.light === 'string' ? rec.light.trim() : '';
+  const dark = typeof rec.dark === 'string' ? rec.dark.trim() : '';
+  if (!light && !dark) return null;
+  return {
+    ...(light ? { light } : {}),
+    ...(dark ? { dark } : {}),
+  };
+};
+
 export const readSceneMeta = (record: Record<string, unknown>): MermaidLanggraphSceneMeta | null => {
   const raw = record[MLG_META_KEY];
   if (!raw || typeof raw !== 'object') return null;
@@ -80,4 +118,3 @@ export const readSceneMeta = (record: Record<string, unknown>): MermaidLanggraph
   ) return null;
   return meta as MermaidLanggraphSceneMeta;
 };
-

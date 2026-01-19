@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSceneMeta, hashString, injectSceneMetaJson, readSceneMeta } from './whiteboardSceneMeta';
+import {
+  buildSceneMeta,
+  hashString,
+  injectCanvasBackgroundByThemeJson,
+  injectSceneMetaJson,
+  readCanvasBackgroundByTheme,
+  readSceneMeta,
+} from './whiteboardSceneMeta';
 
 describe('whiteboardSceneMeta', () => {
   it('hashString is stable', () => {
@@ -18,5 +25,11 @@ describe('whiteboardSceneMeta', () => {
     expect(read?.mermaidHash).toBe(meta.mermaidHash);
     expect(read?.svgHash).toBe(meta.svgHash);
   });
-});
 
+  it('injects and reads canvas background by theme', () => {
+    const base = JSON.stringify({ type: 'excalidraw', version: 2, elements: [] });
+    const json = injectCanvasBackgroundByThemeJson(base, { light: '#fff', dark: '#111' });
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    expect(readCanvasBackgroundByTheme(parsed)).toEqual({ light: '#fff', dark: '#111' });
+  });
+});

@@ -40,7 +40,9 @@ import {
 import {
   buildSceneMeta,
   hashString,
+  injectCanvasBackgroundByThemeJson,
   injectSceneMetaJson,
+  readCanvasBackgroundByTheme,
   type MermaidLanggraphSceneGenerator,
   type MermaidLanggraphSceneMeta,
   normalizeTheme,
@@ -1036,7 +1038,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const [lastMermaidToExcalidrawError, setLastMermaidToExcalidrawError] = useState<string | null>(null);
   const [canvasBackground, setCanvasBackground] = useState<string | null>(null);
   const lastCanvasBackgroundRef = useRef<string | null>(null);
-  const hasUserCanvasBackgroundRef = useRef(false);
+  const canvasBackgroundByThemeRef = useRef<{ light: string | null; dark: string | null }>({ light: null, dark: null });
   const lastBuiltSignatureRef = useRef<string>('');
   const inFlightSignatureRef = useRef<string>('');
   const buildRunIdRef = useRef(0);
@@ -1161,6 +1163,38 @@ const DiagramWhiteboard: React.FC<Props> = ({
     isDirtyRef.current = false;
     const parsed = tryParseInitialScene(initialSceneJson);
     hasHadContentRef.current = Boolean(parsed?.elements && Array.isArray(parsed.elements) && parsed.elements.length > 0);
+    canvasBackgroundByThemeRef.current = { light: null, dark: null };
+    if (initialSceneJson?.trim()) {
+      try {
+        const raw = JSON.parse(initialSceneJson) as unknown;
+        if (raw && typeof raw === 'object') {
+          const record = raw as Record<string, unknown>;
+          const bgs = readCanvasBackgroundByTheme(record);
+          canvasBackgroundByThemeRef.current = {
+            light: typeof bgs?.light === 'string' ? bgs.light : null,
+            dark: typeof bgs?.dark === 'string' ? bgs.dark : null,
+          };
+          const appState = record.appState;
+          const themeFromScene =
+            appState && typeof appState === 'object'
+              ? (((appState as Record<string, unknown>).theme === 'dark' || (appState as Record<string, unknown>).theme === 'light')
+                ? (appState as Record<string, unknown>).theme as 'light' | 'dark'
+                : null)
+              : null;
+          const bgFromScene =
+            appState && typeof appState === 'object'
+              ? (typeof (appState as Record<string, unknown>).viewBackgroundColor === 'string'
+                ? ((appState as Record<string, unknown>).viewBackgroundColor as string).trim()
+                : '')
+              : '';
+          if (themeFromScene && bgFromScene && !canvasBackgroundByThemeRef.current[themeFromScene]) {
+            canvasBackgroundByThemeRef.current[themeFromScene] = bgFromScene;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
     if (initialSceneJson === null && !isDirtyRef.current) {
       lastBuiltSignatureRef.current = '';
       inFlightSignatureRef.current = '';
@@ -1503,14 +1537,9 @@ const DiagramWhiteboard: React.FC<Props> = ({
         const currentBg =
           (lastCanvasBackgroundRef.current ?? (typeof current.viewBackgroundColor === 'string' ? current.viewBackgroundColor : null))
           ?? null;
-        const prevTheme = current.theme === 'dark' || current.theme === 'light' ? current.theme : nextTheme;
-        const prevDefault = prevTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
         const nextDefault = nextTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
         const mermaidBg = typeof mermaidBackgroundCandidate === 'string' ? mermaidBackgroundCandidate.trim() : '';
-        const shouldFollowTheme = !currentBg || (!hasUserCanvasBackgroundRef.current && (
-          currentBg === prevDefault
-          || (mermaidBg && currentBg === mermaidBg)
-        ));
+        const userBg = canvasBackgroundByThemeRef.current[nextTheme] ?? null;
         const autoBg = (() => {
           if (!mermaidBg) return nextDefault;
           const dark = isDarkColor(mermaidBg);
@@ -1518,7 +1547,14 @@ const DiagramWhiteboard: React.FC<Props> = ({
           const wantsDark = nextTheme === 'dark';
           return wantsDark === dark ? mermaidBg : nextDefault;
         })();
-        const resolved = shouldFollowTheme ? autoBg : currentBg;
+        const resolved = userBg ?? autoBg;
+        if (!userBg && currentBg && !canvasBackgroundByThemeRef.current[nextTheme]) {
+          // Back-compat: if we only have a single stored background, consider it
+          // the current theme's user background (unless it is a known default).
+          if (currentBg !== CANVAS_BG_DARK && currentBg !== CANVAS_BG_LIGHT) {
+            canvasBackgroundByThemeRef.current[nextTheme] = currentBg;
+          }
+        }
         if (resolved !== lastCanvasBackgroundRef.current) {
           lastCanvasBackgroundRef.current = resolved;
           setCanvasBackground(resolved);
@@ -1716,7 +1752,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
       const nextBg = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor : null;
       if (nextBg !== lastCanvasBackgroundRef.current) {
         if (skipNextChangeRef.current === 0) {
-          hasUserCanvasBackgroundRef.current = true;
+          const themeKey = themeFromAppState ?? themePropRef.current;
+          canvasBackgroundByThemeRef.current[themeKey] = nextBg;
         }
         lastCanvasBackgroundRef.current = nextBg;
         setCanvasBackground(nextBg);
@@ -1849,7 +1886,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
         // history scenes become non-portable and re-open as blank.
         'local'
       );
-      const json = injectSceneMetaJson(rawJson, sceneMetaForSaveRef.current);
+      const metaJson = injectSceneMetaJson(rawJson, sceneMetaForSaveRef.current);
+      const json = injectCanvasBackgroundByThemeJson(metaJson, {
+        ...(canvasBackgroundByThemeRef.current.light ? { light: canvasBackgroundByThemeRef.current.light } : {}),
+        ...(canvasBackgroundByThemeRef.current.dark ? { dark: canvasBackgroundByThemeRef.current.dark } : {}),
+      });
       lastSerializedSignatureRef.current = signature;
       isDirtyRef.current = true;
       scheduleAutosave(json);
