@@ -1,3 +1,2 @@
-.diagram-whiteboard .excalidraw.theme--dark canvas {
-  filter: none !important;
-}
+/* Keep Excalidraw's default theme filter in dark mode.
+   Disabling it breaks canvas color picking and background rendering. */
