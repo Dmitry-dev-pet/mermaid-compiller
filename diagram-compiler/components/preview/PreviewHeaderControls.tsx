@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Circle, Copy, Download, Layers, Link2, Maximize, Maximize2, Minimize2, Moon, Palette, PenLine, RefreshCw, SquarePen } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Circle, Code2, Copy, Download, Layers, Link2, Maximize, Maximize2, Minimize2, Moon, Palette, PenLine, RefreshCw, SquarePen, Sun } from 'lucide-react';
 import { MermaidDirection } from '../../utils/inlineDirectionCommand';
 import { MermaidLook } from '../../utils/inlineLookCommand';
 import type { FlowchartEdgeStyle, FlowchartEdgeStyleUpdate } from '../../utils/flowchartArrowStyle';
@@ -22,6 +22,14 @@ interface PreviewHeaderControlsProps {
   onToggleWhiteboard: () => void;
   onWhiteboardSyncFromCode: () => void;
   onToggleWhiteboardAutoSync: () => void;
+  showExcalidrawThemeControl: boolean;
+  excalidrawTheme: 'light' | 'dark';
+  onSetExcalidrawTheme: (nextTheme: 'light' | 'dark') => void;
+  pinnedMode: 'mermaid' | 'ed';
+  pinnedCanEd: boolean;
+  pinnedDirty: boolean;
+  pinnedEdDisabledReason: string | null;
+  onSetPinnedMode: (next: 'mermaid' | 'ed') => void;
   markdownNavEnabled: boolean;
   markdownNavLabel: string;
   markdownPrevDisabled: boolean;
@@ -77,6 +85,14 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
   onToggleWhiteboard,
   onWhiteboardSyncFromCode,
   onToggleWhiteboardAutoSync,
+  showExcalidrawThemeControl,
+  excalidrawTheme,
+  onSetExcalidrawTheme,
+  pinnedMode,
+  pinnedCanEd,
+  pinnedDirty,
+  pinnedEdDisabledReason,
+  onSetPinnedMode,
   markdownNavEnabled,
   markdownNavLabel,
   markdownPrevDisabled,
@@ -209,6 +225,9 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
     }
   };
 
+  const pinnedButtonBase =
+    'relative inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors select-none';
+
   const chip = (value: string) => (
     <span className="inline-flex items-center justify-center w-7 h-6 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 font-mono text-[10px] tabular-nums">
       {value}
@@ -223,9 +242,60 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
 
   return (
     <div
-      className="h-24 px-4 py-2 border-b bg-transparent text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-col gap-2"
+      className="relative h-24 px-4 py-2 border-b bg-transparent text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-col gap-2"
       style={{ borderColor: 'var(--panel-border, #e5e7eb)', backgroundColor: 'var(--panel-alt-bg, #ffffff)' }}
     >
+      <div className="pointer-events-none absolute right-4 bottom-2 z-30">
+        <div className="pointer-events-auto inline-flex rounded-md border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/60 backdrop-blur px-1 py-1 shadow-sm">
+          <button
+            type="button"
+            onClick={() => onSetPinnedMode('mermaid')}
+            className={`${pinnedButtonBase} rounded-[6px] ${
+              pinnedMode === 'mermaid'
+                ? 'bg-white text-slate-900 shadow dark:bg-slate-800 dark:text-slate-50'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-50'
+            }`}
+            aria-pressed={pinnedMode === 'mermaid'}
+            title="Mermaid"
+          >
+            <Code2 size={14} />
+            Mermaid
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!pinnedCanEd) return;
+              onSetPinnedMode('ed');
+            }}
+            disabled={!pinnedCanEd}
+            className={`${pinnedButtonBase} rounded-[6px] ${
+              pinnedMode === 'ed'
+                ? 'bg-white text-slate-900 shadow dark:bg-slate-800 dark:text-slate-50'
+                : pinnedCanEd
+                  ? 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-50'
+                  : 'text-slate-400 dark:text-slate-600 cursor-not-allowed'
+            }`}
+            aria-pressed={pinnedMode === 'ed'}
+            title={pinnedCanEd ? 'Excalidraw' : (pinnedEdDisabledReason ?? 'Excalidraw is unavailable')}
+          >
+            <PenLine size={14} />
+            ED
+            <span
+              className={`ml-1 inline-flex h-2 w-2 rounded-full ${
+                pinnedMode === 'ed'
+                  ? pinnedDirty
+                    ? 'bg-amber-500 dark:bg-amber-300'
+                    : 'bg-emerald-500/70 dark:bg-emerald-300/70'
+                  : pinnedDirty
+                    ? 'bg-amber-500/70 dark:bg-amber-300/70'
+                    : 'bg-transparent'
+              }`}
+              aria-hidden
+            />
+          </button>
+        </div>
+      </div>
       <div className="flex items-center justify-between gap-3 min-w-0">
         <div className="flex items-center gap-3 min-w-0 normal-case tracking-normal">
           <div className="min-w-0 truncate font-semibold text-[var(--control-text)]">{title}</div>
@@ -373,6 +443,44 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                     Auto
                   </button>
                 )}
+              </div>
+            )}
+
+            {showExcalidrawThemeControl && (
+              <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
+                <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
+                  ED
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onSetExcalidrawTheme('light')}
+                  className={`${HEADER_CONTROL_BUTTON} ml-1 ${
+                    excalidrawTheme === 'light'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
+                      : ''
+                  }`}
+                  title="Excalidraw theme: light"
+                  aria-label="Excalidraw theme: light"
+                  aria-pressed={excalidrawTheme === 'light'}
+                >
+                  <Sun size={14} />
+                  Light
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSetExcalidrawTheme('dark')}
+                  className={`${HEADER_CONTROL_BUTTON} ${
+                    excalidrawTheme === 'dark'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
+                      : ''
+                  }`}
+                  title="Excalidraw theme: dark"
+                  aria-label="Excalidraw theme: dark"
+                  aria-pressed={excalidrawTheme === 'dark'}
+                >
+                  <Moon size={14} />
+                  Dark
+                </button>
               </div>
             )}
 

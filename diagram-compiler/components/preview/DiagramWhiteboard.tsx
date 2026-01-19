@@ -12,6 +12,7 @@ import {
   type MermaidDiagramTypeHint,
 } from '../../services/excalidraw/mermaidToExcalidrawService';
 import { renderMermaidToExcalidrawElements } from '../../services/excalidraw/mermaidToExcalidrawRenderer';
+import { applyContainerTextMap, buildContainerTextMap } from '../../services/excalidraw/excalidrawTextSync';
 import type {
   AppState,
   BinaryFileData,
@@ -37,6 +38,8 @@ type ExcalidrawElementSkeleton = ExcalidrawElementSkeletonList[number];
 type Props = {
   theme: 'light' | 'dark';
   backgroundColor: string | null;
+  backgroundMode?: 'mermaid' | 'excalidraw';
+  syncKey?: number;
   mermaidCode: string;
   svgMarkup: string;
   initialSceneJson: string | null;
@@ -50,6 +53,7 @@ type Props = {
   onZoomPercentChange?: (nextZoomPercent: number) => void;
   onAutosave: (sceneJson: string) => Promise<unknown> | unknown;
   onDirtyChange?: (dirty: boolean) => void;
+  onThemeChange?: (nextTheme: 'light' | 'dark') => void;
 };
 
 type MermaidLanggraphSceneGenerator = 'unknown' | 'mermaid-to-excalidraw' | 'svg-vectors' | 'svg-image';
@@ -85,6 +89,47 @@ const hashString = (s: string): number => {
   return hash >>> 0;
 };
 
+const computeFlowchartStructureSignature = (code: string): string => {
+  // Best-effort signature: stable for changes in labels/edge texts.
+  // IDs/edges still count as "structure", which matches flowchart converter IDs.
+  const normalized = code
+    .replace(/^\s*%%.*$/gm, '')
+    .replace(/\[[^\]]*]/g, '[]')
+    .replace(/\{[^}]*}/g, '{}')
+    .replace(/\([^)]*\)/g, '()')
+    .replace(/\|[^|]*\|/g, '||')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return String(hashString(normalized));
+};
+
+const computeDiagramStructureSignature = (diagramType: MermaidDiagramTypeHint, code: string): string => {
+  if (diagramType === 'flowchart') return computeFlowchartStructureSignature(code);
+
+  const stripped = code.replace(/^\s*%%.*$/gm, '').replace(/\s+/g, ' ');
+
+  if (diagramType === 'class') {
+    // Remove class body fields/methods and member labels.
+    const normalized = stripped
+      .replace(/\{[^}]*}/g, '{}')
+      .replace(/:\s*[^;]+/g, ':')
+      .trim();
+    return String(hashString(normalized));
+  }
+
+  if (diagramType === 'sequence') {
+    // Remove message texts (after :) and aliases (after "as").
+    const normalized = stripped
+      .replace(/\bas\s+[^ ]+/gi, 'as')
+      .replace(/:\s*[^;]+/g, ':')
+      .trim();
+    return String(hashString(normalized));
+  }
+
+  // Fallback: treat any change as structural.
+  return String(hashString(stripped.trim()));
+};
+
 const parseHexColor = (color: string): { r: number; g: number; b: number } | null => {
   const raw = color.trim();
   const hex = raw.startsWith('#') ? raw.slice(1) : raw;
@@ -113,9 +158,17 @@ const isDarkColor = (color: string): boolean | null => {
   return l < 128;
 };
 
+const CANVAS_BG_DARK = '#1e1e1e';
+const CANVAS_BG_LIGHT = '#ffffff';
+
 const applyMermaidThemeToExcalidrawElements = <T,>(
   raw: readonly T[],
-  opts: { backgroundColor: string | null; themeVariables: Record<string, string | number | boolean> | null; uiTheme: 'light' | 'dark' }
+  opts: {
+    backgroundColor: string | null;
+    themeVariables: Record<string, string | number | boolean> | null;
+    uiTheme: 'light' | 'dark';
+    forceTheme?: boolean;
+  }
 ): T[] => {
   const elements = Array.isArray(raw) ? [...raw] : [];
   const vars = opts.themeVariables ?? null;
@@ -124,15 +177,25 @@ const applyMermaidThemeToExcalidrawElements = <T,>(
   const darkModeVar = typeof vars?.darkMode === 'boolean' ? vars.darkMode : null;
   const bgDark = (bg ? isDarkColor(bg) : null) ?? darkModeVar ?? (opts.uiTheme === 'dark');
 
+  const defaults = bgDark
+    ? { line: '#cbd5e1', text: '#e5e7eb', fill: 'transparent' }
+    : { line: '#0f172a', text: '#0f172a', fill: 'transparent' };
+
   const lineColor =
-    (typeof vars?.lineColor === 'string' && vars.lineColor.trim()) ? String(vars.lineColor).trim()
-      : bgDark ? '#9da5b4' : '#374151';
+    opts.forceTheme
+      ? defaults.line
+      : (typeof vars?.lineColor === 'string' && vars.lineColor.trim()) ? String(vars.lineColor).trim()
+        : defaults.line;
   const textColor =
-    (typeof vars?.primaryTextColor === 'string' && vars.primaryTextColor.trim()) ? String(vars.primaryTextColor).trim()
-      : bgDark ? '#d4d4d4' : '#0f172a';
+    opts.forceTheme
+      ? defaults.text
+      : (typeof vars?.primaryTextColor === 'string' && vars.primaryTextColor.trim()) ? String(vars.primaryTextColor).trim()
+        : defaults.text;
   const nodeFill =
-    (typeof vars?.primaryColor === 'string' && vars.primaryColor.trim()) ? String(vars.primaryColor).trim()
-      : bgDark ? '#1e1e1e' : '#ffffff';
+    opts.forceTheme
+      ? defaults.fill
+      : (typeof vars?.primaryColor === 'string' && vars.primaryColor.trim()) ? String(vars.primaryColor).trim()
+        : defaults.fill;
 
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -156,26 +219,24 @@ const applyMermaidThemeToExcalidrawElements = <T,>(
 
     const next: Record<string, unknown> = { ...el, locked: false };
     if (type === 'text') {
-      if (shouldFixContrast(el.strokeColor)) {
+      if (opts.forceTheme || shouldFixContrast(el.strokeColor)) {
         next.strokeColor = textColor;
       }
       return next as T;
     }
 
     if (type === 'rectangle' || type === 'diamond' || type === 'ellipse') {
-      if (shouldFixContrast(el.strokeColor)) {
+      if (opts.forceTheme || shouldFixContrast(el.strokeColor)) {
         next.strokeColor = lineColor;
       }
-      // Don’t aggressively override fills — users may have edited them.
-      // Only set a fill when it’s missing/transparent (common in old imports).
-      if (typeof el.backgroundColor !== 'string' || el.backgroundColor === 'transparent') {
+      if (opts.forceTheme || typeof el.backgroundColor !== 'string' || el.backgroundColor === 'transparent') {
         next.backgroundColor = nodeFill;
       }
       return next as T;
     }
 
     if (type === 'line' || type === 'arrow') {
-      if (shouldFixContrast(el.strokeColor)) {
+      if (opts.forceTheme || shouldFixContrast(el.strokeColor)) {
         next.strokeColor = lineColor;
       }
       return next as T;
@@ -1233,6 +1294,8 @@ const AUTOSAVE_DEBOUNCE_MS = 1200;
 const DiagramWhiteboard: React.FC<Props> = ({
   theme,
   backgroundColor,
+  backgroundMode: backgroundModeProp,
+  syncKey,
   mermaidCode,
   svgMarkup,
   initialSceneJson,
@@ -1246,10 +1309,12 @@ const DiagramWhiteboard: React.FC<Props> = ({
   onZoomPercentChange,
   onAutosave,
   onDirtyChange,
+  onThemeChange,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isViewMode = mode === 'view';
   const isAutoZoom = zoomMode === 'auto';
+  const backgroundMode = backgroundModeProp ?? 'mermaid';
   const debugEnabled = useMemo(() => {
     try {
       return new URLSearchParams(window.location.search).has('wbDebug');
@@ -1261,7 +1326,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const diagramTypeHint = useMemo(() => detectMermaidDiagramTypeHint(mermaidCode), [mermaidCode]);
   const sceneMeta = useMemo(() => buildSceneMeta({ mermaidCode, svgMarkup }), [mermaidCode, svgMarkup]);
 
-  const effectiveBackgroundColor = useMemo(() => {
+  const mermaidBackgroundCandidate = useMemo(() => {
     const fromProp = backgroundColor?.trim() ?? '';
     if (fromProp) return fromProp;
     const vars = extractFrontmatterThemeVariables(mermaidCode);
@@ -1277,6 +1342,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
   }, [backgroundColor, mermaidCode, svgMarkup]);
 
+  const effectiveBackgroundColor = useMemo(() => {
+    if (backgroundMode === 'excalidraw') return null;
+    return mermaidBackgroundCandidate;
+  }, [backgroundMode, mermaidBackgroundCandidate]);
+
   const lastSavedJsonRef = useRef<string>(initialSceneJson ?? '');
   const pendingSaveRef = useRef<number | null>(null);
   const latestJsonRef = useRef<string>(initialSceneJson ?? '');
@@ -1286,18 +1356,31 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const hasHadContentRef = useRef(false);
   const isDirtyRef = useRef(false);
+  const skipNextChangeRef = useRef(0);
+  const lastMermaidCodeRef = useRef<string>(mermaidCode);
+  const lastStructureSigRef = useRef<string>(computeDiagramStructureSignature(diagramTypeHint, mermaidCode));
+  const lastRethemeSignatureRef = useRef<string>('');
   const [sceneKey, setSceneKey] = useState(0);
   const [initialDataState, setInitialDataState] = useState<ExcalidrawInitialDataState | null>(null);
   const [isSceneBuilding, setIsSceneBuilding] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [lastGenerator, setLastGenerator] = useState<MermaidLanggraphSceneGenerator>('unknown');
   const [lastMermaidToExcalidrawError, setLastMermaidToExcalidrawError] = useState<string | null>(null);
+  const [canvasBackground, setCanvasBackground] = useState<string | null>(null);
+  const lastCanvasBackgroundRef = useRef<string | null>(null);
   const lastBuiltSignatureRef = useRef<string>('');
   const inFlightSignatureRef = useRef<string>('');
   const buildRunIdRef = useRef(0);
   const sceneMetaForSaveRef = useRef<MermaidLanggraphSceneMeta>(sceneMeta);
   const lastSerializedSignatureRef = useRef<string>('');
   const [debugRuntime, setDebugRuntime] = useState<WhiteboardDebugRuntime | null>(null);
+  const lastAppliedSceneKeyRef = useRef<number | null>(null);
+  const lastSyncKeyRef = useRef<number | null>(typeof syncKey === 'number' ? syncKey : null);
+  const normalizedColorsSceneKeyRef = useRef<number | null>(null);
+  const canvasBackgroundForTheme = useMemo(() => {
+    // Excalidraw does not auto-adjust canvas background based on theme, so we provide defaults.
+    return normalizeTheme(theme) === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
+  }, [theme]);
 
   const VIEW_MODE_APPSTATE_PATCH = useMemo(() => {
     if (!isViewMode) return null;
@@ -1324,8 +1407,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
     sceneKey,
     isViewMode,
     isAutoZoom,
-    fitMode,
-    scrollMode,
+    fitMode: fitMode as 'content' | 'width',
+    scrollMode: scrollMode as 'none' | 'vertical',
     viewModeAppStatePatch: VIEW_MODE_APPSTATE_PATCH,
     editableAppState: WHITEBOARD_EDITABLE_APPSTATE,
     debugEnabled,
@@ -1335,13 +1418,28 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
   const prepareInitialData = useCallback((scene: ExcalidrawInitialDataState): ExcalidrawInitialDataState => {
     const sceneAppState = (scene.appState ?? {}) as Partial<AppState>;
-    const themeVars = extractFrontmatterThemeVariables(mermaidCode);
+    const themeVars = backgroundMode === 'excalidraw' ? null : extractFrontmatterThemeVariables(mermaidCode);
+    const contrastBackground =
+      backgroundMode === 'excalidraw'
+        ? (canvasBackground ?? mermaidBackgroundCandidate ?? canvasBackgroundForTheme)
+        : (effectiveBackgroundColor ?? null);
     const themedElements = applyMermaidThemeToExcalidrawElements((scene.elements ?? []) as unknown[], {
-      backgroundColor: effectiveBackgroundColor ?? null,
+      backgroundColor: contrastBackground,
       themeVariables: themeVars,
       uiTheme: theme,
+      forceTheme: backgroundMode === 'excalidraw',
     }) as unknown as ExcalidrawInitialDataState['elements'];
     const targetZoom = clampWhiteboardZoom(zoomPercent / 100);
+    const nextBackground = (() => {
+      if (backgroundMode === 'excalidraw') {
+        const fromUser = canvasBackground?.trim() ?? '';
+        if (fromUser) return fromUser;
+        const fromScene = typeof sceneAppState.viewBackgroundColor === 'string' ? sceneAppState.viewBackgroundColor.trim() : '';
+        if (fromScene) return fromScene;
+        return mermaidBackgroundCandidate ?? canvasBackgroundForTheme;
+      }
+      return effectiveBackgroundColor ?? sceneAppState.viewBackgroundColor ?? undefined;
+    })();
     return {
       ...scene,
       elements: themedElements,
@@ -1349,12 +1447,12 @@ const DiagramWhiteboard: React.FC<Props> = ({
         sceneAppState,
         uiTheme: normalizeTheme(theme),
         viewMode: isViewMode,
-        backgroundColor: effectiveBackgroundColor ?? sceneAppState.viewBackgroundColor ?? undefined,
+        backgroundColor: nextBackground,
         zoomPercent: targetZoom * 100,
         viewModePatch: VIEW_MODE_APPSTATE_PATCH,
       }),
     };
-  }, [VIEW_MODE_APPSTATE_PATCH, effectiveBackgroundColor, isViewMode, mermaidCode, theme, zoomPercent]);
+  }, [VIEW_MODE_APPSTATE_PATCH, backgroundMode, canvasBackground, canvasBackgroundForTheme, effectiveBackgroundColor, isViewMode, mermaidBackgroundCandidate, mermaidCode, theme, zoomPercent]);
 
   const handlePointerUp = useCallback((_: AppState['activeTool'], pointerDownState: any) => {
     if (!isViewMode) return;
@@ -1368,13 +1466,113 @@ const DiagramWhiteboard: React.FC<Props> = ({
   }, [isViewMode, onNotebookDiagramClick]);
 
   useEffect(() => {
+    if (typeof syncKey !== 'number') return;
+    if (lastSyncKeyRef.current === syncKey) return;
+    lastSyncKeyRef.current = syncKey;
+    if (isDirtyRef.current) return;
+
+    lastBuiltSignatureRef.current = '';
+    inFlightSignatureRef.current = '';
+    buildRunIdRef.current += 1;
+    setInitialDataState(null);
+    setBuildError(null);
+    setIsSceneBuilding(false);
+  }, [syncKey]);
+
+  useEffect(() => {
     lastSavedJsonRef.current = initialSceneJson ?? '';
     latestJsonRef.current = initialSceneJson ?? '';
     onDirtyChange?.(false);
     isDirtyRef.current = false;
     const parsed = tryParseInitialScene(initialSceneJson);
     hasHadContentRef.current = Boolean(parsed?.elements && Array.isArray(parsed.elements) && parsed.elements.length > 0);
+    if (initialSceneJson === null && !isDirtyRef.current) {
+      lastBuiltSignatureRef.current = '';
+      inFlightSignatureRef.current = '';
+      setInitialDataState(null);
+    }
   }, [initialSceneJson, onDirtyChange]);
+
+  useEffect(() => {
+    if (!api) return;
+    if (!initialDataState) return;
+    if (isDirtyRef.current) return;
+    if (lastAppliedSceneKeyRef.current === sceneKey) return;
+
+    const nextElements = (initialDataState.elements ?? []) as unknown[];
+    const nextAppState = (initialDataState.appState ?? null) as Partial<AppState> | null;
+    const nextFiles = (initialDataState.files ?? {}) as BinaryFiles;
+
+    const contrastBackground = (() => {
+      if (backgroundMode === 'excalidraw') {
+        const fromScene = typeof nextAppState?.viewBackgroundColor === 'string' ? nextAppState.viewBackgroundColor.trim() : '';
+        return fromScene || mermaidBackgroundCandidate || (canvasBackgroundForTheme ?? null);
+      }
+      return effectiveBackgroundColor ?? null;
+    })();
+    const themeVars = backgroundMode === 'excalidraw' ? null : extractFrontmatterThemeVariables(mermaidCode);
+    const themedElements = applyMermaidThemeToExcalidrawElements(nextElements, {
+      backgroundColor: contrastBackground,
+      themeVariables: themeVars,
+      uiTheme: theme,
+      forceTheme: backgroundMode === 'excalidraw',
+    }) as unknown as ExcalidrawInitialDataState['elements'];
+
+    skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
+    api.updateScene({
+      elements: themedElements as any,
+      appState: nextAppState as any,
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    try {
+      api.history?.clear?.();
+    } catch {
+      // ignore
+    }
+    try {
+      const fileList = Object.values(nextFiles ?? {});
+      if (fileList.length) api.addFiles(fileList as any);
+    } catch {
+      // ignore
+    }
+    lastAppliedSceneKeyRef.current = sceneKey;
+  }, [api, backgroundMode, canvasBackgroundForTheme, effectiveBackgroundColor, initialDataState, mermaidBackgroundCandidate, mermaidCode, sceneKey, theme]);
+
+  useEffect(() => {
+    if (!api) return;
+    const nextTheme = normalizeTheme(theme);
+    const signature = `${nextTheme}:${backgroundMode}:${canvasBackground ?? ''}:${effectiveBackgroundColor ?? ''}:${sceneKey}:${mermaidCode.trim()}`;
+    if (signature === lastRethemeSignatureRef.current) return;
+    const elements = api.getSceneElements();
+    if (!elements.length) return;
+
+    const themeVars = (() => {
+      if (backgroundMode === 'excalidraw') return null;
+      const rawThemeVars = extractFrontmatterThemeVariables(mermaidCode);
+      const vars = rawThemeVars ? { ...rawThemeVars } : null;
+      if (vars && 'background' in vars) {
+        delete (vars as Record<string, unknown>).background;
+      }
+      if (vars) vars.darkMode = nextTheme === 'dark';
+      return vars;
+    })();
+    const contrastBackground =
+      backgroundMode === 'excalidraw'
+        ? (canvasBackground ?? mermaidBackgroundCandidate ?? canvasBackgroundForTheme)
+        : null;
+    const themedElements = applyMermaidThemeToExcalidrawElements(elements as unknown[], {
+      backgroundColor: contrastBackground,
+      themeVariables: themeVars,
+      uiTheme: nextTheme,
+      forceTheme: true,
+    }) as unknown as ExcalidrawInitialDataState['elements'];
+    skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
+    api.updateScene({
+      elements: themedElements,
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    lastRethemeSignatureRef.current = signature;
+  }, [api, backgroundMode, canvasBackground, canvasBackgroundForTheme, effectiveBackgroundColor, isViewMode, mermaidBackgroundCandidate, mermaidCode, sceneKey, theme]);
 
   useEffect(() => {
     if (!initialDataOverride) return;
@@ -1382,6 +1580,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       lockedScrollXRef.current = null;
       setIsSceneBuilding(false);
       setBuildError(null);
+      skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
       setInitialDataState(prepareInitialData(initialDataOverride));
       setSceneKey((k) => {
         const next = k + 1;
@@ -1431,6 +1630,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         // semantic/vector elements when we can.
       } else {
       defer(() => {
+        skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
         setInitialDataState(prepareInitialData(parsed));
         sceneMetaForSaveRef.current = meta;
         setLastGenerator(meta.generator ?? 'unknown');
@@ -1445,7 +1645,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
       }
     }
 
-    const signature = `${sceneMeta.mermaidHash}:${normalizeTheme(theme)}:${effectiveBackgroundColor ?? ''}`;
+    const buildBackground =
+      backgroundMode === 'excalidraw'
+        ? mermaidBackgroundCandidate
+        : effectiveBackgroundColor;
+    const signature = `${sceneMeta.mermaidHash}:${normalizeTheme(theme)}:${buildBackground ?? ''}`;
     if (signature === lastBuiltSignatureRef.current) return;
     if (signature === inFlightSignatureRef.current) return;
     inFlightSignatureRef.current = signature;
@@ -1461,7 +1665,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       mermaidCode,
       svgMarkup,
       theme,
-      backgroundColor: effectiveBackgroundColor,
+      backgroundColor: buildBackground ?? null,
       debug: debugEnabled,
     }).then((result) => {
       if (cancelled) return;
@@ -1472,6 +1676,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         setBuildError('buildSceneFromMermaidCode returned null');
         return;
       }
+      skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
       setInitialDataState(prepareInitialData(result.scene));
       sceneMetaForSaveRef.current = { ...sceneMeta, generator: result.generator };
       setLastGenerator(result.generator);
@@ -1500,12 +1705,14 @@ const DiagramWhiteboard: React.FC<Props> = ({
       }
     };
   }, [
+    backgroundMode,
     diagramTypeHint,
     effectiveBackgroundColor,
     initialDataOverride,
     initialDataState,
     initialSceneJson,
     mermaidCode,
+    mermaidBackgroundCandidate,
     prepareInitialData,
     sceneMeta,
     svgMarkup,
@@ -1613,7 +1820,25 @@ const DiagramWhiteboard: React.FC<Props> = ({
   useEffect(() => {
     if (!api) return;
     const nextTheme = normalizeTheme(theme);
-    const nextBackground = effectiveBackgroundColor ?? undefined;
+    const nextBackground = (() => {
+      if (backgroundMode === 'excalidraw') {
+        const current = api.getAppState();
+        const currentBg =
+          (lastCanvasBackgroundRef.current ?? (typeof current.viewBackgroundColor === 'string' ? current.viewBackgroundColor : null))
+          ?? null;
+        const prevTheme = current.theme === 'dark' || current.theme === 'light' ? current.theme : nextTheme;
+        const prevDefault = prevTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
+        const nextDefault = nextTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
+        const shouldFollowTheme = !currentBg || currentBg === prevDefault;
+        const resolved = shouldFollowTheme ? (mermaidBackgroundCandidate ?? nextDefault) : currentBg;
+        if (resolved !== lastCanvasBackgroundRef.current) {
+          lastCanvasBackgroundRef.current = resolved;
+          setCanvasBackground(resolved);
+        }
+        return resolved;
+      }
+      return effectiveBackgroundColor ?? undefined;
+    })();
     const expectedViewModeEnabled = isViewMode;
     const apply = () => {
       const current = api.getAppState();
@@ -1632,23 +1857,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
         }),
         captureUpdate: CaptureUpdateAction.NEVER,
       });
-      api.refresh();
     };
 
-    // Excalidraw can update its internal appState during initialization/theme changes.
-    // Apply twice across frames to ensure the canvas background sticks.
-    let raf1 = 0;
-    let raf2 = 0;
-    raf1 = requestAnimationFrame(() => {
-      apply();
-      raf2 = requestAnimationFrame(() => apply());
-    });
-
-    return () => {
-      if (raf1) cancelAnimationFrame(raf1);
-      if (raf2) cancelAnimationFrame(raf2);
-    };
-  }, [api, effectiveBackgroundColor, isViewMode, theme]);
+    const raf = requestAnimationFrame(() => apply());
+    return () => cancelAnimationFrame(raf);
+  }, [api, backgroundMode, canvasBackgroundForTheme, effectiveBackgroundColor, isViewMode, mermaidBackgroundCandidate, theme]);
 
   useEffect(() => {
     if (!api) return;
@@ -1667,7 +1880,6 @@ const DiagramWhiteboard: React.FC<Props> = ({
       },
       captureUpdate: CaptureUpdateAction.NEVER,
     });
-    api.refresh();
   }, [api, isAutoZoom, isViewMode, zoomPercent]);
 
   const scheduleAutosave = useCallback((nextJson: string) => {
@@ -1729,6 +1941,60 @@ const DiagramWhiteboard: React.FC<Props> = ({
   }, [mermaidCode, svgMarkup]);
 
   useEffect(() => {
+    // Text-only sync: if the flowchart structure hasn't changed, preserve user
+    // layout (moved boxes/arrows) and update only labels from Mermaid code.
+    if (!apiRef.current) return;
+    if (isViewMode) return;
+    if (!isDirtyRef.current) {
+      lastMermaidCodeRef.current = mermaidCode;
+      lastStructureSigRef.current = computeDiagramStructureSignature(diagramTypeHint, mermaidCode);
+      return;
+    }
+
+    if (diagramTypeHint !== 'flowchart' && diagramTypeHint !== 'sequence' && diagramTypeHint !== 'class') {
+      lastMermaidCodeRef.current = mermaidCode;
+      lastStructureSigRef.current = computeDiagramStructureSignature(diagramTypeHint, mermaidCode);
+      return;
+    }
+
+    const prevCode = lastMermaidCodeRef.current;
+    if (prevCode === mermaidCode) return;
+
+    const prevSig = lastStructureSigRef.current;
+    const nextSig = computeDiagramStructureSignature(diagramTypeHint, mermaidCode);
+    lastMermaidCodeRef.current = mermaidCode;
+    lastStructureSigRef.current = nextSig;
+    if (prevSig !== nextSig) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { elements: nextElements } = await renderMermaidToExcalidrawElements({
+          mermaidCode,
+          diagramTypeHint: diagramTypeHint,
+          timeoutMs: 12000,
+        });
+        if (cancelled) return;
+        const map = buildContainerTextMap(nextElements);
+        if (!map.size) return;
+        const currentElements = apiRef.current?.getSceneElements() ?? [];
+        const { elements: patched, changed } = applyContainerTextMap(currentElements, map);
+        if (!changed) return;
+        apiRef.current?.updateScene({
+          elements: patched as any,
+          captureUpdate: CaptureUpdateAction.NEVER,
+        });
+      } catch {
+        // ignore text-only sync errors
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [diagramTypeHint, isViewMode, mermaidCode]);
+
+  useEffect(() => {
     if (!apiRef.current) return;
     if (pendingFitSceneKeyRef.current !== sceneKey) return;
     if (!initialDataState?.elements?.length) return;
@@ -1740,12 +2006,80 @@ const DiagramWhiteboard: React.FC<Props> = ({
     appState: AppState,
     files: BinaryFiles
   ) => {
+    if (skipNextChangeRef.current > 0) {
+      skipNextChangeRef.current -= 1;
+      return;
+    }
+    if (backgroundMode === 'excalidraw') {
+      const nextBg = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor : null;
+      if (nextBg !== lastCanvasBackgroundRef.current) {
+        lastCanvasBackgroundRef.current = nextBg;
+        setCanvasBackground(nextBg);
+      }
+    }
     if (!hasHadContentRef.current && elements.length === 0) {
       return;
     }
 
     if (elements.length > 0) {
       hasHadContentRef.current = true;
+    }
+
+    if (
+      backgroundMode === 'excalidraw'
+      && !isViewMode
+      && elements.length > 0
+      && normalizedColorsSceneKeyRef.current !== sceneKey
+    ) {
+      const bg =
+        (typeof appState.viewBackgroundColor === 'string' && appState.viewBackgroundColor.trim())
+        || canvasBackgroundForTheme;
+      const bgDark = (isDarkColor(bg) ?? (theme === 'dark'));
+      const expectedLine = bgDark ? '#cbd5e1' : '#0f172a';
+      const expectedText = bgDark ? '#e5e7eb' : '#0f172a';
+
+      const needsNormalize = elements.some((el) => {
+        if (!el) return false;
+        if ((el as any).isDeleted) return false;
+        const type = (el as any).type as string | undefined;
+        if (!type) return false;
+        if (type === 'image') return false;
+        if (type === 'text') {
+          const stroke = (el as any).strokeColor as string | undefined;
+          return stroke ? (isDarkColor(stroke) === bgDark) : true;
+        }
+        if (type === 'line' || type === 'arrow') {
+          const stroke = (el as any).strokeColor as string | undefined;
+          return stroke ? (isDarkColor(stroke) === bgDark) : true;
+        }
+        if (type === 'rectangle' || type === 'diamond' || type === 'ellipse') {
+          const stroke = (el as any).strokeColor as string | undefined;
+          const fill = (el as any).backgroundColor as string | undefined;
+          const badStroke = stroke ? (isDarkColor(stroke) === bgDark) : true;
+          const badFill = typeof fill === 'string' && fill !== 'transparent';
+          return badStroke || badFill;
+        }
+        return false;
+      });
+
+      if (needsNormalize) {
+        const themed = applyMermaidThemeToExcalidrawElements(elements as unknown[], {
+          backgroundColor: bg,
+          themeVariables: null,
+          uiTheme: theme,
+          forceTheme: true,
+        }) as unknown as OrderedExcalidrawElement[];
+        // Only apply if the first pass is likely the raw converter colors.
+        skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
+        apiRef.current?.updateScene({
+          elements: themed as any,
+          captureUpdate: CaptureUpdateAction.NEVER,
+        });
+        normalizedColorsSceneKeyRef.current = sceneKey;
+        return;
+      }
+      // Mark as normalized even if we didn't need to change anything.
+      normalizedColorsSceneKeyRef.current = sceneKey;
     }
 
     if (pendingFitSceneKeyRef.current === sceneKey && elements.length > 0 && apiRef.current) {
@@ -1786,7 +2120,9 @@ const DiagramWhiteboard: React.FC<Props> = ({
         return acc + next;
       }, 0) * 100
     );
-    const signature = `${elements.length}:${elementsVersion}:${Object.keys(files ?? {}).length}:${layoutSignature}`;
+    const themeSig = appState.theme === 'dark' || appState.theme === 'light' ? appState.theme : '';
+    const backgroundSig = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor.trim() : '';
+    const signature = `${elements.length}:${elementsVersion}:${Object.keys(files ?? {}).length}:${layoutSignature}:${themeSig}:${backgroundSig}`;
     if (signature === lastSerializedSignatureRef.current) return;
 
     try {
@@ -1813,6 +2149,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     }
   }, [
     api,
+    backgroundMode,
     effectiveBackgroundColor,
     isViewMode,
     onZoomPercentChange,
@@ -1825,25 +2162,34 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
     const style: React.CSSProperties = {};
-    const resolvedBackground = effectiveBackgroundColor ?? 'transparent';
+    const resolvedBackground =
+      backgroundMode === 'excalidraw'
+        ? (canvasBackground ?? canvasBackgroundForTheme)
+        : (effectiveBackgroundColor ?? 'transparent');
     style['--whiteboard-bg' as keyof React.CSSProperties] = resolvedBackground;
-    if (effectiveBackgroundColor) {
+    if (backgroundMode === 'excalidraw') {
+      style.backgroundColor = canvasBackground ?? canvasBackgroundForTheme;
+    } else if (effectiveBackgroundColor) {
       style.backgroundColor = effectiveBackgroundColor;
     }
     return style;
-  }, [effectiveBackgroundColor]);
+  }, [backgroundMode, canvasBackground, canvasBackgroundForTheme, effectiveBackgroundColor]);
 
   const fallbackInitialData = useMemo(() => {
     if (initialDataState) return initialDataState;
+    const background = (() => {
+      if (backgroundMode === 'excalidraw') return canvasBackgroundForTheme;
+      return effectiveBackgroundColor ?? undefined;
+    })();
     return buildWhiteboardInitialData({
       scene: null,
       sceneMeta,
       uiTheme: normalizeTheme(theme),
       viewMode: isViewMode,
-      backgroundColor: effectiveBackgroundColor ?? undefined,
+      backgroundColor: background,
       zoomPercent,
     });
-  }, [effectiveBackgroundColor, initialDataState, isViewMode, sceneMeta, theme, zoomPercent]);
+  }, [backgroundMode, canvasBackgroundForTheme, effectiveBackgroundColor, initialDataState, isViewMode, sceneMeta, theme, zoomPercent]);
 
   return (
     <div
@@ -1853,10 +2199,10 @@ const DiagramWhiteboard: React.FC<Props> = ({
       onWheel={handleWheel}
     >
       <DiagramWhiteboardCanvas
-        sceneKey={sceneKey}
         initialData={fallbackInitialData}
         theme={normalizeTheme(theme)}
         viewModeEnabled={isViewMode}
+        onThemeChange={onThemeChange}
         onApiReady={(api) => {
           apiRef.current = api;
           setApi(api);

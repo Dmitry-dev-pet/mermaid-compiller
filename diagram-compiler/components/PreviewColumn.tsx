@@ -84,6 +84,25 @@ interface PreviewColumnProps {
 
 const FIT_PADDING_RATIO = 0.05;
 
+type ViewBox = { x: number; y: number; width: number; height: number };
+
+const EXCALIDRAW_THEME_STORAGE_KEY = 'mlg.excalidrawThemeByDiagramKey.v1';
+
+const readExcalidrawThemeFromSceneJson = (sceneJson: string | null | undefined): 'light' | 'dark' | null => {
+  if (!sceneJson) return null;
+  try {
+    const parsed = JSON.parse(sceneJson) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const record = parsed as Record<string, unknown>;
+    const appState = record.appState;
+    if (!appState || typeof appState !== 'object') return null;
+    const theme = (appState as Record<string, unknown>).theme;
+    return theme === 'dark' || theme === 'light' ? theme : null;
+  } catch {
+    return null;
+  }
+};
+
 const hashString = (s: string): number => {
   // djb2
   let hash = 5381;
@@ -140,6 +159,22 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   const [whiteboardZoomPercent, setWhiteboardZoomPercent] = useState(100);
   const [isNotebookExcalidrawMode, setIsNotebookExcalidrawMode] = useState(false);
   const [notebookExcalidrawScene, setNotebookExcalidrawScene] = useState<ExcalidrawInitialDataState | null>(null);
+  const [excalidrawThemeByDiagramKey, setExcalidrawThemeByDiagramKey] = useState<Record<string, 'light' | 'dark'>>(() => {
+    try {
+      const raw = window.localStorage.getItem(EXCALIDRAW_THEME_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== 'object') return {};
+      const record = parsed as Record<string, unknown>;
+      const next: Record<string, 'light' | 'dark'> = {};
+      for (const [key, value] of Object.entries(record)) {
+        if (value === 'light' || value === 'dark') next[key] = value;
+      }
+      return next;
+    } catch {
+      return {};
+    }
+  });
   const lastNotebookExcalidrawSignatureRef = useRef<string>('');
   const inFlightNotebookExcalidrawSignatureRef = useRef<string>('');
   const pendingPreviewZoomRef = useRef<number | null>(null);
@@ -167,6 +202,24 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   });
 
   const codeForRender = isMarkdownMermaidMode ? activeMarkdownBlock?.code ?? '' : mermaidState.code;
+  const diagramThemeKey = useMemo(() => {
+    const code = codeForRender.trim();
+    if (!code) return null;
+    return `diagram:${hashString(code)}`;
+  }, [codeForRender]);
+  const notebookThemeKey = useMemo(() => {
+    const markdown = mermaidState.code.trim();
+    if (!markdown) return 'notebook:empty';
+    return `notebook:${hashString(markdown)}`;
+  }, [mermaidState.code]);
+  const excalidrawTheme = useMemo<'light' | 'dark'>(() => {
+    const stored = diagramThemeKey ? excalidrawThemeByDiagramKey[diagramThemeKey] : undefined;
+    const fromScene = readExcalidrawThemeFromSceneJson(whiteboardSceneJson);
+    return stored ?? fromScene ?? theme;
+  }, [diagramThemeKey, excalidrawThemeByDiagramKey, theme, whiteboardSceneJson]);
+  const notebookExcalidrawTheme = useMemo<'light' | 'dark'>(() => {
+    return excalidrawThemeByDiagramKey[notebookThemeKey] ?? theme;
+  }, [excalidrawThemeByDiagramKey, notebookThemeKey, theme]);
   const activeDiagramType = useMemo(() => {
     if (isMarkdownMermaidMode) {
       return activeMarkdownBlock?.diagramType ?? (codeForRender ? detectMermaidDiagramType(codeForRender) : null);
@@ -186,6 +239,8 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     if (!isMarkdownMode) return 0;
     return markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart').length;
   }, [isMarkdownMode, markdownMermaidBlocks]);
+
+
   const selectedFlowchartEdgeStyle = useMemo<FlowchartEdgeStyle | null>(() => {
     if (isMarkdownMermaidMode) return extractFlowchartEdgeStyle(codeForRender);
     if (!isMarkdownMode) return extractFlowchartEdgeStyle(codeForRender);
@@ -867,6 +922,25 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   );
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(EXCALIDRAW_THEME_STORAGE_KEY, JSON.stringify(excalidrawThemeByDiagramKey));
+    } catch {
+      // ignore
+    }
+  }, [excalidrawThemeByDiagramKey]);
+
+  useEffect(() => {
+    if (!diagramThemeKey) return;
+    const fromScene = readExcalidrawThemeFromSceneJson(whiteboardSceneJson);
+    if (!fromScene) return;
+    setExcalidrawThemeByDiagramKey((prev) => {
+      if (prev[diagramThemeKey] === fromScene) return prev;
+      if (prev[diagramThemeKey]) return prev;
+      return { ...prev, [diagramThemeKey]: fromScene };
+    });
+  }, [diagramThemeKey, whiteboardSceneJson]);
+
+  useEffect(() => {
     if (isNotebookExcalidrawMode && !canNotebookExcalidraw) {
       setIsNotebookExcalidrawMode(false);
     }
@@ -893,10 +967,11 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     }
 
     let cancelled = false;
+    const markdownHash = hashString(mermaidState.code.trim());
     const blocksHash = hashString(markdownMermaidBlocks.map((b) => b.code.trim()).join('\n---\n'));
     const whiteboardHash = hashString(whiteboardBundleJson?.trim() ?? '');
     const basePresetId = (!isThemePresetMixed && selectedThemePreset) ? selectedThemePreset : appThemePresetId;
-    const signature = `${theme}:${previewBackgroundColor ?? ''}:${String(basePresetId)}:${blocksHash}:${whiteboardHash}`;
+    const signature = `${notebookExcalidrawTheme}:${previewBackgroundColor ?? ''}:${String(basePresetId)}:${markdownHash}:${blocksHash}:${whiteboardHash}`;
     if (signature === lastNotebookExcalidrawSignatureRef.current) return;
     if (signature === inFlightNotebookExcalidrawSignatureRef.current) return;
     inFlightNotebookExcalidrawSignatureRef.current = signature;
@@ -906,7 +981,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         const nextScene = await buildNotebookExcalidrawScene({
           mermaidCode: mermaidState.code,
           markdownBlocks: markdownMermaidBlocks,
-          theme,
+          theme: notebookExcalidrawTheme,
           basePresetId,
           previewBackgroundColor,
           whiteboardBundleJson,
@@ -932,15 +1007,16 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
       }
     };
   }, [
+    notebookExcalidrawTheme,
     isBuildDocsMode,
     isMarkdownMode,
     isNotebookExcalidrawMode,
     isThemePresetMixed,
+    mermaidState.code,
     markdownMermaidBlocks,
     previewBackgroundColor,
     selectedThemePreset,
     appThemePresetId,
-    theme,
     whiteboardBundleJson,
   ]);
 
@@ -958,9 +1034,56 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     });
   }, [whiteboardZoomPercent, zoomPercent]);
 
+  const pinnedMode = useMemo<'mermaid' | 'ed'>(() => {
+    if (isBuildDocsMode) return 'mermaid';
+    if (isMarkdownMode) return isNotebookExcalidrawMode ? 'ed' : 'mermaid';
+    return previewMode === 'whiteboard' ? 'ed' : 'mermaid';
+  }, [isBuildDocsMode, isMarkdownMode, isNotebookExcalidrawMode, previewMode]);
+
+  const pinnedCanEd = useMemo(() => {
+    if (isBuildDocsMode) return false;
+    if (isMarkdownMode) return canNotebookExcalidraw;
+    return canWhiteboard;
+  }, [canNotebookExcalidraw, canWhiteboard, isBuildDocsMode, isMarkdownMode]);
+
+  const pinnedDirty = useMemo(() => {
+    if (isBuildDocsMode) return false;
+    if (isMarkdownMode) return false;
+    return isWhiteboardDirty;
+  }, [isBuildDocsMode, isMarkdownMode, isWhiteboardDirty]);
+
+  const pinnedEdDisabledReason = useMemo(() => {
+    if (pinnedCanEd) return null;
+    if (isBuildDocsMode) return 'ED is disabled in Build Docs';
+    if (isMarkdownMode) return 'ED is unavailable in this view';
+    return 'ED is unavailable for this diagram';
+  }, [isBuildDocsMode, isMarkdownMode, pinnedCanEd]);
+
+  const handlePinnedSetMode = useCallback((next: 'mermaid' | 'ed') => {
+    if (next === pinnedMode) return;
+    if (next === 'ed' && !pinnedCanEd) return;
+    if (isBuildDocsMode) return;
+    if (isMarkdownMode) {
+      setIsNotebookExcalidrawMode(next === 'ed');
+      return;
+    }
+    handleToggleWhiteboard();
+  }, [handleToggleWhiteboard, isBuildDocsMode, isMarkdownMode, pinnedCanEd, pinnedMode]);
+
   const handleToggleNotebookExcalidraw = useCallback(() => {
     setIsNotebookExcalidrawMode((value) => !value);
   }, []);
+
+  const handleSetExcalidrawTheme = useCallback((nextTheme: 'light' | 'dark') => {
+    const key = diagramThemeKey;
+    if (!key) return;
+    setExcalidrawThemeByDiagramKey((prev) => (prev[key] === nextTheme ? prev : { ...prev, [key]: nextTheme }));
+  }, [diagramThemeKey]);
+
+  const handleSetNotebookExcalidrawTheme = useCallback((nextTheme: 'light' | 'dark') => {
+    const key = notebookThemeKey;
+    setExcalidrawThemeByDiagramKey((prev) => (prev[key] === nextTheme ? prev : { ...prev, [key]: nextTheme }));
+  }, [notebookThemeKey]);
 
   const handleWhiteboardSyncFromCode = useCallback(() => {
     if (!canWhiteboard) return;
@@ -977,34 +1100,53 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     const prev = lastWhiteboardSourceRef.current;
     lastWhiteboardSourceRef.current = snapshot;
 
-    if (!isWhiteboardAutoSync) return;
     if (!canWhiteboard || previewMode !== 'whiteboard') return;
     if (!prev) return;
     if (prev.code === snapshot.code && prev.svg === snapshot.svg) return;
     if (!snapshot.svg.trim()) return;
 
+    // Auto-sync has two modes:
+    // - Explicit: user enables "Auto" in the header.
+    // - Implicit: keep ED preview synced while the user hasn't edited the board.
+    if (!isWhiteboardAutoSync && isWhiteboardDirty) return;
+
     setIsWhiteboardDirty(false);
     setWhiteboardInitialSceneOverride(null);
     void Promise.resolve(onSaveWhiteboardSceneJson(null)).catch(() => {});
     setWhiteboardResetKey((v) => v + 1);
-  }, [canWhiteboard, codeForRender, isWhiteboardAutoSync, previewMode, svgMarkup]);
+  }, [canWhiteboard, codeForRender, isWhiteboardAutoSync, isWhiteboardDirty, onSaveWhiteboardSceneJson, previewMode, svgMarkup]);
+
+  const previewContainerStyle = useMemo<React.CSSProperties | undefined>(() => {
+    if (!previewBackgroundColor) return undefined;
+    if (previewMode === 'whiteboard') return undefined;
+    if (isMarkdownMode && isNotebookExcalidrawMode) return undefined;
+    return { backgroundColor: previewBackgroundColor };
+  }, [isMarkdownMode, isNotebookExcalidrawMode, previewBackgroundColor, previewMode]);
 
   return (
-    <div className="h-full flex flex-col bg-transparent" style={previewBackgroundColor ? { backgroundColor: previewBackgroundColor } : undefined}>
+    <div className="h-full flex flex-col bg-transparent" style={previewContainerStyle}>
       <PreviewHeaderControls
         title={isBuildDocsMode ? 'Build Docs' : 'Preview'}
         isBuildDocsMode={isBuildDocsMode}
         isMarkdownMode={isMarkdownMode}
-        showNotebookExcalidrawToggle={canNotebookExcalidraw}
+        showNotebookExcalidrawToggle={false}
         isNotebookExcalidrawMode={isNotebookExcalidrawMode}
         onToggleNotebookExcalidraw={handleToggleNotebookExcalidraw}
-        showWhiteboardToggle={canWhiteboard}
+        showWhiteboardToggle={false}
         isWhiteboardMode={previewMode === 'whiteboard'}
         isWhiteboardDirty={isWhiteboardDirty}
         isWhiteboardAutoSync={isWhiteboardAutoSync}
         onToggleWhiteboard={handleToggleWhiteboard}
         onWhiteboardSyncFromCode={handleWhiteboardSyncFromCode}
         onToggleWhiteboardAutoSync={() => setIsWhiteboardAutoSync((value) => !value)}
+        showExcalidrawThemeControl={false}
+        excalidrawTheme={excalidrawTheme}
+        onSetExcalidrawTheme={handleSetExcalidrawTheme}
+        pinnedMode={pinnedMode}
+        pinnedCanEd={pinnedCanEd}
+        pinnedDirty={pinnedDirty}
+        pinnedEdDisabledReason={pinnedEdDisabledReason}
+        onSetPinnedMode={handlePinnedSetMode}
         markdownNavEnabled={markdownNavEnabled}
         markdownNavLabel={markdownNavLabel}
         markdownPrevDisabled={markdownMermaidActiveIndex <= 0}
@@ -1050,65 +1192,72 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         onFitToViewport={fitToViewport}
       />
 
-      {previewMode === 'whiteboard' ? (
-        <DiagramWhiteboard
-          key={`${historyRevisionId ?? 'no-rev'}:${whiteboardResetKey}:${markdownNavEnabled ? markdownMermaidActiveIndex : 'single'}`}
-          theme={theme}
-          backgroundColor={previewBackgroundColor}
-          mermaidCode={codeForRender}
-          svgMarkup={svgMarkup}
-          initialSceneJson={whiteboardInitialSceneOverride !== undefined ? whiteboardInitialSceneOverride : whiteboardSceneJson}
-          zoomPercent={whiteboardZoomPercent}
-          onZoomPercentChange={setWhiteboardZoomPercent}
-          onAutosave={(sceneJson) => onSaveWhiteboardSceneJson(sceneJson)}
-          onDirtyChange={setIsWhiteboardDirty}
-        />
-      ) : isMarkdownMode && isNotebookExcalidrawMode ? (
-        <DiagramWhiteboard
-          key={`notebook-ed:tiles`}
-          theme={theme}
-          backgroundColor={previewBackgroundColor}
-          mermaidCode=""
-          svgMarkup=""
-          initialSceneJson={null}
-          initialDataOverride={notebookExcalidrawScene}
-          zoomPercent={100}
-          onAutosave={() => {}}
-          mode="view"
-          zoomMode="auto"
-          fitMode="width"
-          scrollMode="vertical"
-          onNotebookDiagramClick={(index) => {
-            setIsNotebookExcalidrawMode(false);
-            setMarkdownIndexFromPreview(index);
-          }}
-        />
-      ) : (
-        <PreviewBody
-          viewportRef={viewportRef}
-          svgMountRef={svgMountRef}
-          markdownMountRef={markdownMountRef}
-          docsMountRef={docsMountRef}
-          isBuildDocsMode={isBuildDocsMode}
-          isMarkdownMode={isMarkdownMode}
-          isMarkdownMermaidMode={isMarkdownMermaidMode}
-          isMarkdownMermaidInvalid={isMarkdownMermaidInvalid}
-          renderError={renderError}
-          mermaidState={mermaidState}
-          activeMarkdownErrorMessage={activeMarkdownDiagnostics?.errorMessage ?? null}
-          codeForRender={codeForRender}
-          svgMarkup={svgMarkup}
-          exportError={exportError}
-          hasBuildDocs={Boolean(activeBuildDoc?.text)}
-          onMarkdownScroll={handleMarkdownScroll}
-          onToggleFullScreen={onToggleFullScreen}
-          zoomPercent={previewMode === 'whiteboard' ? whiteboardZoomPercent : zoomPercent}
-          showZoomControls={!isMarkdownMode && previewMode === 'preview' && Boolean(svgMarkup)}
-          onZoomOut={zoomOut}
-          onZoomIn={zoomIn}
-          onFitToViewport={fitToViewport}
-        />
-      )}
+      <div className="relative flex-1 min-h-0 flex">
+        {previewMode === 'whiteboard' ? (
+          <DiagramWhiteboard
+            key={`${historyRevisionId ?? 'no-rev'}:${markdownNavEnabled ? markdownMermaidActiveIndex : 'single'}`}
+            theme={excalidrawTheme}
+            backgroundColor={previewBackgroundColor}
+            backgroundMode="excalidraw"
+            syncKey={whiteboardResetKey}
+            mermaidCode={codeForRender}
+            svgMarkup={svgMarkup}
+            initialSceneJson={whiteboardInitialSceneOverride !== undefined ? whiteboardInitialSceneOverride : whiteboardSceneJson}
+            zoomPercent={whiteboardZoomPercent}
+            onZoomPercentChange={setWhiteboardZoomPercent}
+            onAutosave={(sceneJson) => onSaveWhiteboardSceneJson(sceneJson)}
+            onDirtyChange={setIsWhiteboardDirty}
+            onThemeChange={handleSetExcalidrawTheme}
+          />
+        ) : isMarkdownMode && isNotebookExcalidrawMode ? (
+          <DiagramWhiteboard
+            key={`notebook-ed:tiles`}
+            theme={notebookExcalidrawTheme}
+            backgroundColor={null}
+            backgroundMode="excalidraw"
+            mermaidCode=""
+            svgMarkup=""
+            initialSceneJson={null}
+            initialDataOverride={notebookExcalidrawScene}
+            zoomPercent={100}
+            onAutosave={() => {}}
+            mode="view"
+            zoomMode="auto"
+            fitMode="width"
+            scrollMode="vertical"
+            onThemeChange={handleSetNotebookExcalidrawTheme}
+            onNotebookDiagramClick={(index) => {
+              setIsNotebookExcalidrawMode(false);
+              setMarkdownIndexFromPreview(index);
+            }}
+          />
+        ) : (
+          <PreviewBody
+            viewportRef={viewportRef}
+            svgMountRef={svgMountRef}
+            markdownMountRef={markdownMountRef}
+            docsMountRef={docsMountRef}
+            isBuildDocsMode={isBuildDocsMode}
+            isMarkdownMode={isMarkdownMode}
+            isMarkdownMermaidMode={isMarkdownMermaidMode}
+            isMarkdownMermaidInvalid={isMarkdownMermaidInvalid}
+            renderError={renderError}
+            mermaidState={mermaidState}
+            activeMarkdownErrorMessage={activeMarkdownDiagnostics?.errorMessage ?? null}
+            codeForRender={codeForRender}
+            svgMarkup={svgMarkup}
+            exportError={exportError}
+            hasBuildDocs={Boolean(activeBuildDoc?.text)}
+            onMarkdownScroll={handleMarkdownScroll}
+            onToggleFullScreen={onToggleFullScreen}
+            zoomPercent={previewMode === 'whiteboard' ? whiteboardZoomPercent : zoomPercent}
+            showZoomControls={!isMarkdownMode && previewMode === 'preview' && Boolean(svgMarkup)}
+            onZoomOut={zoomOut}
+            onZoomIn={zoomIn}
+            onFitToViewport={fitToViewport}
+          />
+        )}
+      </div>
     </div>
   );
 };
