@@ -1550,13 +1550,6 @@ const DiagramWhiteboard: React.FC<Props> = ({
             return wantsDark === dark ? mermaidBg : nextDefault;
           })();
           const resolved = userBg ?? autoBg;
-          if (!userBg && currentBg && !canvasBackgroundByThemeRef.current[nextTheme]) {
-            // Back-compat: if we only have a single stored background, consider it
-            // the current theme's user background (unless it is a known default).
-            if (currentBg !== CANVAS_BG_DARK && currentBg !== CANVAS_BG_LIGHT) {
-              canvasBackgroundByThemeRef.current[nextTheme] = currentBg;
-            }
-          }
           if (resolved !== lastCanvasBackgroundRef.current) {
             lastCanvasBackgroundRef.current = resolved;
             setCanvasBackground(resolved);
@@ -1751,8 +1744,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       const nextBg = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor : null;
       if (nextBg !== lastCanvasBackgroundRef.current) {
         if (skipNextChangeRef.current === 0) {
-          const themeKey = themeFromAppState ?? themePropRef.current;
-          canvasBackgroundByThemeRef.current[themeKey] = nextBg;
+          canvasBackgroundByThemeRef.current[themePropRef.current] = nextBg;
         }
         lastCanvasBackgroundRef.current = nextBg;
         setCanvasBackground(nextBg);
