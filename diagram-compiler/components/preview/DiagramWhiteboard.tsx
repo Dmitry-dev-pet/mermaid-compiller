@@ -1046,9 +1046,15 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const lastAppliedSceneKeyRef = useRef<number | null>(null);
   const lastSyncKeyRef = useRef<number | null>(typeof syncKey === 'number' ? syncKey : null);
   const normalizedColorsSceneKeyRef = useRef<number | null>(null);
+  const themePropRef = useRef<'light' | 'dark'>(normalizeTheme(theme));
+  const pendingThemeSyncRef = useRef<'light' | 'dark' | null>(null);
   const canvasBackgroundForTheme = useMemo(() => {
     // Excalidraw does not auto-adjust canvas background based on theme, so we provide defaults.
     return normalizeTheme(theme) === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
+  }, [theme]);
+
+  useEffect(() => {
+    themePropRef.current = normalizeTheme(theme);
   }, [theme]);
 
   const VIEW_MODE_APPSTATE_PATCH = useMemo(() => {
@@ -1694,8 +1700,17 @@ const DiagramWhiteboard: React.FC<Props> = ({
       appState.theme === 'dark' || appState.theme === 'light'
         ? appState.theme
         : null;
-    if (themeFromAppState && themeFromAppState !== normalizeTheme(theme)) {
-      onThemeChange?.(themeFromAppState);
+    if (themeFromAppState && themeFromAppState !== themePropRef.current) {
+      if (pendingThemeSyncRef.current !== themeFromAppState) {
+        pendingThemeSyncRef.current = themeFromAppState;
+        defer(() => {
+          if (themePropRef.current !== themeFromAppState) {
+            onThemeChange?.(themeFromAppState);
+          }
+        });
+      }
+    } else {
+      pendingThemeSyncRef.current = null;
     }
     if (backgroundMode === 'excalidraw') {
       const nextBg = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor : null;
