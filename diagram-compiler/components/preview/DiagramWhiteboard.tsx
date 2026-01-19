@@ -1679,16 +1679,16 @@ const DiagramWhiteboard: React.FC<Props> = ({
     appState: AppState,
     files: BinaryFiles
   ) => {
-    if (skipNextChangeRef.current > 0) {
-      skipNextChangeRef.current -= 1;
-      return;
-    }
     const themeFromAppState =
       appState.theme === 'dark' || appState.theme === 'light'
         ? appState.theme
         : null;
     if (themeFromAppState && themeFromAppState !== normalizeTheme(theme)) {
       onThemeChange?.(themeFromAppState);
+    }
+    if (skipNextChangeRef.current > 0) {
+      skipNextChangeRef.current -= 1;
+      return;
     }
     if (backgroundMode === 'excalidraw') {
       const nextBg = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor : null;
