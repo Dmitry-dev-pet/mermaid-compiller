@@ -1039,6 +1039,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const [canvasBackground, setCanvasBackground] = useState<string | null>(null);
   const lastCanvasBackgroundRef = useRef<string | null>(null);
   const canvasBackgroundByThemeRef = useRef<{ light: string | null; dark: string | null }>({ light: null, dark: null });
+  const expectedCanvasBackgroundRef = useRef<string | null>(null);
   const lastBuiltSignatureRef = useRef<string>('');
   const inFlightSignatureRef = useRef<string>('');
   const buildRunIdRef = useRef(0);
@@ -1558,6 +1559,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         }
         return effectiveBackgroundColor ?? undefined;
       })();
+      expectedCanvasBackgroundRef.current = typeof nextBackground === 'string' ? nextBackground : null;
       if (
         current.theme === nextTheme
         && current.viewBackgroundColor === nextBackground
@@ -1743,7 +1745,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
     if (backgroundMode === 'excalidraw') {
       const nextBg = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor : null;
       if (nextBg !== lastCanvasBackgroundRef.current) {
-        if (skipNextChangeRef.current === 0) {
+        const expectedBg = expectedCanvasBackgroundRef.current;
+        if (expectedBg === null || nextBg !== expectedBg) {
           canvasBackgroundByThemeRef.current[themePropRef.current] = nextBg;
         }
         lastCanvasBackgroundRef.current = nextBg;
