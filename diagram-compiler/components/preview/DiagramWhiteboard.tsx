@@ -1531,41 +1531,40 @@ const DiagramWhiteboard: React.FC<Props> = ({
   useEffect(() => {
     if (!api) return;
     const nextTheme = normalizeTheme(theme);
-    const nextBackground = (() => {
-      if (backgroundMode === 'excalidraw') {
-        const current = api.getAppState();
-        const currentBg =
-          (lastCanvasBackgroundRef.current ?? (typeof current.viewBackgroundColor === 'string' ? current.viewBackgroundColor : null))
-          ?? null;
-        const nextDefault = nextTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
-        const mermaidBg = typeof mermaidBackgroundCandidate === 'string' ? mermaidBackgroundCandidate.trim() : '';
-        const userBg = canvasBackgroundByThemeRef.current[nextTheme] ?? null;
-        const autoBg = (() => {
-          if (!mermaidBg) return nextDefault;
-          const dark = isDarkColor(mermaidBg);
-          if (dark === null) return mermaidBg;
-          const wantsDark = nextTheme === 'dark';
-          return wantsDark === dark ? mermaidBg : nextDefault;
-        })();
-        const resolved = userBg ?? autoBg;
-        if (!userBg && currentBg && !canvasBackgroundByThemeRef.current[nextTheme]) {
-          // Back-compat: if we only have a single stored background, consider it
-          // the current theme's user background (unless it is a known default).
-          if (currentBg !== CANVAS_BG_DARK && currentBg !== CANVAS_BG_LIGHT) {
-            canvasBackgroundByThemeRef.current[nextTheme] = currentBg;
-          }
-        }
-        if (resolved !== lastCanvasBackgroundRef.current) {
-          lastCanvasBackgroundRef.current = resolved;
-          setCanvasBackground(resolved);
-        }
-        return resolved;
-      }
-      return effectiveBackgroundColor ?? undefined;
-    })();
     const expectedViewModeEnabled = isViewMode;
     const apply = () => {
       const current = api.getAppState();
+      const nextBackground = (() => {
+        if (backgroundMode === 'excalidraw') {
+          const currentBg =
+            (lastCanvasBackgroundRef.current ?? (typeof current.viewBackgroundColor === 'string' ? current.viewBackgroundColor : null))
+            ?? null;
+          const nextDefault = nextTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
+          const mermaidBg = typeof mermaidBackgroundCandidate === 'string' ? mermaidBackgroundCandidate.trim() : '';
+          const userBg = canvasBackgroundByThemeRef.current[nextTheme] ?? null;
+          const autoBg = (() => {
+            if (!mermaidBg) return nextDefault;
+            const dark = isDarkColor(mermaidBg);
+            if (dark === null) return mermaidBg;
+            const wantsDark = nextTheme === 'dark';
+            return wantsDark === dark ? mermaidBg : nextDefault;
+          })();
+          const resolved = userBg ?? autoBg;
+          if (!userBg && currentBg && !canvasBackgroundByThemeRef.current[nextTheme]) {
+            // Back-compat: if we only have a single stored background, consider it
+            // the current theme's user background (unless it is a known default).
+            if (currentBg !== CANVAS_BG_DARK && currentBg !== CANVAS_BG_LIGHT) {
+              canvasBackgroundByThemeRef.current[nextTheme] = currentBg;
+            }
+          }
+          if (resolved !== lastCanvasBackgroundRef.current) {
+            lastCanvasBackgroundRef.current = resolved;
+            setCanvasBackground(resolved);
+          }
+          return resolved;
+        }
+        return effectiveBackgroundColor ?? undefined;
+      })();
       if (
         current.theme === nextTheme
         && current.viewBackgroundColor === nextBackground
