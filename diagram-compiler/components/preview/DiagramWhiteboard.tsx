@@ -1036,6 +1036,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const [lastMermaidToExcalidrawError, setLastMermaidToExcalidrawError] = useState<string | null>(null);
   const [canvasBackground, setCanvasBackground] = useState<string | null>(null);
   const lastCanvasBackgroundRef = useRef<string | null>(null);
+  const hasUserCanvasBackgroundRef = useRef(false);
   const lastBuiltSignatureRef = useRef<string>('');
   const inFlightSignatureRef = useRef<string>('');
   const buildRunIdRef = useRef(0);
@@ -1499,7 +1500,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         const prevTheme = current.theme === 'dark' || current.theme === 'light' ? current.theme : nextTheme;
         const prevDefault = prevTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
         const nextDefault = nextTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
-        const shouldFollowTheme = !currentBg || currentBg === prevDefault;
+        const shouldFollowTheme = !currentBg || (!hasUserCanvasBackgroundRef.current && currentBg === prevDefault);
         const resolved = shouldFollowTheme ? (mermaidBackgroundCandidate ?? nextDefault) : currentBg;
         if (resolved !== lastCanvasBackgroundRef.current) {
           lastCanvasBackgroundRef.current = resolved;
@@ -1518,6 +1519,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
         && current.viewModeEnabled === expectedViewModeEnabled
         && current.zenModeEnabled === false
       ) return;
+      // Prevent our sync patches from marking the scene as user-edited.
+      skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 1);
       api.updateScene({
         appState: buildWhiteboardAppState({
           uiTheme: nextTheme,
@@ -1683,6 +1686,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     if (backgroundMode === 'excalidraw') {
       const nextBg = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor : null;
       if (nextBg !== lastCanvasBackgroundRef.current) {
+        hasUserCanvasBackgroundRef.current = true;
         lastCanvasBackgroundRef.current = nextBg;
         setCanvasBackground(nextBg);
       }
