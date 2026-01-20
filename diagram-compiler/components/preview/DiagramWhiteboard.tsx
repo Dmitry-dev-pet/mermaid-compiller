@@ -2047,6 +2047,39 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
           {isCanvasBackgroundPickerOpen ? (
             <div className="mt-2 w-56 rounded-md border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 backdrop-blur shadow-md p-2">
+              <div className="flex items-center justify-between gap-2 px-1 pb-2">
+                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  ED theme
+                </div>
+                <div className="inline-flex items-center rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] ${
+                      normalizeTheme(theme) === 'light'
+                        ? 'bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-50'
+                        : 'bg-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-50'
+                    }`}
+                    onClick={() => onThemeChange?.('light')}
+                    title="Light"
+                  >
+                    <Sun className="w-3.5 h-3.5" />
+                    Light
+                  </button>
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] border-l border-slate-200 dark:border-slate-700 ${
+                      normalizeTheme(theme) === 'dark'
+                        ? 'bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-50'
+                        : 'bg-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-50'
+                    }`}
+                    onClick={() => onThemeChange?.('dark')}
+                    title="Dark"
+                  >
+                    <Moon className="w-3.5 h-3.5" />
+                    Dark
+                  </button>
+                </div>
+              </div>
               <div className="flex items-center gap-2 px-1 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                 <Sun className="w-3.5 h-3.5" />
                 <span>Light</span>
