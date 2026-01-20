@@ -87,6 +87,7 @@ const FIT_PADDING_RATIO = 0.05;
 type ViewBox = { x: number; y: number; width: number; height: number };
 
 const EXCALIDRAW_THEME_STORAGE_KEY = 'mlg.excalidrawThemeByDiagramKey.v1';
+const EXCALIDRAW_CANVAS_BG_STORAGE_KEY = 'mlg.excalidrawCanvasBackgroundByDiagramKey.v1';
 
 const readExcalidrawThemeFromSceneJson = (sceneJson: string | null | undefined): 'light' | 'dark' | null => {
   if (!sceneJson) return null;
@@ -175,6 +176,29 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
       return {};
     }
   });
+  const [excalidrawCanvasBackgroundByDiagramKey, setExcalidrawCanvasBackgroundByDiagramKey] = useState<
+    Record<string, { light?: string | null; dark?: string | null }>
+  >(() => {
+    try {
+      const raw = window.localStorage.getItem(EXCALIDRAW_CANVAS_BG_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== 'object') return {};
+      const record = parsed as Record<string, unknown>;
+      const next: Record<string, { light?: string | null; dark?: string | null }> = {};
+      for (const [key, value] of Object.entries(record)) {
+        if (!value || typeof value !== 'object') continue;
+        const v = value as Record<string, unknown>;
+        const light = typeof v.light === 'string' ? v.light : (v.light === null ? null : undefined);
+        const dark = typeof v.dark === 'string' ? v.dark : (v.dark === null ? null : undefined);
+        if (light === undefined && dark === undefined) continue;
+        next[key] = { ...(light !== undefined ? { light } : {}), ...(dark !== undefined ? { dark } : {}) };
+      }
+      return next;
+    } catch {
+      return {};
+    }
+  });
   const lastNotebookExcalidrawSignatureRef = useRef<string>('');
   const inFlightNotebookExcalidrawSignatureRef = useRef<string>('');
   const pendingPreviewZoomRef = useRef<number | null>(null);
@@ -220,6 +244,12 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   const notebookExcalidrawTheme = useMemo<'light' | 'dark'>(() => {
     return excalidrawThemeByDiagramKey[notebookThemeKey] ?? theme;
   }, [excalidrawThemeByDiagramKey, notebookThemeKey, theme]);
+  const diagramCanvasBackgroundByTheme = useMemo(() => {
+    return diagramThemeKey ? (excalidrawCanvasBackgroundByDiagramKey[diagramThemeKey] ?? null) : null;
+  }, [diagramThemeKey, excalidrawCanvasBackgroundByDiagramKey]);
+  const notebookCanvasBackgroundByTheme = useMemo(() => {
+    return excalidrawCanvasBackgroundByDiagramKey[notebookThemeKey] ?? null;
+  }, [excalidrawCanvasBackgroundByDiagramKey, notebookThemeKey]);
   const activeDiagramType = useMemo(() => {
     if (isMarkdownMermaidMode) {
       return activeMarkdownBlock?.diagramType ?? (codeForRender ? detectMermaidDiagramType(codeForRender) : null);
@@ -930,6 +960,17 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   }, [excalidrawThemeByDiagramKey]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        EXCALIDRAW_CANVAS_BG_STORAGE_KEY,
+        JSON.stringify(excalidrawCanvasBackgroundByDiagramKey)
+      );
+    } catch {
+      // ignore
+    }
+  }, [excalidrawCanvasBackgroundByDiagramKey]);
+
+  useEffect(() => {
     if (!diagramThemeKey) return;
     const fromScene = readExcalidrawThemeFromSceneJson(whiteboardSceneJson);
     if (!fromScene) return;
@@ -1085,6 +1126,25 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     setExcalidrawThemeByDiagramKey((prev) => (prev[key] === nextTheme ? prev : { ...prev, [key]: nextTheme }));
   }, [notebookThemeKey]);
 
+  const handleSetDiagramCanvasBackgroundByTheme = useCallback((next: { light: string | null; dark: string | null }) => {
+    if (!diagramThemeKey) return;
+    const key = diagramThemeKey;
+    setExcalidrawCanvasBackgroundByDiagramKey((prev) => {
+      const current = prev[key] ?? {};
+      if (current.light === next.light && current.dark === next.dark) return prev;
+      return { ...prev, [key]: { light: next.light, dark: next.dark } };
+    });
+  }, [diagramThemeKey]);
+
+  const handleSetNotebookCanvasBackgroundByTheme = useCallback((next: { light: string | null; dark: string | null }) => {
+    const key = notebookThemeKey;
+    setExcalidrawCanvasBackgroundByDiagramKey((prev) => {
+      const current = prev[key] ?? {};
+      if (current.light === next.light && current.dark === next.dark) return prev;
+      return { ...prev, [key]: { light: next.light, dark: next.dark } };
+    });
+  }, [notebookThemeKey]);
+
   const handleWhiteboardSyncFromCode = useCallback(() => {
     if (!canWhiteboard) return;
     const ok = window.confirm('Sync from Mermaid code?\n\nThis will overwrite the current whiteboard scene.');
@@ -1199,6 +1259,8 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
             theme={excalidrawTheme}
             backgroundColor={previewBackgroundColor}
             backgroundMode="excalidraw"
+            initialCanvasBackgroundByTheme={diagramCanvasBackgroundByTheme}
+            onCanvasBackgroundByThemeChange={handleSetDiagramCanvasBackgroundByTheme}
             syncKey={whiteboardResetKey}
             mermaidCode={codeForRender}
             svgMarkup={svgMarkup}
@@ -1215,6 +1277,8 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
             theme={notebookExcalidrawTheme}
             backgroundColor={null}
             backgroundMode="excalidraw"
+            initialCanvasBackgroundByTheme={notebookCanvasBackgroundByTheme}
+            onCanvasBackgroundByThemeChange={handleSetNotebookCanvasBackgroundByTheme}
             mermaidCode=""
             svgMarkup=""
             initialSceneJson={null}

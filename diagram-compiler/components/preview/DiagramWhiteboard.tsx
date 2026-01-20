@@ -64,6 +64,8 @@ type Props = {
   svgMarkup: string;
   initialSceneJson: string | null;
   initialDataOverride?: ExcalidrawInitialDataState | null;
+  initialCanvasBackgroundByTheme?: { light?: string | null; dark?: string | null } | null;
+  onCanvasBackgroundByThemeChange?: (next: { light: string | null; dark: string | null }) => void;
   zoomPercent: number;
   mode?: 'edit' | 'view';
   zoomMode?: 'controlled' | 'auto';
@@ -980,6 +982,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
   onAutosave,
   onDirtyChange,
   onThemeChange,
+  initialCanvasBackgroundByTheme,
+  onCanvasBackgroundByThemeChange,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isViewMode = mode === 'view';
@@ -1038,7 +1042,14 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const [lastMermaidToExcalidrawError, setLastMermaidToExcalidrawError] = useState<string | null>(null);
   const [canvasBackground, setCanvasBackground] = useState<string | null>(null);
   const lastCanvasBackgroundRef = useRef<string | null>(null);
-  const canvasBackgroundByThemeRef = useRef<{ light: string | null; dark: string | null }>({ light: null, dark: null });
+  const canvasBackgroundByThemeRef = useRef<{ light: string | null; dark: string | null }>({
+    light: (typeof initialCanvasBackgroundByTheme?.light === 'string' && initialCanvasBackgroundByTheme.light.trim())
+      ? initialCanvasBackgroundByTheme.light.trim()
+      : null,
+    dark: (typeof initialCanvasBackgroundByTheme?.dark === 'string' && initialCanvasBackgroundByTheme.dark.trim())
+      ? initialCanvasBackgroundByTheme.dark.trim()
+      : null,
+  });
   const expectedCanvasBackgroundRef = useRef<string | null>(null);
   const lastBuiltSignatureRef = useRef<string>('');
   const inFlightSignatureRef = useRef<string>('');
@@ -1164,17 +1175,15 @@ const DiagramWhiteboard: React.FC<Props> = ({
     isDirtyRef.current = false;
     const parsed = tryParseInitialScene(initialSceneJson);
     hasHadContentRef.current = Boolean(parsed?.elements && Array.isArray(parsed.elements) && parsed.elements.length > 0);
-    canvasBackgroundByThemeRef.current = { light: null, dark: null };
+    const nextBgByTheme = { ...canvasBackgroundByThemeRef.current };
     if (initialSceneJson?.trim()) {
       try {
         const raw = JSON.parse(initialSceneJson) as unknown;
         if (raw && typeof raw === 'object') {
           const record = raw as Record<string, unknown>;
           const bgs = readCanvasBackgroundByTheme(record);
-          canvasBackgroundByThemeRef.current = {
-            light: typeof bgs?.light === 'string' ? bgs.light : null,
-            dark: typeof bgs?.dark === 'string' ? bgs.dark : null,
-          };
+          if (typeof bgs?.light === 'string' && bgs.light.trim()) nextBgByTheme.light = bgs.light.trim();
+          if (typeof bgs?.dark === 'string' && bgs.dark.trim()) nextBgByTheme.dark = bgs.dark.trim();
           const appState = record.appState;
           const themeFromScene =
             appState && typeof appState === 'object'
@@ -1188,20 +1197,22 @@ const DiagramWhiteboard: React.FC<Props> = ({
                 ? ((appState as Record<string, unknown>).viewBackgroundColor as string).trim()
                 : '')
               : '';
-          if (themeFromScene && bgFromScene && !canvasBackgroundByThemeRef.current[themeFromScene]) {
-            canvasBackgroundByThemeRef.current[themeFromScene] = bgFromScene;
+          if (themeFromScene && bgFromScene && !nextBgByTheme[themeFromScene]) {
+            nextBgByTheme[themeFromScene] = bgFromScene;
           }
         }
       } catch {
         // ignore
       }
     }
+    canvasBackgroundByThemeRef.current = nextBgByTheme;
+    onCanvasBackgroundByThemeChange?.(nextBgByTheme);
     if (initialSceneJson === null && !isDirtyRef.current) {
       lastBuiltSignatureRef.current = '';
       inFlightSignatureRef.current = '';
       setInitialDataState(null);
     }
-  }, [initialSceneJson, onDirtyChange]);
+  }, [initialSceneJson, onCanvasBackgroundByThemeChange, onDirtyChange]);
 
   useEffect(() => {
     if (!api) return;
@@ -1747,7 +1758,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
       if (nextBg !== lastCanvasBackgroundRef.current) {
         const expectedBg = expectedCanvasBackgroundRef.current;
         if (expectedBg === null || nextBg !== expectedBg) {
-          canvasBackgroundByThemeRef.current[themePropRef.current] = nextBg;
+          const themeKey = themePropRef.current;
+          if (canvasBackgroundByThemeRef.current[themeKey] !== nextBg) {
+            canvasBackgroundByThemeRef.current[themeKey] = nextBg;
+            onCanvasBackgroundByThemeChange?.({ ...canvasBackgroundByThemeRef.current });
+          }
         }
         lastCanvasBackgroundRef.current = nextBg;
         setCanvasBackground(nextBg);
@@ -1896,6 +1911,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     backgroundMode,
     effectiveBackgroundColor,
     isViewMode,
+    onCanvasBackgroundByThemeChange,
     onZoomPercentChange,
     sceneKey,
     scheduleAutosave,
