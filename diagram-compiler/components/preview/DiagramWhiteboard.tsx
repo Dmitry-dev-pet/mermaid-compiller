@@ -39,6 +39,10 @@ import {
   isDarkColor,
 } from '../../services/excalidraw/excalidrawTheme';
 import {
+  resolveExcalidrawStoredCanvasColor,
+  resolveExcalidrawVisibleCanvasColor,
+} from '../../services/excalidraw/excalidrawCanvasFilter';
+import {
   buildSceneMeta,
   hashString,
   injectCanvasBackgroundByThemeJson,
@@ -1041,7 +1045,10 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const [buildError, setBuildError] = useState<string | null>(null);
   const [lastGenerator, setLastGenerator] = useState<MermaidLanggraphSceneGenerator>('unknown');
   const [lastMermaidToExcalidrawError, setLastMermaidToExcalidrawError] = useState<string | null>(null);
+  // Stored in Excalidraw `appState.viewBackgroundColor` (pre-filtered in dark theme).
   const [canvasBackground, setCanvasBackground] = useState<string | null>(null);
+  // What the user expects to see (post-filter color in dark theme).
+  const [canvasBackgroundVisible, setCanvasBackgroundVisible] = useState<string | null>(null);
   const [canvasBackgroundUiKey, setCanvasBackgroundUiKey] = useState(0);
   const lastCanvasBackgroundRef = useRef<string | null>(null);
   const canvasBackgroundByThemeRef = useRef<{ light: string | null; dark: string | null }>({
@@ -1052,6 +1059,13 @@ const DiagramWhiteboard: React.FC<Props> = ({
       ? initialCanvasBackgroundByTheme.dark.trim()
       : null,
   });
+  const canvasBackgroundVisibleRef = useRef<string | null>(
+    (typeof initialCanvasBackgroundByTheme?.light === 'string' && initialCanvasBackgroundByTheme.light.trim())
+      ? initialCanvasBackgroundByTheme.light.trim()
+      : (typeof initialCanvasBackgroundByTheme?.dark === 'string' && initialCanvasBackgroundByTheme.dark.trim())
+        ? initialCanvasBackgroundByTheme.dark.trim()
+        : null
+  );
   const expectedCanvasBackgroundRef = useRef<string | null>(null);
   const lastBuiltSignatureRef = useRef<string>('');
   const inFlightSignatureRef = useRef<string>('');
@@ -1063,11 +1077,27 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const lastSyncKeyRef = useRef<number | null>(typeof syncKey === 'number' ? syncKey : null);
   const normalizedColorsSceneKeyRef = useRef<number | null>(null);
   const themePropRef = useRef<'light' | 'dark'>(normalizeTheme(theme));
-  const pendingThemeSyncRef = useRef<'light' | 'dark' | null>(null);
   const canvasBackgroundForTheme = useMemo(() => {
     // Excalidraw does not auto-adjust canvas background based on theme, so we provide defaults.
     return normalizeTheme(theme) === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
   }, [theme]);
+
+  const canvasBackgroundAutoVisible = useMemo(() => {
+    // When the user hasn't chosen a custom ED background, use a sensible initial value.
+    return (mermaidBackgroundCandidate ?? canvasBackgroundForTheme)?.trim() || CANVAS_BG_LIGHT;
+  }, [canvasBackgroundForTheme, mermaidBackgroundCandidate]);
+
+  const resolveStoredCanvasBackground = useCallback((visible: string, nextTheme: 'light' | 'dark'): string => {
+    const trimmed = visible.trim();
+    if (!trimmed) return CANVAS_BG_LIGHT;
+    return resolveExcalidrawStoredCanvasColor(trimmed, nextTheme) ?? trimmed;
+  }, []);
+
+  const resolveVisibleCanvasBackground = useCallback((stored: string, nextTheme: 'light' | 'dark'): string => {
+    const trimmed = stored.trim();
+    if (!trimmed) return CANVAS_BG_LIGHT;
+    return resolveExcalidrawVisibleCanvasColor(trimmed, nextTheme) ?? trimmed;
+  }, []);
 
   useEffect(() => {
     themePropRef.current = normalizeTheme(theme);
@@ -1112,7 +1142,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     const themeVars = backgroundMode === 'excalidraw' ? null : extractFrontmatterThemeVariables(mermaidCode);
     const contrastBackground =
       backgroundMode === 'excalidraw'
-        ? (canvasBackground ?? mermaidBackgroundCandidate ?? canvasBackgroundForTheme)
+        ? (canvasBackgroundVisible ?? canvasBackgroundAutoVisible ?? CANVAS_BG_LIGHT)
         : (effectiveBackgroundColor ?? null);
     const themedElements = applyMermaidThemeToExcalidrawElements((scene.elements ?? []) as unknown[], {
       backgroundColor: contrastBackground,
@@ -1123,11 +1153,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
     const targetZoom = clampWhiteboardZoom(zoomPercent / 100);
     const nextBackground = (() => {
       if (backgroundMode === 'excalidraw') {
-        const fromUser = canvasBackground?.trim() ?? '';
-        if (fromUser) return fromUser;
+        const fromUser = canvasBackgroundVisibleRef.current?.trim() ?? '';
+        if (fromUser) return resolveStoredCanvasBackground(fromUser, normalizeTheme(theme));
         const fromScene = typeof sceneAppState.viewBackgroundColor === 'string' ? sceneAppState.viewBackgroundColor.trim() : '';
         if (fromScene) return fromScene;
-        return mermaidBackgroundCandidate ?? canvasBackgroundForTheme;
+        return resolveStoredCanvasBackground(canvasBackgroundAutoVisible, normalizeTheme(theme));
       }
       return effectiveBackgroundColor ?? sceneAppState.viewBackgroundColor ?? undefined;
     })();
@@ -1143,7 +1173,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         viewModePatch: VIEW_MODE_APPSTATE_PATCH,
       }),
     };
-  }, [VIEW_MODE_APPSTATE_PATCH, backgroundMode, canvasBackground, canvasBackgroundForTheme, effectiveBackgroundColor, isViewMode, mermaidBackgroundCandidate, mermaidCode, theme, zoomPercent]);
+  }, [VIEW_MODE_APPSTATE_PATCH, backgroundMode, canvasBackgroundAutoVisible, canvasBackgroundForTheme, canvasBackgroundVisible, effectiveBackgroundColor, isViewMode, mermaidCode, resolveStoredCanvasBackground, theme, zoomPercent]);
 
   const handlePointerUp = useCallback((_: AppState['activeTool'], pointerDownState: any) => {
     if (!isViewMode) return;
@@ -1208,7 +1238,15 @@ const DiagramWhiteboard: React.FC<Props> = ({
       }
     }
     canvasBackgroundByThemeRef.current = nextBgByTheme;
-    onCanvasBackgroundByThemeChange?.(nextBgByTheme);
+    // "Independent ED background": treat stored values as a single visible color.
+    const mergedVisible =
+      (typeof nextBgByTheme.light === 'string' && nextBgByTheme.light.trim()) ? nextBgByTheme.light.trim()
+        : (typeof nextBgByTheme.dark === 'string' && nextBgByTheme.dark.trim()) ? nextBgByTheme.dark.trim()
+          : null;
+    canvasBackgroundVisibleRef.current = mergedVisible;
+    setCanvasBackgroundVisible(mergedVisible);
+    canvasBackgroundByThemeRef.current = { light: mergedVisible, dark: mergedVisible };
+    onCanvasBackgroundByThemeChange?.({ light: mergedVisible, dark: mergedVisible });
     if (initialSceneJson === null && !isDirtyRef.current) {
       lastBuiltSignatureRef.current = '';
       inFlightSignatureRef.current = '';
@@ -1228,8 +1266,14 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
     const contrastBackground = (() => {
       if (backgroundMode === 'excalidraw') {
-        const fromScene = typeof nextAppState?.viewBackgroundColor === 'string' ? nextAppState.viewBackgroundColor.trim() : '';
-        return fromScene || mermaidBackgroundCandidate || (canvasBackgroundForTheme ?? null);
+        const fromSceneStored = typeof nextAppState?.viewBackgroundColor === 'string'
+          ? nextAppState.viewBackgroundColor.trim()
+          : '';
+        const fromSceneVisible = fromSceneStored
+          ? resolveVisibleCanvasBackground(fromSceneStored, normalizeTheme(theme))
+          : '';
+        const fromUserVisible = canvasBackgroundVisibleRef.current?.trim() ?? '';
+        return fromUserVisible || fromSceneVisible || canvasBackgroundAutoVisible || null;
       }
       return effectiveBackgroundColor ?? null;
     })();
@@ -1264,7 +1308,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   useEffect(() => {
     if (!api) return;
     const nextTheme = normalizeTheme(theme);
-    const signature = `${nextTheme}:${backgroundMode}:${canvasBackground ?? ''}:${effectiveBackgroundColor ?? ''}:${sceneKey}:${mermaidCode.trim()}`;
+    const signature = `${nextTheme}:${backgroundMode}:${canvasBackgroundVisible ?? ''}:${effectiveBackgroundColor ?? ''}:${sceneKey}:${mermaidCode.trim()}`;
     if (signature === lastRethemeSignatureRef.current) return;
     const elements = api.getSceneElements();
     if (!elements.length) return;
@@ -1281,7 +1325,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     })();
     const contrastBackground =
       backgroundMode === 'excalidraw'
-        ? (canvasBackground ?? mermaidBackgroundCandidate ?? canvasBackgroundForTheme)
+        ? ((canvasBackgroundVisibleRef.current ?? canvasBackgroundVisible ?? canvasBackgroundAutoVisible) ?? null)
         : null;
     const themedElements = applyMermaidThemeToExcalidrawElements(elements as unknown[], {
       backgroundColor: contrastBackground,
@@ -1550,25 +1594,19 @@ const DiagramWhiteboard: React.FC<Props> = ({
       const current = api.getAppState();
       const nextBackground = (() => {
         if (backgroundMode === 'excalidraw') {
-          const currentBg =
-            (lastCanvasBackgroundRef.current ?? (typeof current.viewBackgroundColor === 'string' ? current.viewBackgroundColor : null))
-            ?? null;
-          const nextDefault = nextTheme === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
-          const mermaidBg = typeof mermaidBackgroundCandidate === 'string' ? mermaidBackgroundCandidate.trim() : '';
-          const userBg = canvasBackgroundByThemeRef.current[nextTheme] ?? null;
-          const autoBg = (() => {
-            if (!mermaidBg) return nextDefault;
-            const dark = isDarkColor(mermaidBg);
-            if (dark === null) return mermaidBg;
-            const wantsDark = nextTheme === 'dark';
-            return wantsDark === dark ? mermaidBg : nextDefault;
-          })();
-          const resolved = userBg ?? autoBg;
-          if (resolved !== lastCanvasBackgroundRef.current) {
-            lastCanvasBackgroundRef.current = resolved;
-            setCanvasBackground(resolved);
+          const userVisible = canvasBackgroundVisibleRef.current?.trim() || null;
+          const resolvedVisible = (userVisible ?? canvasBackgroundAutoVisible)?.trim() || CANVAS_BG_LIGHT;
+          const stored = resolveStoredCanvasBackground(resolvedVisible, nextTheme);
+          if (stored !== lastCanvasBackgroundRef.current) {
+            lastCanvasBackgroundRef.current = stored;
+            setCanvasBackground(stored);
           }
-          return resolved;
+          // Keep `null` when in "Auto" mode (follows Mermaid bg) so the UI selection stays consistent.
+          if (userVisible !== canvasBackgroundVisibleRef.current) {
+            canvasBackgroundVisibleRef.current = userVisible;
+            setCanvasBackgroundVisible(userVisible);
+          }
+          return stored;
         }
         return effectiveBackgroundColor ?? undefined;
       })();
@@ -1594,7 +1632,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
     const raf = requestAnimationFrame(() => apply());
     return () => cancelAnimationFrame(raf);
-  }, [api, backgroundMode, canvasBackgroundForTheme, effectiveBackgroundColor, isViewMode, mermaidBackgroundCandidate, theme]);
+  }, [api, backgroundMode, canvasBackgroundAutoVisible, effectiveBackgroundColor, isViewMode, resolveStoredCanvasBackground, theme]);
 
   useEffect(() => {
     if (!api) return;
@@ -1739,32 +1777,21 @@ const DiagramWhiteboard: React.FC<Props> = ({
     appState: AppState,
     files: BinaryFiles
   ) => {
-    const themeFromAppState =
+    const effectiveTheme =
       appState.theme === 'dark' || appState.theme === 'light'
         ? appState.theme
-        : null;
-    if (themeFromAppState && themeFromAppState !== themePropRef.current) {
-      if (pendingThemeSyncRef.current !== themeFromAppState) {
-        pendingThemeSyncRef.current = themeFromAppState;
-        defer(() => {
-          if (themePropRef.current !== themeFromAppState) {
-            onThemeChange?.(themeFromAppState);
-          }
-        });
-      }
-    } else {
-      pendingThemeSyncRef.current = null;
-    }
+        : themePropRef.current;
     if (backgroundMode === 'excalidraw') {
       const nextBg = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor : null;
       if (nextBg !== lastCanvasBackgroundRef.current) {
         const expectedBg = expectedCanvasBackgroundRef.current;
         if (expectedBg === null || nextBg !== expectedBg) {
-          const themeKey = themePropRef.current;
-          if (canvasBackgroundByThemeRef.current[themeKey] !== nextBg) {
-            canvasBackgroundByThemeRef.current[themeKey] = nextBg;
-            onCanvasBackgroundByThemeChange?.({ ...canvasBackgroundByThemeRef.current });
-          }
+          const visible = nextBg ? resolveVisibleCanvasBackground(nextBg, effectiveTheme) : null;
+          canvasBackgroundVisibleRef.current = visible;
+          setCanvasBackgroundVisible(visible);
+          canvasBackgroundByThemeRef.current.light = visible;
+          canvasBackgroundByThemeRef.current.dark = visible;
+          onCanvasBackgroundByThemeChange?.({ ...canvasBackgroundByThemeRef.current });
         }
         lastCanvasBackgroundRef.current = nextBg;
         setCanvasBackground(nextBg);
@@ -1788,10 +1815,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
       && elements.length > 0
       && normalizedColorsSceneKeyRef.current !== sceneKey
     ) {
-      const bg =
+      const bgStored =
         (typeof appState.viewBackgroundColor === 'string' && appState.viewBackgroundColor.trim())
-        || canvasBackgroundForTheme;
-      const bgDark = (isDarkColor(bg) ?? (theme === 'dark'));
+        || resolveStoredCanvasBackground(canvasBackgroundAutoVisible, effectiveTheme);
+      const bgVisible = resolveVisibleCanvasBackground(bgStored, effectiveTheme);
+      const bgDark = (isDarkColor(bgVisible) ?? (effectiveTheme === 'dark'));
       const expectedLine = bgDark ? '#cbd5e1' : '#0f172a';
       const expectedText = bgDark ? '#e5e7eb' : '#0f172a';
 
@@ -1821,9 +1849,9 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
       if (needsNormalize) {
         const themed = applyMermaidThemeToExcalidrawElements(elements as unknown[], {
-          backgroundColor: bg,
+          backgroundColor: bgVisible,
           themeVariables: null,
-          uiTheme: theme,
+          uiTheme: effectiveTheme,
           forceTheme: true,
         }) as unknown as OrderedExcalidrawElement[];
         // Only apply if the first pass is likely the raw converter colors.
@@ -1911,10 +1939,13 @@ const DiagramWhiteboard: React.FC<Props> = ({
   }, [
     api,
     backgroundMode,
+    canvasBackgroundAutoVisible,
     effectiveBackgroundColor,
     isViewMode,
     onCanvasBackgroundByThemeChange,
     onZoomPercentChange,
+    resolveStoredCanvasBackground,
+    resolveVisibleCanvasBackground,
     sceneKey,
     scheduleAutosave,
     scheduleClampScroll,
@@ -1926,16 +1957,16 @@ const DiagramWhiteboard: React.FC<Props> = ({
     const style: React.CSSProperties = {};
     const resolvedBackground =
       backgroundMode === 'excalidraw'
-        ? (canvasBackground ?? canvasBackgroundForTheme)
+        ? ((canvasBackgroundVisible ?? canvasBackgroundAutoVisible) ?? CANVAS_BG_LIGHT)
         : (effectiveBackgroundColor ?? 'transparent');
     style['--whiteboard-bg' as keyof React.CSSProperties] = resolvedBackground;
     if (backgroundMode === 'excalidraw') {
-      style.backgroundColor = canvasBackground ?? canvasBackgroundForTheme;
+      style.backgroundColor = resolvedBackground;
     } else if (effectiveBackgroundColor) {
       style.backgroundColor = effectiveBackgroundColor;
     }
     return style;
-  }, [backgroundMode, canvasBackground, canvasBackgroundForTheme, effectiveBackgroundColor]);
+  }, [backgroundMode, canvasBackgroundAutoVisible, canvasBackgroundVisible, effectiveBackgroundColor]);
 
   const showCanvasBackgroundPicker = backgroundMode === 'excalidraw' && isViewMode;
   const [isCanvasBackgroundPickerOpen, setIsCanvasBackgroundPickerOpen] = useState(false);
@@ -1966,49 +1997,39 @@ const DiagramWhiteboard: React.FC<Props> = ({
   }, [isCanvasBackgroundPickerOpen]);
 
   const canvasBackgroundPresets = useMemo(() => {
-    return {
-      light: [
-        { id: 'light-default', color: CANVAS_BG_LIGHT, title: 'Default' },
-        { id: 'light-white', color: '#ffffff', title: 'White' },
-        { id: 'light-gray-100', color: '#f3f4f6', title: 'Gray' },
-        { id: 'light-warm', color: '#fff7ed', title: 'Warm' },
-      ],
-      dark: [
-        // In dark theme Excalidraw applies `filter: var(--theme-filter)` to the canvas.
-        // So the stored `viewBackgroundColor` must be in the "unfiltered" (light) space.
-        // These colors are intentionally light — they render dark after the canvas filter.
-        { id: 'dark-default', color: '#ffffff', title: 'Default' },
-        { id: 'dark-dim', color: '#f3f4f6', title: 'Dim' },
-        { id: 'dark-paper', color: '#e5e7eb', title: 'Paper' },
-        { id: 'dark-stone', color: '#d1d5db', title: 'Stone' },
-      ],
-    } as const;
+    return [
+      { id: 'auto', color: null, title: 'Auto' },
+      { id: 'white', color: '#ffffff', title: 'White' },
+      { id: 'paper', color: '#f3f4f6', title: 'Paper' },
+      { id: 'dim', color: '#e5e7eb', title: 'Dim' },
+      { id: 'slate', color: '#0f172a', title: 'Slate' },
+      { id: 'ink', color: '#1e1e1e', title: 'Ink' },
+      { id: 'coal', color: '#111827', title: 'Coal' },
+      { id: 'deep', color: '#0b1220', title: 'Deep' },
+    ] as const;
   }, []);
 
-  const applyCanvasBackgroundForTheme = useCallback((themeKey: 'light' | 'dark', nextBg: string | null) => {
-    canvasBackgroundByThemeRef.current[themeKey] = nextBg;
+  const applyCanvasBackground = useCallback((nextVisible: string | null) => {
+    const next = typeof nextVisible === 'string' && nextVisible.trim() ? nextVisible.trim() : null;
+    canvasBackgroundVisibleRef.current = next;
+    setCanvasBackgroundVisible(next);
+    canvasBackgroundByThemeRef.current.light = next;
+    canvasBackgroundByThemeRef.current.dark = next;
     setCanvasBackgroundUiKey((v) => v + 1);
     onCanvasBackgroundByThemeChange?.({ ...canvasBackgroundByThemeRef.current });
 
-    const apiTheme = (() => {
-      const raw = apiRef.current?.getAppState?.().theme;
-      return raw === 'light' || raw === 'dark' ? raw : null;
-    })();
-    const activeTheme = apiTheme ?? themePropRef.current;
-    if (themeKey !== activeTheme) return;
+    const activeTheme = themePropRef.current;
+    const resolvedVisible = next ?? canvasBackgroundAutoVisible;
+    const stored = resolveStoredCanvasBackground(resolvedVisible, activeTheme);
 
-    const resolved = (typeof nextBg === 'string' && nextBg.trim())
-      ? nextBg.trim()
-      // The default is always white in Excalidraw's internal color space.
-      : CANVAS_BG_LIGHT;
-    lastCanvasBackgroundRef.current = resolved;
-    setCanvasBackground(resolved);
-    expectedCanvasBackgroundRef.current = null;
+    lastCanvasBackgroundRef.current = stored;
+    setCanvasBackground(stored);
+    expectedCanvasBackgroundRef.current = stored;
     apiRef.current?.updateScene({
-      appState: { viewBackgroundColor: resolved },
+      appState: { viewBackgroundColor: stored },
       captureUpdate: CaptureUpdateAction.NEVER,
     });
-  }, [onCanvasBackgroundByThemeChange]);
+  }, [canvasBackgroundAutoVisible, onCanvasBackgroundByThemeChange, resolveStoredCanvasBackground]);
 
   const fallbackInitialData = useMemo(() => {
     if (initialDataState) return initialDataState;
@@ -2049,97 +2070,51 @@ const DiagramWhiteboard: React.FC<Props> = ({
             <div className="mt-2 w-56 rounded-md border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 backdrop-blur shadow-md p-2">
               <div className="flex items-center justify-between gap-2 px-1 pb-2">
                 <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                  ED theme
+                  Canvas background
                 </div>
-                <div className="inline-flex items-center rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
-                  <button
-                    type="button"
-                    className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] ${
-                      normalizeTheme(theme) === 'light'
-                        ? 'bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-50'
-                        : 'bg-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-50'
-                    }`}
-                    onClick={() => onThemeChange?.('light')}
-                    title="Light"
-                  >
-                    <Sun className="w-3.5 h-3.5" />
-                    Light
-                  </button>
-                  <button
-                    type="button"
-                    className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] border-l border-slate-200 dark:border-slate-700 ${
-                      normalizeTheme(theme) === 'dark'
-                        ? 'bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-50'
-                        : 'bg-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-50'
-                    }`}
-                    onClick={() => onThemeChange?.('dark')}
-                    title="Dark"
-                  >
-                    <Moon className="w-3.5 h-3.5" />
-                    Dark
-                  </button>
+                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  {normalizeTheme(theme) === 'dark' ? (
+                    <span className="inline-flex items-center gap-1"><Moon className="w-3.5 h-3.5" />Dark</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1"><Sun className="w-3.5 h-3.5" />Light</span>
+                  )}
                 </div>
-              </div>
-              <div className="flex items-center gap-2 px-1 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                <Sun className="w-3.5 h-3.5" />
-                <span>Light</span>
-              </div>
-              <div className="flex flex-wrap gap-2 px-1 pb-2">
-                {canvasBackgroundPresets.light.map((preset) => {
-                  const selected = canvasBackgroundByThemeRef.current.light === preset.color;
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={`w-7 h-7 rounded border ${selected ? 'border-slate-900' : 'border-slate-300'} shadow-sm`}
-                      style={{ backgroundColor: preset.color }}
-                      title={preset.title}
-                      onClick={() => {
-                        applyCanvasBackgroundForTheme('light', preset.color);
-                      }}
-                    />
-                  );
-                })}
-                <button
-                  type="button"
-                  className="h-7 px-2 rounded border border-slate-300 text-[11px] text-slate-600 hover:text-slate-900 hover:border-slate-400"
-                  title="Reset (Light)"
-                  onClick={() => applyCanvasBackgroundForTheme('light', null)}
-                >
-                  reset
-                </button>
               </div>
 
-              <div className="flex items-center gap-2 px-1 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                <Moon className="w-3.5 h-3.5" />
-                <span>Dark</span>
-              </div>
               <div className="flex flex-wrap gap-2 px-1">
-                {canvasBackgroundPresets.dark.map((preset) => {
-                  const selected = canvasBackgroundByThemeRef.current.dark === preset.color;
+                {canvasBackgroundPresets.map((preset) => {
+                  const selected = (canvasBackgroundVisibleRef.current ?? null) === preset.color;
+                  if (preset.color === null) {
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className={`h-7 px-2 rounded border text-[11px] ${
+                          selected
+                            ? 'border-slate-900 text-slate-900 dark:border-slate-200 dark:text-slate-100'
+                            : 'border-slate-300 text-slate-600 hover:text-slate-900 hover:border-slate-400 dark:border-slate-600 dark:text-slate-300 dark:hover:text-slate-50 dark:hover:border-slate-400'
+                        }`}
+                        title={preset.title}
+                        onClick={() => applyCanvasBackground(null)}
+                      >
+                        auto
+                      </button>
+                    );
+                  }
                   return (
                     <button
                       key={preset.id}
                       type="button"
-                      className={`w-7 h-7 rounded border ${selected ? 'border-slate-50' : 'border-slate-600'} shadow-sm`}
-                      style={{ backgroundColor: preset.color, filter: 'invert(93%) hue-rotate(180deg)' }}
+                      className={`w-7 h-7 rounded border ${selected ? 'border-slate-900 dark:border-slate-200' : 'border-slate-300 dark:border-slate-600'} shadow-sm`}
+                      style={{ backgroundColor: preset.color }}
                       title={preset.title}
-                      onClick={() => {
-                        applyCanvasBackgroundForTheme('dark', preset.color);
-                      }}
+                      onClick={() => applyCanvasBackground(preset.color)}
                     />
                   );
                 })}
-                <button
-                  type="button"
-                  className="h-7 px-2 rounded border border-slate-600 text-[11px] text-slate-300 hover:text-slate-50 hover:border-slate-400"
-                  title="Reset (Dark)"
-                  onClick={() => applyCanvasBackgroundForTheme('dark', null)}
-                >
-                  reset
-                </button>
               </div>
-              {/* force re-render when updating non-active theme */}
+
+              {/* force re-render when updating refs */}
               <span className="sr-only">{canvasBackgroundUiKey}</span>
             </div>
           ) : null}
