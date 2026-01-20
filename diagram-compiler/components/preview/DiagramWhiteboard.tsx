@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Moon, Palette, Sun } from 'lucide-react';
 import {
   CaptureUpdateAction,
   convertToExcalidrawElements,
@@ -1041,6 +1042,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const [lastGenerator, setLastGenerator] = useState<MermaidLanggraphSceneGenerator>('unknown');
   const [lastMermaidToExcalidrawError, setLastMermaidToExcalidrawError] = useState<string | null>(null);
   const [canvasBackground, setCanvasBackground] = useState<string | null>(null);
+  const [canvasBackgroundUiKey, setCanvasBackgroundUiKey] = useState(0);
   const lastCanvasBackgroundRef = useRef<string | null>(null);
   const canvasBackgroundByThemeRef = useRef<{ light: string | null; dark: string | null }>({
     light: (typeof initialCanvasBackgroundByTheme?.light === 'string' && initialCanvasBackgroundByTheme.light.trim())
@@ -1935,6 +1937,70 @@ const DiagramWhiteboard: React.FC<Props> = ({
     return style;
   }, [backgroundMode, canvasBackground, canvasBackgroundForTheme, effectiveBackgroundColor]);
 
+  const showCanvasBackgroundPicker = backgroundMode === 'excalidraw' && isViewMode;
+  const [isCanvasBackgroundPickerOpen, setIsCanvasBackgroundPickerOpen] = useState(false);
+  const canvasBackgroundPickerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isCanvasBackgroundPickerOpen) return;
+
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (canvasBackgroundPickerRef.current?.contains(target)) return;
+      setIsCanvasBackgroundPickerOpen(false);
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsCanvasBackgroundPickerOpen(false);
+    };
+
+    window.document.addEventListener('mousedown', onPointerDown, true);
+    window.document.addEventListener('touchstart', onPointerDown, true);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.document.removeEventListener('mousedown', onPointerDown, true);
+      window.document.removeEventListener('touchstart', onPointerDown, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isCanvasBackgroundPickerOpen]);
+
+  const canvasBackgroundPresets = useMemo(() => {
+    return {
+      light: [
+        { id: 'light-default', color: CANVAS_BG_LIGHT, title: 'Default' },
+        { id: 'light-white', color: '#ffffff', title: 'White' },
+        { id: 'light-gray-100', color: '#f3f4f6', title: 'Gray' },
+        { id: 'light-warm', color: '#fff7ed', title: 'Warm' },
+      ],
+      dark: [
+        { id: 'dark-default', color: CANVAS_BG_DARK, title: 'Default' },
+        { id: 'dark-ink', color: '#1e1e1e', title: 'Ink' },
+        { id: 'dark-slate', color: '#111827', title: 'Slate' },
+        { id: 'dark-deep', color: '#0b1220', title: 'Deep' },
+      ],
+    } as const;
+  }, []);
+
+  const applyCanvasBackgroundForTheme = useCallback((themeKey: 'light' | 'dark', nextBg: string | null) => {
+    canvasBackgroundByThemeRef.current[themeKey] = nextBg;
+    setCanvasBackgroundUiKey((v) => v + 1);
+    onCanvasBackgroundByThemeChange?.({ ...canvasBackgroundByThemeRef.current });
+
+    if (themeKey !== themePropRef.current) return;
+
+    const resolved = (typeof nextBg === 'string' && nextBg.trim())
+      ? nextBg.trim()
+      : (themeKey === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT);
+    lastCanvasBackgroundRef.current = resolved;
+    setCanvasBackground(resolved);
+    expectedCanvasBackgroundRef.current = null;
+    apiRef.current?.updateScene({
+      appState: { viewBackgroundColor: resolved },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  }, [onCanvasBackgroundByThemeChange]);
+
   const fallbackInitialData = useMemo(() => {
     if (initialDataState) return initialDataState;
     const background = (() => {
@@ -1958,6 +2024,86 @@ const DiagramWhiteboard: React.FC<Props> = ({
       style={containerStyle}
       onWheel={handleWheel}
     >
+      {showCanvasBackgroundPicker ? (
+        <div ref={canvasBackgroundPickerRef} className="absolute left-3 top-3 z-40 text-xs">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/60 backdrop-blur text-slate-700 dark:text-slate-200 hover:bg-white/90 dark:hover:bg-slate-900/80 shadow-sm"
+            onClick={() => setIsCanvasBackgroundPickerOpen((v) => !v)}
+            title="Canvas background"
+          >
+            <Palette className="w-4 h-4" />
+            <span className="font-medium">Canvas</span>
+          </button>
+
+          {isCanvasBackgroundPickerOpen ? (
+            <div className="mt-2 w-56 rounded-md border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 backdrop-blur shadow-md p-2">
+              <div className="flex items-center gap-2 px-1 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                <Sun className="w-3.5 h-3.5" />
+                <span>Light</span>
+              </div>
+              <div className="flex flex-wrap gap-2 px-1 pb-2">
+                {canvasBackgroundPresets.light.map((preset) => {
+                  const selected = canvasBackgroundByThemeRef.current.light === preset.color;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`w-7 h-7 rounded border ${selected ? 'border-slate-900' : 'border-slate-300'} shadow-sm`}
+                      style={{ backgroundColor: preset.color }}
+                      title={preset.title}
+                      onClick={() => {
+                        applyCanvasBackgroundForTheme('light', preset.color);
+                      }}
+                    />
+                  );
+                })}
+                <button
+                  type="button"
+                  className="h-7 px-2 rounded border border-slate-300 text-[11px] text-slate-600 hover:text-slate-900 hover:border-slate-400"
+                  title="Reset (Light)"
+                  onClick={() => applyCanvasBackgroundForTheme('light', null)}
+                >
+                  reset
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 px-1 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                <Moon className="w-3.5 h-3.5" />
+                <span>Dark</span>
+              </div>
+              <div className="flex flex-wrap gap-2 px-1">
+                {canvasBackgroundPresets.dark.map((preset) => {
+                  const selected = canvasBackgroundByThemeRef.current.dark === preset.color;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`w-7 h-7 rounded border ${selected ? 'border-slate-50' : 'border-slate-600'} shadow-sm`}
+                      style={{ backgroundColor: preset.color }}
+                      title={preset.title}
+                      onClick={() => {
+                        applyCanvasBackgroundForTheme('dark', preset.color);
+                      }}
+                    />
+                  );
+                })}
+                <button
+                  type="button"
+                  className="h-7 px-2 rounded border border-slate-600 text-[11px] text-slate-300 hover:text-slate-50 hover:border-slate-400"
+                  title="Reset (Dark)"
+                  onClick={() => applyCanvasBackgroundForTheme('dark', null)}
+                >
+                  reset
+                </button>
+              </div>
+              {/* force re-render when updating non-active theme */}
+              <span className="sr-only">{canvasBackgroundUiKey}</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <DiagramWhiteboardCanvas
         initialData={fallbackInitialData}
         theme={normalizeTheme(theme)}
