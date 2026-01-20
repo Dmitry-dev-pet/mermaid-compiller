@@ -1990,7 +1990,12 @@ const DiagramWhiteboard: React.FC<Props> = ({
     setCanvasBackgroundUiKey((v) => v + 1);
     onCanvasBackgroundByThemeChange?.({ ...canvasBackgroundByThemeRef.current });
 
-    if (themeKey !== themePropRef.current) return;
+    const apiTheme = (() => {
+      const raw = apiRef.current?.getAppState?.().theme;
+      return raw === 'light' || raw === 'dark' ? raw : null;
+    })();
+    const activeTheme = apiTheme ?? themePropRef.current;
+    if (themeKey !== activeTheme) return;
 
     const resolved = (typeof nextBg === 'string' && nextBg.trim())
       ? nextBg.trim()
