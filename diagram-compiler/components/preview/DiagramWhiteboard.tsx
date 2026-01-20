@@ -1974,10 +1974,13 @@ const DiagramWhiteboard: React.FC<Props> = ({
         { id: 'light-warm', color: '#fff7ed', title: 'Warm' },
       ],
       dark: [
-        { id: 'dark-default', color: CANVAS_BG_DARK, title: 'Default' },
-        { id: 'dark-ink', color: '#1e1e1e', title: 'Ink' },
-        { id: 'dark-slate', color: '#111827', title: 'Slate' },
-        { id: 'dark-deep', color: '#0b1220', title: 'Deep' },
+        // In dark theme Excalidraw applies `filter: var(--theme-filter)` to the canvas.
+        // So the stored `viewBackgroundColor` must be in the "unfiltered" (light) space.
+        // These colors are intentionally light — they render dark after the canvas filter.
+        { id: 'dark-default', color: '#ffffff', title: 'Default' },
+        { id: 'dark-dim', color: '#f3f4f6', title: 'Dim' },
+        { id: 'dark-paper', color: '#e5e7eb', title: 'Paper' },
+        { id: 'dark-stone', color: '#d1d5db', title: 'Stone' },
       ],
     } as const;
   }, []);
@@ -1991,7 +1994,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
     const resolved = (typeof nextBg === 'string' && nextBg.trim())
       ? nextBg.trim()
-      : (themeKey === 'dark' ? CANVAS_BG_DARK : CANVAS_BG_LIGHT);
+      // The default is always white in Excalidraw's internal color space.
+      : CANVAS_BG_LIGHT;
     lastCanvasBackgroundRef.current = resolved;
     setCanvasBackground(resolved);
     expectedCanvasBackgroundRef.current = null;
@@ -2080,7 +2084,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
                       key={preset.id}
                       type="button"
                       className={`w-7 h-7 rounded border ${selected ? 'border-slate-50' : 'border-slate-600'} shadow-sm`}
-                      style={{ backgroundColor: preset.color }}
+                      style={{ backgroundColor: preset.color, filter: 'invert(93%) hue-rotate(180deg)' }}
                       title={preset.title}
                       onClick={() => {
                         applyCanvasBackgroundForTheme('dark', preset.color);
