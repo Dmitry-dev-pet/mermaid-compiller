@@ -485,7 +485,7 @@ const Header: React.FC<HeaderProps> = ({
         <HeaderNotebookSlot>{notebookTabs}</HeaderNotebookSlot>
       </div>
 
-      <div className="flex items-center gap-4 text-[10px] text-slate-500 dark:text-slate-400 font-medium pl-3 border-l border-slate-200 dark:border-slate-800">
+      <div className="flex items-center gap-4 text-[10px] text-slate-500 dark:text-slate-400 font-medium pl-3">
         <div className="relative" ref={themeDropdownRef}>
           <Button
             type="button"
