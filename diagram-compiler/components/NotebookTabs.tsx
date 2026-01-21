@@ -152,27 +152,27 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
               </button>
             );
           })}
-        </div>
 
-        {onSelectDiagramStep && historyChips.length > 0 && (
-          <div className="flex items-center gap-1 shrink-0">
-            <span className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1" />
-            {historyChips.map((chip) => (
-              <button
-                key={chip.marker.stepId}
-                type="button"
-                onClick={() => handleHistoryChipClick(chip.marker)}
-                onMouseEnter={(e) => showTooltip(e, chip.tooltip)}
-                onMouseMove={(e) => showTooltip(e, chip.tooltip)}
-                onMouseLeave={hideTooltip}
-                className={`whitespace-nowrap ${chip.className}`}
-                title={chip.tooltip}
-              >
-                {chip.label}
-              </button>
-            ))}
-          </div>
-        )}
+          {onSelectDiagramStep && historyChips.length > 0 && (
+            <>
+              <span className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
+              {historyChips.map((chip) => (
+                <button
+                  key={chip.marker.stepId}
+                  type="button"
+                  onClick={() => handleHistoryChipClick(chip.marker)}
+                  onMouseEnter={(e) => showTooltip(e, chip.tooltip)}
+                  onMouseMove={(e) => showTooltip(e, chip.tooltip)}
+                  onMouseLeave={hideTooltip}
+                  className={`whitespace-nowrap ${chip.className}`}
+                  title={chip.tooltip}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
 
         <div className="flex items-center gap-1 shrink-0">
           <button
