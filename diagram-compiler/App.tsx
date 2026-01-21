@@ -269,6 +269,10 @@ function App() {
       onAppendMarkdownMermaidBlock={isProjectPreview ? () => {} : appendMarkdownMermaidBlock}
       onBuildDocsScopeChange={(scope) => {
         if (isProjectPreview) return;
+        if (editorTab === 'build_docs' && scope === 'notebook') {
+          setDocsMode('plan');
+          setBuildDocsActivePathForMode('plan', PROMPTS_VIRTUAL_SYSTEM_PATH);
+        }
         setNextBuildDocsScope(scope);
       }}
       diagramMarkers={diagramMarkers}
