@@ -30,6 +30,7 @@ import { useFixFlow } from './useFixFlow';
 import { useNotebookContext } from './useNotebookContext';
 import { MAIN_CHAT_CONTEXT_ID, resolveChatContextId, resolveOperationLogContextId } from '../../utils/contextIds';
 import type { LLMRequestStartNotice } from '../../services/llmRequestRunner';
+import { getSystemPromptModeFromPath, isSystemPromptPath } from '../../utils/systemPrompts';
 import {
   ensureWhiteboardBundle,
   resolveWhiteboardSceneForBlock,
@@ -397,6 +398,16 @@ export const useDiagramStudio = () => {
     resetDocsSelectionsToDefault,
     buildDocsType,
   } = useBuildDocs(docsDiagramType);
+
+  useEffect(() => {
+    if (editorTab !== 'build_docs') return;
+    if (!buildDocsActivePath || !isSystemPromptPath(buildDocsActivePath)) return;
+    const modeFromPath = getSystemPromptModeFromPath(buildDocsActivePath);
+    if (!modeFromPath) return;
+    if (docsMode !== modeFromPath) {
+      setDocsMode(modeFromPath);
+    }
+  }, [buildDocsActivePath, docsMode, editorTab, setDocsMode]);
 
   useEffect(() => {
     if (appState.diagramType === 'auto') return;
