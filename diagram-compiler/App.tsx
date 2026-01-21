@@ -17,6 +17,11 @@ import { setFlowchartLinkStylePreset } from './utils/flowchartLinkStyle';
 import type { FlowchartCurve } from './utils/flowchartCurveConfig';
 import { setFlowchartCurve } from './utils/flowchartCurveConfig';
 import { DIAGRAM_TYPES } from './utils/diagramTypes';
+import {
+  PROMPTS_VIRTUAL_INTENT_PATH,
+  PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH,
+  PROMPTS_VIRTUAL_SYSTEM_PATH,
+} from './utils/promptsVirtualPaths';
 import { getDiagramSyntaxPath, getDocsPaths } from './services/docsContextService';
 import type { DiagramType } from './types';
 import { getThemeColorScheme } from './utils/appTheme';
@@ -161,6 +166,13 @@ function App() {
     options?: { blockIndex?: number | null }
   ) => {
     const cleaned = fileLabel.trim().replace(/\s*\([^)]*\)\s*$/, '').trim();
+    const normalized = cleaned.toLowerCase();
+    const virtualPath = (() => {
+      if (normalized === 'system' || normalized === PROMPTS_VIRTUAL_SYSTEM_PATH) return PROMPTS_VIRTUAL_SYSTEM_PATH;
+      if (normalized === 'intent' || normalized === PROMPTS_VIRTUAL_INTENT_PATH) return PROMPTS_VIRTUAL_INTENT_PATH;
+      if (normalized === 'notebook plan' || normalized === PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH) return PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH;
+      return null;
+    })();
     const fileName = cleaned.split('/').pop() || cleaned;
     const matchInCurrent =
       buildDocsEntries.find((entry) => (entry.path.split('/').pop() || entry.path) === fileName)
@@ -174,6 +186,11 @@ function App() {
       }
       setEditorTab('build_docs');
       setDocsMode(mode);
+
+      if (virtualPath) {
+        setBuildDocsActivePathForMode(mode, virtualPath);
+        return;
+      }
 
       if (matchInCurrent) {
         setBuildDocsActivePathForMode(mode, matchInCurrent.path);

@@ -2,6 +2,7 @@ import React from 'react';
 import type { DocsMode } from '../../types';
 import type { OperationLogTextRow } from './operationLogUtils';
 import OperationLogTooltip from './OperationLogTooltip';
+import { PROMPTS_VIRTUAL_SYSTEM_PATH } from '../../utils/promptsVirtualPaths';
 
 type Props = {
   row: OperationLogTextRow;
@@ -60,6 +61,27 @@ const OperationLogRowText: React.FC<Props> = ({
 
   const lines = row.text.split('\n');
   const renderLine = (line: string, index: number) => {
+    const trimmedLine = line.trim();
+    if (/^prompt$/i.test(trimmedLine) && onOpenBuildDocsFile) {
+      return (
+        <button
+          key={`line-${index}`}
+          type="button"
+          className="underline decoration-dotted hover:text-[var(--control-text)]"
+          onClick={(eventClick) => {
+            eventClick.preventDefault();
+            eventClick.stopPropagation();
+            onOpenBuildDocsFile(PROMPTS_VIRTUAL_SYSTEM_PATH, docsMode, {
+              blockIndex: typeof row.blockIndex === 'number' ? row.blockIndex : null,
+            });
+          }}
+          title="Открыть system prompt в Prompts"
+        >
+          {trimmedLine}
+        </button>
+      );
+    }
+
     const messageMatch = row.tooltipMessages
       ? line.match(/^(.*?)(messages:\s.*)$/i)
       : null;
