@@ -205,7 +205,7 @@ const Header: React.FC<HeaderProps> = ({
     <PanelHeader
       as="header"
       ref={headerRef}
-      className="fixed top-0 left-0 right-0 grid items-center gap-0 border-slate-200 dark:border-slate-800 shadow-sm shrink-0 z-50 min-h-12 transition-colors"
+      className="fixed top-0 left-0 right-0 grid items-center gap-0 h-24 shrink-0 z-50 transition-colors"
       style={{
         gridTemplateColumns: `minmax(260px, ${chatColumnWidthPercent}%) 0.25rem minmax(0, 1fr) auto`,
       }}
@@ -479,7 +479,7 @@ const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <div className="h-6 w-1 bg-slate-200 dark:bg-slate-800 rounded-sm" aria-hidden="true" />
+      <div className="h-full w-1 bg-slate-200 dark:bg-slate-800" aria-hidden="true" />
 
       <div className="min-w-0">
         <HeaderNotebookSlot>{notebookTabs}</HeaderNotebookSlot>
