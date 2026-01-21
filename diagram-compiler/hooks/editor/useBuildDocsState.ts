@@ -3,6 +3,7 @@ import type { DocsEntry } from '../../services/docsContextService';
 import { DocsMode, PromptPreviewMode, PromptPreviewTab } from '../../types';
 import { getSystemPromptPath, isSystemPromptPath } from '../../utils/systemPrompts';
 import { buildSystemPrompt } from '../../services/llm/prompts';
+import { isPromptsVirtualPath, PROMPTS_VIRTUAL_SYSTEM_PATH } from '../../utils/promptsVirtualPaths';
 
 type BuildDocsPanelState = {
   docsMode: DocsMode;
@@ -53,18 +54,24 @@ export const useBuildDocsState = ({
   const systemPromptLang = resolveSelectedLanguage(analyzeLanguage, appLanguage, activePrompt?.language);
   const systemPromptPath = getSystemPromptPath(systemPromptLang, docsMode);
   const isSystemPromptRaw = systemPromptRawByMode[docsMode] ?? false;
-  const fallbackPlannerLanguage = systemPromptLang === 'ru' ? 'Russian' : 'English';
-  const fallbackPlannerPrompt = buildSystemPrompt('plan_notebook', {
+  const fallbackLanguage = systemPromptLang === 'ru' ? 'Russian' : 'English';
+  const fallbackMode = docsMode === 'plan'
+    ? 'plan_notebook'
+    : docsMode === 'build'
+      ? 'generate'
+      : docsMode === 'chat'
+        ? 'chat_notebook'
+        : docsMode;
+  const fallbackPrompt = buildSystemPrompt(fallbackMode, {
     docsContext: 'Documentation context redacted.',
-    language: fallbackPlannerLanguage,
+    language: fallbackLanguage,
   });
   const systemPromptContent = (() => {
     const fromPreview = isSystemPromptRaw
       ? activePrompt?.systemPrompt ?? ''
       : activePrompt?.systemPromptRedacted ?? activePrompt?.systemPrompt ?? '';
     if (fromPreview) return fromPreview;
-    if (docsMode === 'plan') return fallbackPlannerPrompt;
-    return '';
+    return fallbackPrompt;
   })();
   const systemPromptEntry: DocsEntry = {
     path: systemPromptPath,
@@ -83,8 +90,8 @@ export const useBuildDocsState = ({
 
   useEffect(() => {
     if (!buildDocsEntries.length) {
-      if (buildDocsActivePath !== systemPromptPath) {
-        onBuildDocsActivePathChange(systemPromptPath);
+      if (buildDocsActivePath !== PROMPTS_VIRTUAL_SYSTEM_PATH) {
+        onBuildDocsActivePathChange(PROMPTS_VIRTUAL_SYSTEM_PATH);
       }
       return;
     }
@@ -94,6 +101,8 @@ export const useBuildDocsState = ({
       return;
     }
 
+    if (isPromptsVirtualPath(buildDocsActivePath)) return;
+    if (isSystemPromptPath(buildDocsActivePath)) return;
     if (buildDocsEntries.some((entry) => entry.path === buildDocsActivePath)) return;
     onBuildDocsActivePathChange(buildDocsEntries[0]?.path ?? '');
   }, [buildDocsActivePath, buildDocsEntries, onBuildDocsActivePathChange, systemPromptPath]);

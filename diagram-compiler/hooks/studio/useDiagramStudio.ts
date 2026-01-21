@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAI } from '../core/useAI';
 import { useMermaid } from '../core/useMermaid';
 import { useLayout } from '../core/useLayout';
@@ -28,7 +28,7 @@ import { createAnalyticsAdapter } from '../../services/analyticsAdapter';
 import { useNotebookBuild } from './useNotebookBuild';
 import { useFixFlow } from './useFixFlow';
 import { useNotebookContext } from './useNotebookContext';
-import { resolveChatContextId, resolveOperationLogContextId } from '../../utils/contextIds';
+import { MAIN_CHAT_CONTEXT_ID, resolveChatContextId, resolveOperationLogContextId } from '../../utils/contextIds';
 import type { LLMRequestStartNotice } from '../../services/llmRequestRunner';
 import {
   ensureWhiteboardBundle,
@@ -81,6 +81,9 @@ export const useDiagramStudio = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [diagramIntentByContext, setDiagramIntentByContext] = useState<Record<string, DiagramIntent | null>>({});
   const [editorTab, setEditorTab] = useState<EditorTab>('code');
+  const [buildDocsScope, setBuildDocsScope] = useState<'notebook' | 'diagram'>('notebook');
+  const prevEditorTabRef = useRef<EditorTab>('code');
+  const nextBuildDocsScopeRef = useRef<'notebook' | 'diagram' | null>(null);
   const [previewMermaidState, setPreviewMermaidState] = useState<MermaidState | null>(null);
   const previewCacheRef = useRef<Record<string, MermaidState>>({});
   const previewLoadingRef = useRef<Set<string>>(new Set());
@@ -98,6 +101,23 @@ export const useDiagramStudio = () => {
     setPreviewMermaidState(null);
   }, []);
 
+  const setNextBuildDocsScope = useCallback((scope: 'notebook' | 'diagram' | null) => {
+    nextBuildDocsScopeRef.current = scope;
+  }, []);
+
+  useLayoutEffect(() => {
+    const prev = prevEditorTabRef.current;
+    if (editorTab === 'build_docs' && prev !== 'build_docs') {
+      const override = nextBuildDocsScopeRef.current;
+      if (override) {
+        setBuildDocsScope(override);
+        nextBuildDocsScopeRef.current = null;
+      } else {
+        setBuildDocsScope(prev === 'markdown_mermaid' ? 'diagram' : 'notebook');
+      }
+    }
+    prevEditorTabRef.current = editorTab;
+  }, [editorTab]);
 
   const {
     markdownMermaidBlocks,
@@ -129,6 +149,7 @@ export const useDiagramStudio = () => {
 
   const notebookContext = useNotebookContext({
     editorTab,
+    buildDocsScope,
     mermaidCode: mermaidState.code,
     markdownBlocksLength: markdownMermaidBlocks.length,
   });
@@ -458,6 +479,7 @@ export const useDiagramStudio = () => {
     setPromptPreview,
   } = usePromptPreview({
     diagramType: editorTab === 'build_docs' ? (buildDocsType ?? docsDiagramType) : docsDiagramType,
+    mainDiagramTypes: appState.mainDiagramTypes,
     analyzeLanguage: appState.analyzeLanguage ?? 'auto',
     appLanguage: appState.language ?? 'auto',
     isNotebookChatEnabled,
@@ -964,19 +986,19 @@ export const useDiagramStudio = () => {
   }, [activeLLMRequest, isProcessing]);
 
   const handleChatMessage = useCallback(async (text: string) => {
-    if (editorTab === 'code') {
+    if (activeChatContextId === MAIN_CHAT_CONTEXT_ID) {
       return baseHandleChatMessage(text);
     }
 
     return runWithActiveDiagramContext(() => baseHandleChatMessage(text));
   }, [
     baseHandleChatMessage,
-    editorTab,
+    activeChatContextId,
     runWithActiveDiagramContext,
   ]);
 
   const handleBuildFromPrompt = useCallback(async (text?: string) => {
-    if (editorTab === 'code') {
+    if (activeChatContextId === MAIN_CHAT_CONTEXT_ID) {
       await handleNotebookBuild(text);
       return;
     }
@@ -984,7 +1006,7 @@ export const useDiagramStudio = () => {
     await runWithActiveDiagramContext(() => baseHandleBuildFromPrompt(text));
   }, [
     baseHandleBuildFromPrompt,
-    editorTab,
+    activeChatContextId,
     handleNotebookBuild,
     runWithActiveDiagramContext,
   ]);
@@ -1152,6 +1174,7 @@ export const useDiagramStudio = () => {
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
+    setNextBuildDocsScope,
     startMarkdownNotebook,
     appendMarkdownMermaidBlock,
     openNotebookBlock,

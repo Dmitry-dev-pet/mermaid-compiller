@@ -2,15 +2,13 @@ import React from 'react';
 import { Bookmark, Check, Copy, FileCode2, Loader2, PenTool, RefreshCw } from 'lucide-react';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
 import { EditorTab, MermaidState } from '../../types';
+import type { DiagramMarker } from '../../hooks/core/useHistory';
 import { HEADER_CONTROL_ICON_BUTTON, HEADER_CONTROL_SELECT } from '../../utils/uiControlStyles';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../../utils/uiModes';
 
 interface EditorHeaderProps {
   mermaidState: MermaidState;
   isMarkdown: boolean;
-  showMarkdownStats: boolean;
-  markdownValidCount: number;
-  markdownInvalidCount: number;
   isProcessing: boolean;
   activeOperationKind?: 'chat' | 'build' | 'analyze' | 'fix' | 'compile' | null;
   isAIReady: boolean;
@@ -29,14 +27,14 @@ interface EditorHeaderProps {
   onActiveTabChange: (tab: EditorTab) => void;
   isMarkdownMermaidTab: boolean;
   isBuildDocsTab: boolean;
+  diagramMarkers?: DiagramMarker[];
+  selectedStepId?: string | null;
+  onSelectDiagramStep?: (step: DiagramMarker) => void | Promise<void>;
 }
 
   const EditorHeader: React.FC<EditorHeaderProps> = ({
   mermaidState,
   isMarkdown,
-  showMarkdownStats,
-  markdownValidCount,
-  markdownInvalidCount,
   isProcessing,
   activeOperationKind = null,
   isAIReady,
@@ -55,13 +53,75 @@ interface EditorHeaderProps {
   onActiveTabChange,
   isMarkdownMermaidTab,
   isBuildDocsTab,
+  diagramMarkers = [],
+  selectedStepId = null,
+  onSelectDiagramStep,
 }) => {
   const actionButtonBase =
     'h-7 px-2 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1 shrink-0 whitespace-nowrap normal-case tracking-normal';
   const isAnalyzing = isProcessing && activeOperationKind === 'analyze';
   const isFixing = isProcessing && activeOperationKind === 'fix';
 
-  const editorTitle = isBuildDocsTab ? 'Build Docs' : isMarkdownMermaidTab ? 'Markdown' : 'Editor';
+  const editorTitle = isBuildDocsTab ? 'Prompts' : 'Editor';
+  const historyChips = React.useMemo(() => {
+    if (!onSelectDiagramStep) return [];
+    if (isBuildDocsTab) return [];
+    if (!diagramMarkers.length) return [];
+
+    const inactiveClassByMode: Record<'chat' | 'build' | 'analyze' | 'fix' | 'plan' | 'system', string> = {
+      chat:
+        'text-indigo-600 dark:text-indigo-200 border-indigo-200/70 dark:border-indigo-700/70 hover:border-indigo-300 dark:hover:border-indigo-600',
+      build:
+        'text-emerald-600 dark:text-emerald-200 border-emerald-200/70 dark:border-emerald-700/70 hover:border-emerald-300 dark:hover:border-emerald-600',
+      analyze:
+        'text-sky-600 dark:text-sky-200 border-sky-200/70 dark:border-sky-700/70 hover:border-sky-300 dark:hover:border-sky-600',
+      fix:
+        'text-amber-600 dark:text-amber-200 border-amber-200/70 dark:border-amber-700/70 hover:border-amber-300 dark:hover:border-amber-600',
+      plan:
+        'text-violet-600 dark:text-violet-200 border-violet-200/70 dark:border-violet-700/70 hover:border-violet-300 dark:hover:border-violet-600',
+      system: 'text-[var(--control-muted-text)] border-[var(--panel-border)]',
+    };
+
+    const resolveUiMode = (type: DiagramMarker['type']): keyof typeof inactiveClassByMode => {
+      if (type === 'fix') return 'fix';
+      if (type === 'analyze') return 'analyze';
+      if (type === 'build' || type === 'recompile') return 'build';
+      if (type === 'chat') return 'chat';
+      return 'system';
+    };
+
+    return diagramMarkers.map((marker, index) => {
+      const isSelected = selectedStepId ? marker.stepId === selectedStepId : false;
+      const uiMode = resolveUiMode(marker.type);
+      const modeStyles = MODE_UI[uiMode];
+      const activeClass = modeStyles.button ?? MODE_BUTTON_DISABLED;
+      const inactiveClass = inactiveClassByMode[uiMode] ?? MODE_BUTTON_DISABLED;
+      const timeLabel = new Date(marker.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      const actionLabel =
+        marker.type === 'build'
+          ? 'Build'
+          : marker.type === 'fix'
+            ? 'Fix'
+            : marker.type === 'recompile'
+              ? 'Run'
+              : marker.type === 'manual_edit'
+                ? 'Edit'
+                : marker.type === 'seed'
+                  ? 'Seed'
+                  : marker.type === 'analyze'
+                    ? 'Analyze'
+                    : marker.type;
+      const tooltip = `#${index + 1}/${diagramMarkers.length} • ${timeLabel}\n${actionLabel}`;
+      return {
+        marker,
+        tooltip,
+        label: `#${index + 1}`,
+        className: `shrink-0 whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-medium ${
+          isSelected ? activeClass : inactiveClass
+        }`,
+      };
+    });
+  }, [diagramMarkers, isBuildDocsTab, onSelectDiagramStep, selectedStepId]);
 
   return (
     <div
@@ -76,19 +136,6 @@ interface EditorHeaderProps {
           </div>
 
           <div className="flex items-center gap-2 min-w-0 text-xs font-mono">
-            {showMarkdownStats && (
-              <span className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                <span className="text-blue-600 dark:text-blue-400 font-bold">📄 Markdown</span>
-                {markdownValidCount + markdownInvalidCount > 0 && (
-                  <>
-                    <span>{markdownValidCount}</span>
-                    <span>·</span>
-                    <span>{markdownInvalidCount}</span>
-                  </>
-                )}
-              </span>
-            )}
-
             {!isMarkdown && mermaidState.status === 'invalid' && (
               <span
                 className="inline-flex h-3 w-3 rounded-full bg-red-500 ring-1 ring-red-700"
@@ -165,7 +212,7 @@ interface EditorHeaderProps {
       </div>
 
       <div className="flex items-center justify-between gap-2 normal-case tracking-normal">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 min-w-0">
           <button
             type="button"
             onClick={() => onActiveTabChange('code')}
@@ -186,10 +233,29 @@ interface EditorHeaderProps {
                 ? 'bg-slate-700 text-white border-slate-700'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
             }`}
-            title="Build docs files"
+            title="Prompt context"
           >
-            Build Docs
+            Prompts
           </button>
+
+          {!!historyChips.length && (
+            <>
+              <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1 shrink-0" />
+              <div className="flex items-center gap-1 min-w-0 overflow-x-auto">
+                {historyChips.map((chip) => (
+                  <button
+                    key={chip.marker.stepId}
+                    type="button"
+                    onClick={() => void Promise.resolve(onSelectDiagramStep?.(chip.marker)).catch(() => {})}
+                    className={chip.className}
+                    title={chip.tooltip}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="text-[10px] text-[var(--control-muted-text)]">

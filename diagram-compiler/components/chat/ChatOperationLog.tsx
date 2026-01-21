@@ -10,7 +10,7 @@ type Props = {
   operationLog: OperationLog;
   showSummaryLine?: boolean;
   timeoutMs?: number;
-  onOpenBuildDocsFile?: (fileName: string, mode: DocsMode) => void;
+  onOpenBuildDocsFile?: (fileName: string, mode: DocsMode, options?: { blockIndex?: number | null }) => void;
 };
 
 const ChatOperationLog: React.FC<Props> = ({

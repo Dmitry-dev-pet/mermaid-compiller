@@ -28,3 +28,12 @@ export const resolveNotebookRawIntent = (steps: TimeStep[], blockIndex: number) 
   }
   return '';
 };
+
+export const resolveNotebookPlanIntent = (steps: TimeStep[]) => {
+  for (const step of steps) {
+    const meta = step.meta as Record<string, unknown> | undefined;
+    if (!meta || meta.mode !== 'notebook') continue;
+    if (typeof meta.notebookPlanIntent === 'string') return meta.notebookPlanIntent;
+  }
+  return '';
+};

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import mermaid from 'mermaid';
 import svgPanZoom from 'svg-pan-zoom';
 import type { ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types';
-import { DiagramType, EditorTab, MermaidState } from '../types';
+import { DiagramType, DocsMode, EditorTab, MermaidState } from '../types';
 import { useDiagramExport } from '../hooks/studio/useDiagramExport';
 import { MermaidThemeName } from '../utils/inlineThemeCommand';
 import { extractInlineDirectionCommand, MermaidDirection } from '../utils/inlineDirectionCommand';
@@ -42,11 +42,17 @@ import {
 } from '../utils/diagramTypeMeta';
 import { getSystemPromptModeFromPath, isSystemPromptPath } from '../utils/systemPrompts';
 import { buildNotebookExcalidrawScene } from '../services/excalidraw/notebookRibbonBuilder';
+import { augmentMermaidErrorForAutoFix } from '../utils/mermaidAutoFixHints';
 import PreviewHeaderControls from './preview/PreviewHeaderControls';
 import PreviewBody from './preview/PreviewBody';
 import DiagramWhiteboard from './preview/DiagramWhiteboard';
 import './markdown-preview.css';
 import { parseSvgViewBox } from '../utils/svgViewBox';
+import {
+  PROMPTS_VIRTUAL_INTENT_PATH,
+  PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH,
+  PROMPTS_VIRTUAL_SYSTEM_PATH,
+} from '../utils/promptsVirtualPaths';
 
 interface PreviewColumnProps {
   mermaidState: MermaidState;
@@ -65,14 +71,20 @@ interface PreviewColumnProps {
   onSetFlowchartLinkStylePreset: (presetId: FlowchartLinkStylePresetId) => void;
   onSetFlowchartCurve: (curve: FlowchartCurve | null) => void;
   activeEditorTab: EditorTab;
+  docsMode: DocsMode;
   buildDocsSystemPrompts: Record<'chat' | 'build' | 'plan' | 'analyze' | 'fix', { raw: string; redacted: string }>;
-  systemPromptRawByMode: Record<'chat' | 'build' | 'analyze' | 'fix', boolean>;
+  systemPromptRawByMode: Record<DocsMode, boolean>;
+  buildDocsRequestPreviewText: string;
+  buildDocsRequestPreviewRawText: string;
+  buildDocsIntentPreviewText: string;
+  buildDocsNotebookPlanText: string;
   buildDocsEntries: Array<{ path: string; text: string }>;
   buildDocsActivePath: string;
   markdownMermaidBlocks: MermaidMarkdownBlock[];
   markdownMermaidDiagnostics: Array<Pick<MermaidState, 'isValid' | 'errorMessage' | 'errorLine' | 'status'>>;
   markdownMermaidActiveIndex: number;
   onMarkdownMermaidActiveIndexChange: (index: number) => void;
+  onAppendMarkdownMermaidBlock: () => void;
   onActiveEditorTabChange: (tab: EditorTab) => void;
   hoveredMarkdownIndex: number | null;
   onHoverMarkdownIndex: (index: number | null) => void;
@@ -131,14 +143,20 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   onSetFlowchartLinkStylePreset,
   onSetFlowchartCurve,
   activeEditorTab,
+  docsMode,
   buildDocsSystemPrompts,
   systemPromptRawByMode,
+  buildDocsRequestPreviewText,
+  buildDocsRequestPreviewRawText,
+  buildDocsIntentPreviewText,
+  buildDocsNotebookPlanText,
   buildDocsEntries,
   buildDocsActivePath,
   markdownMermaidBlocks,
   markdownMermaidDiagnostics,
   markdownMermaidActiveIndex,
   onMarkdownMermaidActiveIndexChange,
+  onAppendMarkdownMermaidBlock,
   onActiveEditorTabChange,
   hoveredMarkdownIndex,
   onHoverMarkdownIndex,
@@ -332,11 +350,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     const curves = new Set(flowchartBlocks.map((block) => extractFlowchartCurve(block.code) ?? null));
     return curves.size > 1;
   }, [isMarkdownMermaidMode, isMarkdownMode, markdownMermaidBlocks]);
-  const markdownNavEnabled =
-    (isMarkdownMode || isMarkdownMermaidMode) && markdownMermaidBlocks.length > 1;
-  const markdownNavLabel = markdownNavEnabled
-    ? `${markdownMermaidActiveIndex + 1}/${markdownMermaidBlocks.length}`
-    : '';
+  const hasNotebookTabs = (isMarkdownMode || isMarkdownMermaidMode) && markdownMermaidBlocks.length > 0;
   const canSyncScroll = isScrollSyncEnabled && isMarkdownMode;
   const handleHoverSync = useCallback((index: number) => {
     if (!canSyncScroll) return;
@@ -371,6 +385,10 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     isMarkdownMermaidMode,
     isBuildDocsMode
   );
+  const enrichMermaidError = useCallback((code: string, message: string) => {
+    const diagramType = detectMermaidDiagramType(code) ?? 'auto';
+    return augmentMermaidErrorForAutoFix(diagramType, message);
+  }, []);
   const createMarkdownErrorBlock = useCallback((message: string, index?: number) => {
     const wrapper = document.createElement('div');
     wrapper.className = 'markdown-callout markdown-callout-error markdown-mermaid-preview markdown-mermaid-block';
@@ -381,7 +399,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     title.className = 'markdown-callout-title';
     title.textContent = 'Mermaid Error';
     const body = document.createElement('div');
-    body.className = 'markdown-callout-body';
+    body.className = 'markdown-callout-body whitespace-pre-wrap break-words';
     body.textContent = message;
     wrapper.appendChild(title);
     wrapper.appendChild(body);
@@ -406,10 +424,31 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     const prompt = useRaw ? buildDocsSystemPrompts[mode]?.raw : buildDocsSystemPrompts[mode]?.redacted;
     return prompt || buildDocsSystemPrompts[mode]?.raw || 'No system prompt available.';
   };
-  const activeBuildDoc =
-    isSystemPromptPath(buildDocsActivePath)
-      ? { path: buildDocsActivePath, text: resolveSystemPromptForPath(buildDocsActivePath) }
-      : buildDocsEntries.find((entry) => entry.path === buildDocsActivePath) ?? buildDocsEntries[0];
+  const activeBuildDoc = (() => {
+    if (buildDocsActivePath === PROMPTS_VIRTUAL_SYSTEM_PATH) {
+      const useRaw = systemPromptRawByMode[docsMode] ?? false;
+      const preview = useRaw ? buildDocsRequestPreviewRawText : buildDocsRequestPreviewText;
+      const fallback = useRaw ? buildDocsRequestPreviewText : buildDocsRequestPreviewRawText;
+      const text = preview?.trim() ? preview : (fallback?.trim() ? fallback : 'No preview available yet.');
+      return { path: buildDocsActivePath, text };
+    }
+
+    if (buildDocsActivePath === PROMPTS_VIRTUAL_INTENT_PATH) {
+      const text = buildDocsIntentPreviewText?.trim() ? buildDocsIntentPreviewText : 'Intent is not available yet.';
+      return { path: buildDocsActivePath, text };
+    }
+
+    if (buildDocsActivePath === PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH) {
+      const text = buildDocsNotebookPlanText?.trim() ? buildDocsNotebookPlanText : 'Notebook plan is not available yet.';
+      return { path: buildDocsActivePath, text };
+    }
+
+    if (isSystemPromptPath(buildDocsActivePath)) {
+      return { path: buildDocsActivePath, text: resolveSystemPromptForPath(buildDocsActivePath) };
+    }
+
+    return buildDocsEntries.find((entry) => entry.path === buildDocsActivePath) ?? buildDocsEntries[0];
+  })();
   const buildDocsHtml = useMemo(() => {
     if (!isBuildDocsMode) return '';
     const content = activeBuildDoc?.text ?? '';
@@ -460,7 +499,15 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
 
   const updateZoomPercent = useCallback((nextZoom?: number) => {
     const instance = panZoomRef.current;
-    const zoom = typeof nextZoom === 'number' ? nextZoom : instance?.getZoom();
+    const zoom = (() => {
+      if (typeof nextZoom === 'number') return nextZoom;
+      if (!instance) return undefined;
+      try {
+        return instance.getZoom();
+      } catch {
+        return undefined;
+      }
+    })();
 
     if (!zoom) {
       setZoomPercent(100);
@@ -487,10 +534,14 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   const fitToViewport = useCallback(() => {
     const instance = panZoomRef.current;
     if (!instance) return;
-    instance.resize();
-    instance.fit();
-    instance.center();
-    updateZoomPercent(instance.getZoom());
+    try {
+      instance.resize();
+      instance.fit();
+      instance.center();
+      updateZoomPercent(instance.getZoom());
+    } catch {
+      // Ignore svg-pan-zoom errors (e.g., non-invertible SVG matrix).
+    }
   }, [updateZoomPercent]);
 
   const clampPreviewZoom = useCallback((percent: number) => Math.min(600, Math.max(15, percent)), []);
@@ -509,6 +560,18 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
       // Ignore zoom errors from svg-pan-zoom.
     }
   }, [clampPreviewZoom, snapPreviewZoom, updateZoomPercent]);
+
+  const safeDestroyPanZoom = useCallback(() => {
+    const instance = panZoomRef.current;
+    if (!instance) return;
+    try {
+      instance.destroy();
+    } catch {
+      // svg-pan-zoom can throw if SVG matrix is not invertible (e.g., detached/0-sized SVG).
+    } finally {
+      panZoomRef.current = null;
+    }
+  }, []);
 
   const zoomIn = useCallback(() => {
     applyPreviewZoom(zoomPercent + 10);
@@ -532,10 +595,9 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     setSvgMarkup('');
     bindFunctionsRef.current = null;
     svgRef.current = null;
-    panZoomRef.current?.destroy();
-    panZoomRef.current = null;
+    safeDestroyPanZoom();
     setZoomPercent(100);
-  }, [codeForRender, isBuildDocsMode, isMarkdownMermaidMode, isMarkdownMode]);
+  }, [codeForRender, isBuildDocsMode, isMarkdownMermaidMode, isMarkdownMode, safeDestroyPanZoom]);
 
   useEffect(() => {
     if (isBuildDocsMode) return;
@@ -574,8 +636,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         setRenderError(null);
         bindFunctionsRef.current = null;
         svgRef.current = null;
-        panZoomRef.current?.destroy();
-        panZoomRef.current = null;
+        safeDestroyPanZoom();
         setZoomPercent(100);
         if (svgMountRef.current) svgMountRef.current.replaceChildren();
         return;
@@ -588,7 +649,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         const id = `mermaid-${Date.now()}`;
         const validation = await validateMermaidDiagramCode(codeForRender, { logError: false });
         if (validation.isValid === false) {
-          setRenderError(validation.errorMessage ?? 'Syntax Error');
+          setRenderError(enrichMermaidError(codeForRender, validation.errorMessage ?? 'Syntax Error'));
           setSvgMarkup('');
           return;
         }
@@ -603,7 +664,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         setSvgMarkup(svg);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        setRenderError(message);
+        setRenderError(enrichMermaidError(codeForRender, message));
         setSvgMarkup('');
         console.error('Render failed', error);
       }
@@ -646,7 +707,10 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
           if (validation.isValid === false) {
             const pre = block.parentElement;
             if (pre && pre.parentElement) {
-              const errorBlock = createMarkdownErrorBlock(validation.errorMessage || 'Syntax Error', i);
+              const errorBlock = createMarkdownErrorBlock(
+                enrichMermaidError(code, validation.errorMessage || 'Syntax Error'),
+                i
+              );
               pre.replaceWith(errorBlock);
             }
             continue;
@@ -684,7 +748,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
             const pre = block.parentElement;
             if (pre && pre.parentElement) {
               const message = e instanceof Error ? e.message : 'Syntax Error';
-              const errorBlock = createMarkdownErrorBlock(message, i);
+              const errorBlock = createMarkdownErrorBlock(enrichMermaidError(code, message), i);
               pre.replaceWith(errorBlock);
             }
           }
@@ -703,6 +767,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     };
   }, [
     createMarkdownErrorBlock,
+    enrichMermaidError,
     isBuildDocsMode,
     isMarkdownMode,
     markdownHtml,
@@ -773,8 +838,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   useEffect(() => {
     if (isBuildDocsMode) return;
     if (previewMode !== 'preview') {
-      panZoomRef.current?.destroy();
-      panZoomRef.current = null;
+      safeDestroyPanZoom();
       return;
     }
     if (!svgMarkup) return;
@@ -786,8 +850,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     const svgEl = mount.querySelector('svg');
     if (!svgEl) return;
 
-    panZoomRef.current?.destroy();
-    panZoomRef.current = null;
+    safeDestroyPanZoom();
     setZoomPercent(100);
 
     svgEl.setAttribute('width', '100%');
@@ -845,18 +908,27 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         // Some SVGs (esp. foreignObject-heavy) need one paint before fit/center stabilizes.
         requestAnimationFrame(() => {
           if (!isActive) return;
-          instance.resize();
-          instance.fit();
-          instance.center();
-          updateZoomPercent(instance.getZoom());
+          try {
+            instance.resize();
+            instance.fit();
+            instance.center();
+            updateZoomPercent(instance.getZoom());
+          } catch {
+            // Ignore svg-pan-zoom errors (e.g., non-invertible SVG matrix during init/teardown).
+          }
         });
 
         const handleWheel = (event: WheelEvent) => {
-          if (!panZoomRef.current) return;
+          const instance = panZoomRef.current;
+          if (!instance) return;
           const isZoomGesture = event.ctrlKey || event.metaKey;
           if (!isZoomGesture) {
             event.preventDefault();
-            panZoomRef.current.panBy({ x: -event.deltaX, y: -event.deltaY });
+            try {
+              instance.panBy({ x: -event.deltaX, y: -event.deltaY });
+            } catch {
+              // Ignore pan errors from svg-pan-zoom.
+            }
             return;
           }
 
@@ -865,8 +937,12 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
           const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
           const step = 1.1;
           const scale = event.deltaY < 0 ? step : 1 / step;
-          panZoomRef.current.zoomAtPointBy(scale, point);
-          updateZoomPercent(panZoomRef.current.getZoom());
+          try {
+            instance.zoomAtPointBy(scale, point);
+            updateZoomPercent(instance.getZoom());
+          } catch {
+            // Ignore zoom errors from svg-pan-zoom.
+          }
         };
 
         svgEl.addEventListener('wheel', handleWheel, { passive: false });
@@ -881,10 +957,9 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
       isActive = false;
       cancelAnimationFrame(rafId);
       removeWheelListener?.();
-      panZoomRef.current?.destroy();
-      panZoomRef.current = null;
+      safeDestroyPanZoom();
     };
-  }, [computeFitViewBoxFromBBox, isBuildDocsMode, previewMode, svgMarkup, updateZoomPercent]);
+  }, [computeFitViewBoxFromBBox, isBuildDocsMode, previewMode, safeDestroyPanZoom, svgMarkup, updateZoomPercent]);
 
   useEffect(() => {
     if (isBuildDocsMode) return;
@@ -1095,7 +1170,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
 
   const pinnedEdDisabledReason = useMemo(() => {
     if (pinnedCanEd) return null;
-    if (isBuildDocsMode) return 'ED is disabled in Build Docs';
+    if (isBuildDocsMode) return 'ED is disabled in Prompts';
     if (isMarkdownMode) return 'ED is unavailable in this view';
     return 'ED is unavailable for this diagram';
   }, [isBuildDocsMode, isMarkdownMode, pinnedCanEd]);
@@ -1183,10 +1258,24 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     return { backgroundColor: previewBackgroundColor };
   }, [isMarkdownMode, isNotebookExcalidrawMode, previewBackgroundColor, previewMode]);
 
+  const previewHeaderTitle = useMemo(() => {
+    if (!isBuildDocsMode) return 'Preview';
+    const path = activeBuildDoc?.path || buildDocsActivePath || '';
+    const fileLabel =
+      path === PROMPTS_VIRTUAL_SYSTEM_PATH
+        ? 'System'
+        : path === PROMPTS_VIRTUAL_INTENT_PATH
+          ? 'Intent'
+          : path === PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH
+            ? 'Notebook plan'
+            : path.split('/').pop() || path || 'Docs';
+    return `Prompts: ${fileLabel}`;
+  }, [activeBuildDoc?.path, buildDocsActivePath, isBuildDocsMode]);
+
   return (
     <div className="h-full flex flex-col bg-transparent" style={previewContainerStyle}>
       <PreviewHeaderControls
-        title={isBuildDocsMode ? 'Build Docs' : 'Preview'}
+        title={previewHeaderTitle}
         isBuildDocsMode={isBuildDocsMode}
         isMarkdownMode={isMarkdownMode}
         showNotebookExcalidrawToggle={false}
@@ -1207,16 +1296,6 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
         pinnedDirty={pinnedDirty}
         pinnedEdDisabledReason={pinnedEdDisabledReason}
         onSetPinnedMode={handlePinnedSetMode}
-        markdownNavEnabled={markdownNavEnabled}
-        markdownNavLabel={markdownNavLabel}
-        markdownPrevDisabled={markdownMermaidActiveIndex <= 0}
-        markdownNextDisabled={markdownMermaidActiveIndex >= markdownMermaidBlocks.length - 1}
-        onMarkdownPrev={() => setMarkdownIndexFromPreview(Math.max(0, markdownMermaidActiveIndex - 1))}
-        onMarkdownNext={() =>
-          setMarkdownIndexFromPreview(
-            Math.min(markdownMermaidBlocks.length - 1, markdownMermaidActiveIndex + 1)
-          )
-        }
         showThemeControl={supportsInlineTheme || (isMarkdownMode && markdownMermaidBlocks.length > 0)}
         showArrowControl={(activeDiagramType === 'flowchart' && !isMarkdownMode) || (isMarkdownMode && flowchartBlocksCount > 0)}
         showDirectionControl={!isMarkdownMode && supportsInlineDirection}
@@ -1255,7 +1334,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
       <div className="relative flex-1 min-h-0 flex">
         {previewMode === 'whiteboard' ? (
           <DiagramWhiteboard
-            key={`${historyRevisionId ?? 'no-rev'}:${markdownNavEnabled ? markdownMermaidActiveIndex : 'single'}`}
+            key={`${historyRevisionId ?? 'no-rev'}:${hasNotebookTabs ? markdownMermaidActiveIndex : 'single'}`}
             theme={excalidrawTheme}
             backgroundColor={previewBackgroundColor}
             backgroundMode="excalidraw"

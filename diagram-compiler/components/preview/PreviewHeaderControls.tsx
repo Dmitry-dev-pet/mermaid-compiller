@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Circle, Code2, Copy, Download, Layers, Link2, Maximize, Maximize2, Minimize2, Moon, Palette, PenLine, RefreshCw, SquarePen, Sun } from 'lucide-react';
+import { ChevronDown, Circle, Code2, Copy, Download, Layers, Link2, Maximize, Maximize2, Minimize2, Moon, Palette, PenLine, RefreshCw, SquarePen, Sun } from 'lucide-react';
 import { MermaidDirection } from '../../utils/inlineDirectionCommand';
 import { MermaidLook } from '../../utils/inlineLookCommand';
 import type { FlowchartEdgeStyle, FlowchartEdgeStyleUpdate } from '../../utils/flowchartArrowStyle';
@@ -30,12 +30,6 @@ interface PreviewHeaderControlsProps {
   pinnedDirty: boolean;
   pinnedEdDisabledReason: string | null;
   onSetPinnedMode: (next: 'mermaid' | 'ed') => void;
-  markdownNavEnabled: boolean;
-  markdownNavLabel: string;
-  markdownPrevDisabled: boolean;
-  markdownNextDisabled: boolean;
-  onMarkdownPrev: () => void;
-  onMarkdownNext: () => void;
   showThemeControl: boolean;
   showDirectionControl: boolean;
   showLookControl: boolean;
@@ -93,12 +87,6 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
   pinnedDirty,
   pinnedEdDisabledReason,
   onSetPinnedMode,
-  markdownNavEnabled,
-  markdownNavLabel,
-  markdownPrevDisabled,
-  markdownNextDisabled,
-  onMarkdownPrev,
-  onMarkdownNext,
   showThemeControl,
   showDirectionControl,
   showLookControl,
@@ -300,40 +288,6 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
         <div className="flex items-center gap-3 min-w-0 normal-case tracking-normal">
           <div className="min-w-0 truncate font-semibold text-[var(--control-text)]">{title}</div>
 
-          {!isBuildDocsMode && markdownNavEnabled && (
-            <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
-              <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
-                Diagram
-              </span>
-              <button
-                type="button"
-                onClick={onMarkdownPrev}
-                disabled={markdownPrevDisabled}
-                className={`${HEADER_CONTROL_BUTTON} ml-1`}
-                title="Previous diagram"
-                aria-label="Previous diagram"
-                data-testid="markdown-prev-diagram"
-              >
-                <ChevronLeft size={14} />
-                Prev
-              </button>
-              <span className="text-[11px] text-[var(--control-text)] font-mono w-12 text-center select-none">
-                {markdownNavLabel}
-              </span>
-              <button
-                type="button"
-                onClick={onMarkdownNext}
-                disabled={markdownNextDisabled}
-                className={HEADER_CONTROL_BUTTON}
-                title="Next diagram"
-                aria-label="Next diagram"
-                data-testid="markdown-next-diagram"
-              >
-                Next
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
         </div>
 
         {!isBuildDocsMode && (

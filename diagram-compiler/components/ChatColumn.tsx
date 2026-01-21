@@ -57,7 +57,12 @@ interface ChatColumnProps {
   operationLogs?: OperationLog[];
   activeOperationLog?: OperationLog | null;
   activeOperationKind?: 'chat' | 'build' | 'analyze' | 'fix' | 'compile' | null;
-  onOpenBuildDocsFile?: (fileName: string, mode: import('../types').DocsMode) => void;
+  onOpenBuildDocsFile?: (
+    fileName: string,
+    mode: import('../types').DocsMode,
+    options?: { blockIndex?: number | null }
+  ) => void;
+  headerAddon?: React.ReactNode;
 }
 
 const ChatColumn: React.FC<ChatColumnProps> = ({
@@ -97,6 +102,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   activeOperationLog,
   activeOperationKind,
   onOpenBuildDocsFile,
+  headerAddon,
 }) => {
   const [input, setInput] = useState('');
   const columnRef = useRef<HTMLDivElement>(null);
@@ -453,59 +459,21 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     return `${base} ${accent}`;
   }, []);
 
-  const parseDocsContext = useCallback((docsContext: string) => {
-    const lines = docsContext.split(/\r?\n/);
-    const entries: Array<{ fileName: string; tokens: number }> = [];
-    let currentPath = '';
-    let buffer: string[] = [];
-    const flush = () => {
-      if (!currentPath) return;
-      const content = buffer.join('\n');
-      const tokensMatch = currentPath.match(/\(~(\d+)\s+tok\)/);
-      const tokens = tokensMatch?.[1] ? Number(tokensMatch[1]) : estimateTokens(content);
-      const fileName = currentPath.replace(/\s+\(~\d+\s+tok\)\s*$/, '').trim();
-      entries.push({ fileName, tokens: Number.isFinite(tokens) ? tokens : 0 });
-      currentPath = '';
-      buffer = [];
-    };
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      const match = trimmed.match(/^--- (.+) ---$/);
-      if (match) {
-        flush();
-        currentPath = match[1];
-        buffer = [];
-        continue;
-      }
-      if (currentPath) buffer.push(line);
-    }
-    flush();
-
-    return entries;
-  }, []);
-
-
   const formatRequestPreview = useCallback(
     (preview: LLMRequestPreview, options: { redactDocs: boolean }) => {
-      const docsEntries = parseDocsContext(preview.docsContext);
-      const docsTotalTokens = docsEntries.reduce((sum, entry) => sum + entry.tokens, 0);
-      const docsSummaryBlock = docsEntries.length
-        ? docsEntries.map((entry) => `--- ${entry.fileName} --- (~${entry.tokens} tok)`).join('\n')
-        : '';
-      const systemPromptValue =
-        options.redactDocs && preview.docsContext && docsSummaryBlock
-          ? preview.systemPrompt.replace(preview.docsContext, docsSummaryBlock)
-          : preview.systemPrompt;
-      const hasDocs = docsEntries.length > 0;
+      const redactedSystemPrompt =
+        preview.systemPromptRedacted?.trim()
+          ? preview.systemPromptRedacted
+          : preview.docsContext && preview.systemPrompt.includes(preview.docsContext)
+            ? preview.systemPrompt.replace(preview.docsContext, 'Documentation context redacted.')
+            : preview.systemPrompt;
+      const systemPromptValue = options.redactDocs ? redactedSystemPrompt : preview.systemPrompt;
       const metaLines =
         preview.mode === 'build'
           ? [`Mode: ${preview.mode}`, `Diagram type: ${preview.diagramType}`, `Language: ${preview.language}`]
           : [];
       const lines = [
         preview.error ? `Error: ${preview.error}` : '',
-        hasDocs ? `Docs files: ${docsEntries.map((entry) => `${entry.fileName} (~${entry.tokens} tok)`).join(', ')}` : '',
-        hasDocs ? `Docs tokens total: ~${docsTotalTokens} tok` : '',
         ...metaLines,
         '',
         '--- System Prompt ---',
@@ -516,7 +484,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       ].filter((line) => line !== '');
       return lines.join('\n');
     },
-    [formatMessagesForPreview, parseDocsContext]
+    [formatMessagesForPreview]
   );
 
   const handleSubmit = (mode: 'chat' | 'build', e?: React.FormEvent) => {
@@ -561,6 +529,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         ? 'LLM request (Chat)'
         : mode === 'build'
           ? 'LLM request (Build)'
+          : mode === 'plan'
+            ? 'LLM request (Plan)'
           : mode === 'analyze'
             ? 'LLM request (Analyze)'
             : 'LLM request (Fix)';
@@ -577,9 +547,12 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       const redacted = formatRequestPreview(preview, { redactDocs: true });
       const raw = formatRequestPreview(preview, { redactDocs: false });
       const intentMessage = preview.messages.find((message) => /^Intent:\s*/i.test(message.content.trim()));
-      const resolvedIntent = intentMessage
-        ? intentMessage.content.replace(/^Intent:\s*/i, '').trim()
-        : intentText?.trim();
+      const resolvedIntent =
+        mode === 'plan'
+          ? preview.messages.map((message) => message.content).join('\n\n').trim()
+          : intentMessage
+            ? intentMessage.content.replace(/^Intent:\s*/i, '').trim()
+            : intentText?.trim();
       onSetPromptPreview(
         mode,
         title,
@@ -607,6 +580,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     previewTimerRef.current = window.setTimeout(() => {
       void updatePromptPreview('chat', input, requestId);
       void updatePromptPreview('build', input, requestId);
+      void updatePromptPreview('plan', input, requestId);
       void updatePromptPreview('analyze', input, requestId);
       void updatePromptPreview('fix', input, requestId);
     }, 250);
@@ -660,6 +634,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           notebookBuildCount={notebookBuildCount}
           onNotebookBuildCountChange={onNotebookBuildCountChange}
         />
+        {headerAddon}
 
       {isNotebookChatMode && onBackToNotebookMainChat && (
         <div

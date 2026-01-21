@@ -17,9 +17,12 @@ export const useMarkdownMermaidBlockState = ({
   activeTab,
   hoveredIndex = null,
 }: MarkdownMermaidStateArgs) => {
-  const isMarkdownMermaidMode = activeTab === 'markdown_mermaid';
-  const activeBlock = blocks[activeIndex];
-  const activeDiagnostics = diagnostics[activeIndex];
+  const isMarkdownMermaidMode = activeTab === 'markdown_mermaid' && blocks.length > 0;
+  const safeActiveIndex = isMarkdownMermaidMode
+    ? Math.max(0, Math.min(activeIndex, blocks.length - 1))
+    : 0;
+  const activeBlock = isMarkdownMermaidMode ? (blocks[safeActiveIndex] ?? null) : null;
+  const activeDiagnostics = isMarkdownMermaidMode ? (diagnostics[safeActiveIndex] ?? null) : null;
   const isMarkdownMermaidInvalid = isMarkdownMermaidMode && activeDiagnostics?.isValid === false;
   const hoveredBlock = useMemo(
     () => (hoveredIndex !== null ? blocks[hoveredIndex] ?? null : null),

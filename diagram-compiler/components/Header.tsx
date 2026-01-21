@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Eye, EyeOff, Timer, Palette, Layers } from 'lucide-react';
 import { AIConfig, CliproxyFilters, ConnectionState, OpenRouterFilters, ThemePresetId } from '../types';
-import { MERMAID_VERSION } from '../constants';
 import { APP_THEME_PRESETS } from '../utils/appTheme';
+import { Button } from './ui/Button';
 
 interface HeaderProps {
   aiConfig: AIConfig;
@@ -10,11 +10,18 @@ interface HeaderProps {
   onConfigChange: React.Dispatch<React.SetStateAction<AIConfig>>;
   onConnect: () => Promise<void>;
   onDisconnect: () => void;
+  chatColumnWidthPercent: number;
   theme: ThemePresetId;
   onThemeChange: (theme: ThemePresetId) => void;
   llmTimeoutMs: number;
   onLLMTimeoutMsChange: (timeoutMs: number) => void;
+  notebookTabs?: React.ReactNode;
 }
+
+const HeaderNotebookSlot: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
+  if (!children) return null;
+  return <div className="flex-1 min-w-0">{children}</div>;
+};
 
 const Header: React.FC<HeaderProps> = ({ 
   aiConfig, 
@@ -22,10 +29,12 @@ const Header: React.FC<HeaderProps> = ({
   onConfigChange, 
   onConnect, 
   onDisconnect,
+  chatColumnWidthPercent,
   theme,
   onThemeChange,
   llmTimeoutMs,
   onLLMTimeoutMsChange,
+  notebookTabs,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
@@ -81,10 +90,11 @@ const Header: React.FC<HeaderProps> = ({
     return `AI: ${providerName} · ${modelName}${contextLabel}`;
   };
 
-  const getStatusColor = () => {
-    if (connectionState.status === 'connected') return 'text-green-600 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/30 dark:border-green-800';
-    if (connectionState.status === 'failed') return 'text-red-600 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/30 dark:border-red-800';
-    return 'text-slate-600 bg-slate-50 border-slate-200 hover:bg-slate-100 dark:text-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700';
+  const getStatusTone = () => {
+    if (connectionState.status === 'connected') return 'text-emerald-500';
+    if (connectionState.status === 'failed') return 'text-rose-500';
+    if (connectionState.status === 'connecting') return 'text-amber-500';
+    return 'text-slate-400 dark:text-slate-500';
   };
 
   const updateConfig = useCallback((updates: Partial<AIConfig>) => {
@@ -124,6 +134,7 @@ const Header: React.FC<HeaderProps> = ({
     if (theme === 'abyss') return Layers;
     return Palette;
   }, [theme]);
+  const statusToneClass = getStatusTone();
 
   const updateFilters = (updates: Partial<OpenRouterFilters & CliproxyFilters>) => {
     onConfigChange((prev) => {
@@ -192,26 +203,30 @@ const Header: React.FC<HeaderProps> = ({
   return (
     <header
       ref={headerRef}
-      className="fixed top-0 left-0 right-0 flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-transparent shadow-sm shrink-0 z-50 min-h-12 transition-colors"
-      style={{ backgroundColor: 'var(--app-header-bg, #ffffff)' }}
+      className="fixed top-0 left-0 right-0 grid items-center gap-0 px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-transparent shadow-sm shrink-0 z-50 min-h-12 transition-colors"
+      style={{
+        backgroundColor: 'var(--panel-alt-bg, #ffffff)',
+        gridTemplateColumns: `minmax(260px, ${chatColumnWidthPercent}%) 0.25rem minmax(0, 1fr) auto`,
+      }}
     >
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-4 min-w-0 pr-2">
         <h1 className="font-bold text-lg tracking-tight text-slate-800 dark:text-slate-100">Diagram Compiler</h1>
         
         {/* AI Control Plane Trigger */}
         <div className="relative" ref={dropdownRef}>
-          <button 
+          <Button 
             onClick={() => setIsOpen(!isOpen)}
-            className={`flex items-center gap-2 px-3 py-1 rounded-md border text-sm font-medium transition-colors ${getStatusColor()} dark:bg-slate-900 dark:border-slate-700 dark:text-slate-300`}
+            variant="default"
+            className="px-3"
           >
-            {connectionState.status === 'connected' ? <Wifi size={14} /> : <WifiOff size={14} />}
-            <span className="truncate max-w-[320px]">{getStatusText()}</span>
-            <span className="ml-1 inline-flex items-center gap-1 text-[11px] font-mono tabular-nums text-slate-400 dark:text-slate-400">
+            {connectionState.status === 'connected' ? <Wifi size={14} className={statusToneClass} /> : <WifiOff size={14} className={statusToneClass} />}
+            <span className="truncate max-w-[320px] text-[10px] ml-1">{getStatusText()}</span>
+            <span className="ml-1 inline-flex items-center gap-1 text-[10px] font-mono tabular-nums text-slate-400 dark:text-slate-400">
               <Timer size={12} className="opacity-80" />
               {timeoutSeconds}s
             </span>
-            <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-          </button>
+            <ChevronDown size={14} className={`ml-1 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          </Button>
 
           {/* Dropdown Panel */}
           {isOpen && (
@@ -461,30 +476,30 @@ const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
-
-        <div className="text-xs text-slate-400 font-mono group relative cursor-help">
-          Mermaid {MERMAID_VERSION}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-             Syntax version used for validation & rendering.
-          </div>
-        </div>
       </div>
 
-      <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 font-medium">
+      <div className="h-6 w-1 bg-slate-200 dark:bg-slate-800 rounded-sm" aria-hidden="true" />
+
+      <div className="min-w-0">
+        <HeaderNotebookSlot>{notebookTabs}</HeaderNotebookSlot>
+      </div>
+
+      <div className="flex items-center gap-4 text-[10px] text-slate-500 dark:text-slate-400 font-medium pl-3 border-l border-slate-200 dark:border-slate-800">
         <div className="relative" ref={themeDropdownRef}>
-          <button
+          <Button
             type="button"
             onClick={() => setIsThemeOpen((v) => !v)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
+            variant="default"
+            className="px-3"
             title="Theme"
             aria-haspopup="menu"
             aria-expanded={isThemeOpen}
           >
             <ThemeIcon size={16} className="opacity-80" />
-            <span className="text-sm font-medium">Theme</span>
-            <span className="text-[11px] font-mono text-slate-400 dark:text-slate-400">{themeLabel}</span>
-            <ChevronDown size={14} className={`transition-transform ${isThemeOpen ? 'rotate-180' : ''}`} />
-          </button>
+            <span className="text-[10px] font-medium ml-1">Theme</span>
+            <span className="text-[11px] font-mono text-slate-400 dark:text-slate-400 ml-1">{themeLabel}</span>
+            <ChevronDown size={14} className={`ml-1 transition-transform ${isThemeOpen ? 'rotate-180' : ''}`} />
+          </Button>
           {isThemeOpen && (
             <div
               className="absolute right-0 top-full mt-2 w-48 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl p-1 z-50"

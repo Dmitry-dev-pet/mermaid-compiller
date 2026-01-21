@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from '
 import { INITIAL_CHAT_MESSAGE } from '../../constants';
 import type { DiagramIntent, Message } from '../../types';
 import type { TimeStep } from '../../services/history/types';
-import { resolveNotebookRawIntent } from './notebookIntent';
+import { resolveNotebookPlanIntent } from './notebookIntent';
 import { resolveChatContextId } from '../../utils/chatContext';
 
 type NotebookChatInfo = { messages: Message[]; rawIntent?: Message };
@@ -161,8 +161,7 @@ export const useNotebookChat = ({
   const buildDocsIntentText = useMemo(() => {
     if (isNotebookDataEnabled) {
       if (!markdownMermaidBlocksLength) return '';
-      const index = Math.max(0, Math.min(markdownMermaidActiveIndex, markdownMermaidBlocksLength - 1));
-      const rawIntent = resolveNotebookRawIntent(historySteps, index);
+      const rawIntent = resolveNotebookPlanIntent(historySteps);
       return rawIntent?.trim() || '';
     }
     return diagramIntent?.content?.trim() || '';
@@ -170,7 +169,6 @@ export const useNotebookChat = ({
     diagramIntent,
     historySteps,
     isNotebookDataEnabled,
-    markdownMermaidActiveIndex,
     markdownMermaidBlocksLength,
   ]);
 

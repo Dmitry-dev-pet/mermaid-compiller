@@ -14,6 +14,7 @@ type ResolveActiveMermaidContext = () => {
 
 type UsePromptPreviewArgs = {
   diagramType: DiagramType;
+  mainDiagramTypes: DiagramType[];
   analyzeLanguage: string;
   appLanguage: string;
   isNotebookChatEnabled: boolean;
@@ -33,6 +34,7 @@ const DEFAULT_PREVIEW_BY_MODE: Record<PromptPreviewMode, PromptPreviewTab | null
 
 export const usePromptPreview = ({
   diagramType,
+  mainDiagramTypes,
   analyzeLanguage,
   appLanguage,
   isNotebookChatEnabled,
@@ -98,13 +100,18 @@ ${code}
     if (mode === 'plan') {
       const docsContext = await getDocsContext('plan');
       const language = resolvePreviewLanguage(trimmed, relevantMessages);
+      const allowedNotebookTypes = diagramType === 'auto' ? mainDiagramTypes : null;
       const systemPrompt = buildSystemPrompt('plan_notebook', {
         docsContext,
         language,
+        diagramType,
+        allowedDiagramTypes: allowedNotebookTypes,
       });
       const systemPromptRedacted = buildSystemPrompt('plan_notebook', {
         docsContext: 'Documentation context redacted.',
         language,
+        diagramType,
+        allowedDiagramTypes: allowedNotebookTypes,
       });
       const basis =
         trimmed ||
@@ -237,13 +244,18 @@ Fix it.`,
     const promptMode = mode === 'build'
       ? 'generate'
       : (isNotebookChatEnabled ? 'chat_notebook' : 'chat');
+    const allowedNotebookTypes = promptMode === 'chat_notebook' && diagramType === 'auto'
+      ? mainDiagramTypes
+      : null;
     const systemPrompt = buildSystemPrompt(promptMode, {
       diagramType,
+      allowedDiagramTypes: allowedNotebookTypes,
       docsContext,
       language,
     });
     const systemPromptRedacted = buildSystemPrompt(promptMode, {
       diagramType,
+      allowedDiagramTypes: allowedNotebookTypes,
       docsContext: 'Documentation context redacted.',
       language,
     });
@@ -302,6 +314,7 @@ Fix it.`,
     getDocsContext,
     getDiagramContextMessage,
     isNotebookChatEnabled,
+    mainDiagramTypes,
     messages,
     resolveActiveMermaidContext,
     resolvePreviewAnalyzeLanguage,

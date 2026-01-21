@@ -37,6 +37,7 @@ export type OperationLogTextRow = {
   tooltipMessages?: string;
   tooltipDocs?: string;
   contextScope?: OperationEvent['contextScope'];
+  blockIndex?: number;
 };
 
 export type OperationLogRowView = OperationLogTextRow & {

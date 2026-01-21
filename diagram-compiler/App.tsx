@@ -1,8 +1,9 @@
-import React, { useCallback, useRef, useState } from 'react'; // No need for useCallback anymore directly here
+import React, { useCallback, useMemo, useRef, useState } from 'react'; // No need for useCallback anymore directly here
 import Header from './components/Header';
 import ChatColumn from './components/ChatColumn';
 import EditorColumn from './components/EditorColumn';
 import PreviewColumn from './components/PreviewColumn';
+import NotebookTabs from './components/NotebookTabs';
 import { useDiagramStudio } from './hooks/studio/useDiagramStudio';
 import { ScrollSyncMeasure, ScrollSyncPayload } from './hooks/studio/useScrollSync';
 import type { MermaidThemePresetId } from './utils/mermaidThemePreset';
@@ -46,6 +47,7 @@ function App() {
     handleFixSyntax,
     handleAnalyze,
     handleManualSnapshot,
+    diagramMarkers,
     editorDiagramMarkers,
     selectedStepId,
     projects,
@@ -97,6 +99,7 @@ function App() {
     buildPromptPreview,
     setPromptPreview,
     setEditorTab,
+    setNextBuildDocsScope,
     loadBuildDocsEntries,
     appendMarkdownMermaidBlock,
     openNotebookBlock,
@@ -151,7 +154,11 @@ function App() {
     return null;
   }, []);
 
-  const handleOpenBuildDocsFile = useCallback((fileLabel: string, mode: import('./types').DocsMode) => {
+  const handleOpenBuildDocsFile = useCallback((
+    fileLabel: string,
+    mode: import('./types').DocsMode,
+    options?: { blockIndex?: number | null }
+  ) => {
     const cleaned = fileLabel.trim().replace(/\s*\([^)]*\)\s*$/, '').trim();
     const fileName = cleaned.split('/').pop() || cleaned;
     const matchInCurrent =
@@ -159,6 +166,11 @@ function App() {
       ?? buildDocsEntries.find((entry) => entry.path.endsWith(`/${fileName}`))
       ?? null;
     const open = async () => {
+      setNextBuildDocsScope(null);
+      if (typeof options?.blockIndex === 'number') {
+        setMarkdownMermaidActiveIndex(options.blockIndex);
+        setNextBuildDocsScope('diagram');
+      }
       setEditorTab('build_docs');
       setDocsMode(mode);
 
@@ -178,7 +190,16 @@ function App() {
       setBuildDocsActivePathForMode(mode, matchInLoaded.path);
     };
     void open();
-  }, [buildDocsEntries, loadBuildDocsEntries, resolveBuildDocsTypeForFileName, setBuildDocsActivePathForMode, setDocsMode, setEditorTab]);
+  }, [
+    buildDocsEntries,
+    loadBuildDocsEntries,
+    resolveBuildDocsTypeForFileName,
+    setBuildDocsActivePathForMode,
+    setDocsMode,
+    setEditorTab,
+    setMarkdownMermaidActiveIndex,
+    setNextBuildDocsScope,
+  ]);
   const scrollSyncSourceRef = useRef<ScrollSyncPayload['source'] | null>(null);
   const [scrollSyncPayload, setScrollSyncPayload] = useState<ScrollSyncPayload | null>(null);
   const [hoveredMarkdownIndex, setHoveredMarkdownIndex] = useState<number | null>(null);
@@ -190,8 +211,48 @@ function App() {
   const markdownMermaidDiagnosticsForView = isProjectPreview ? [] : markdownMermaidDiagnostics;
   const markdownMermaidActiveIndexForView = isProjectPreview ? 0 : markdownMermaidActiveIndex;
   const hoveredMarkdownIndexForView = isProjectPreview ? null : hoveredMarkdownIndex;
+  const hasNotebookTabs = isMarkdownLike(mermaidStateForView.code) && markdownMermaidBlocksForView.length > 0;
+  const editorPreviewTotal = appState.columnWidths[1] + appState.columnWidths[2] || 100;
+  const editorShare = editorPreviewTotal > 0 ? (appState.columnWidths[1] / editorPreviewTotal) * 100 : 50;
+  const previewShare = 100 - editorShare;
   const headerHeightVar = 'var(--app-header-height, 3rem)';
   const promptPreviewKey = `${mermaidStateForView.code}::${mermaidStateForView.errorMessage ?? ''}::${appState.analyzeLanguage}::${appState.language}::${markdownMermaidActiveIndex}`;
+  const buildDocsIntentPreviewText = (promptPreviewByMode[docsMode]?.intentText ?? buildDocsIntentText ?? '').trim();
+  const buildDocsRequestPreviewText = promptPreviewByMode[docsMode]?.content ?? '';
+  const buildDocsRequestPreviewRawText = promptPreviewByMode[docsMode]?.rawContent ?? '';
+  const notebookPlanText = useMemo(() => {
+    const extract = (marker: (typeof diagramMarkers)[number] | null | undefined) => {
+      const meta = marker?.meta as Record<string, unknown> | undefined;
+      if (!meta || meta.mode !== 'notebook') return '';
+      return typeof meta.notebookPlanIntent === 'string' ? meta.notebookPlanIntent.trim() : '';
+    };
+
+    if (selectedStepId) {
+      const selected = diagramMarkers.find((m) => m.stepId === selectedStepId);
+      const text = extract(selected);
+      if (text) return text;
+    }
+
+    for (let i = diagramMarkers.length - 1; i >= 0; i -= 1) {
+      const text = extract(diagramMarkers[i]);
+      if (text) return text;
+    }
+    return '';
+  }, [diagramMarkers, selectedStepId]);
+  const notebookTabs = hasNotebookTabs ? (
+    <NotebookTabs
+      activeTab={editorTabForView}
+      markdownMermaidBlocks={markdownMermaidBlocksForView}
+      markdownMermaidDiagnostics={markdownMermaidDiagnosticsForView}
+      markdownMermaidActiveIndex={markdownMermaidActiveIndexForView}
+      onMarkdownMermaidActiveIndexChange={isProjectPreview ? () => {} : setMarkdownMermaidActiveIndex}
+      onActiveTabChange={isProjectPreview ? () => {} : setEditorTab}
+      onAppendMarkdownMermaidBlock={isProjectPreview ? () => {} : appendMarkdownMermaidBlock}
+      diagramMarkers={diagramMarkers}
+      selectedStepId={selectedStepId}
+      onSelectDiagramStep={goToDiagramStep}
+    />
+  ) : null;
   const applyInlineUpdate = (updateCode: (code: string) => string) => {
     if (isProjectPreview) return;
     if (editorTab === 'markdown_mermaid' && markdownMermaidBlocks.length) {
@@ -256,17 +317,19 @@ function App() {
         onConfigChange={setAiConfig}
         onConnect={connectAI}
         onDisconnect={disconnectAI}
+        chatColumnWidthPercent={appState.columnWidths[0]}
         theme={appState.theme}
         onThemeChange={setThemePreset}
         llmTimeoutMs={appState.llmTimeoutMs}
         onLLMTimeoutMsChange={setLLMTimeoutMs}
+        notebookTabs={notebookTabs}
       />
 
       <div
         className="flex overflow-hidden relative"
         style={{ marginTop: headerHeightVar, height: `calc(100vh - ${headerHeightVar})` }}
       >
-        {!appState.isPreviewFullScreen && (
+        {!appState.isPreviewFullScreen ? (
           <>
             {/* Col 1: Chat */}
             <div style={{ width: `${appState.columnWidths[0]}%` }} className="flex flex-col min-w-[260px]">
@@ -316,142 +379,233 @@ function App() {
               onMouseDown={() => startResize(0)}
             ></div>
 
-            {/* Col 2: Editor */}
-            <div style={{ width: `${appState.columnWidths[1]}%` }} className="flex flex-col min-w-[300px]">
-	              <EditorColumn 
-	                mermaidState={mermaidStateForView}
-	                onChange={isProjectPreview ? () => {} : handleMermaidChange}
-	                onAnalyze={isProjectPreview ? () => {} : handleAnalyze}
-	                onFixSyntax={isProjectPreview ? () => {} : handleFixSyntax}
-	                onSnapshot={isProjectPreview ? () => {} : handleManualSnapshot}
-                isAIReady={!isProjectPreview && connectionState.status === 'connected' && !!aiConfig.selectedModelId}
-                isProcessing={isProcessing}
-                activeOperationKind={activeOperationKind}
-                isReadOnly={isProjectPreview}
-                analyzeLanguage={appState.analyzeLanguage}
-                onAnalyzeLanguageChange={setAnalyzeLanguage}
-                appLanguage={appState.language}
-                promptPreviewByMode={promptPreviewByMode}
-                intentText={buildDocsIntentText}
-                activeTab={editorTabForView}
-	                buildDocsEntries={buildDocsEntries}
-	                buildDocsSelectionsByMode={buildDocsSelectionsByMode}
-	                onToggleBuildDocForMode={setBuildDocSelectionForMode}
-	                onResetBuildDocsSelections={resetDocsSelectionsToDefault}
-	                buildDocsActivePath={buildDocsActivePath}
-	                onBuildDocsActivePathChange={setBuildDocsActivePath}
-	                docsMode={docsMode}
-	                onDocsModeChange={setDocsMode}
-	                systemPromptRawByMode={systemPromptRawByMode}
-                onSystemPromptRawChange={setSystemPromptRaw}
-                markdownMermaidBlocks={markdownMermaidBlocksForView}
-                markdownMermaidDiagnostics={markdownMermaidDiagnosticsForView}
-                markdownMermaidActiveIndex={markdownMermaidActiveIndexForView}
-                onMarkdownMermaidActiveIndexChange={isProjectPreview ? () => {} : setMarkdownMermaidActiveIndex}
-                onActiveTabChange={isProjectPreview ? () => {} : setEditorTab}
-                onAppendMarkdownMermaidBlock={isProjectPreview ? () => {} : appendMarkdownMermaidBlock}
-                isScrollSyncEnabled={appState.isScrollSyncEnabled}
-                scrollSyncPayload={scrollSyncPayload}
-                onScrollSync={handleEditorScrollSync}
-                hoveredMarkdownIndex={hoveredMarkdownIndexForView}
-                diagramMarkers={editorDiagramMarkers}
-                selectedStepId={selectedStepId}
-                onSelectDiagramStep={goToDiagramStep}
-              />
+            <div style={{ width: `${editorPreviewTotal}%` }} className="flex flex-col min-w-0">
+              <div className="flex min-h-0 flex-1">
+                {/* Col 2: Editor */}
+                <div style={{ width: `${editorShare}%` }} className="flex flex-col min-w-[300px]">
+                  <EditorColumn 
+                    mermaidState={mermaidStateForView}
+                    onChange={isProjectPreview ? () => {} : handleMermaidChange}
+                    onAnalyze={isProjectPreview ? () => {} : handleAnalyze}
+                    onFixSyntax={isProjectPreview ? () => {} : handleFixSyntax}
+                    onSnapshot={isProjectPreview ? () => {} : handleManualSnapshot}
+                    isAIReady={!isProjectPreview && connectionState.status === 'connected' && !!aiConfig.selectedModelId}
+                    isProcessing={isProcessing}
+                    activeOperationKind={activeOperationKind}
+                    isReadOnly={isProjectPreview}
+                    analyzeLanguage={appState.analyzeLanguage}
+                    onAnalyzeLanguageChange={setAnalyzeLanguage}
+                    appLanguage={appState.language}
+                    promptPreviewByMode={promptPreviewByMode}
+                    intentText={buildDocsIntentText}
+                    notebookPlanText={notebookPlanText}
+                    activeTab={editorTabForView}
+                    buildDocsEntries={buildDocsEntries}
+                    buildDocsSelectionsByMode={buildDocsSelectionsByMode}
+                    onToggleBuildDocForMode={setBuildDocSelectionForMode}
+                    onResetBuildDocsSelections={resetDocsSelectionsToDefault}
+                    buildDocsActivePath={buildDocsActivePath}
+                    onBuildDocsActivePathChange={setBuildDocsActivePath}
+                    docsMode={docsMode}
+                    onDocsModeChange={setDocsMode}
+                    systemPromptRawByMode={systemPromptRawByMode}
+                    onSystemPromptRawChange={setSystemPromptRaw}
+                    markdownMermaidBlocks={markdownMermaidBlocksForView}
+                    markdownMermaidDiagnostics={markdownMermaidDiagnosticsForView}
+                    markdownMermaidActiveIndex={markdownMermaidActiveIndexForView}
+                    onMarkdownMermaidActiveIndexChange={isProjectPreview ? () => {} : setMarkdownMermaidActiveIndex}
+                    onActiveTabChange={isProjectPreview ? () => {} : setEditorTab}
+                    isScrollSyncEnabled={appState.isScrollSyncEnabled}
+                    scrollSyncPayload={scrollSyncPayload}
+                    onScrollSync={handleEditorScrollSync}
+                    hoveredMarkdownIndex={hoveredMarkdownIndexForView}
+                    diagramMarkers={hasNotebookTabs ? [] : editorDiagramMarkers}
+                    selectedStepId={hasNotebookTabs ? null : selectedStepId}
+                    onSelectDiagramStep={hasNotebookTabs ? undefined : goToDiagramStep}
+                  />
+                </div>
+
+                {/* Resizer 2 */}
+                <div
+                  className="resizer w-1 hover:w-1 bg-slate-200 dark:bg-slate-800 hover:bg-blue-400 cursor-col-resize z-10 transition-colors"
+                  onMouseDown={() => startResize(1)}
+                ></div>
+
+                {/* Col 3: Preview */}
+                <div style={{ width: `${previewShare}%` }} className="flex flex-col min-w-[300px]">
+                  <PreviewColumn
+                    mermaidState={mermaidStateForView}
+                    theme={colorScheme}
+                    appThemePresetId={appState.theme}
+                    isFullScreen={appState.isPreviewFullScreen}
+                    onToggleFullScreen={togglePreviewFullScreen}
+                    isScrollSyncEnabled={appState.isScrollSyncEnabled}
+                    onToggleScrollSync={toggleScrollSync}
+                    scrollSyncPayload={scrollSyncPayload}
+                    onScrollSync={handlePreviewScrollSync}
+                    onSetThemePreset={(presetId: MermaidThemePresetId | null) => {
+                      if (isProjectPreview) return;
+                      if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                        const nextMarkdown = setThemePresetForMarkdownMermaidBlocks(mermaidStateForView.code, presetId);
+                        handleMermaidChange(nextMarkdown);
+                        return;
+                      }
+                      applyInlineUpdate((code) => setMermaidThemePreset(code, presetId));
+                    }}
+                    onSetInlineDirection={(nextDirection: MermaidDirection | null) => {
+                      if (isProjectPreview) return;
+                      applyInlineUpdate((code) => setInlineDirectionCommand(code, nextDirection));
+                    }}
+                    onSetInlineLook={(nextLook: MermaidLook | null) => {
+                      if (isProjectPreview) return;
+                      if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                        const nextMarkdown = setLookForMarkdownMermaidBlocks(mermaidStateForView.code, nextLook);
+                        handleMermaidChange(nextMarkdown);
+                        return;
+                      }
+                      applyInlineUpdate((code) => setInlineLookCommand(code, nextLook));
+                    }}
+                    onSetFlowchartEdgeStyle={(update: FlowchartEdgeStyleUpdate) => {
+                      if (isProjectPreview) return;
+                      if (!update || !Object.keys(update).length) return;
+                      if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                        const nextMarkdown = setFlowchartEdgeStyleForMarkdownMermaidBlocks(mermaidStateForView.code, update);
+                        handleMermaidChange(nextMarkdown);
+                        return;
+                      }
+                      applyInlineUpdate((code) => setFlowchartEdgeStyle(code, update));
+                    }}
+                    onSetFlowchartLinkStylePreset={(presetId: FlowchartLinkStylePresetId) => {
+                      if (isProjectPreview) return;
+                      if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                        const nextMarkdown = setFlowchartLinkStylePresetForMarkdownMermaidBlocks(mermaidStateForView.code, presetId);
+                        handleMermaidChange(nextMarkdown);
+                        return;
+                      }
+                      applyInlineUpdate((code) => setFlowchartLinkStylePreset(code, presetId));
+                    }}
+                    onSetFlowchartCurve={(curve: FlowchartCurve | null) => {
+                      if (isProjectPreview) return;
+                      if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                        const nextMarkdown = setFlowchartCurveForMarkdownMermaidBlocks(mermaidStateForView.code, curve);
+                        handleMermaidChange(nextMarkdown);
+                        return;
+                      }
+                      applyInlineUpdate((code) => setFlowchartCurve(code, curve));
+                    }}
+                    activeEditorTab={editorTabForView}
+                    docsMode={docsMode}
+                    buildDocsSystemPrompts={buildDocsSystemPrompts}
+                    systemPromptRawByMode={systemPromptRawByMode}
+                    buildDocsRequestPreviewText={buildDocsRequestPreviewText}
+                    buildDocsRequestPreviewRawText={buildDocsRequestPreviewRawText}
+                    buildDocsIntentPreviewText={buildDocsIntentPreviewText}
+                    buildDocsNotebookPlanText={notebookPlanText}
+                    buildDocsEntries={buildDocsEntries}
+                    buildDocsActivePath={buildDocsActivePath}
+                    markdownMermaidBlocks={markdownMermaidBlocksForView}
+                    markdownMermaidDiagnostics={markdownMermaidDiagnosticsForView}
+                    markdownMermaidActiveIndex={markdownMermaidActiveIndexForView}
+                    onMarkdownMermaidActiveIndexChange={isProjectPreview ? () => {} : setMarkdownMermaidActiveIndex}
+                    onActiveEditorTabChange={isProjectPreview ? () => {} : setEditorTab}
+                    onAppendMarkdownMermaidBlock={isProjectPreview ? () => {} : appendMarkdownMermaidBlock}
+                    hoveredMarkdownIndex={hoveredMarkdownIndexForView}
+                    onHoverMarkdownIndex={isProjectPreview ? () => {} : setHoveredMarkdownIndex}
+                    historyRevisionId={historySessionCurrentRevisionId}
+                    whiteboardSceneJson={whiteboardSceneJson}
+                    whiteboardBundleJson={whiteboardBundleJson}
+                    onSaveWhiteboardSceneJson={isProjectPreview ? async () => null : saveWhiteboardForCurrentRevision}
+                  />
+                </div>
+              </div>
             </div>
-
-            {/* Resizer 2 */}
-            <div
-              className="resizer w-1 hover:w-1 bg-slate-200 dark:bg-slate-800 hover:bg-blue-400 cursor-col-resize z-10 transition-colors"
-              onMouseDown={() => startResize(1)}
-            ></div>
           </>
+        ) : (
+          <div className="flex flex-col flex-1 min-w-0">
+            <PreviewColumn
+              mermaidState={mermaidStateForView}
+              theme={colorScheme}
+              appThemePresetId={appState.theme}
+              isFullScreen={appState.isPreviewFullScreen}
+              onToggleFullScreen={togglePreviewFullScreen}
+              isScrollSyncEnabled={appState.isScrollSyncEnabled}
+              onToggleScrollSync={toggleScrollSync}
+              scrollSyncPayload={scrollSyncPayload}
+              onScrollSync={handlePreviewScrollSync}
+              onSetThemePreset={(presetId: MermaidThemePresetId | null) => {
+                if (isProjectPreview) return;
+                if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                  const nextMarkdown = setThemePresetForMarkdownMermaidBlocks(mermaidStateForView.code, presetId);
+                  handleMermaidChange(nextMarkdown);
+                  return;
+                }
+                applyInlineUpdate((code) => setMermaidThemePreset(code, presetId));
+              }}
+              onSetInlineDirection={(nextDirection: MermaidDirection | null) => {
+                if (isProjectPreview) return;
+                applyInlineUpdate((code) => setInlineDirectionCommand(code, nextDirection));
+              }}
+              onSetInlineLook={(nextLook: MermaidLook | null) => {
+                if (isProjectPreview) return;
+                if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                  const nextMarkdown = setLookForMarkdownMermaidBlocks(mermaidStateForView.code, nextLook);
+                  handleMermaidChange(nextMarkdown);
+                  return;
+                }
+                applyInlineUpdate((code) => setInlineLookCommand(code, nextLook));
+              }}
+              onSetFlowchartEdgeStyle={(update: FlowchartEdgeStyleUpdate) => {
+                if (isProjectPreview) return;
+                if (!update || !Object.keys(update).length) return;
+                if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                  const nextMarkdown = setFlowchartEdgeStyleForMarkdownMermaidBlocks(mermaidStateForView.code, update);
+                  handleMermaidChange(nextMarkdown);
+                  return;
+                }
+                applyInlineUpdate((code) => setFlowchartEdgeStyle(code, update));
+              }}
+              onSetFlowchartLinkStylePreset={(presetId: FlowchartLinkStylePresetId) => {
+                if (isProjectPreview) return;
+                if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                  const nextMarkdown = setFlowchartLinkStylePresetForMarkdownMermaidBlocks(mermaidStateForView.code, presetId);
+                  handleMermaidChange(nextMarkdown);
+                  return;
+                }
+                applyInlineUpdate((code) => setFlowchartLinkStylePreset(code, presetId));
+              }}
+              onSetFlowchartCurve={(curve: FlowchartCurve | null) => {
+                if (isProjectPreview) return;
+                if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
+                  const nextMarkdown = setFlowchartCurveForMarkdownMermaidBlocks(mermaidStateForView.code, curve);
+                  handleMermaidChange(nextMarkdown);
+                  return;
+                }
+                applyInlineUpdate((code) => setFlowchartCurve(code, curve));
+              }}
+              activeEditorTab={editorTabForView}
+              docsMode={docsMode}
+              buildDocsSystemPrompts={buildDocsSystemPrompts}
+              systemPromptRawByMode={systemPromptRawByMode}
+              buildDocsRequestPreviewText={buildDocsRequestPreviewText}
+              buildDocsRequestPreviewRawText={buildDocsRequestPreviewRawText}
+              buildDocsIntentPreviewText={buildDocsIntentPreviewText}
+              buildDocsEntries={buildDocsEntries}
+              buildDocsActivePath={buildDocsActivePath}
+              markdownMermaidBlocks={markdownMermaidBlocksForView}
+              markdownMermaidDiagnostics={markdownMermaidDiagnosticsForView}
+              markdownMermaidActiveIndex={markdownMermaidActiveIndexForView}
+              onMarkdownMermaidActiveIndexChange={isProjectPreview ? () => {} : setMarkdownMermaidActiveIndex}
+              onActiveEditorTabChange={isProjectPreview ? () => {} : setEditorTab}
+              onAppendMarkdownMermaidBlock={isProjectPreview ? () => {} : appendMarkdownMermaidBlock}
+              hoveredMarkdownIndex={hoveredMarkdownIndexForView}
+              onHoverMarkdownIndex={isProjectPreview ? () => {} : setHoveredMarkdownIndex}
+              historyRevisionId={historySessionCurrentRevisionId}
+              whiteboardSceneJson={whiteboardSceneJson}
+              whiteboardBundleJson={whiteboardBundleJson}
+              onSaveWhiteboardSceneJson={isProjectPreview ? async () => null : saveWhiteboardForCurrentRevision}
+            />
+          </div>
         )}
-
-        {/* Col 3: Preview */}
-        <div
-          style={appState.isPreviewFullScreen ? undefined : { width: `${appState.columnWidths[2]}%` }}
-          className={`flex flex-col ${appState.isPreviewFullScreen ? 'flex-1 min-w-0' : 'min-w-[300px]'}`}
-        >
-          <PreviewColumn
-            mermaidState={mermaidStateForView}
-            theme={colorScheme}
-            appThemePresetId={appState.theme}
-            isFullScreen={appState.isPreviewFullScreen}
-            onToggleFullScreen={togglePreviewFullScreen}
-            isScrollSyncEnabled={appState.isScrollSyncEnabled}
-            onToggleScrollSync={toggleScrollSync}
-            scrollSyncPayload={scrollSyncPayload}
-            onScrollSync={handlePreviewScrollSync}
-            onSetThemePreset={(presetId: MermaidThemePresetId | null) => {
-              if (isProjectPreview) return;
-              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
-                const nextMarkdown = setThemePresetForMarkdownMermaidBlocks(mermaidStateForView.code, presetId);
-                handleMermaidChange(nextMarkdown);
-                return;
-              }
-              applyInlineUpdate((code) => setMermaidThemePreset(code, presetId));
-            }}
-            onSetInlineDirection={(nextDirection: MermaidDirection | null) => {
-              if (isProjectPreview) return;
-              applyInlineUpdate((code) => setInlineDirectionCommand(code, nextDirection));
-            }}
-            onSetInlineLook={(nextLook: MermaidLook | null) => {
-              if (isProjectPreview) return;
-              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
-                const nextMarkdown = setLookForMarkdownMermaidBlocks(mermaidStateForView.code, nextLook);
-                handleMermaidChange(nextMarkdown);
-                return;
-              }
-              applyInlineUpdate((code) => setInlineLookCommand(code, nextLook));
-            }}
-            onSetFlowchartEdgeStyle={(update: FlowchartEdgeStyleUpdate) => {
-              if (isProjectPreview) return;
-              if (!update || !Object.keys(update).length) return;
-              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
-                const nextMarkdown = setFlowchartEdgeStyleForMarkdownMermaidBlocks(mermaidStateForView.code, update);
-                handleMermaidChange(nextMarkdown);
-                return;
-              }
-              applyInlineUpdate((code) => setFlowchartEdgeStyle(code, update));
-            }}
-            onSetFlowchartLinkStylePreset={(presetId: FlowchartLinkStylePresetId) => {
-              if (isProjectPreview) return;
-              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
-                const nextMarkdown = setFlowchartLinkStylePresetForMarkdownMermaidBlocks(mermaidStateForView.code, presetId);
-                handleMermaidChange(nextMarkdown);
-                return;
-              }
-              applyInlineUpdate((code) => setFlowchartLinkStylePreset(code, presetId));
-            }}
-            onSetFlowchartCurve={(curve: FlowchartCurve | null) => {
-              if (isProjectPreview) return;
-              if (editorTab !== 'markdown_mermaid' && markdownMermaidBlocks.length && isMarkdownLike(mermaidStateForView.code)) {
-                const nextMarkdown = setFlowchartCurveForMarkdownMermaidBlocks(mermaidStateForView.code, curve);
-                handleMermaidChange(nextMarkdown);
-                return;
-              }
-              applyInlineUpdate((code) => setFlowchartCurve(code, curve));
-            }}
-            activeEditorTab={editorTabForView}
-            buildDocsSystemPrompts={buildDocsSystemPrompts}
-            systemPromptRawByMode={systemPromptRawByMode}
-            buildDocsEntries={buildDocsEntries}
-            buildDocsActivePath={buildDocsActivePath}
-            markdownMermaidBlocks={markdownMermaidBlocksForView}
-            markdownMermaidDiagnostics={markdownMermaidDiagnosticsForView}
-            markdownMermaidActiveIndex={markdownMermaidActiveIndexForView}
-            onMarkdownMermaidActiveIndexChange={isProjectPreview ? () => {} : setMarkdownMermaidActiveIndex}
-            onActiveEditorTabChange={isProjectPreview ? () => {} : setEditorTab}
-            hoveredMarkdownIndex={hoveredMarkdownIndexForView}
-            onHoverMarkdownIndex={isProjectPreview ? () => {} : setHoveredMarkdownIndex}
-
-            historyRevisionId={historySessionCurrentRevisionId}
-            whiteboardSceneJson={whiteboardSceneJson}
-            whiteboardBundleJson={whiteboardBundleJson}
-            onSaveWhiteboardSceneJson={isProjectPreview ? async () => null : saveWhiteboardForCurrentRevision}
-          />
-        </div>
       </div>
     </div>
   );

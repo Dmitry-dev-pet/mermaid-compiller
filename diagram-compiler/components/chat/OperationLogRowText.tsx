@@ -7,7 +7,7 @@ type Props = {
   row: OperationLogTextRow;
   pinnedTooltip: string | null;
   setPinnedTooltip: React.Dispatch<React.SetStateAction<string | null>>;
-  onOpenBuildDocsFile?: (fileName: string, mode: DocsMode) => void;
+  onOpenBuildDocsFile?: (fileName: string, mode: DocsMode, options?: { blockIndex?: number | null }) => void;
 };
 
 const normalizeFileLabel = (value: string) => {
@@ -47,9 +47,11 @@ const OperationLogRowText: React.FC<Props> = ({
           if (!onOpenBuildDocsFile) return;
           eventClick.preventDefault();
           eventClick.stopPropagation();
-          onOpenBuildDocsFile(normalizeFileLabel(label), docsMode);
+          onOpenBuildDocsFile(normalizeFileLabel(label), docsMode, {
+            blockIndex: typeof row.blockIndex === 'number' ? row.blockIndex : null,
+          });
         }}
-        title="Открыть в Build Docs"
+        title="Открыть в Prompts"
       >
         {label}
       </button>
