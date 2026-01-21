@@ -479,7 +479,7 @@ const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <div className="h-full w-1 bg-slate-200 dark:bg-slate-800" aria-hidden="true" />
+      <div className="h-full w-1 bg-transparent" aria-hidden="true" />
 
       <div className="min-w-0">
         <HeaderNotebookSlot>{notebookTabs}</HeaderNotebookSlot>

@@ -92,10 +92,7 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
 
   return (
     <>
-      <div
-        className="flex items-center gap-2 min-h-8 border-b px-2 py-1 bg-transparent"
-        style={{ borderColor: 'var(--panel-border, #e5e7eb)', backgroundColor: 'var(--panel-alt-bg, #ffffff)' }}
-      >
+      <div className="flex items-center gap-2 min-h-8 px-2 py-1 bg-transparent">
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
