@@ -493,7 +493,7 @@ export const useDiagramStudio = () => {
     appLanguage: appState.language ?? 'auto',
     isNotebookChatMode,
     isNotebookDataEnabled,
-    promptScope: editorTab === 'build_docs' ? buildDocsScope : null,
+    promptScope: editorTab === 'build_docs' && isNotebookDataEnabled ? buildDocsScope : null,
     messages: chatMessagesForView,
     diagramIntent,
     resolveActiveMermaidContext,
