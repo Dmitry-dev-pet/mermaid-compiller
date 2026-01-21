@@ -153,6 +153,15 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
             );
           })}
 
+          <button
+            type="button"
+            onClick={onAppendMarkdownMermaidBlock}
+            className="px-2 py-0.5 text-[10px] rounded border bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 inline-flex items-center gap-1 shrink-0"
+            title="Add empty mermaid block"
+          >
+            <Plus size={12} /> Block
+          </button>
+
           {onSelectDiagramStep && historyChips.length > 0 && (
             <>
               <span className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
@@ -172,17 +181,6 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
               ))}
             </>
           )}
-        </div>
-
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={onAppendMarkdownMermaidBlock}
-            className="px-2 py-0.5 text-[10px] rounded border bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 inline-flex items-center gap-1"
-            title="Add empty mermaid block"
-          >
-            <Plus size={12} /> Block
-          </button>
         </div>
       </div>
       {tooltipPortal}
