@@ -3,8 +3,9 @@ import { Bookmark, Check, Copy, FileCode2, Loader2, PenTool, RefreshCw } from 'l
 import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
 import { EditorTab, MermaidState } from '../../types';
 import type { DiagramMarker } from '../../hooks/core/useHistory';
-import { HEADER_CONTROL_ICON_BUTTON, HEADER_CONTROL_SELECT } from '../../utils/uiControlStyles';
+import { HEADER_CONTROL_BUTTON, HEADER_CONTROL_ICON_BUTTON, HEADER_CONTROL_SELECT } from '../../utils/uiControlStyles';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../../utils/uiModes';
+import { buildHistoryChipModels, HISTORY_CHIP_INACTIVE_CLASS_BY_MODE } from '../../utils/historyChipUtils';
 
 interface EditorHeaderProps {
   mermaidState: MermaidState;
@@ -68,57 +69,16 @@ interface EditorHeaderProps {
     if (isBuildDocsTab) return [];
     if (!diagramMarkers.length) return [];
 
-    const inactiveClassByMode: Record<'chat' | 'build' | 'analyze' | 'fix' | 'plan' | 'system', string> = {
-      chat:
-        'text-indigo-600 dark:text-indigo-200 border-indigo-200/70 dark:border-indigo-700/70 hover:border-indigo-300 dark:hover:border-indigo-600',
-      build:
-        'text-emerald-600 dark:text-emerald-200 border-emerald-200/70 dark:border-emerald-700/70 hover:border-emerald-300 dark:hover:border-emerald-600',
-      analyze:
-        'text-sky-600 dark:text-sky-200 border-sky-200/70 dark:border-sky-700/70 hover:border-sky-300 dark:hover:border-sky-600',
-      fix:
-        'text-amber-600 dark:text-amber-200 border-amber-200/70 dark:border-amber-700/70 hover:border-amber-300 dark:hover:border-amber-600',
-      plan:
-        'text-violet-600 dark:text-violet-200 border-violet-200/70 dark:border-violet-700/70 hover:border-violet-300 dark:hover:border-violet-600',
-      system: 'text-[var(--control-muted-text)] border-[var(--panel-border)]',
-    };
-
-    const resolveUiMode = (type: DiagramMarker['type']): keyof typeof inactiveClassByMode => {
-      if (type === 'fix') return 'fix';
-      if (type === 'analyze') return 'analyze';
-      if (type === 'build' || type === 'recompile') return 'build';
-      if (type === 'chat') return 'chat';
-      return 'system';
-    };
-
-    return diagramMarkers.map((marker, index) => {
-      const isSelected = selectedStepId ? marker.stepId === selectedStepId : false;
-      const uiMode = resolveUiMode(marker.type);
-      const modeStyles = MODE_UI[uiMode];
+    const chipModels = buildHistoryChipModels(diagramMarkers, selectedStepId);
+    return chipModels.map((chip) => {
+      const modeStyles = MODE_UI[chip.uiMode];
       const activeClass = modeStyles.button ?? MODE_BUTTON_DISABLED;
-      const inactiveClass = inactiveClassByMode[uiMode] ?? MODE_BUTTON_DISABLED;
-      const timeLabel = new Date(marker.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-      const actionLabel =
-        marker.type === 'build'
-          ? 'Build'
-          : marker.type === 'fix'
-            ? 'Fix'
-            : marker.type === 'recompile'
-              ? 'Run'
-              : marker.type === 'manual_edit'
-                ? 'Edit'
-                : marker.type === 'seed'
-                  ? 'Seed'
-                  : marker.type === 'analyze'
-                    ? 'Analyze'
-                    : marker.type;
-      const tooltip = `#${index + 1}/${diagramMarkers.length} • ${timeLabel}\n${actionLabel}`;
+      const inactiveClass = HISTORY_CHIP_INACTIVE_CLASS_BY_MODE[chip.uiMode] ?? MODE_BUTTON_DISABLED;
       return {
-        marker,
-        tooltip,
-        label: `#${index + 1}`,
-        className: `shrink-0 whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-medium ${
-          isSelected ? activeClass : inactiveClass
-        }`,
+        marker: chip.marker,
+        tooltip: chip.tooltip,
+        label: chip.label,
+        className: `rounded-full ${HEADER_CONTROL_BUTTON} ${chip.isSelected ? activeClass : inactiveClass}`,
       };
     });
   }, [diagramMarkers, isBuildDocsTab, onSelectDiagramStep, selectedStepId]);

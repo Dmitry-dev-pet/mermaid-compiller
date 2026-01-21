@@ -52,6 +52,7 @@ import {
   PROMPTS_VIRTUAL_INTENT_PATH,
   PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH,
   PROMPTS_VIRTUAL_SYSTEM_PATH,
+  getPromptsVirtualLabel,
 } from '../utils/promptsVirtualPaths';
 
 interface PreviewColumnProps {
@@ -1261,14 +1262,7 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   const previewHeaderTitle = useMemo(() => {
     if (!isBuildDocsMode) return 'Preview';
     const path = activeBuildDoc?.path || buildDocsActivePath || '';
-    const fileLabel =
-      path === PROMPTS_VIRTUAL_SYSTEM_PATH
-        ? 'System'
-        : path === PROMPTS_VIRTUAL_INTENT_PATH
-          ? 'Intent'
-          : path === PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH
-            ? 'Notebook plan'
-            : path.split('/').pop() || path || 'Docs';
+    const fileLabel = getPromptsVirtualLabel(path) ?? (path.split('/').pop() || path || 'Docs');
     return `Prompts: ${fileLabel}`;
   }, [activeBuildDoc?.path, buildDocsActivePath, isBuildDocsMode]);
 

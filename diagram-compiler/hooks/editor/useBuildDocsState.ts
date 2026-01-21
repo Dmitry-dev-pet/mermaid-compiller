@@ -9,6 +9,7 @@ type BuildDocsPanelState = {
   docsMode: DocsMode;
   analyzeLanguage: string;
   appLanguage: string;
+  buildDocsScope?: 'notebook' | 'diagram' | null;
   promptPreviewByMode: Record<PromptPreviewMode, PromptPreviewTab | null>;
   systemPromptRawByMode: Record<DocsMode, boolean>;
   buildDocsEntries: DocsEntry[];
@@ -37,6 +38,7 @@ export const useBuildDocsState = ({
   docsMode,
   analyzeLanguage,
   appLanguage,
+  buildDocsScope = null,
   promptPreviewByMode,
   systemPromptRawByMode,
   buildDocsEntries,
@@ -55,13 +57,18 @@ export const useBuildDocsState = ({
   const systemPromptPath = getSystemPromptPath(systemPromptLang, docsMode);
   const isSystemPromptRaw = systemPromptRawByMode[docsMode] ?? false;
   const fallbackLanguage = systemPromptLang === 'ru' ? 'Russian' : 'English';
-  const fallbackMode = docsMode === 'plan'
-    ? 'plan_notebook'
-    : docsMode === 'build'
-      ? 'generate'
-      : docsMode === 'chat'
-        ? 'chat_notebook'
-        : docsMode;
+  const fallbackMode =
+    docsMode === 'plan'
+      ? 'plan_notebook'
+      : docsMode === 'build'
+        ? 'generate'
+        : docsMode === 'chat'
+          ? buildDocsScope === 'diagram'
+            ? 'chat_diagram'
+            : buildDocsScope === 'notebook'
+              ? 'chat_notebook'
+              : 'chat'
+          : docsMode;
   const fallbackPrompt = buildSystemPrompt(fallbackMode, {
     docsContext: 'Documentation context redacted.',
     language: fallbackLanguage,

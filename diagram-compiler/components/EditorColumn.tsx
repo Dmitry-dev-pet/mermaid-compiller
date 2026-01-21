@@ -45,6 +45,7 @@ interface EditorColumnProps {
   analyzeLanguage: string;
   onAnalyzeLanguageChange: (lang: string) => void;
   appLanguage: string;
+  buildDocsScope?: 'notebook' | 'diagram';
   promptPreviewByMode: Record<PromptPreviewMode, PromptPreviewTab | null>;
   intentText?: string;
   notebookPlanText?: string;
@@ -86,6 +87,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   analyzeLanguage,
   onAnalyzeLanguageChange,
   appLanguage,
+  buildDocsScope,
   promptPreviewByMode,
   intentText,
   notebookPlanText,
@@ -117,6 +119,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const editorValueRef = useRef<string>('');
   const [copied, setCopied] = React.useState(false);
+  const hasNotebookData = markdownMermaidBlocks.length > 0;
   const isBuildDocsTab = activeTab === 'build_docs';
   const {
     systemPromptEntry,
@@ -125,6 +128,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     docsMode,
     analyzeLanguage,
     appLanguage,
+    buildDocsScope: hasNotebookData ? (buildDocsScope ?? null) : null,
     promptPreviewByMode,
     systemPromptRawByMode,
     buildDocsEntries,
@@ -180,7 +184,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   const editorLineNumbers = Array.from({ length: Math.max(editorLineCount, 1) }, (_, i) => i + 1);
   const markdownValidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === true).length;
   const markdownInvalidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === false).length;
-  const hasMarkdownBlocks = markdownMermaidBlocks.length > 0;
+  const hasMarkdownBlocks = hasNotebookData;
   const isMarkdown = isMarkdownLike(mermaidState.code) || hasMarkdownBlocks;
   const canFix = !isReadOnly && (isMarkdown
     ? markdownInvalidCount > 0

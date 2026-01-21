@@ -55,6 +55,7 @@ function App() {
     diagramIntent,
     promptPreviewByMode,
     editorTab,
+    buildDocsScope,
     buildDocsEntries,
     buildDocsSelection,
     toggleBuildDocSelection,
@@ -216,7 +217,7 @@ function App() {
   const editorShare = editorPreviewTotal > 0 ? (appState.columnWidths[1] / editorPreviewTotal) * 100 : 50;
   const previewShare = 100 - editorShare;
   const headerHeightVar = 'var(--app-header-height, 3rem)';
-  const promptPreviewKey = `${mermaidStateForView.code}::${mermaidStateForView.errorMessage ?? ''}::${appState.analyzeLanguage}::${appState.language}::${markdownMermaidActiveIndex}`;
+  const promptPreviewKey = `${mermaidStateForView.code}::${mermaidStateForView.errorMessage ?? ''}::${appState.analyzeLanguage}::${appState.language}::${markdownMermaidActiveIndex}::${editorTabForView}::${isNotebookChatMode}::${buildDocsScope}`;
   const buildDocsIntentPreviewText = (promptPreviewByMode[docsMode]?.intentText ?? buildDocsIntentText ?? '').trim();
   const buildDocsRequestPreviewText = promptPreviewByMode[docsMode]?.content ?? '';
   const buildDocsRequestPreviewRawText = promptPreviewByMode[docsMode]?.rawContent ?? '';
@@ -242,12 +243,17 @@ function App() {
   const notebookTabs = hasNotebookTabs ? (
     <NotebookTabs
       activeTab={editorTabForView}
+      buildDocsScope={editorTabForView === 'build_docs' ? buildDocsScope : undefined}
       markdownMermaidBlocks={markdownMermaidBlocksForView}
       markdownMermaidDiagnostics={markdownMermaidDiagnosticsForView}
       markdownMermaidActiveIndex={markdownMermaidActiveIndexForView}
       onMarkdownMermaidActiveIndexChange={isProjectPreview ? () => {} : setMarkdownMermaidActiveIndex}
       onActiveTabChange={isProjectPreview ? () => {} : setEditorTab}
       onAppendMarkdownMermaidBlock={isProjectPreview ? () => {} : appendMarkdownMermaidBlock}
+      onBuildDocsScopeChange={(scope) => {
+        if (isProjectPreview) return;
+        setNextBuildDocsScope(scope);
+      }}
       diagramMarkers={diagramMarkers}
       selectedStepId={selectedStepId}
       onSelectDiagramStep={goToDiagramStep}
@@ -396,6 +402,7 @@ function App() {
                     analyzeLanguage={appState.analyzeLanguage}
                     onAnalyzeLanguageChange={setAnalyzeLanguage}
                     appLanguage={appState.language}
+                    buildDocsScope={buildDocsScope}
                     promptPreviewByMode={promptPreviewByMode}
                     intentText={buildDocsIntentText}
                     notebookPlanText={notebookPlanText}

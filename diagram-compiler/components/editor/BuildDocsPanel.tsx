@@ -7,9 +7,11 @@ import { HEADER_CONTROL_BUTTON } from '../../utils/uiControlStyles';
 import { Sparkles } from 'lucide-react';
 import { isSystemPromptPath } from '../../utils/systemPrompts';
 import {
+  PROMPTS_VIRTUAL_ENTRIES,
   PROMPTS_VIRTUAL_INTENT_PATH,
   PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH,
   PROMPTS_VIRTUAL_SYSTEM_PATH,
+  getPromptsVirtualLabel,
 } from '../../utils/promptsVirtualPaths';
 import { MERMAID_VERSION } from '../../constants';
 
@@ -73,32 +75,24 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
     return result;
   }, [tokenCountsByMode]);
 
-  const virtualEntries = useMemo<DocsEntry[]>(
-    () => [
-      { path: PROMPTS_VIRTUAL_SYSTEM_PATH, text: '' },
-      { path: PROMPTS_VIRTUAL_INTENT_PATH, text: '' },
-      { path: PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH, text: '' },
-    ],
-    []
-  );
+  const virtualEntries = useMemo<DocsEntry[]>(() => PROMPTS_VIRTUAL_ENTRIES.map((entry) => ({ path: entry.path, text: '' })), []);
 
   const fileEntries = useMemo(() => [...virtualEntries, ...buildDocsEntries], [buildDocsEntries, virtualEntries]);
 
   const resolveEntryName = (path: string) => {
-    if (path === PROMPTS_VIRTUAL_SYSTEM_PATH) return 'System';
-    if (path === PROMPTS_VIRTUAL_INTENT_PATH) return 'Intent';
-    if (path === PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH) return 'Notebook plan';
+    const virtualLabel = getPromptsVirtualLabel(path);
+    if (virtualLabel) return virtualLabel;
     return path.split('/').pop() || path;
   };
 
-  const resolveIntentPreview = () => {
+  const resolvedIntentPreviewText = useMemo(() => {
     const previewIntent = intentPreviewText?.trim() ?? '';
     const analyzePreview = analyzeCode?.trim() ?? '';
     const fixPreview = fixDetailsText?.trim() ?? '';
     if (docsMode === 'analyze') return analyzePreview;
     if (docsMode === 'fix') return fixPreview;
     return previewIntent || (intentText ?? '').trim();
-  };
+  }, [analyzeCode, docsMode, fixDetailsText, intentPreviewText, intentText]);
 
   const activeDocEntry = useMemo<DocsEntry>(() => {
     if (buildDocsActivePath === PROMPTS_VIRTUAL_SYSTEM_PATH) {
@@ -107,7 +101,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
       return { path: PROMPTS_VIRTUAL_SYSTEM_PATH, text };
     }
     if (buildDocsActivePath === PROMPTS_VIRTUAL_INTENT_PATH) {
-      return { path: PROMPTS_VIRTUAL_INTENT_PATH, text: resolveIntentPreview() };
+      return { path: PROMPTS_VIRTUAL_INTENT_PATH, text: resolvedIntentPreviewText };
     }
     if (buildDocsActivePath === PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH) {
       const text = (notebookPlanText ?? '').trim();
@@ -118,17 +112,13 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
     }
     return buildDocsEntries.find((entry) => entry.path === buildDocsActivePath) ?? buildDocsEntries[0] ?? { path: 'docs/empty', text: '' };
   }, [
-    analyzeCode,
     buildDocsActivePath,
     buildDocsEntries,
-    docsMode,
-    fixDetailsText,
-    intentPreviewText,
-    intentText,
     isSystemPromptRaw,
     notebookPlanText,
     requestPreviewRawText,
     requestPreviewText,
+    resolvedIntentPreviewText,
     systemPromptEntry.text,
   ]);
 

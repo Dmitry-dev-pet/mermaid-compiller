@@ -5,6 +5,8 @@ import type { DocsEntry } from '../../services/docsContextService';
 import { safeParse } from '../../utils';
 import { getNotebookPlannerDocsPaths } from '../../services/docsContextService';
 import { DOCS_MODE_ORDER } from '../../utils/docsModes';
+import { isPromptsVirtualPath } from '../../utils/promptsVirtualPaths';
+import { isSystemPromptPath } from '../../utils/systemPrompts';
 
 type DocsSelectionState = {
   mode: DocsMode;
@@ -97,6 +99,11 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     const nextActivePaths: DocsSelectionState['activePaths'] = { ...docsStateRef.current.activePaths };
     DOCS_MODE_ORDER.forEach((mode) => {
       const prevPath = nextActivePaths[mode];
+      // Preserve "virtual" prompt paths (System/Intent/Notebook plan) and
+      // system prompt pseudo-files across doc-set reloads (e.g. switching active diagram).
+      if (prevPath && (isPromptsVirtualPath(prevPath) || isSystemPromptPath(prevPath))) {
+        return;
+      }
       if (!prevPath || !entries.some((entry) => entry.path === prevPath)) {
         if (mode === 'plan') {
           nextActivePaths[mode] =

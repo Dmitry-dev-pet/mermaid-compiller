@@ -84,6 +84,7 @@ export const useDiagramStudio = () => {
   const [buildDocsScope, setBuildDocsScope] = useState<'notebook' | 'diagram'>('notebook');
   const prevEditorTabRef = useRef<EditorTab>('code');
   const nextBuildDocsScopeRef = useRef<'notebook' | 'diagram' | null>(null);
+  const prevBuildDocsScopeRef = useRef<'notebook' | 'diagram'>('notebook');
   const [previewMermaidState, setPreviewMermaidState] = useState<MermaidState | null>(null);
   const previewCacheRef = useRef<Record<string, MermaidState>>({});
   const previewLoadingRef = useRef<Set<string>>(new Set());
@@ -102,8 +103,16 @@ export const useDiagramStudio = () => {
   }, []);
 
   const setNextBuildDocsScope = useCallback((scope: 'notebook' | 'diagram' | null) => {
+    if (!scope) {
+      nextBuildDocsScopeRef.current = null;
+      return;
+    }
+    if (editorTab === 'build_docs') {
+      setBuildDocsScope(scope);
+      return;
+    }
     nextBuildDocsScopeRef.current = scope;
-  }, []);
+  }, [editorTab, setBuildDocsScope]);
 
   useLayoutEffect(() => {
     const prev = prevEditorTabRef.current;
@@ -482,12 +491,26 @@ export const useDiagramStudio = () => {
     mainDiagramTypes: appState.mainDiagramTypes,
     analyzeLanguage: appState.analyzeLanguage ?? 'auto',
     appLanguage: appState.language ?? 'auto',
-    isNotebookChatEnabled,
+    isNotebookChatMode,
+    isNotebookDataEnabled,
+    promptScope: editorTab === 'build_docs' ? buildDocsScope : null,
     messages: chatMessagesForView,
     diagramIntent,
     resolveActiveMermaidContext,
     getDocsContext: editorTab === 'build_docs' ? getViewerDocsContext : getDocsContext,
   });
+
+  useEffect(() => {
+    if (editorTab !== 'build_docs') {
+      prevBuildDocsScopeRef.current = buildDocsScope;
+      return;
+    }
+    const prevScope = prevBuildDocsScopeRef.current;
+    if (prevScope !== buildDocsScope) {
+      prevBuildDocsScopeRef.current = buildDocsScope;
+      resetPromptPreview();
+    }
+  }, [buildDocsScope, editorTab, resetPromptPreview]);
 
   const { buildDocsIntentText } = useNotebookChat({
     isNotebookChatMode,
@@ -1072,7 +1095,7 @@ export const useDiagramStudio = () => {
         : 'empty',
       source: 'compiled',
     }));
-    if (editorTab === 'markdown_mermaid') {
+    if (isMarkdownLike(revision.mermaid)) {
       const blocks = extractMermaidBlocksFromMarkdown(revision.mermaid);
       const metaBlockIndex = markerMeta && typeof markerMeta.blockIndex === 'number'
         ? markerMeta.blockIndex
@@ -1128,6 +1151,7 @@ export const useDiagramStudio = () => {
     diagramIntent,
     promptPreviewByMode,
     editorTab,
+    buildDocsScope,
     buildDocsEntries,
     buildDocsSelection,
     toggleBuildDocSelection,

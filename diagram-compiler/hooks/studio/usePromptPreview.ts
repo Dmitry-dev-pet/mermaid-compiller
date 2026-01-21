@@ -17,7 +17,9 @@ type UsePromptPreviewArgs = {
   mainDiagramTypes: DiagramType[];
   analyzeLanguage: string;
   appLanguage: string;
-  isNotebookChatEnabled: boolean;
+  isNotebookChatMode: boolean;
+  isNotebookDataEnabled: boolean;
+  promptScope?: 'notebook' | 'diagram' | null;
   messages: Message[];
   diagramIntent: DiagramIntent | null;
   resolveActiveMermaidContext: ResolveActiveMermaidContext;
@@ -37,7 +39,9 @@ export const usePromptPreview = ({
   mainDiagramTypes,
   analyzeLanguage,
   appLanguage,
-  isNotebookChatEnabled,
+  isNotebookChatMode,
+  isNotebookDataEnabled,
+  promptScope = null,
   messages,
   diagramIntent,
   resolveActiveMermaidContext,
@@ -46,6 +50,12 @@ export const usePromptPreview = ({
   const [promptPreviewByMode, setPromptPreviewByMode] = useState<Record<PromptPreviewMode, PromptPreviewTab | null>>(
     DEFAULT_PREVIEW_BY_MODE
   );
+
+  const resolvedPromptScope = (() => {
+    if (promptScope) return promptScope;
+    if (!isNotebookDataEnabled) return null;
+    return isNotebookChatMode ? 'diagram' : 'notebook';
+  })();
 
   const resetPromptPreview = useCallback(() => {
     setPromptPreviewByMode(DEFAULT_PREVIEW_BY_MODE);
@@ -79,6 +89,7 @@ export const usePromptPreview = ({
   }, [analyzeLanguage, appLanguage, resolvePreviewLanguage]);
 
   const getDiagramContextMessage = useCallback((): Message | null => {
+    if (resolvedPromptScope === 'notebook') return null;
     const { code } = resolveActiveMermaidContext();
     if (!code) return null;
 
@@ -91,7 +102,7 @@ ${code}
 \`\`\``,
       timestamp: Date.now(),
     };
-  }, [resolveActiveMermaidContext]);
+  }, [resolveActiveMermaidContext, resolvedPromptScope]);
 
   const buildPromptPreview = useCallback(async (mode: PromptPreviewMode, inputText: string): Promise<LLMRequestPreview> => {
     const trimmed = inputText.trim();
@@ -243,10 +254,12 @@ Fix it.`,
     const language = resolvePreviewLanguage(trimmed, relevantMessages);
     const promptMode = mode === 'build'
       ? 'generate'
-      : (isNotebookChatEnabled ? 'chat_notebook' : 'chat');
-    const allowedNotebookTypes = promptMode === 'chat_notebook' && diagramType === 'auto'
-      ? mainDiagramTypes
-      : null;
+      : resolvedPromptScope === 'notebook'
+        ? 'chat_notebook'
+        : resolvedPromptScope === 'diagram'
+          ? 'chat_diagram'
+          : 'chat';
+    const allowedNotebookTypes = diagramType === 'auto' ? mainDiagramTypes : null;
     const systemPrompt = buildSystemPrompt(promptMode, {
       diagramType,
       allowedDiagramTypes: allowedNotebookTypes,
@@ -313,9 +326,12 @@ Fix it.`,
     diagramType,
     getDocsContext,
     getDiagramContextMessage,
-    isNotebookChatEnabled,
+    isNotebookChatMode,
+    isNotebookDataEnabled,
     mainDiagramTypes,
     messages,
+    promptScope,
+    resolvedPromptScope,
     resolveActiveMermaidContext,
     resolvePreviewAnalyzeLanguage,
     resolvePreviewLanguage,
