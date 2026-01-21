@@ -205,13 +205,12 @@ const Header: React.FC<HeaderProps> = ({
     <PanelHeader
       as="header"
       ref={headerRef}
-      className="fixed top-0 left-0 right-0 grid items-start content-start gap-0 h-24 shrink-0 z-50 transition-colors"
+      className="fixed top-0 left-0 right-0 grid items-center gap-0 h-24 shrink-0 z-50 transition-colors"
       style={{
         gridTemplateColumns: `minmax(260px, ${chatColumnWidthPercent}%) 0.25rem minmax(0, 1fr) auto`,
-        gridTemplateRows: 'auto auto',
       }}
     >
-      <div className="row-start-1 flex items-center gap-4 min-w-0 pr-2">
+      <div className="flex items-center gap-4 min-w-0 pr-2">
         <h1 className="font-bold text-lg tracking-tight text-slate-800 dark:text-slate-100">Diagram Compiler</h1>
         
         {/* AI Control Plane Trigger */}
@@ -480,13 +479,13 @@ const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <div className="row-span-2 h-full w-1 bg-slate-200 dark:bg-slate-800" aria-hidden="true" />
+      <div className="h-full w-1 bg-slate-200 dark:bg-slate-800" aria-hidden="true" />
 
-      <div className="row-start-2 min-w-0">
+      <div className="min-w-0">
         <HeaderNotebookSlot>{notebookTabs}</HeaderNotebookSlot>
       </div>
 
-      <div className="row-start-1 flex items-center gap-4 text-[10px] text-slate-500 dark:text-slate-400 font-medium pl-3 border-l border-slate-200 dark:border-slate-800">
+      <div className="flex items-center gap-4 text-[10px] text-slate-500 dark:text-slate-400 font-medium pl-3 border-l border-slate-200 dark:border-slate-800">
         <div className="relative" ref={themeDropdownRef}>
           <Button
             type="button"
