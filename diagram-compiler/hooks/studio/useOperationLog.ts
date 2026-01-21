@@ -4,14 +4,14 @@ import type { TimeStep } from '../../services/history/types';
 import { generateId } from '../../utils';
 
 export const extractOperationLogsFromSteps = (steps: TimeStep[]): OperationLog[] => {
-  const logs: OperationLog[] = [];
+  const byId = new Map<string, OperationLog>();
   for (const step of steps) {
     const meta = step.meta as Record<string, unknown> | undefined;
     const opLog = meta?.operationLog as OperationLog | undefined;
     if (!opLog || !opLog.id) continue;
-    logs.push(opLog);
+    byId.set(opLog.id, opLog);
   }
-  return logs;
+  return Array.from(byId.values()).sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
 };
 
 export const useOperationLog = () => {
