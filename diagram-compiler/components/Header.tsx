@@ -3,6 +3,7 @@ import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Ey
 import { AIConfig, CliproxyFilters, ConnectionState, OpenRouterFilters, ThemePresetId } from '../types';
 import { APP_THEME_PRESETS } from '../utils/appTheme';
 import { Button } from './ui/Button';
+import PanelHeader from './ui/PanelHeader';
 
 interface HeaderProps {
   aiConfig: AIConfig;
@@ -201,11 +202,11 @@ const Header: React.FC<HeaderProps> = ({
   }, [aiConfig.selectedModelId, connectionState.status, filteredModels, updateSelectedModel]);
 
   return (
-    <header
+    <PanelHeader
+      as="header"
       ref={headerRef}
-      className="fixed top-0 left-0 right-0 grid items-center gap-0 px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-transparent shadow-sm shrink-0 z-50 min-h-12 transition-colors"
+      className="fixed top-0 left-0 right-0 grid items-center gap-0 border-slate-200 dark:border-slate-800 shadow-sm shrink-0 z-50 min-h-12 transition-colors"
       style={{
-        backgroundColor: 'var(--panel-alt-bg, #ffffff)',
         gridTemplateColumns: `minmax(260px, ${chatColumnWidthPercent}%) 0.25rem minmax(0, 1fr) auto`,
       }}
     >
@@ -541,7 +542,7 @@ const Header: React.FC<HeaderProps> = ({
         <span className="cursor-pointer hover:text-slate-800 dark:hover:text-slate-200">Privacy</span>
         <span className="cursor-pointer hover:text-slate-800 dark:hover:text-slate-200">Donate</span>
       </div>
-    </header>
+    </PanelHeader>
   );
 };
 

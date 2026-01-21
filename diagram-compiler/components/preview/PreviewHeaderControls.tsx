@@ -7,6 +7,7 @@ import type { FlowchartLinkStylePresetId } from '../../utils/flowchartLinkStyle'
 import { FLOWCHART_CURVES, FlowchartCurve } from '../../utils/flowchartCurveConfig';
 import { MermaidThemePresetId } from '../../utils/mermaidThemePreset';
 import { CONTROL_BASE, HEADER_CONTROL_BUTTON } from '../../utils/uiControlStyles';
+import PanelHeader from '../ui/PanelHeader';
 
 interface PreviewHeaderControlsProps {
   title: string;
@@ -229,9 +230,8 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
   const canNotebookExcalidrawToggle = !isBuildDocsMode && isMarkdownMode && showNotebookExcalidrawToggle;
 
   return (
-    <div
-      className="relative h-24 px-4 py-2 border-b bg-transparent text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-col gap-2"
-      style={{ borderColor: 'var(--panel-border, #e5e7eb)', backgroundColor: 'var(--panel-alt-bg, #ffffff)' }}
+    <PanelHeader
+      className="relative h-24 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-col gap-2"
     >
       <div className="pointer-events-none absolute right-4 bottom-2 z-30">
         <div className="pointer-events-auto inline-flex rounded-md border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/60 backdrop-blur px-1 py-1 shadow-sm">
@@ -941,7 +941,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </PanelHeader>
   );
 };
 

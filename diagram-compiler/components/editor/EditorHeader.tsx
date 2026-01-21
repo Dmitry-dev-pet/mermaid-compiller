@@ -6,6 +6,7 @@ import type { DiagramMarker } from '../../hooks/core/useHistory';
 import { HEADER_CONTROL_BUTTON, HEADER_CONTROL_ICON_BUTTON, HEADER_CONTROL_SELECT } from '../../utils/uiControlStyles';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../../utils/uiModes';
 import { buildHistoryChipModels, HISTORY_CHIP_INACTIVE_CLASS_BY_MODE } from '../../utils/historyChipUtils';
+import PanelHeader from '../ui/PanelHeader';
 
 interface EditorHeaderProps {
   mermaidState: MermaidState;
@@ -84,9 +85,8 @@ interface EditorHeaderProps {
   }, [diagramMarkers, isBuildDocsTab, onSelectDiagramStep, selectedStepId]);
 
   return (
-    <div
-      className="h-24 px-4 py-2 border-b bg-transparent text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-col gap-2"
-      style={{ borderColor: 'var(--panel-border, #e5e7eb)', backgroundColor: 'var(--panel-alt-bg, #ffffff)' }}
+    <PanelHeader
+      className="h-24 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-col gap-2"
     >
       <div className="flex items-center justify-between gap-3 min-w-0 normal-case tracking-normal">
         <div className="flex items-center gap-3 min-w-0">
@@ -229,7 +229,7 @@ interface EditorHeaderProps {
           </span>
         </div>
       </div>
-    </div>
+    </PanelHeader>
   );
 };
 
