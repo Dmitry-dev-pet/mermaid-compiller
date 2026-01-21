@@ -205,7 +205,7 @@ const Header: React.FC<HeaderProps> = ({
     <PanelHeader
       as="header"
       ref={headerRef}
-      className="fixed top-0 left-0 right-0 grid items-center gap-0 h-24 shrink-0 z-50 transition-colors"
+      className="fixed top-0 left-0 right-0 grid items-center gap-0 h-12 shrink-0 z-50 transition-colors"
       style={{
         gridTemplateColumns: `minmax(260px, ${chatColumnWidthPercent}%) 0.25rem minmax(0, 1fr) auto`,
       }}
