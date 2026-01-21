@@ -82,9 +82,12 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
 
   const handleHistoryChipClick = useCallback(
     (marker: DiagramMarker) => {
+      if (activeTab === 'build_docs') {
+        onBuildDocsScopeChange?.('diagram');
+      }
       void Promise.resolve(onSelectDiagramStep?.(marker)).catch(() => {});
     },
-    [onSelectDiagramStep]
+    [activeTab, onBuildDocsScopeChange, onSelectDiagramStep]
   );
 
   return (

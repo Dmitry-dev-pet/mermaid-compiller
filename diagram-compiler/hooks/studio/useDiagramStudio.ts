@@ -1112,6 +1112,9 @@ export const useDiagramStudio = () => {
             ? firstNonEmptyIndex
             : 0;
       setMarkdownMermaidActiveIndex(nextIndex);
+      if (editorTab === 'build_docs') {
+        setBuildDocsScope('diagram');
+      }
     }
   };
 
