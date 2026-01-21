@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { OperationEvent, OperationLog, OperationPhase, OperationLevel } from '../../types';
 import type { TimeStep } from '../../services/history/types';
 import { generateId } from '../../utils';
@@ -15,7 +15,15 @@ export const extractOperationLogsFromSteps = (steps: TimeStep[]): OperationLog[]
 };
 
 export const useOperationLog = () => {
-  const [operationLogs, setOperationLogs] = useState<OperationLog[]>([]);
+  const [operationLogs, setOperationLogsState] = useState<OperationLog[]>([]);
+  const operationLogsRef = useRef<OperationLog[]>([]);
+
+  const setOperationLogs = useCallback((next: OperationLog[] | ((prev: OperationLog[]) => OperationLog[])) => {
+    const prev = operationLogsRef.current;
+    const resolved = typeof next === 'function' ? next(prev) : next;
+    operationLogsRef.current = resolved;
+    setOperationLogsState(resolved);
+  }, []);
 
   const startOperation = useCallback((title: string, contextId?: string) => {
     const id = generateId();
@@ -38,7 +46,7 @@ export const useOperationLog = () => {
     };
     setOperationLogs((prev) => [...prev, log]);
     return id;
-  }, []);
+  }, [setOperationLogs]);
 
   const addOperationEvent = useCallback(
     (opId: string, args: { phase: OperationPhase; level: OperationLevel; title: string; detail?: string; tooltip?: string; tooltipMessages?: string; tooltipDocs?: string; kind?: OperationEvent['kind']; contextScope?: OperationEvent['contextScope']; blockIndex?: number; attempt?: OperationEvent['attempt']; metrics?: OperationEvent['metrics']; error?: OperationEvent['error'] }) => {
@@ -72,7 +80,7 @@ export const useOperationLog = () => {
         })
       );
     },
-    []
+    [setOperationLogs]
   );
 
   const finishOperation = useCallback((opId: string, status: OperationLog['status']) => {
@@ -98,11 +106,11 @@ export const useOperationLog = () => {
           : log
       )
     );
-  }, []);
+  }, [setOperationLogs]);
 
   const getOperationLog = useCallback(
-    (opId: string) => operationLogs.find((log) => log.id === opId) ?? null,
-    [operationLogs]
+    (opId: string) => operationLogsRef.current.find((log) => log.id === opId) ?? null,
+    []
   );
 
   const hydrateOperationLogs = useCallback((steps: TimeStep[]) => {
@@ -113,7 +121,7 @@ export const useOperationLog = () => {
       const next = logs.filter((log) => !existingIds.has(log.id));
       return next.length ? [...prev, ...next] : prev;
     });
-  }, []);
+  }, [setOperationLogs]);
 
   const activeOperationLog = useMemo(() => {
     for (let i = operationLogs.length - 1; i >= 0; i -= 1) {
