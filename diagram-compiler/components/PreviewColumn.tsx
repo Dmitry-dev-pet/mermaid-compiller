@@ -1,55 +1,36 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DocsMode, EditorTab, MermaidState } from '../types';
+import type { BuildDocsSystemPrompts, DocsMode, EditorTab, MermaidState, SystemPromptRawByMode } from '../types';
 import { useDiagramExport } from '../hooks/studio/useDiagramExport';
-import { MermaidThemeName } from '../utils/inlineThemeCommand';
-import { extractInlineDirectionCommand, MermaidDirection } from '../utils/inlineDirectionCommand';
-import { extractInlineLookCommand, MermaidLook } from '../utils/inlineLookCommand';
-import {
-  extractFlowchartEdgeStyle,
-  FlowchartEdgeStyle,
-  FlowchartEdgeStyleUpdate,
-} from '../utils/flowchartArrowStyle';
-import { extractFlowchartLinkStylePreset, FlowchartLinkStylePresetId } from '../utils/flowchartLinkStyle';
-import { extractFlowchartCurve, FlowchartCurve } from '../utils/flowchartCurveConfig';
+import type { MermaidDirection } from '../utils/inlineDirectionCommand';
+import type { MermaidLook } from '../utils/inlineLookCommand';
+import type { FlowchartEdgeStyleUpdate } from '../utils/flowchartArrowStyle';
+import type { FlowchartLinkStylePresetId } from '../utils/flowchartLinkStyle';
+import type { FlowchartCurve } from '../utils/flowchartCurveConfig';
 import { extractFrontmatterThemeVariables } from '../utils/mermaidFrontmatterThemeVariables';
 import {
-  extractMermaidThemePreset,
   getMermaidThemePresetPanelBackground,
-  MermaidThemePresetId,
   MERMAID_THEME_PRESETS,
 } from '../utils/mermaidThemePreset';
+import type { MermaidThemePresetId } from '../utils/mermaidThemePreset';
 import { extractMermaidSvgBackgroundColor } from '../utils/mermaidSvgBackground';
-import {
-  detectMermaidDiagramType,
-  isMarkdownLike,
-  MermaidMarkdownBlock,
-} from '../services/mermaidService';
+import { detectMermaidDiagramType, isMarkdownLike } from '../services/mermaidService';
+import type { MermaidMarkdownBlock } from '../services/mermaidService';
 import { initializeMermaid } from '../services/mermaidService';
-import { ScrollSyncMeasure, ScrollSyncPayload, useScrollSync } from '../hooks/studio/useScrollSync';
+import type { ScrollSyncMeasure, ScrollSyncPayload } from '../hooks/studio/useScrollSync';
 import { useMarkdownMermaidBlockState } from '../hooks/markdown/useMarkdownMermaidBlockState';
 import { useMarkdownPreview } from '../hooks/preview/useMarkdownPreview';
-import { useMarkdownMermaidOffsets } from '../hooks/preview/useMarkdownMermaidOffsets';
+import { usePreviewScrollSync } from '../hooks/preview/usePreviewScrollSync';
+import { useMarkdownPreviewMeta } from '../hooks/preview/useMarkdownPreviewMeta';
 import { useMermaidSvgRender } from '../hooks/preview/useMermaidSvgRender';
 import { useSvgPanZoom } from '../hooks/preview/useSvgPanZoom';
 import { useMermaidCodeBlockRenderer } from '../hooks/preview/useMermaidCodeBlockRenderer';
 import { usePreviewWhiteboard } from '../hooks/preview/usePreviewWhiteboard';
-import {
-  DIAGRAM_TYPE_SUPPORTS_INLINE_DIRECTION,
-  DIAGRAM_TYPE_SUPPORTS_INLINE_LOOK,
-  getInlineDirectionOptions,
-} from '../utils/diagramTypeMeta';
-import { getSystemPromptModeFromPath, isSystemPromptPath } from '../utils/systemPrompts';
+import { useBuildDocsPreview } from '../hooks/preview/useBuildDocsPreview';
 import { augmentMermaidErrorForAutoFix } from '../utils/mermaidAutoFixHints';
 import PreviewHeaderControls from './preview/PreviewHeaderControls';
 import PreviewBody from './preview/PreviewBody';
 import DiagramWhiteboard from './preview/DiagramWhiteboard';
 import './markdown-preview.css';
-import {
-  PROMPTS_VIRTUAL_INTENT_PATH,
-  PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH,
-  PROMPTS_VIRTUAL_SYSTEM_PATH,
-  getPromptsVirtualLabel,
-} from '../utils/promptsVirtualPaths';
 
 interface PreviewColumnProps {
   mermaidState: MermaidState;
@@ -69,8 +50,8 @@ interface PreviewColumnProps {
   onSetFlowchartCurve: (curve: FlowchartCurve | null) => void;
   activeEditorTab: EditorTab;
   docsMode: DocsMode;
-  buildDocsSystemPrompts: Record<'chat' | 'build' | 'plan' | 'analyze' | 'fix', { raw: string; redacted: string }>;
-  systemPromptRawByMode: Record<DocsMode, boolean>;
+  buildDocsSystemPrompts: BuildDocsSystemPrompts;
+  systemPromptRawByMode: SystemPromptRawByMode;
   buildDocsRequestPreviewText: string;
   buildDocsRequestPreviewRawText: string;
   buildDocsIntentPreviewText: string;
@@ -137,7 +118,6 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   const [previewMode, setPreviewMode] = useState<'preview' | 'whiteboard'>('preview');
   const pendingPreviewZoomRef = useRef<number | null>(null);
   const bindFunctionsRef = useRef<((element: Element) => void) | null>(null);
-  const { refreshOffsets, resolveBlockIndex, getOffset } = useMarkdownMermaidOffsets();
 
   const [isMarkdownMode, setIsMarkdownMode] = useState<boolean>(false);
   const isBuildDocsMode = activeEditorTab === 'build_docs';
@@ -154,101 +134,30 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   });
 
   const codeForRender = isMarkdownMermaidMode ? activeMarkdownBlock?.code ?? '' : mermaidState.code;
-  const activeDiagramType = useMemo(() => {
-    if (isMarkdownMermaidMode) {
-      return activeMarkdownBlock?.diagramType ?? (codeForRender ? detectMermaidDiagramType(codeForRender) : null);
-    }
-    return codeForRender ? detectMermaidDiagramType(codeForRender) : null;
-  }, [activeMarkdownBlock?.diagramType, codeForRender, isMarkdownMermaidMode]);
-  const supportsInlineTheme = Boolean(activeDiagramType);
-  const supportsInlineDirection = Boolean(
-    activeDiagramType && DIAGRAM_TYPE_SUPPORTS_INLINE_DIRECTION[activeDiagramType]
-  );
-  const supportsInlineLook = Boolean(activeDiagramType && DIAGRAM_TYPE_SUPPORTS_INLINE_LOOK[activeDiagramType]);
-  const directionOptions = useMemo<MermaidDirection[]>(
-    () => getInlineDirectionOptions(activeDiagramType),
-    [activeDiagramType]
-  );
-  const flowchartBlocksCount = useMemo(() => {
-    if (!isMarkdownMode) return 0;
-    return markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart').length;
-  }, [isMarkdownMode, markdownMermaidBlocks]);
+  const {
+    activeDiagramType,
+    supportsInlineTheme,
+    supportsInlineDirection,
+    supportsInlineLook,
+    directionOptions,
+    flowchartBlocksCount,
+    selectedFlowchartEdgeStyle,
+    selectedFlowchartLinkStylePreset,
+    selectedFlowchartCurve,
+    isFlowchartCurveMixed,
+    selectedThemePreset,
+    isThemePresetMixed,
+    selectedInlineDirection,
+    selectedInlineLook,
+  } = useMarkdownPreviewMeta({
+    codeForRender,
+    isMarkdownMode,
+    isMarkdownMermaidMode,
+    markdownMermaidBlocks,
+    activeMarkdownBlock: activeMarkdownBlock ?? null,
+  });
 
-
-  const selectedFlowchartEdgeStyle = useMemo<FlowchartEdgeStyle | null>(() => {
-    if (isMarkdownMermaidMode) return extractFlowchartEdgeStyle(codeForRender);
-    if (!isMarkdownMode) return extractFlowchartEdgeStyle(codeForRender);
-
-    const flowchartBlocks = markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart');
-    if (!flowchartBlocks.length) return null;
-    const extracted = flowchartBlocks
-      .map((block) => extractFlowchartEdgeStyle(block.code))
-      .filter(Boolean) as FlowchartEdgeStyle[];
-    if (!extracted.length) return null;
-
-    const pick = <K extends keyof FlowchartEdgeStyle>(key: K): FlowchartEdgeStyle[K] => {
-      const values = new Set(extracted.map((value) => value[key]).filter((value) => value !== null));
-      if (!values.size) return null;
-      if (values.size === 1) return Array.from(values)[0] as FlowchartEdgeStyle[K];
-      return null;
-    };
-
-    return {
-      lineStyle: pick('lineStyle'),
-      endCap: pick('endCap'),
-      direction: pick('direction'),
-      length: pick('length'),
-    };
-  }, [codeForRender, isMarkdownMermaidMode, isMarkdownMode, markdownMermaidBlocks]);
-  const selectedFlowchartLinkStylePreset = useMemo<FlowchartLinkStylePresetId | null>(() => {
-    if (isMarkdownMermaidMode) return extractFlowchartLinkStylePreset(codeForRender);
-    if (!isMarkdownMode) return extractFlowchartLinkStylePreset(codeForRender);
-
-    const flowchartBlocks = markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart');
-    if (!flowchartBlocks.length) return null;
-    const presets = new Set(
-      flowchartBlocks
-        .map((block) => extractFlowchartLinkStylePreset(block.code))
-        .filter((value): value is FlowchartLinkStylePresetId => Boolean(value))
-    );
-    return presets.size === 1 ? (Array.from(presets)[0] ?? null) : null;
-  }, [codeForRender, isMarkdownMermaidMode, isMarkdownMode, markdownMermaidBlocks]);
-
-  const selectedFlowchartCurve = useMemo<FlowchartCurve | null>(() => {
-    if (isMarkdownMermaidMode) return extractFlowchartCurve(codeForRender);
-    if (!isMarkdownMode) return extractFlowchartCurve(codeForRender);
-
-    const flowchartBlocks = markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart');
-    if (!flowchartBlocks.length) return null;
-    const curves = new Set(
-      flowchartBlocks
-        .map((block) => extractFlowchartCurve(block.code))
-        .filter((value): value is FlowchartCurve => Boolean(value))
-    );
-    return curves.size === 1 ? (Array.from(curves)[0] ?? null) : null;
-  }, [codeForRender, isMarkdownMermaidMode, isMarkdownMode, markdownMermaidBlocks]);
-
-  const isFlowchartCurveMixed = useMemo(() => {
-    if (isMarkdownMermaidMode) return false;
-    if (!isMarkdownMode) return false;
-    const flowchartBlocks = markdownMermaidBlocks.filter((b) => b.diagramType === 'flowchart');
-    if (!flowchartBlocks.length) return false;
-    const curves = new Set(flowchartBlocks.map((block) => extractFlowchartCurve(block.code) ?? null));
-    return curves.size > 1;
-  }, [isMarkdownMermaidMode, isMarkdownMode, markdownMermaidBlocks]);
   const hasNotebookTabs = (isMarkdownMode || isMarkdownMermaidMode) && markdownMermaidBlocks.length > 0;
-  const canSyncScroll = isScrollSyncEnabled && isMarkdownMode;
-  const handleHoverSync = useCallback((index: number) => {
-    if (!canSyncScroll) return;
-    const container = markdownMountRef.current;
-    if (!container) return;
-    onScrollSync({
-      scrollTop: container.scrollTop,
-      scrollHeight: container.scrollHeight,
-      clientHeight: container.clientHeight,
-      blockIndex: index,
-    });
-  }, [canSyncScroll, onScrollSync]);
   const setMarkdownIndexFromPreview = useCallback(
     (index: number) => {
       onMarkdownMermaidActiveIndexChange(index);
@@ -256,14 +165,12 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     },
     [onActiveEditorTabChange, onMarkdownMermaidActiveIndexChange]
   );
-  const { handleScrollSync: handleMarkdownScroll } = useScrollSync({
-    enabled: canSyncScroll,
-    source: 'preview',
-    scrollRef: markdownMountRef,
+  const { handleHoverSync, handleMarkdownScroll, refreshPreviewOffsets } = usePreviewScrollSync({
+    isScrollSyncEnabled,
+    isMarkdownMode,
+    markdownMountRef,
     scrollSyncPayload,
     onScrollSync,
-    resolveBlockIndex,
-    getBlockOffset: (index) => getOffset(index),
   });
   const { markdownHtml, renderMarkdown, markdownRenderer } = useMarkdownPreview(
     codeForRender,
@@ -291,11 +198,6 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     wrapper.appendChild(body);
     return wrapper;
   }, []);
-  const refreshPreviewOffsets = useCallback(() => {
-    const container = markdownMountRef.current;
-    if (!container) return;
-    refreshOffsets(container);
-  }, [refreshOffsets]);
 
   const { svgMarkup, renderError } = useMermaidSvgRender({
     code: codeForRender,
@@ -329,85 +231,20 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     appThemePresetId,
   });
 
-  const resolveSystemPromptForPath = (path: string) => {
-    const mode = getSystemPromptModeFromPath(path);
-    if (!mode) return '';
-    const useRaw = systemPromptRawByMode[mode] ?? false;
-    const prompt = useRaw ? buildDocsSystemPrompts[mode]?.raw : buildDocsSystemPrompts[mode]?.redacted;
-    return prompt || buildDocsSystemPrompts[mode]?.raw || 'No system prompt available.';
-  };
-  const activeBuildDoc = (() => {
-    if (buildDocsActivePath === PROMPTS_VIRTUAL_SYSTEM_PATH) {
-      const useRaw = systemPromptRawByMode[docsMode] ?? false;
-      const preview = useRaw ? buildDocsRequestPreviewRawText : buildDocsRequestPreviewText;
-      const fallback = useRaw ? buildDocsRequestPreviewText : buildDocsRequestPreviewRawText;
-      const text = preview?.trim() ? preview : (fallback?.trim() ? fallback : 'No preview available yet.');
-      return { path: buildDocsActivePath, text };
-    }
+  const { activeBuildDoc, buildDocsHtml } = useBuildDocsPreview({
+    isBuildDocsMode,
+    buildDocsActivePath,
+    buildDocsEntries,
+    buildDocsSystemPrompts,
+    systemPromptRawByMode,
+    docsMode,
+    buildDocsRequestPreviewText,
+    buildDocsRequestPreviewRawText,
+    buildDocsIntentPreviewText,
+    buildDocsNotebookPlanText,
+    markdownRenderer,
+  });
 
-    if (buildDocsActivePath === PROMPTS_VIRTUAL_INTENT_PATH) {
-      const text = buildDocsIntentPreviewText?.trim() ? buildDocsIntentPreviewText : 'Intent is not available yet.';
-      return { path: buildDocsActivePath, text };
-    }
-
-    if (buildDocsActivePath === PROMPTS_VIRTUAL_NOTEBOOK_PLAN_PATH) {
-      const text = buildDocsNotebookPlanText?.trim() ? buildDocsNotebookPlanText : 'Notebook plan is not available yet.';
-      return { path: buildDocsActivePath, text };
-    }
-
-    if (isSystemPromptPath(buildDocsActivePath)) {
-      return { path: buildDocsActivePath, text: resolveSystemPromptForPath(buildDocsActivePath) };
-    }
-
-    return buildDocsEntries.find((entry) => entry.path === buildDocsActivePath) ?? buildDocsEntries[0];
-  })();
-  const buildDocsHtml = useMemo(() => {
-    if (!isBuildDocsMode) return '';
-    const content = activeBuildDoc?.text ?? '';
-    return content.trim() ? markdownRenderer.render(content) : '';
-  }, [activeBuildDoc?.text, isBuildDocsMode, markdownRenderer]);
-
-
-  const selectedThemePreset = useMemo<MermaidThemePresetId | null>(() => {
-    if (!isMarkdownMode) {
-      const vars = extractFrontmatterThemeVariables(codeForRender);
-      return extractMermaidThemePreset(codeForRender, { themeVariables: vars });
-    }
-    if (!markdownMermaidBlocks.length) return null;
-    const values = new Set(
-      markdownMermaidBlocks.map((block) => {
-        const vars = extractFrontmatterThemeVariables(block.code);
-        return extractMermaidThemePreset(block.code, { themeVariables: vars });
-      })
-    );
-    return values.size === 1 ? (Array.from(values)[0] ?? null) : null;
-  }, [codeForRender, isMarkdownMode, markdownMermaidBlocks]);
-
-  const isThemePresetMixed = useMemo(() => {
-    if (!isMarkdownMode) return false;
-    if (!markdownMermaidBlocks.length) return false;
-    const values = new Set(
-      markdownMermaidBlocks.map((block) => {
-        const vars = extractFrontmatterThemeVariables(block.code);
-        return extractMermaidThemePreset(block.code, { themeVariables: vars });
-      })
-    );
-    return values.size > 1;
-  }, [isMarkdownMode, markdownMermaidBlocks]);
-
-  const selectedInlineDirection = useMemo(() => {
-    return extractInlineDirectionCommand(codeForRender).direction ?? '';
-  }, [codeForRender]);
-
-  const selectedInlineLook = useMemo(() => {
-    if (!isMarkdownMode) {
-      return extractInlineLookCommand(codeForRender).look ?? '';
-    }
-    if (!markdownMermaidBlocks.length) return '';
-    const looks = markdownMermaidBlocks.map((block) => extractInlineLookCommand(block.code).look ?? '');
-    const first = looks[0] ?? '';
-    return looks.every((value) => value === first) ? first : '';
-  }, [codeForRender, isMarkdownMode, markdownMermaidBlocks]);
 
   useEffect(() => {
     if (isBuildDocsMode) return;
@@ -569,17 +406,9 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
     return { backgroundColor: previewBackgroundColor };
   }, [isMarkdownMode, isNotebookExcalidrawMode, previewBackgroundColor, previewMode]);
 
-  const previewHeaderTitle = useMemo(() => {
-    if (!isBuildDocsMode) return 'Preview';
-    const path = activeBuildDoc?.path || buildDocsActivePath || '';
-    const fileLabel = getPromptsVirtualLabel(path) ?? (path.split('/').pop() || path || 'Docs');
-    return `Prompts: ${fileLabel}`;
-  }, [activeBuildDoc?.path, buildDocsActivePath, isBuildDocsMode]);
-
   return (
     <div className="h-full flex flex-col bg-transparent" style={previewContainerStyle}>
       <PreviewHeaderControls
-        title={previewHeaderTitle}
         isBuildDocsMode={isBuildDocsMode}
         isMarkdownMode={isMarkdownMode}
         showNotebookExcalidrawToggle={false}

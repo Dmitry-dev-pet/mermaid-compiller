@@ -167,6 +167,9 @@ export type NotebookPlan = {
 
 export type DocsMode = 'chat' | 'build' | 'analyze' | 'fix' | 'plan';
 
+export type SystemPromptRawByMode = Record<DocsMode, boolean>;
+export type BuildDocsSystemPrompts = Record<DocsMode, { raw: string; redacted: string }>;
+
 export type PromptPreviewMode = 'chat' | 'build' | 'analyze' | 'fix' | 'plan';
 export type EditorTab =
   | 'code'

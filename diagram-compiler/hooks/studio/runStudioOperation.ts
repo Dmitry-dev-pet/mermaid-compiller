@@ -47,10 +47,12 @@ export const runStudioOperation = async <T>(
   })();
   const opId = ctx.startOperation(args.title, opContextId, operationKind);
 
+  const defaultDiagramType = args.stepType === 'build' ? ctx.appState.diagramType : undefined;
   const logEvent: StudioOperationHelpers['logEvent'] = (eventArgs) => {
     ctx.addOperationEvent(opId, {
       ...eventArgs,
       blockIndex: typeof notebookBlockIndex === 'number' ? notebookBlockIndex : eventArgs.blockIndex,
+      diagramType: eventArgs.diagramType ?? defaultDiagramType,
     });
   };
 

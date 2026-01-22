@@ -5,6 +5,7 @@ import { resolveNotebookTypes } from './operationLogBlockDetailUtils';
 import { stripDiagramTypeFromRows } from './operationLogContextRowUtils';
 import { buildViewRows } from './operationLogRowViewUtils';
 import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
+import { resolveDiagramTypeShortLabelFromText } from './operationLogTextUtils';
 import {
   buildSummary,
   formatAttemptIndicator,
@@ -39,8 +40,11 @@ export const buildOperationLogViewModel = (
   const summaryLabel = isRunning ? labels.active : labels.done;
   const summaryLine = !isRunning && showSummaryLine ? buildSummary(operationLog) : null;
   const lastLlmStartAt = resolveLastLlmStartAt(operationLog);
-  const resolveDiagramTypeLabel = (event: OperationEvent) =>
-    event.diagramType ? getDiagramTypeShortLabel(event.diagramType) : undefined;
+  const resolveDiagramTypeLabel = (event: OperationEvent) => {
+    if (event.diagramType) return getDiagramTypeShortLabel(event.diagramType);
+    if (event.detail) return resolveDiagramTypeShortLabelFromText(event.detail) ?? undefined;
+    return undefined;
+  };
 
   const statusByBlock = new Map<number, 'ok' | 'err'>();
   const errorEventsByBlock = new Map<number, Array<{ id: string; text: string }>>();

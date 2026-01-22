@@ -1,5 +1,6 @@
 import type { LogRow } from './operationLogViewModelTypes';
 import {
+  resolveDiagramTypeShortLabelFromText,
   stripDiagramTypeFromText,
   stripInnerBlockLabelFromContextText,
 } from './operationLogTextUtils';
@@ -15,7 +16,10 @@ export const isContextRow = (row: LogRow) => {
 export const stripDiagramTypeFromRows = (rows: LogRow[], isRunning: boolean) => {
   for (const row of rows) {
     const sourceText = row.contentText ?? row.text;
-    const typeLabel = row.diagramTypeLabel ?? null;
+    const inferredLabel = row.diagramTypeLabel ?? resolveDiagramTypeShortLabelFromText(sourceText) ?? null;
+    if (!row.diagramTypeLabel && inferredLabel) {
+      row.diagramTypeLabel = inferredLabel;
+    }
     const strippedContent = stripInnerBlockLabelFromContextText(
       row.diagramType
         ? stripDiagramTypeFromText(sourceText, row.diagramType)
@@ -23,16 +27,12 @@ export const stripDiagramTypeFromRows = (rows: LogRow[], isRunning: boolean) => 
     );
     row.contentText = strippedContent;
     row.text = row.labelText ? `${row.labelText} — ${strippedContent}` : strippedContent;
-    if (typeLabel) {
-      row.diagramTypeLabel = typeLabel;
-    }
-
-    if (typeLabel && isContextRow(row)) {
+    if (row.diagramTypeLabel && isContextRow(row)) {
       const isCountdown = typeof row.timeLabel === 'string' && /^\d+:\d\d$/.test(row.timeLabel);
       if (!row.timeLabel || (!isCountdown && row.timeLabel.endsWith('s'))) {
-        row.timeLabel = typeLabel;
+        row.timeLabel = row.diagramTypeLabel;
       }
-      if (!row.timeLabel) row.timeLabel = typeLabel;
+      if (!row.timeLabel) row.timeLabel = row.diagramTypeLabel;
     }
   }
 };

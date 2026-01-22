@@ -1,12 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, type RefObject } from 'react';
 import mermaid from 'mermaid';
 import { MERMAID_CODE_BLOCK_SELECTOR } from '../../utils/markdownMermaid';
+import { hashString } from '../../utils/hashString';
 import { applyInlineMermaidDirectives, validateMermaidDiagramCode } from '../../services/mermaidService';
 
 type MermaidBlockRendererMode = 'interactive' | 'static';
 
 type MermaidBlockRendererArgs = {
-  mountRef: React.RefObject<HTMLElement>;
+  mountRef: RefObject<HTMLElement>;
   html: string;
   enabled: boolean;
   idPrefix: string;
@@ -56,7 +57,7 @@ export const useMermaidCodeBlockRenderer = ({
           const block = mermaidBlocks[i];
           const code = block.textContent ?? '';
           if (!code.trim()) continue;
-          const id = `${idPrefix}-${Date.now()}-${i}`;
+          const id = `${idPrefix}-${hashString(code)}-${i}`;
           const validation = await validateMermaidDiagramCode(code, { logError: false });
           if (validation.isValid === false) {
             const pre = block.parentElement;

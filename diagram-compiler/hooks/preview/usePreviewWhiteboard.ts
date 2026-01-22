@@ -4,6 +4,7 @@ import type { DiagramType } from '../../types';
 import type { MermaidThemePresetId } from '../../utils/mermaidThemePreset';
 import type { MermaidMarkdownBlock } from '../../services/mermaidService';
 import { buildNotebookExcalidrawScene } from '../../services/excalidraw/notebookRibbonBuilder';
+import { hashString } from '../../utils/hashString';
 
 const EXCALIDRAW_THEME_STORAGE_KEY = 'mlg.excalidrawThemeByDiagramKey.v1';
 const EXCALIDRAW_CANVAS_BG_STORAGE_KEY = 'mlg.excalidrawCanvasBackgroundByDiagramKey.v1';
@@ -21,15 +22,6 @@ const readExcalidrawThemeFromSceneJson = (sceneJson: string | null | undefined):
   } catch {
     return null;
   }
-};
-
-const hashString = (s: string): number => {
-  // djb2
-  let hash = 5381;
-  for (let i = 0; i < s.length; i += 1) {
-    hash = (hash << 5) + hash + s.charCodeAt(i);
-  }
-  return hash >>> 0;
 };
 
 type UsePreviewWhiteboardArgs = {

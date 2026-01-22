@@ -23,6 +23,17 @@ describe('operationLogTextUtils', () => {
     expect(resolveDiagramTypeShortLabelFromText(input)).toBe('FC');
   });
 
+  test('extracts short labels for common types', () => {
+    const cases = [
+      { input: '1/2 - sequence - Handshake', expected: 'SD' },
+      { input: '1/2 - er - Model', expected: 'ER' },
+      { input: '1/2 - architecture - Services', expected: 'AR' },
+    ];
+    for (const item of cases) {
+      expect(resolveDiagramTypeShortLabelFromText(item.input)).toBe(item.expected);
+    }
+  });
+
   test('extracts and strips type when text starts with it', () => {
     const input = 'flowchart - Хронология службы ✅';
     expect(resolveDiagramTypeShortLabelFromText(input)).toBe('FC');
