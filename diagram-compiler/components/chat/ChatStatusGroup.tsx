@@ -1,46 +1,63 @@
 import React from 'react';
 import { Button } from '../ui/Button';
 import { ArrowUpRight } from 'lucide-react';
-import type { Message } from '../../types';
+import type { Message, OperationLog } from '../../types';
 import { getAttemptIndicator, parseNotebookBuildMessage } from './chatMessageUtils';
 
 type Props = {
   messages: Message[];
+  operationLog?: OperationLog | null;
   isProcessing: boolean;
   isLatestGroup: boolean;
   onOpenNotebookBlock?: (index: number) => void;
 };
 
-const summarizeStatusGroup = (group: Message[]) => {
+const summarizeStatusGroup = (operationLog?: OperationLog | null) => {
+  if (!operationLog) return null;
   let ok = 0;
   let failed = 0;
-  let blocks = 0;
-  let attemptsUsed = 0;
-  let attemptsMax = 0;
-  let autoFixTotal = 0;
+  const blockIds = new Set<number>();
+  const statusByBlock = new Map<number, 'ok' | 'err'>();
+  const attemptsByBlock = new Map<number, { current: number; max: number }>();
+  const autoFixByBlock = new Map<number, number>();
   const errors: string[] = [];
-  for (const msg of group) {
-    const text = msg.content.replace(/^\[notebook-block:\d+\]\s*/i, '').toLowerCase();
-    if (text.includes('сборка: блок') || text.includes('notebook block')) blocks += 1;
-    if (text.includes('— готов') || text.includes('— готов.')) ok += 1;
-    if (text.includes('— невалиден') || text.includes('failed') || text.includes('error')) failed += 1;
-    const attemptMatch = text.match(/попытки:\s*(\d+)\s*\/\s*(\d+)/i);
-    if (attemptMatch) {
-      attemptsUsed += Number(attemptMatch[1]);
-      attemptsMax += Number(attemptMatch[2]);
+
+  for (const event of operationLog.events) {
+    if (typeof event.blockIndex === 'number') {
+      blockIds.add(event.blockIndex);
     }
-    const autoFixMatch = text.match(/auto-fix:\s*(\d+)/i);
-    if (autoFixMatch) {
-      autoFixTotal += Number(autoFixMatch[1]);
+    if (event.title === 'Block validation' && typeof event.blockIndex === 'number') {
+      statusByBlock.set(event.blockIndex, event.detail === 'valid' ? 'ok' : 'err');
+      if (event.metrics?.autoFix) {
+        autoFixByBlock.set(event.blockIndex, event.metrics.autoFix);
+      }
     }
-    const errorMatch = text.match(/последняя ошибка:\s*(.+)$/i);
-    if (errorMatch?.[1]) {
-      errors.push(errorMatch[1].trim());
+    if ((event.level === 'warn' || event.level === 'error') && typeof event.blockIndex === 'number') {
+      statusByBlock.set(event.blockIndex, 'err');
+      const errorText = event.error?.message ?? event.detail;
+      if (errorText) errors.push(errorText);
+    }
+    if (event.attempt && typeof event.blockIndex === 'number') {
+      attemptsByBlock.set(event.blockIndex, event.attempt);
     }
   }
-  if (ok === 0 && failed === 0 && blocks === 0) return null;
+
+  for (const status of statusByBlock.values()) {
+    if (status === 'ok') ok += 1;
+    if (status === 'err') failed += 1;
+  }
+
+  const blocks = blockIds.size || ok + failed;
+  if (blocks === 0) return null;
+
+  const attemptsUsed = Array.from(attemptsByBlock.values())
+    .reduce((sum, attempt) => sum + attempt.current, 0);
+  const attemptsMax = Array.from(attemptsByBlock.values())
+    .reduce((sum, attempt) => sum + attempt.max, 0);
+  const autoFixTotal = Array.from(autoFixByBlock.values())
+    .reduce((sum, value) => sum + value, 0);
   const parts = [
-    `Итог: блоков ${blocks || ok + failed}, успешно ${ok}${failed ? `, ошибок ${failed}` : ''}`,
+    `Итог: блоков ${blocks}, успешно ${ok}${failed ? `, ошибок ${failed}` : ''}`,
   ];
   if (attemptsUsed && attemptsMax) {
     parts.push(`попытки ${attemptsUsed}/${attemptsMax}`);
@@ -55,9 +72,9 @@ const summarizeStatusGroup = (group: Message[]) => {
   return parts.join(' • ');
 };
 
-const ChatStatusGroup: React.FC<Props> = ({ messages, isProcessing, isLatestGroup, onOpenNotebookBlock }) => {
+const ChatStatusGroup: React.FC<Props> = ({ messages, operationLog, isProcessing, isLatestGroup, onOpenNotebookBlock }) => {
   const summaryLabel = isProcessing && isLatestGroup ? 'Working' : 'Finished working';
-  const summaryLine = !isProcessing ? summarizeStatusGroup(messages) : null;
+  const summaryLine = !isProcessing ? summarizeStatusGroup(operationLog) : null;
 
   return (
     <div className="text-[11px] text-slate-500 dark:text-slate-400">

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { OperationEvent, OperationLog, OperationPhase, OperationLevel } from '../../types';
+import type { OperationEvent, OperationKind, OperationLog, OperationPhase, OperationLevel } from '../../types';
 import type { TimeStep } from '../../services/history/types';
 import { generateId } from '../../utils';
 
@@ -25,11 +25,12 @@ export const useOperationLog = () => {
     setOperationLogsState(resolved);
   }, []);
 
-  const startOperation = useCallback((title: string, contextId?: string) => {
+  const startOperation = useCallback((title: string, contextId?: string, kind?: OperationKind) => {
     const id = generateId();
     const log: OperationLog = {
       id,
       contextId,
+      kind,
       status: 'running',
       startedAt: Date.now(),
       events: [

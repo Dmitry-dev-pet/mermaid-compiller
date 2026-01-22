@@ -99,6 +99,7 @@ export type OperationEvent = {
   level: OperationLevel;
   title: string;
   detail?: string;
+  diagramType?: DiagramType;
   tooltip?: string;
   tooltipMessages?: string;
   tooltipDocs?: string;
@@ -117,9 +118,12 @@ export type OperationEvent = {
   error?: { code: string; message: string };
 };
 
+export type OperationKind = 'chat' | 'build' | 'analyze' | 'fix' | 'compile';
+
 export type OperationLog = {
   id: string;
   contextId?: string;
+  kind?: OperationKind;
   status: 'running' | 'done' | 'error';
   startedAt: number;
   finishedAt?: number;

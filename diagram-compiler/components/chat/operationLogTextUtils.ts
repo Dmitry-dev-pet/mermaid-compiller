@@ -1,7 +1,5 @@
 import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
-import { DIAGRAM_TYPES, normalizeDiagramType } from '../../utils/diagramTypes';
-
-const DIAGRAM_TYPE_SET = new Set<string>([...DIAGRAM_TYPES, 'auto']);
+import { isDiagramType, normalizeDiagramType } from '../../utils/diagramTypes';
 const TYPE_MATCH_RE = /(?:^|—|-)\s*([a-zA-Z]+)\s*-\s*/;
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -11,15 +9,14 @@ export const resolveDiagramTypeShortLabelFromText = (text: string) => {
   const raw = match?.[1]?.trim();
   const normalized = normalizeDiagramType(raw ?? '') ?? raw ?? '';
   if (!normalized) return null;
-  if (!DIAGRAM_TYPE_SET.has(normalized)) return null;
-  return getDiagramTypeShortLabel(normalized as never);
+  if (!isDiagramType(normalized)) return null;
+  return getDiagramTypeShortLabel(normalized);
 };
 
-export const stripDiagramTypeFromText = (text: string) => {
-  const match = text.match(TYPE_MATCH_RE);
-  const raw = match?.[1]?.trim();
-  const normalized = normalizeDiagramType(raw ?? '') ?? raw ?? '';
-  if (!normalized || !DIAGRAM_TYPE_SET.has(normalized)) return text;
+export const stripDiagramTypeFromText = (text: string, diagramType?: string | null) => {
+  const raw = diagramType ?? text.match(TYPE_MATCH_RE)?.[1]?.trim() ?? '';
+  const normalized = normalizeDiagramType(raw) ?? raw;
+  if (!normalized || !isDiagramType(normalized)) return text;
 
   const escaped = escapeRegExp(raw);
   const startPattern = new RegExp(`^\\s*${escaped}\\s*-\\s*`, 'i');

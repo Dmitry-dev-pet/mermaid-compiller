@@ -10,8 +10,7 @@ import type { StudioContext } from './actionsContext';
 import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { runAutoFixLoop } from './autoFix';
 import type { DiagramType, Message } from '../../types';
-import { TimeoutError } from '../../services/llmTimeout';
-import { formatTimeoutFinalMessage, formatTimeoutRetryMessage } from './stepMessageUtils';
+import { formatTimeoutRetryMessage } from './stepMessageUtils';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import {
   buildContextEventForLog,
@@ -21,6 +20,7 @@ import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsCon
 import { runStudioOperation } from './runStudioOperation';
 import { createStudioOperationRunner } from './operationRunner';
 import { buildSelectionLine } from './selectionLine';
+import { isDiagramType } from '../../utils/diagramTypes';
 
 export const createRecompileHandler = (ctx: StudioContext) => {
   return async () => {
@@ -34,7 +34,6 @@ export const createRecompileHandler = (ctx: StudioContext) => {
           addStepMessage('assistant', content, 'build');
         };
         if (ctx.connectionState.status !== 'connected') {
-          alert('Connect AI first!');
           pushStatus('Пересборка\n- офлайн: подключите AI');
           logEvent({
             phase: 'compile',
@@ -94,7 +93,6 @@ export const createRecompileHandler = (ctx: StudioContext) => {
             },
             onTimeoutDetail: (notice) => {
               const message = formatTimeoutRetryMessage('Recompile', notice.attempt, notice.maxAttempts);
-              alert(message);
               return message;
             },
           });
@@ -140,10 +138,6 @@ export const createRecompileHandler = (ctx: StudioContext) => {
           pushStatus('Пересборка\n- история сохранена');
         } catch (e: unknown) {
           const message = e instanceof Error ? e.message : String(e);
-          if (e instanceof TimeoutError) {
-            alert(formatTimeoutFinalMessage('Recompile', LLM_TIMEOUT_RETRIES));
-          }
-          alert(`Generation failed (${ctx.getCurrentModelName()}): ${message}`);
           pushStatus(`Пересборка: ошибка (${ctx.getCurrentModelName()}): ${message}`);
           logEvent({
             phase: 'compile',
@@ -233,6 +227,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
           const fixContextEvent = buildContextEventForLog({
             phase: 'fix',
             contextScope: 'fix',
+            diagramType: detectedDiagramType ?? ctx.appState.diagramType,
             systemPrompt,
             messages: [fixMessage],
             docsContext: docs,
@@ -291,8 +286,7 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
                 stageContextScope: 'fix',
                 onTimeoutDetail: (notice) => {
                   const message = formatTimeoutRetryMessage('Fix', notice.attempt, notice.maxAttempts);
-                  alert(message);
-                  return message;
+                return message;
                 },
               });
               fixContextSent = true;
@@ -352,10 +346,6 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
           });
         } catch (e: unknown) {
           const message = e instanceof Error ? e.message : String(e);
-          if (e instanceof TimeoutError) {
-            alert(formatTimeoutFinalMessage('Fix', LLM_TIMEOUT_RETRIES));
-          }
-          alert(`Fix failed (${ctx.getCurrentModelName()}): ${message}`);
           logEvent({
             phase: 'fix',
             level: 'error',
@@ -401,7 +391,6 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
           : diagramCode;
 
         if (ctx.connectionState.status !== 'connected' || !analysisInput) {
-          alert('Connect AI and provide Mermaid code first!');
           logEvent({
             phase: 'analyze',
             level: 'error',
@@ -429,13 +418,13 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             ? Array.from(
                 new Set(
                   notebookBlocks
-                    .map((block) => detectMermaidDiagramType(block.code) ?? null)
-                    .filter(Boolean) as string[]
+                    .map((block) => detectMermaidDiagramType(block.code))
+                    .filter((type): type is DiagramType => Boolean(type && isDiagramType(type)))
                 )
               )
             : [];
           const notebookSyntaxDocs = isNotebookAnalysis
-            ? await Promise.all(detectedTypes.map((type) => fetchDiagramSyntaxDoc(type as never)))
+            ? await Promise.all(detectedTypes.map((type) => fetchDiagramSyntaxDoc(type)))
             : [];
           const notebookDocsEntries = notebookSyntaxDocs
             .filter((doc) => doc.path && doc.text)
@@ -484,6 +473,7 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
           const analyzeContextEvent = buildContextEventForLog({
             phase: 'analyze',
             contextScope: 'analyze',
+            diagramType: detectedDiagramType ?? ctx.appState.diagramType,
             selectionLine: buildSelectionLine({
               diagramType: (detectedDiagramType ?? ctx.appState.diagramType) as DiagramType,
               allowedDiagramTypes: ctx.appState.diagramType === 'auto' ? ctx.appState.mainDiagramTypes : null,
@@ -510,7 +500,6 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             stageContextScope: 'analyze',
             onTimeoutDetail: (notice) => {
               const message = formatTimeoutRetryMessage('Analyze', notice.attempt, notice.maxAttempts);
-              alert(message);
               return message;
             },
           });
@@ -525,10 +514,6 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
           await finalizeStep('done', { meta: { diagramType: ctx.appState.diagramType } });
         } catch (e: unknown) {
           const message = e instanceof Error ? e.message : String(e);
-          if (e instanceof TimeoutError) {
-            alert(formatTimeoutFinalMessage('Analyze', LLM_TIMEOUT_RETRIES));
-          }
-          alert(`Analysis failed (${ctx.getCurrentModelName()}): ${message}`);
           logEvent({
             phase: 'analyze',
             level: 'error',

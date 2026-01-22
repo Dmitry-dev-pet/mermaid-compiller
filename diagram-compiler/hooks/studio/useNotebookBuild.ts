@@ -7,7 +7,7 @@ import { normalizeSummaryText, sanitizeSummaryText } from '../../utils/buildSumm
 import { sanitizeMermaidByType } from '../../utils/mermaidSanitizer';
 import { NOTEBOOK_BUILD_RETRY_CONFIG } from './notebookBuildConfig';
 import { extractMermaidBlocksFromMarkdown, replaceMermaidBlockInMarkdown } from '../../services/mermaidService';
-import { formatDocsContext, getNotebookPlannerDocsPaths } from '../../services/docsContextService';
+import { formatDocsContext, getNotebookPlannerDocsPaths, type DocsEntry } from '../../services/docsContextService';
 import { planNotebook, summarizeBuild } from '../../services/llmService';
 import { buildSystemPrompt } from '../../services/llm/prompts';
 import { normalizeNotebookPlan, parseNotebookPlan } from '../../services/notebookPlanService';
@@ -59,7 +59,7 @@ type NotebookBuildDeps = {
     excludedPaths: string[];
   }>;
   loadBuildDocsEntries: (type: DiagramType) => Promise<unknown>;
-  startOperation: (title: string) => string;
+  startOperation: (title: string, kind?: import('../../types').OperationKind) => string;
   addOperationEvent: (opId: string, args: {
     phase: import('../../types').OperationPhase;
     level: import('../../types').OperationLevel;
@@ -200,6 +200,30 @@ const resolveNotebookPrompt = (messages: Message[], diagramIntent: DiagramIntent
     .find((m) => m.id !== 'init' && m.role === 'user' && m.content.trim().length > 0)?.content;
   if (fallback) return { content: fallback, source: 'fallback' as const };
   return null;
+};
+
+const buildNotebookContextEvent = (args: {
+  phase: import('../../types').OperationPhase;
+  contextScope: import('../../types').OperationEvent['contextScope'];
+  diagramType?: import('../../types').DiagramType | null;
+  selectionLine?: string;
+  systemPrompt: string;
+  messages: Message[];
+  docsContext: string;
+  selectionSummary?: { includedPaths: string[] } | null;
+  docsPrefix?: string;
+}) => {
+  return buildContextEventForLog({
+    phase: args.phase,
+    contextScope: args.contextScope,
+    diagramType: args.diagramType ?? undefined,
+    selectionLine: args.selectionLine || undefined,
+    systemPrompt: args.systemPrompt,
+    messages: args.messages,
+    docsContext: args.docsContext,
+    selectionSummary: args.selectionSummary ?? null,
+    docsPrefix: args.docsPrefix,
+  });
 };
 
 const resolveNotebookRequestedN = (args: {
@@ -481,7 +505,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
     let successBlocks = 0;
     let failedBlocks = 0;
     let summaryAdded = false;
-    const opId = deps.startOperation('Notebook build');
+    const opId = deps.startOperation('Notebook build', 'build');
     const logEvent = (args: Parameters<typeof deps.addOperationEvent>[1]) => {
       deps.addOperationEvent(opId, args);
     };
@@ -614,13 +638,14 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         diagramType: forcedDiagramType ?? deps.appState.diagramType,
         allowedDiagramTypes,
       });
-      const plannerContextEvent = buildContextEventForLog({
+      const plannerContextEvent = buildNotebookContextEvent({
         phase: 'planning',
         contextScope: 'planner',
+        diagramType: forcedDiagramType ?? deps.appState.diagramType,
         selectionLine: buildSelectionLine({
           diagramType: forcedDiagramType ?? deps.appState.diagramType,
           allowedDiagramTypes,
-        }) || undefined,
+        }),
         systemPrompt: plannerSystemPrompt,
         messages: [plannerMessage],
         docsContext: docs,
@@ -726,7 +751,12 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         const docsSelections = (docsState as { selections?: Record<string, Record<string, boolean>> }).selections ?? {};
         const buildSelection = docsSelections.build ?? {};
         const selectedDocsEntries = docsEntries.filter((entry) => buildSelection[entry.path] !== false);
-        const blockDocs = formatDocsContext(selectedDocsEntries as never);
+        const blockDocsEntries: DocsEntry[] = selectedDocsEntries.map((entry) => ({
+          path: entry.path,
+          text: entry.text ?? '',
+          isOptional: entry.isOptional,
+        }));
+        const blockDocs = formatDocsContext(blockDocsEntries);
         const selectionSummary = await deps.getDocsSelectionSummary?.('build');
         const includedPaths = docsEntries.length
           ? docsEntries.filter((entry) => buildSelection[entry.path] !== false).map((entry) => entry.path)
@@ -737,7 +767,15 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         });
 
         updateBlockMessage(`Сборка: ${blockLabel} — старт.`);
-        logEvent({ phase: 'build', level: 'info', title: 'Block', detail: blockLabel, blockIndex: i, kind: 'block' });
+        logEvent({
+          phase: 'build',
+          level: 'info',
+          title: 'Block',
+          detail: blockLabel,
+          blockIndex: i,
+          kind: 'block',
+          diagramType: targetDiagramType,
+        });
 
         const blockStartAt = Date.now();
         let success = false;
@@ -761,9 +799,10 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               docsContext: 'Documentation context redacted.',
               language,
             });
-            const blockContextEvent = buildContextEventForLog({
+            const blockContextEvent = buildNotebookContextEvent({
               phase: 'planning',
               contextScope: 'block',
+              diagramType: targetDiagramType,
               selectionLine: blockLabel,
               systemPrompt: blockSystemPrompt,
               messages: [intentMessage],
@@ -774,7 +813,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               { onLLMRequestStart: deps.onLLMRequestStart },
               {
                 logEvent: (args) => {
-                  logEvent({ ...args, blockIndex: i });
+                  logEvent({ ...args, blockIndex: i, diagramType: targetDiagramType });
                 },
               }
             );
@@ -804,6 +843,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Block attempt',
                     detail: blockLabel,
                     blockIndex: i,
+                    diagramType: targetDiagramType,
                     attempt: { current: attempt, max },
                     kind: 'attempt',
                   });
@@ -816,6 +856,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Block',
                     detail: 'no mermaid code',
                     blockIndex: i,
+                    diagramType: targetDiagramType,
                     kind: 'block',
                   });
                 },
@@ -830,6 +871,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Block',
                     detail: message,
                     blockIndex: i,
+                    diagramType: targetDiagramType,
                     error: { code: 'block_error', message },
                     kind: 'block',
                   });
@@ -843,6 +885,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Block',
                     detail: `json ${status}`,
                     blockIndex: i,
+                    diagramType: targetDiagramType,
                     kind: 'block',
                   });
                 },
@@ -857,6 +900,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Block',
                     detail: `type mismatch ${received}`,
                     blockIndex: i,
+                    diagramType: targetDiagramType,
                     kind: 'block',
                   });
                 },
@@ -867,6 +911,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Auto-fix',
                     detail: `attempt ${attempt}/${max}`,
                     blockIndex: i,
+                    diagramType: targetDiagramType,
                     attempt: { current: attempt, max },
                     kind: 'attempt',
                   });
@@ -877,6 +922,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                       title: 'Auto-fix error',
                       detail: errorLine,
                       blockIndex: i,
+                      diagramType: targetDiagramType,
                       attempt: { current: attempt, max },
                       error: { code: 'validation', message: errorLine },
                       kind: 'attempt',
@@ -895,6 +941,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Block validation',
                     detail: isValid ? 'valid' : 'invalid',
                     blockIndex: i,
+                    diagramType: targetDiagramType,
                     metrics: lastAutoFix ? { autoFix: lastAutoFix } : undefined,
                     kind: 'block',
                   });
@@ -906,6 +953,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                     title: 'Ошибка',
                     detail: errorLine || 'validation error',
                     blockIndex: i,
+                    diagramType: targetDiagramType,
                     error: { code: 'validation', message: errorLine || 'validation error' },
                     kind: 'block',
                   });
@@ -945,6 +993,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               title: 'Block',
               detail: lastError,
               blockIndex: i,
+              diagramType: targetDiagramType,
               error: { code: 'block_error', message: lastError },
               kind: 'block',
             });
@@ -971,6 +1020,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           title: 'Block',
           detail: `${blockLabel} — ${success ? 'готов' : 'невалиден'}`,
           blockIndex: i,
+          diagramType: targetDiagramType,
           metrics: { durationMs: Date.now() - blockStartAt },
         });
         const progressMessage = tracker.getMessage();
@@ -1098,9 +1148,10 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             language,
             diagramType: deps.appState.diagramType,
           });
-          const summaryContextEvent = buildContextEventForLog({
+          const summaryContextEvent = buildNotebookContextEvent({
             phase: 'build',
             contextScope: 'summary',
+            diagramType: deps.appState.diagramType,
             systemPrompt,
             messages: [summaryMessage],
             docsContext: '',

@@ -1,4 +1,4 @@
-import type { Message, MermaidState } from '../../types';
+import type { Message, MermaidState, OperationKind } from '../../types';
 import type { TimeStepType } from '../../services/history/types';
 import type { StudioContext } from './actionsContext';
 
@@ -22,13 +22,30 @@ export const runStudioOperation = async <T>(
     title: string;
     stepType: TimeStepType;
     notebookBlockIndex?: number | null;
+    operationKind?: OperationKind;
     run: (helpers: StudioOperationHelpers) => Promise<T>;
   }
 ): Promise<T> => {
   const stepMessages: Message[] = [];
   const notebookBlockIndex = args.notebookBlockIndex;
   const opContextId = typeof notebookBlockIndex === 'number' ? `block:${notebookBlockIndex}` : undefined;
-  const opId = ctx.startOperation(args.title, opContextId);
+  const operationKind = args.operationKind ?? (() => {
+    switch (args.stepType) {
+      case 'chat':
+        return 'chat';
+      case 'build':
+        return 'build';
+      case 'analyze':
+        return 'analyze';
+      case 'fix':
+        return 'fix';
+      case 'recompile':
+        return 'compile';
+      default:
+        return undefined;
+    }
+  })();
+  const opId = ctx.startOperation(args.title, opContextId, operationKind);
 
   const logEvent: StudioOperationHelpers['logEvent'] = (eventArgs) => {
     ctx.addOperationEvent(opId, {
@@ -59,4 +76,3 @@ export const runStudioOperation = async <T>(
 
   return args.run({ opId, stepMessages, addStepMessage, logEvent, finalizeStep });
 };
-

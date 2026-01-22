@@ -13,9 +13,12 @@ import { useManualEditRecorder } from './useManualEditRecorder';
 import { usePromptPreview } from './usePromptPreview';
 import { useNotebookChat, useNotebookChatView } from './useNotebookChat';
 import { useProjects } from './useProjects';
+import { useProjectPreview } from './useProjectPreview';
+import { useStudioChatContext } from './useStudioChatContext';
+import { useStudioWhiteboard } from './useStudioWhiteboard';
 import type { DiagramMarker } from '../core/useHistory';
 import { DEFAULT_MERMAID_STATE } from '../../constants';
-import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState, ModelParams, Message } from '../../types';
+import type { DiagramIntent, DiagramType, DocsMode, EditorTab, MermaidState, ModelParams, Message, OperationKind } from '../../types';
 import {
   appendEmptyMermaidBlockToMarkdown,
   createMermaidNotebookMarkdown,
@@ -28,14 +31,9 @@ import { createAnalyticsAdapter } from '../../services/analyticsAdapter';
 import { useNotebookBuild } from './useNotebookBuild';
 import { useFixFlow } from './useFixFlow';
 import { useNotebookContext } from './useNotebookContext';
-import { MAIN_CHAT_CONTEXT_ID, resolveChatContextId, resolveOperationLogContextId } from '../../utils/contextIds';
+import { MAIN_CHAT_CONTEXT_ID, resolveOperationLogContextId } from '../../utils/contextIds';
 import type { LLMRequestStartNotice } from '../../services/llmRequestRunner';
 import { getSystemPromptModeFromPath, isSystemPromptPath } from '../../utils/systemPrompts';
-import {
-  ensureWhiteboardBundle,
-  resolveWhiteboardSceneForBlock,
-  updateWhiteboardBundleForBlock,
-} from '../../services/history/whiteboardBundle';
 
 export const useDiagramStudio = () => {
   const [activeLLMRequest, setActiveLLMRequest] = useState<LLMRequestStartNotice | null>(null);
@@ -86,22 +84,15 @@ export const useDiagramStudio = () => {
   const prevEditorTabRef = useRef<EditorTab>('code');
   const nextBuildDocsScopeRef = useRef<'notebook' | 'diagram' | null>(null);
   const prevBuildDocsScopeRef = useRef<'notebook' | 'diagram'>('notebook');
-  const [previewMermaidState, setPreviewMermaidState] = useState<MermaidState | null>(null);
-  const previewCacheRef = useRef<Record<string, MermaidState>>({});
-  const previewLoadingRef = useRef<Set<string>>(new Set());
-  const [whiteboardSceneJson, setWhiteboardSceneJson] = useState<string | null>(null);
-  const [whiteboardBundleJson, setWhiteboardBundleJson] = useState<string | null>(null);
-  const whiteboardRawRef = useRef<string | null>(null);
+  const { previewMermaidState, showProjectPreview, clearProjectPreview } = useProjectPreview({
+    loadSessionSnapshot,
+  });
 
   const isHydratingRef = useRef(true);
   const hydratedSessionIdRef = useRef<string | null>(null);
-  const hydratedRevisionIdRef = useRef<string | null>(null);
   const seededNotebookSessionIdsRef = useRef<Set<string>>(new Set());
   const lastManualRecordedCodeRef = useRef<string>('');
   const diagramTypeWaitRef = useRef<{ target: DiagramType; resolve: () => void } | null>(null);
-  const clearProjectPreview = useCallback(() => {
-    setPreviewMermaidState(null);
-  }, []);
 
   const setNextBuildDocsScope = useCallback((scope: 'notebook' | 'diagram' | null) => {
     if (!scope) {
@@ -140,12 +131,6 @@ export const useDiagramStudio = () => {
     setEditorTab,
   });
 
-  const resolveWhiteboardSceneForActiveContext = useCallback((raw: string | null): string | null => {
-    const isMarkdownBlock = markdownMermaidBlocks.length > 0;
-    if (!isMarkdownBlock) return raw?.trim() ? raw : null;
-    return resolveWhiteboardSceneForBlock(raw, markdownMermaidActiveIndex);
-  }, [markdownMermaidActiveIndex, markdownMermaidBlocks.length]);
-
   const {
     operationLogs,
     activeOperationLog,
@@ -169,21 +154,13 @@ export const useDiagramStudio = () => {
     isNotebookChatEnabled,
   } = notebookContext;
 
-  const getNotebookChatIndex = useCallback(() => {
-    if (!isNotebookChatMode) return null;
-    const index = typeof markdownMermaidActiveIndex === 'number' ? markdownMermaidActiveIndex : 0;
-    return Math.max(0, Math.min(index, Math.max(0, markdownMermaidBlocks.length - 1)));
-  }, [isNotebookChatMode, markdownMermaidActiveIndex, markdownMermaidBlocks.length]);
-
-  const activeChatContextId = useMemo(() => {
-    return resolveChatContextId(isNotebookChatMode, getNotebookChatIndex());
-  }, [getNotebookChatIndex, isNotebookChatMode]);
-
-  useEffect(() => {
-    if (activeContextId !== activeChatContextId) {
-      setActiveContextId(activeChatContextId);
-    }
-  }, [activeChatContextId, activeContextId, setActiveContextId]);
+  const { activeChatContextId, getNotebookChatIndex } = useStudioChatContext({
+    isNotebookChatMode,
+    markdownMermaidActiveIndex,
+    markdownMermaidBlocksLength: markdownMermaidBlocks.length,
+    activeContextId,
+    setActiveContextId,
+  });
 
   const safeAppendTimeStep = useCallback((args: Parameters<typeof appendTimeStep>[0]) => {
     const nextMeta = { ...(args.meta ?? {}) } as Record<string, unknown>;
@@ -225,8 +202,25 @@ export const useDiagramStudio = () => {
     isNotebookChatMode,
   ]);
 
+  const {
+    whiteboardSceneJson,
+    whiteboardBundleJson,
+    saveWhiteboardForCurrentRevision,
+    setWhiteboardFromRaw,
+  } = useStudioWhiteboard({
+    historyLoadResult,
+    historySession,
+    getRevision,
+    updateCurrentRevisionWhiteboard,
+    markdownMermaidBlocksLength: markdownMermaidBlocks.length,
+    markdownMermaidActiveIndex,
+    mermaidState,
+    safeAppendTimeStep,
+  });
+
   const startOperationForContext = useCallback(
-    (title: string, contextId?: string) => startOperation(title, contextId ?? activeChatContextId),
+    (title: string, contextId?: string, kind?: OperationKind) =>
+      startOperation(title, contextId ?? activeChatContextId, kind),
     [activeChatContextId, startOperation]
   );
 
@@ -481,16 +475,10 @@ export const useDiagramStudio = () => {
     return null;
   }, [filteredOperationLogs]);
 
-  const activeOperationKind = useMemo(() => {
-    const title = filteredActiveOperationLog?.events?.[0]?.title?.toLowerCase() ?? '';
-    if (!title) return null;
-    if (title.includes('чат')) return 'chat';
-    if (title.includes('сборка') || title.includes('notebook build') || title === 'build') return 'build';
-    if (title.includes('анализ')) return 'analyze';
-    if (title.includes('исправление')) return 'fix';
-    if (title.includes('пересборка') || title.includes('recompile')) return 'compile';
-    return null;
-  }, [filteredActiveOperationLog]);
+  const activeOperationKind = useMemo(
+    () => filteredActiveOperationLog?.kind ?? null,
+    [filteredActiveOperationLog]
+  );
 
   const {
     buildPromptPreview,
@@ -563,11 +551,6 @@ export const useDiagramStudio = () => {
       const diag = historyLoadResult.currentRevisionDiagnostics;
 
       lastManualRecordedCodeRef.current = code;
-      const rawWhiteboard = historyLoadResult.currentRevisionWhiteboard ?? null;
-      whiteboardRawRef.current = rawWhiteboard;
-      setWhiteboardBundleJson(rawWhiteboard);
-      setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(rawWhiteboard));
-      hydratedRevisionIdRef.current = historyLoadResult.session.currentRevisionId ?? null;
       setMermaidState((prev) => ({
         ...prev,
         code,
@@ -580,90 +563,11 @@ export const useDiagramStudio = () => {
       }));
     } else {
       lastManualRecordedCodeRef.current = '';
-      whiteboardRawRef.current = null;
-      setWhiteboardBundleJson(null);
-      setWhiteboardSceneJson(null);
-      hydratedRevisionIdRef.current = null;
       setMermaidState(DEFAULT_MERMAID_STATE);
     }
 
     isHydratingRef.current = false;
-  }, [historyLoadResult, historySteps, resolveWhiteboardSceneForActiveContext, setMermaidState, setMessagesForContext]);
-
-  useEffect(() => {
-    const revId = historySession?.currentRevisionId ?? null;
-    if (revId === hydratedRevisionIdRef.current) return;
-    hydratedRevisionIdRef.current = revId;
-    if (!revId) {
-      whiteboardRawRef.current = null;
-      setWhiteboardBundleJson(null);
-      setWhiteboardSceneJson(null);
-      return;
-    }
-    void getRevision(revId).then((rev) => {
-      const raw = rev?.whiteboard ?? null;
-      whiteboardRawRef.current = raw;
-      setWhiteboardBundleJson(raw);
-      setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(raw));
-    });
-  }, [getRevision, historySession?.currentRevisionId, resolveWhiteboardSceneForActiveContext]);
-
-  const saveWhiteboardForCurrentRevision = useCallback(async (sceneJson: string | null) => {
-    const isMarkdownBlock = markdownMermaidBlocks.length > 0;
-    const nextRaw = (() => {
-      const trimmed = sceneJson?.trim() ? sceneJson : null;
-      if (!isMarkdownBlock) return trimmed;
-      return updateWhiteboardBundleForBlock(whiteboardRawRef.current, markdownMermaidActiveIndex, trimmed);
-    })();
-
-    // Optimistically update local whiteboard state so switching modes keeps the scene.
-    whiteboardRawRef.current = nextRaw;
-    setWhiteboardBundleJson(nextRaw);
-    setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(nextRaw));
-
-    let revisionId = historySession?.currentRevisionId ?? null;
-    if (!revisionId) {
-      const code = mermaidState.code;
-      if (!code.trim()) return null;
-      const step = await safeAppendTimeStep({
-        type: 'manual_edit',
-        messages: [],
-        nextMermaid: {
-          code,
-          isValid: mermaidState.isValid,
-          errorMessage: mermaidState.errorMessage,
-          errorLine: mermaidState.errorLine,
-        },
-      });
-      revisionId = (step as { session?: { currentRevisionId?: string | null } } | null)?.session?.currentRevisionId ?? null;
-    }
-
-    const updated = await updateCurrentRevisionWhiteboard(nextRaw, revisionId);
-    const raw = updated?.whiteboard ?? null;
-    if (updated) {
-      whiteboardRawRef.current = raw;
-      setWhiteboardBundleJson(raw);
-      setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(raw));
-    }
-    return updated;
-  }, [
-    historySession?.currentRevisionId,
-    mermaidState.code,
-    mermaidState.errorLine,
-    mermaidState.errorMessage,
-    mermaidState.isValid,
-    markdownMermaidActiveIndex,
-    markdownMermaidBlocks.length,
-    resolveWhiteboardSceneForActiveContext,
-    safeAppendTimeStep,
-    updateCurrentRevisionWhiteboard,
-  ]);
-
-  useEffect(() => {
-    // Keep the active whiteboard scene in sync with the selected markdown block.
-    // The underlying revision stores a bundle of scenes per block index.
-    setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(whiteboardRawRef.current));
-  }, [markdownMermaidActiveIndex, markdownMermaidBlocks.length, resolveWhiteboardSceneForActiveContext]);
+  }, [historyLoadResult, historySteps, setMermaidState, setMessagesForContext]);
 
   useEffect(() => {
     if (!historyLoadResult) return;
@@ -753,37 +657,6 @@ export const useDiagramStudio = () => {
     lastManualRecordedCodeRef,
     isHydratingRef,
   });
-
-  const buildPreviewState = useCallback((snapshot: { code: string; diagnostics?: { isValid?: boolean; errorMessage?: string; errorLine?: number } | null }) => {
-    const code = snapshot.code ?? '';
-    const isValid = snapshot.diagnostics?.isValid ?? true;
-    return {
-      code,
-      isValid,
-      lastValidCode: isValid ? code : '',
-      errorMessage: snapshot.diagnostics?.errorMessage,
-      errorLine: snapshot.diagnostics?.errorLine,
-      source: 'compiled',
-      status: code.trim()
-        ? (isValid ? 'valid' : 'invalid')
-        : 'empty',
-    } as MermaidState;
-  }, []);
-
-  const showProjectPreview = useCallback(async (sessionId: string) => {
-    if (previewCacheRef.current[sessionId]) {
-      setPreviewMermaidState(previewCacheRef.current[sessionId]);
-      return;
-    }
-    if (previewLoadingRef.current.has(sessionId)) return;
-    previewLoadingRef.current.add(sessionId);
-    const snapshot = await loadSessionSnapshot(sessionId);
-    previewLoadingRef.current.delete(sessionId);
-    if (!snapshot) return;
-    const nextState = buildPreviewState(snapshot);
-    previewCacheRef.current[sessionId] = nextState;
-    setPreviewMermaidState(nextState);
-  }, [buildPreviewState, loadSessionSnapshot]);
 
   useEffect(() => {
     if (editorTab !== 'build_docs') return;
@@ -894,7 +767,7 @@ export const useDiagramStudio = () => {
     getDocsContext,
     getDocsSelectionSummary,
     loadBuildDocsEntries,
-    startOperation: (title) => startOperation(title, 'main'),
+    startOperation: (title, kind) => startOperation(title, 'main', kind),
     addOperationEvent,
     finishOperation,
     getOperationLog,
@@ -1089,9 +962,7 @@ export const useDiagramStudio = () => {
     if (!revision) return;
 
     lastManualRecordedCodeRef.current = revision.mermaid;
-    const rawWhiteboard = revision.whiteboard ?? null;
-    whiteboardRawRef.current = rawWhiteboard;
-    setWhiteboardSceneJson(resolveWhiteboardSceneForActiveContext(rawWhiteboard));
+    setWhiteboardFromRaw(revision.whiteboard ?? null);
     setMermaidState((prev) => ({
       ...prev,
       code: revision.mermaid,

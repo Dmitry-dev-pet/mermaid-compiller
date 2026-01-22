@@ -4,6 +4,7 @@ import type { LogRow, OperationLogViewModel } from './operationLogViewModelTypes
 import { resolveNotebookTypes } from './operationLogBlockDetailUtils';
 import { stripDiagramTypeFromRows } from './operationLogContextRowUtils';
 import { buildViewRows } from './operationLogRowViewUtils';
+import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
 import {
   buildSummary,
   formatAttemptIndicator,
@@ -38,12 +39,15 @@ export const buildOperationLogViewModel = (
   const summaryLabel = isRunning ? labels.active : labels.done;
   const summaryLine = !isRunning && showSummaryLine ? buildSummary(operationLog) : null;
   const lastLlmStartAt = resolveLastLlmStartAt(operationLog);
+  const resolveDiagramTypeLabel = (event: OperationEvent) =>
+    event.diagramType ? getDiagramTypeShortLabel(event.diagramType) : undefined;
 
   const statusByBlock = new Map<number, 'ok' | 'err'>();
   const errorEventsByBlock = new Map<number, Array<{ id: string; text: string }>>();
   const displayEvents: LogRow[] = [];
   for (let i = 0; i < operationLog.events.length; i += 1) {
     const event = operationLog.events[i];
+    const diagramTypeLabel = resolveDiagramTypeLabel(event);
     if (isHiddenOperationEvent(event)) continue;
     if (typeof event.blockIndex === 'number') {
       if (event.title === 'Block validation') {
@@ -200,6 +204,8 @@ export const buildOperationLogViewModel = (
           blockIndex: event.blockIndex,
           kind: event.title === 'Block attempt' ? 'block_attempt' : 'attempt',
           key,
+          diagramType: event.diagramType,
+          diagramTypeLabel,
         });
       }
       continue;
@@ -221,6 +227,8 @@ export const buildOperationLogViewModel = (
       contentText: formatted.contentText,
       blockIndex: event.blockIndex,
       kind,
+      diagramType: event.diagramType,
+      diagramTypeLabel,
       ...(resolveVolumeForEvent(event) ?? {}),
       timeMs: event.metrics?.durationMs,
       isTerminal: event.title === 'Done' || event.title === 'Failed',
@@ -362,4 +370,3 @@ export const buildOperationLogViewModel = (
   const viewRows = buildViewRows(rows);
   return { summaryLabel, summaryLine, rows: viewRows };
 };
-

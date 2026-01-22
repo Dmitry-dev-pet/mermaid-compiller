@@ -8,6 +8,7 @@ import type {
   DiagramIntent,
   DocsMode,
   ModelParams,
+  OperationKind,
 } from '../../types';
 import { MermaidMarkdownBlock, replaceMermaidBlockInMarkdown, validateMermaid } from '../../services/mermaidService';
 import type { AnalyticsContext } from '../../services/analyticsService';
@@ -57,7 +58,7 @@ export type StudioActionsDeps = {
     nextMermaid?: Pick<MermaidState, 'code' | 'isValid' | 'errorMessage' | 'errorLine'> | null;
     setCurrentRevisionId?: string | null;
   }) => Promise<void>;
-  startOperation: (title: string, contextId?: string) => string;
+  startOperation: (title: string, contextId?: string, kind?: OperationKind) => string;
   addOperationEvent: (opId: string, args: {
     phase: import('../../types').OperationPhase;
     level: import('../../types').OperationLevel;

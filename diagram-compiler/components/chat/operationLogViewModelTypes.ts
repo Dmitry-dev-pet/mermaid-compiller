@@ -1,4 +1,4 @@
-import type { OperationEvent } from '../../types';
+import type { DiagramType, OperationEvent } from '../../types';
 
 export type LogRow = {
   id: string;
@@ -10,6 +10,7 @@ export type LogRow = {
   key?: string;
   status?: 'ok' | 'err';
   diagramTypeLabel?: string;
+  diagramType?: DiagramType;
   contextMeta?: OperationEvent['contextMeta'];
   volumeTokens?: number;
   volumeLabel?: string;
@@ -47,4 +48,3 @@ export type OperationLogViewModel = {
   summaryLine: string | null;
   rows: OperationLogRowView[];
 };
-

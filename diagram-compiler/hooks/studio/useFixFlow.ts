@@ -3,7 +3,6 @@ import { AUTO_FIX_MAX_ATTEMPTS, LLM_TIMEOUT_RETRIES } from '../../constants';
 import { detectLanguage } from '../../utils';
 import type { AIConfig, MermaidState, ModelParams, Message, DiagramType } from '../../types';
 import {
-  detectMermaidDiagramType,
   extractMermaidBlocksFromMarkdown,
   extractMermaidCode,
   replaceMermaidBlockInMarkdown,
@@ -18,6 +17,7 @@ import {
   buildContextEventForLog,
 } from './logContextUtils';
 import { toRunnerContextEvent } from './operationTracer';
+import { summarizeFixOutcome as buildFixSummary } from './fixSummary';
 import { createStudioOperationRunner, type StudioOperationRunner } from './operationRunner';
 import { fetchDiagramSyntaxDoc, formatDocsContext } from '../../services/docsContextService';
 import { DIAGRAM_TYPES, normalizeDiagramType } from '../../utils/diagramTypes';
@@ -57,7 +57,7 @@ type FixFlowDeps = {
   baseHandleFixSyntax: () => Promise<void>;
   onLLMRequestStart?: (notice: LLMRequestStartNotice) => void;
   llmTimeoutMs: number;
-  startOperation: (title: string, contextId?: string) => string;
+  startOperation: (title: string, contextId?: string, kind?: import('../../types').OperationKind) => string;
   addOperationEvent: (opId: string, args: {
     phase: import('../../types').OperationPhase;
     level: import('../../types').OperationLevel;
@@ -77,6 +77,16 @@ type FixFlowDeps = {
   getOperationLog: (opId: string) => import('../../types').OperationLog | null;
 };
 
+type FixBlockMode = 'block' | 'markdown_all';
+
+const buildFixBlockLabel = (index: number, total: number, diagramType: string | null) => {
+  return `${index + 1}/${total} - ${diagramType ?? 'unknown'} - Fix block`;
+};
+
+const resolveFixDiagramType = (block: MermaidMarkdownBlock, appDiagramType: DiagramType | null) => {
+  return block.diagramType ?? (normalizeDiagramType(appDiagramType ?? '') ?? null);
+};
+
 export const useFixFlow = (deps: FixFlowDeps) => {
   const coerceToDiagramType = useCallback((value: string | null | undefined): DiagramType | null => {
     const normalized = normalizeDiagramType(value ?? '') ?? null;
@@ -93,111 +103,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     return detectLanguage(basis);
   }, [deps.messages]);
 
-  const summarizeFixOutcome = useCallback((args: {
-    indexLabel?: string;
-    attempts: number;
-    changed: boolean;
-    cleared: boolean;
-    wasValid: boolean;
-    errorMessage?: string;
-    finalErrorMessage?: string;
-    before?: string;
-    after?: string;
-  }) => {
-    const rawError = args.finalErrorMessage ?? args.errorMessage ?? '';
-    const errorLine = rawError.split(/\r?\n/)[0]?.slice(0, 160) ?? '';
-    const errorNote = !args.wasValid && errorLine ? `ошибка: ${errorLine}` : '';
-    let typeNote = '';
-    let diagnosisNote = '';
-    let diffNote = '';
-    if (args.changed && !args.cleared && args.before !== undefined && args.after !== undefined) {
-      const beforeLines = args.before.split(/\r?\n/);
-      const afterLines = args.after.split(/\r?\n/);
-      const beforeType = detectMermaidDiagramType(args.before);
-      const afterType = detectMermaidDiagramType(args.after);
-      if (beforeType || afterType) {
-        typeNote = `тип: ${beforeType ?? 'unknown'} → ${afterType ?? 'unknown'}`;
-      }
-      const beforeHead = beforeLines.find((line) => line.trim().length > 0) ?? '';
-      const afterHead = afterLines.find((line) => line.trim().length > 0) ?? '';
-      if (beforeHead && afterHead && beforeHead.trim() !== afterHead.trim()) {
-        const hasNonAscii = Array.from(beforeHead).some((char) => char.charCodeAt(0) > 127);
-        if ((args.errorMessage ?? '').includes('No diagram type detected')) {
-          diagnosisNote = `исправлен заголовок диаграммы: "${beforeHead.trim()}" → "${afterHead.trim()}"`;
-        }
-        if (!diagnosisNote && hasNonAscii) {
-          diagnosisNote = `исправлены некорректные символы в заголовке: "${beforeHead.trim()}" → "${afterHead.trim()}"`;
-        }
-      }
-      const maxLines = Math.max(beforeLines.length, afterLines.length);
-      let changedLines = 0;
-      let firstDiffLine = -1;
-      for (let i = 0; i < maxLines; i += 1) {
-        const beforeLine = beforeLines[i] ?? '';
-        const afterLine = afterLines[i] ?? '';
-        if (beforeLine !== afterLine) {
-          changedLines += 1;
-          if (firstDiffLine === -1) {
-            firstDiffLine = i;
-          }
-        }
-      }
-      if (changedLines > 0 && firstDiffLine >= 0) {
-        const beforeSample = (beforeLines[firstDiffLine] ?? '').slice(0, 80);
-        const afterSample = (afterLines[firstDiffLine] ?? '').slice(0, 80);
-        diffNote = `изменено строк: ~${changedLines}; пример L${firstDiffLine + 1}: "${beforeSample}" -> "${afterSample}"`;
-      }
-    }
-    const combinedDiagnosis = typeNote;
-    const errorText = errorNote ? errorNote.replace(/^ошибка:\s*/i, '') : '';
-    const statusLine = args.indexLabel ? args.indexLabel : 'блок';
-    const resultLabel = args.cleared ? 'очищен' : (args.wasValid ? 'валиден' : 'с ошибкой');
-    const changedLabel = args.changed ? 'да' : 'нет';
-    const changesSummary = diffNote
-      ? diffNote.replace(/^изменено строк:\s*~?\d+;.*$/i, (match) => {
-        const count = match.match(/~?\d+/)?.[0] ?? '';
-        return count ? `Строк: ${count}` : '';
-      }).trim()
-      : '';
-    const exampleMatch = diffNote.match(/пример\s+L(\d+):\s+"([^"]*)"\s+->\s+"([^"]*)"/i);
-    const exampleLine = exampleMatch
-      ? `- Пример (L${exampleMatch[1]}): \`${exampleMatch[2]}\` → \`${exampleMatch[3]}\``
-      : '';
-
-    const extractLineNumber = (text: string) => {
-      const match = text.match(/line\s+(\d+)/i);
-      return match ? match[1] : '';
-    };
-    const lineHint = errorText ? extractLineNumber(errorText) : '';
-    const explanation = diagnosisNote
-      ? diagnosisNote
-      : errorText
-        ? (() => {
-          if (/no diagram type detected/i.test(errorText)) {
-            return 'Не распознан тип диаграммы. Проверьте заголовок.';
-          }
-          if (/parse error|syntax error|unexpected/i.test(errorText)) {
-            return `Синтаксическая ошибка${lineHint ? ` в строке ${lineHint}` : ''}.`;
-          }
-          return `Mermaid не смог разобрать синтаксис${lineHint ? ` (строка ${lineHint})` : ''}.`;
-        })()
-        : '';
-
-    const base = [
-      `Итог: ${statusLine} — ${resultLabel}; попыток: ${args.attempts}; код изменён: ${changedLabel}.`,
-    ];
-
-    if (combinedDiagnosis) base.push(combinedDiagnosis.replace(/^тип:\s*/i, 'Тип: '));
-    if (changesSummary) base.push(changesSummary);
-    if (!changesSummary && exampleLine) {
-      // Drop markdown bullets/backticks; keep as plain text.
-      base.push(exampleLine.replace(/^- /, '').replace(/`/g, ''));
-    }
-    if (explanation) base.push(explanation);
-    if (errorText) base.push(`Ошибка: ${errorText.replace(/`/g, '')}`);
-
-    return base.filter(Boolean).join('\n');
-  }, []);
+  const summarizeFixOutcome = useCallback(buildFixSummary, []);
 
   const runMarkdownFix = useCallback(async (args: {
     runner: StudioOperationRunner;
@@ -268,6 +174,253 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     };
   }, [deps.aiConfig, deps.appDiagramType, deps.llmTimeoutMs, deps.modelParams]);
 
+  const runBlockFix = useCallback(async (args: {
+    block: MermaidMarkdownBlock;
+    blockIndex: number;
+    totalBlocks: number;
+    markdown: string;
+    initialValidation: Awaited<ReturnType<typeof validateMermaidDiagramCode>>;
+    fixMode: FixBlockMode;
+    opId: string;
+    logEvent: (args: Parameters<typeof deps.addOperationEvent>[1]) => void;
+    onMarkdownChange: (nextMarkdown: string) => void;
+    durationStart?: number;
+  }) => {
+    const {
+      block,
+      blockIndex,
+      totalBlocks,
+      markdown,
+      initialValidation,
+      fixMode,
+      opId,
+      logEvent,
+      onMarkdownChange,
+      durationStart,
+    } = args;
+    const diagramType = resolveFixDiagramType(block, deps.appDiagramType ?? null);
+    const runner = createStudioOperationRunner(
+      { onLLMRequestStart: deps.onLLMRequestStart },
+      {
+        logEvent: (eventArgs) => {
+          logEvent({ ...eventArgs, blockIndex });
+        },
+      }
+    );
+    const docsSelection = await deps.getDocsSelectionSummary?.('fix');
+    const diagramTypeForDocs = coerceToDiagramType(diagramType);
+    const syntaxDoc = diagramTypeForDocs
+      ? await fetchDiagramSyntaxDoc(diagramTypeForDocs)
+      : { text: '', path: null };
+    const docsEntries = syntaxDoc.path ? [{ path: syntaxDoc.path, text: syntaxDoc.text }] : [];
+    const docs = docsEntries.length ? formatDocsContext(docsEntries) : await deps.getDocsContext('fix');
+    const language = resolveFixLanguage();
+    const label = buildFixBlockLabel(blockIndex, totalBlocks, diagramType);
+
+    logEvent({
+      phase: 'fix',
+      level: 'info',
+      title: 'Block',
+      detail: label,
+      blockIndex,
+      kind: 'block',
+      contextScope: 'block',
+    });
+    logEvent({
+      phase: 'fix',
+      level: 'info',
+      title: 'Fix',
+      detail: `язык: ${language}`,
+    });
+
+    const fixMessage: Message = {
+      id: `fix-input-${blockIndex + 1}`,
+      role: 'user',
+      content: [
+        'Code:',
+        '```mermaid',
+        block.code,
+        '```',
+        '',
+        'Error:',
+        (initialValidation.errorMessage ?? '').trim() || (initialValidation.isValid === false ? 'Validation error' : 'Unknown error'),
+      ].join('\n'),
+      timestamp: Date.now(),
+    };
+    const systemPrompt = buildSystemPrompt('fix', {
+      diagramType: (diagramType ?? deps.appDiagramType ?? 'auto') as DiagramType,
+      docsContext: 'Documentation context redacted.',
+      language,
+    });
+    const fixContextEvent = buildContextEventForLog({
+      phase: 'fix',
+      contextScope: 'block',
+      diagramType: diagramType ?? deps.appDiagramType ?? 'auto',
+      systemPrompt,
+      messages: [fixMessage],
+      docsContext: docs,
+      selectionSummary: docsEntries.length
+        ? { includedPaths: docsEntries.map((entry) => entry.path) }
+        : (docsSelection ? { includedPaths: docsSelection.includedPaths } : null),
+    });
+    await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
+      diagramType,
+      mode: 'fix',
+      codeLength: block.code.length,
+    });
+
+    const {
+      currentCode,
+      validation,
+      attempts,
+      changed,
+      cleared,
+      nextMarkdown,
+      nextMermaid,
+    } = await runMarkdownFix({
+      runner,
+      contextEvent: fixContextEvent,
+      block,
+      markdown,
+      docs,
+      language,
+      initialValidation,
+      onAttempt: (attempt, nextValidation) => {
+        logEvent({
+          phase: 'fix',
+          level: 'info',
+          title: 'Auto-fix',
+          detail: `attempt ${attempt}/${AUTO_FIX_MAX_ATTEMPTS}`,
+          blockIndex,
+          attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
+          kind: 'attempt',
+          contextScope: 'block',
+        });
+        if (nextValidation.errorMessage) {
+          const line = nextValidation.errorMessage.split(/\r?\n/)[0]?.slice(0, 200) ?? '';
+          if (line) {
+            logEvent({
+              phase: 'fix',
+              level: 'warn',
+              title: 'Auto-fix error',
+              detail: line,
+              blockIndex,
+              attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
+              error: { code: 'validation', message: line },
+              kind: 'attempt',
+              contextScope: 'block',
+            });
+          }
+        }
+      },
+    });
+
+    if (changed || cleared) {
+      onMarkdownChange(nextMarkdown);
+    }
+
+    logEvent({
+      phase: 'validate',
+      level: validation.isValid ? 'info' : 'warn',
+      title: 'Block validation',
+      detail: validation.isValid ? 'valid' : 'invalid',
+      blockIndex,
+      metrics: attempts ? { autoFix: attempts } : undefined,
+      kind: 'block',
+      contextScope: 'block',
+    });
+    if (!validation.isValid) {
+      const line = validation.errorMessage?.split(/\r?\n/)[0]?.slice(0, 200) ?? 'validation error';
+      logEvent({
+        phase: 'validate',
+        level: 'error',
+        title: 'Ошибка',
+        detail: line,
+        blockIndex,
+        error: { code: 'validation', message: line },
+        kind: 'block',
+        contextScope: 'block',
+      });
+    }
+
+    const resultMessage = deps.addMessage(
+      'assistant',
+      summarizeFixOutcome({
+        indexLabel: `блок ${blockIndex + 1}${fixMode === 'markdown_all' ? ` из ${totalBlocks}` : ''}`,
+        attempts,
+        changed,
+        cleared,
+        wasValid: !!validation.isValid,
+        errorMessage: initialValidation.errorMessage,
+        finalErrorMessage: validation.errorMessage,
+        before: block.code,
+        after: currentCode,
+      }),
+      'fix'
+    );
+
+    const shouldStop = fixMode === 'markdown_all' && !validation.isValid;
+    const stopMessage = shouldStop
+      ? deps.addMessage(
+          'assistant',
+          `Fix остановлен после блока ${blockIndex + 1}: исправление не удалось.`,
+          'fix'
+        )
+      : null;
+
+    await deps.safeAppendTimeStep({
+      type: 'fix',
+      messages: [resultMessage, stopMessage].filter(Boolean) as Message[],
+      nextMermaid,
+      setCurrentRevisionId: cleared ? null : undefined,
+      meta: {
+        attempts,
+        changed,
+        isValid: !!validation.isValid,
+        cleared,
+        diagramType,
+        mode: 'notebook',
+        fixMode,
+        blockIndex,
+        totalBlocks,
+        stopped: shouldStop ? true : undefined,
+        operationLog: deps.getOperationLog(opId),
+      },
+    });
+
+    if (!shouldStop && (fixMode === 'block' || validation.isValid)) {
+      await deps.trackAnalyticsWithContext('diagram_fix_success', 'fix', {
+        diagramType,
+        mode: 'fix',
+        attempts,
+        changed,
+        cleared,
+        isValid: !!validation.isValid,
+        durationMs: durationStart ? Date.now() - durationStart : undefined,
+        codeLength: currentCode.length,
+        errorLine: validation.errorLine,
+      });
+    }
+
+    return {
+      currentCode,
+      validation,
+      attempts,
+      changed,
+      cleared,
+      nextMarkdown,
+      nextMermaid,
+      shouldStop,
+      diagramType,
+    };
+  }, [
+    coerceToDiagramType,
+    deps,
+    resolveFixLanguage,
+    runMarkdownFix,
+    summarizeFixOutcome,
+  ]);
+
   const handleFixAllMarkdownBlocks = useCallback(async () => {
     if (deps.connectionStatus !== 'connected') {
       deps.addMessage('assistant', 'Не могу запустить Fix: подключите AI.', 'fix');
@@ -280,15 +433,13 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     }
 
     const startedAt = Date.now();
-    const opId = deps.startOperation('Fix');
+    const opId = deps.startOperation('Fix', undefined, 'fix');
     const logEvent = (args: Parameters<typeof deps.addOperationEvent>[1]) => {
       deps.addOperationEvent(opId, args);
     };
     deps.setIsProcessing(true);
     try {
-      const docsSelection = await deps.getDocsSelectionSummary?.('fix');
       const language = resolveFixLanguage();
-
       let markdown = deps.mermaidState.code;
       let blocks = extractMermaidBlocksFromMarkdown(markdown);
       logEvent({
@@ -297,236 +448,34 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         title: 'Fix',
         detail: `all blocks: ${blocks.length}, язык: ${language}`,
       });
+      const applyMarkdownChange = (nextMarkdown: string) => {
+        deps.handleMermaidChange(nextMarkdown);
+        markdown = nextMarkdown;
+        blocks = extractMermaidBlocksFromMarkdown(markdown);
+      };
       for (let i = 0; i < blocks.length; i += 1) {
         const block = blocks[i];
         const initialValidation = await validateMermaidDiagramCode(block.code, { logError: false });
         if (initialValidation.isValid !== false) continue;
 
         deps.setMarkdownMermaidActiveIndex(i);
-        const runner = createStudioOperationRunner(
-          { onLLMRequestStart: deps.onLLMRequestStart },
-          {
-            logEvent: (args) => {
-              logEvent({ ...args, blockIndex: i });
-            },
-          }
-        );
-
-        const diagramType = block.diagramType ?? (normalizeDiagramType(deps.appDiagramType ?? '') ?? null);
-        const diagramTypeForDocs = coerceToDiagramType(diagramType);
-        const syntaxDoc = diagramTypeForDocs ? await fetchDiagramSyntaxDoc(diagramTypeForDocs) : { text: '', path: null };
-        const docsEntries = syntaxDoc.path ? [{ path: syntaxDoc.path, text: syntaxDoc.text }] : [];
-        const docs = docsEntries.length ? formatDocsContext(docsEntries) : await deps.getDocsContext('fix');
-        const label = `${i + 1}/${blocks.length} - ${diagramType ?? 'unknown'} - Fix block`;
-        logEvent({
-          phase: 'fix',
-          level: 'info',
-          title: 'Block',
-          detail: label,
-          blockIndex: i,
-          kind: 'block',
-          contextScope: 'block',
-        });
-        const fixMessage: Message = {
-          id: `fix-input-${i + 1}`,
-          role: 'user',
-          content: [
-            'Code:',
-            '```mermaid',
-            block.code,
-            '```',
-            '',
-            'Error:',
-            (initialValidation.errorMessage ?? '').trim() || 'Unknown error',
-          ].join('\n'),
-          timestamp: Date.now(),
-        };
-        const systemPrompt = buildSystemPrompt('fix', {
-          diagramType: (diagramType ?? deps.appDiagramType ?? 'auto') as DiagramType,
-          docsContext: 'Documentation context redacted.',
-          language,
-        });
-        const fixContextEvent = buildContextEventForLog({
-          phase: 'fix',
-          contextScope: 'block',
-          systemPrompt,
-          messages: [fixMessage],
-          docsContext: docs,
-          selectionSummary: docsEntries.length
-            ? { includedPaths: docsEntries.map((entry) => entry.path) }
-            : (docsSelection ? { includedPaths: docsSelection.includedPaths } : null),
-        });
-        await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
-          diagramType,
-          mode: 'fix',
-          codeLength: block.code.length,
-        });
-
-        const {
-          currentCode,
-          validation,
-          attempts,
-          changed,
-          cleared,
-          nextMarkdown,
-          nextMermaid,
-        } = await runMarkdownFix({
-          runner,
-          contextEvent: fixContextEvent,
+        const totalBlocks = blocks.length;
+        const result = await runBlockFix({
           block,
-          markdown,
-          docs,
-          language,
-          initialValidation,
-          onAttempt: (attempt, nextValidation) => {
-            logEvent({
-              phase: 'fix',
-              level: 'info',
-              title: 'Auto-fix',
-              detail: `attempt ${attempt}/${AUTO_FIX_MAX_ATTEMPTS}`,
-              blockIndex: i,
-              attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
-              kind: 'attempt',
-              contextScope: 'block',
-            });
-            if (nextValidation.errorMessage) {
-              const line = nextValidation.errorMessage.split(/\r?\n/)[0]?.slice(0, 200) ?? '';
-              if (line) {
-                logEvent({
-                  phase: 'fix',
-                  level: 'warn',
-                  title: 'Auto-fix error',
-                  detail: line,
-                  blockIndex: i,
-                  attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
-                  error: { code: 'validation', message: line },
-                  kind: 'attempt',
-                  contextScope: 'block',
-                });
-              }
-            }
-          },
-        });
-
-        logEvent({
-          phase: 'validate',
-          level: validation.isValid ? 'info' : 'warn',
-          title: 'Block validation',
-          detail: validation.isValid ? 'valid' : 'invalid',
           blockIndex: i,
-          metrics: attempts ? { autoFix: attempts } : undefined,
-          kind: 'block',
-          contextScope: 'block',
+          totalBlocks,
+          markdown,
+          initialValidation,
+          fixMode: 'markdown_all',
+          opId,
+          logEvent,
+          onMarkdownChange: applyMarkdownChange,
+          durationStart: startedAt,
         });
-        if (!validation.isValid) {
-          const line = validation.errorMessage?.split(/\r?\n/)[0]?.slice(0, 200) ?? 'validation error';
-          logEvent({
-            phase: 'validate',
-            level: 'error',
-            title: 'Ошибка',
-            detail: line,
-            blockIndex: i,
-            error: { code: 'validation', message: line },
-            kind: 'block',
-            contextScope: 'block',
-          });
-        }
-
-        if (changed || cleared) {
-          deps.handleMermaidChange(nextMarkdown);
-          markdown = nextMarkdown;
-          blocks = extractMermaidBlocksFromMarkdown(markdown);
-        }
-
-        if (validation.isValid === false) {
-          const resultMessage = deps.addMessage(
-            'assistant',
-            summarizeFixOutcome({
-              indexLabel: `блок ${i + 1} из ${blocks.length}`,
-              attempts,
-              changed,
-              cleared,
-              wasValid: false,
-              errorMessage: initialValidation.errorMessage,
-              finalErrorMessage: validation.errorMessage,
-              before: block.code,
-              after: currentCode,
-            }),
-            'fix'
-          );
-          const stopMessage = deps.addMessage(
-            'assistant',
-            `Fix остановлен после блока ${i + 1}: исправление не удалось.`,
-            'fix'
-          );
-          await deps.safeAppendTimeStep({
-            type: 'fix',
-            messages: [resultMessage, stopMessage].filter(Boolean) as Message[],
-            nextMermaid,
-            setCurrentRevisionId: cleared ? null : undefined,
-            meta: {
-              attempts,
-              changed,
-              isValid: !!validation.isValid,
-              cleared,
-              diagramType,
-              mode: 'notebook',
-              fixMode: 'markdown_all',
-              blockIndex: i,
-              totalBlocks: blocks.length,
-              stopped: true,
-              operationLog: deps.getOperationLog(opId),
-            },
-          });
+        if (result.shouldStop) {
           deps.finishOperation(opId, 'error');
           return;
         }
-
-        const resultMessage = deps.addMessage(
-          'assistant',
-          summarizeFixOutcome({
-            indexLabel: `блок ${i + 1} из ${blocks.length}`,
-            attempts,
-            changed,
-            cleared,
-            wasValid: !!validation.isValid,
-            errorMessage: initialValidation.errorMessage,
-            finalErrorMessage: validation.errorMessage,
-            before: block.code,
-            after: currentCode,
-          }),
-          'fix'
-        );
-        await deps.safeAppendTimeStep({
-          type: 'fix',
-          messages: [resultMessage].filter(Boolean) as Message[],
-          nextMermaid,
-          setCurrentRevisionId: cleared ? null : undefined,
-          meta: {
-            attempts,
-            changed,
-            isValid: !!validation.isValid,
-            cleared,
-            diagramType,
-            mode: 'notebook',
-            fixMode: 'markdown_all',
-            blockIndex: i,
-            totalBlocks: blocks.length,
-            operationLog: deps.getOperationLog(opId),
-          },
-        });
-
-        await deps.trackAnalyticsWithContext('diagram_fix_success', 'fix', {
-          diagramType,
-          mode: 'fix',
-          attempts,
-          changed,
-          cleared,
-          isValid: !!validation.isValid,
-          durationMs: Date.now() - startedAt,
-          codeLength: currentCode.length,
-          errorLine: validation.errorLine,
-        });
       }
       deps.finishOperation(opId, 'done');
     } catch (e: unknown) {
@@ -538,7 +487,6 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         error: 'exception',
         durationMs: Date.now() - startedAt,
       });
-      alert(`Fix failed (${deps.aiConfig.selectedModelId ? `model=${deps.aiConfig.selectedModelId}` : 'model=unknown'}): ${message}`);
       await deps.safeAppendTimeStep({
         type: 'fix',
         messages: [],
@@ -549,9 +497,8 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     }
   }, [
     deps,
+    runBlockFix,
     resolveFixLanguage,
-    runMarkdownFix,
-    summarizeFixOutcome,
   ]);
 
   const handleFixSyntax = useCallback(async () => {
@@ -599,202 +546,27 @@ export const useFixFlow = (deps: FixFlowDeps) => {
     }
 
     const startedAt = Date.now();
-    const opId = deps.startOperation('Fix');
+    const opId = deps.startOperation('Fix', undefined, 'fix');
     const logEvent = (args: Parameters<typeof deps.addOperationEvent>[1]) => {
       deps.addOperationEvent(opId, args);
     };
     deps.setIsProcessing(true);
     try {
-      const diagramType =
-        targetBlock.diagramType ?? (normalizeDiagramType(deps.appDiagramType ?? '') ?? null);
-      const runner = createStudioOperationRunner(
-        { onLLMRequestStart: deps.onLLMRequestStart },
-        {
-          logEvent: (args) => {
-            logEvent({ ...args, blockIndex: targetIndex });
-          },
-        }
-      );
+      const initialValidation = await validateMermaidDiagramCode(targetBlock.code, { logError: false });
       const totalBlocks = deps.markdownMermaidBlocks.length;
-      const label = `${targetIndex + 1}/${totalBlocks} - ${diagramType ?? 'unknown'} - Fix block`;
-      logEvent({
-        phase: 'fix',
-        level: 'info',
-        title: 'Block',
-        detail: label,
-        blockIndex: targetIndex,
-        kind: 'block',
-        contextScope: 'block',
-      });
-      const docsSelection = await deps.getDocsSelectionSummary?.('fix');
-      const diagramTypeForDocs = coerceToDiagramType(diagramType);
-      const syntaxDoc = diagramTypeForDocs ? await fetchDiagramSyntaxDoc(diagramTypeForDocs) : { text: '', path: null };
-      const docsEntries = syntaxDoc.path ? [{ path: syntaxDoc.path, text: syntaxDoc.text }] : [];
-      const docs = docsEntries.length ? formatDocsContext(docsEntries) : await deps.getDocsContext('fix');
-      const language = resolveFixLanguage();
-      logEvent({
-        phase: 'fix',
-        level: 'info',
-        title: 'Fix',
-        detail: `язык: ${language}`,
-      });
-      const fixMessage: Message = {
-        id: `fix-input-${targetIndex + 1}`,
-        role: 'user',
-        content: [
-          'Code:',
-          '```mermaid',
-          targetBlock.code,
-          '```',
-          '',
-          'Error:',
-          (targetDiagnostics?.errorMessage ?? '').trim() || (targetDiagnostics?.isValid === false ? 'Validation error' : 'Unknown error'),
-        ].join('\n'),
-        timestamp: Date.now(),
-      };
-      const systemPrompt = buildSystemPrompt('fix', {
-        diagramType: (diagramType ?? normalizeDiagramType(deps.appDiagramType ?? '') ?? 'auto') as DiagramType,
-        docsContext: 'Documentation context redacted.',
-        language,
-      });
-      const fixContextEvent = buildContextEventForLog({
-        phase: 'fix',
-        contextScope: 'block',
-        systemPrompt,
-        messages: [fixMessage],
-        docsContext: docs,
-        selectionSummary: docsEntries.length
-          ? { includedPaths: docsEntries.map((entry) => entry.path) }
-          : (docsSelection ? { includedPaths: docsSelection.includedPaths } : null),
-      });
-      await deps.trackAnalyticsWithContext('diagram_fix_started', 'fix', {
-        diagramType,
-        mode: 'fix',
-        codeLength: targetBlock.code.length,
-      });
-
-      const startCode = targetBlock.code;
-      const initialValidation = await validateMermaidDiagramCode(startCode, { logError: false });
-      const {
-        currentCode,
-        validation,
-        attempts,
-        changed,
-        cleared,
-        nextMarkdown,
-        nextMermaid,
-      } = await runMarkdownFix({
-        runner,
-        contextEvent: fixContextEvent,
+      const result = await runBlockFix({
         block: targetBlock,
-        markdown: deps.mermaidState.code,
-        docs,
-        language,
-        initialValidation,
-        onAttempt: (attempt, nextValidation) => {
-          logEvent({
-            phase: 'fix',
-            level: 'info',
-            title: 'Auto-fix',
-            detail: `attempt ${attempt}/${AUTO_FIX_MAX_ATTEMPTS}`,
-            blockIndex: targetIndex,
-            attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
-            kind: 'attempt',
-            contextScope: 'block',
-          });
-          if (nextValidation.errorMessage) {
-            const line = nextValidation.errorMessage.split(/\r?\n/)[0]?.slice(0, 200) ?? '';
-            if (line) {
-              logEvent({
-                phase: 'fix',
-                level: 'warn',
-                title: 'Auto-fix error',
-                detail: line,
-                blockIndex: targetIndex,
-                attempt: { current: attempt, max: AUTO_FIX_MAX_ATTEMPTS },
-                error: { code: 'validation', message: line },
-                kind: 'attempt',
-                contextScope: 'block',
-              });
-            }
-          }
-        },
-      });
-
-      if (changed || cleared) {
-        deps.handleMermaidChange(nextMarkdown);
-      }
-
-      logEvent({
-        phase: 'validate',
-        level: validation.isValid ? 'info' : 'warn',
-        title: 'Block validation',
-        detail: validation.isValid ? 'valid' : 'invalid',
         blockIndex: targetIndex,
-        metrics: attempts ? { autoFix: attempts } : undefined,
-        kind: 'block',
-        contextScope: 'block',
+        totalBlocks,
+        markdown: deps.mermaidState.code,
+        initialValidation,
+        fixMode: 'block',
+        opId,
+        logEvent,
+        onMarkdownChange: (nextMarkdown) => deps.handleMermaidChange(nextMarkdown),
+        durationStart: startedAt,
       });
-      if (!validation.isValid) {
-        const line = validation.errorMessage?.split(/\r?\n/)[0]?.slice(0, 200) ?? 'validation error';
-        logEvent({
-          phase: 'validate',
-          level: 'error',
-          title: 'Ошибка',
-          detail: line,
-          blockIndex: targetIndex,
-          error: { code: 'validation', message: line },
-          kind: 'block',
-          contextScope: 'block',
-        });
-      }
-
-      const resultMessage = deps.addMessage(
-        'assistant',
-        summarizeFixOutcome({
-          indexLabel: `блок ${targetIndex + 1}`,
-          attempts,
-          changed,
-          cleared,
-          wasValid: !!validation.isValid,
-          errorMessage: initialValidation.errorMessage,
-          finalErrorMessage: validation.errorMessage,
-          before: startCode,
-          after: currentCode,
-        }),
-        'fix'
-      );
-      await deps.safeAppendTimeStep({
-        type: 'fix',
-        messages: [resultMessage].filter(Boolean) as Message[],
-        nextMermaid,
-        setCurrentRevisionId: cleared ? null : undefined,
-        meta: {
-          attempts,
-          changed,
-          isValid: !!validation.isValid,
-          cleared,
-          diagramType,
-          mode: 'notebook',
-          fixMode: 'block',
-          blockIndex: targetIndex,
-          totalBlocks: deps.markdownMermaidBlocks.length,
-          operationLog: deps.getOperationLog(opId),
-        },
-      });
-      deps.finishOperation(opId, validation.isValid ? 'done' : 'error');
-
-      await deps.trackAnalyticsWithContext('diagram_fix_success', 'fix', {
-        diagramType,
-        mode: 'fix',
-        attempts,
-        changed,
-        cleared,
-        isValid: !!validation.isValid,
-        durationMs: Date.now() - startedAt,
-        codeLength: currentCode.length,
-        errorLine: validation.errorLine,
-      });
+      deps.finishOperation(opId, result.validation.isValid ? 'done' : 'error');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       deps.addMessage('assistant', `Fix failed: ${message}`, 'fix');
@@ -803,7 +575,6 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         error: 'exception',
         durationMs: Date.now() - startedAt,
       });
-      alert(`Fix failed (${deps.aiConfig.selectedModelId ? `model=${deps.aiConfig.selectedModelId}` : 'model=unknown'}): ${message}`);
       await deps.safeAppendTimeStep({ type: 'fix', messages: [], meta: { error: message } });
       deps.finishOperation(opId, 'error');
     } finally {
@@ -812,9 +583,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
   }, [
     deps,
     handleFixAllMarkdownBlocks,
-    resolveFixLanguage,
-    runMarkdownFix,
-    summarizeFixOutcome,
+    runBlockFix,
   ]);
 
   return {

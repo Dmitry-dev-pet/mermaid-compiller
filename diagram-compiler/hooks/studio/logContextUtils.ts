@@ -1,5 +1,5 @@
 import type { Message } from '../../types';
-import type { OperationEvent, OperationPhase } from '../../types';
+import type { DiagramType, OperationEvent, OperationPhase } from '../../types';
 
 type DocsSelectionSummary = {
   includedPaths: string[];
@@ -163,6 +163,7 @@ export const buildDocsTooltipForLog = (docsDetail: string) => `Docs:\n${docsDeta
 export const buildContextEventForLog = (args: {
   phase: OperationPhase;
   contextScope: OperationEvent['contextScope'];
+  diagramType?: DiagramType | null;
   selectionLine?: string;
   systemPrompt: string;
   messages: Message[];
@@ -197,6 +198,7 @@ export const buildContextEventForLog = (args: {
     level: 'info' as const,
     title: 'Контекст',
     detail,
+    diagramType: args.diagramType ?? undefined,
     metrics: totalTokens > 0 ? { tokens: totalTokens } : undefined,
     contextMeta: {
       selectionLine: args.selectionLine?.trim() || undefined,

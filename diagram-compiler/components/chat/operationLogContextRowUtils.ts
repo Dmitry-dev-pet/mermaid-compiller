@@ -1,6 +1,5 @@
 import type { LogRow } from './operationLogViewModelTypes';
 import {
-  resolveDiagramTypeShortLabelFromText,
   stripDiagramTypeFromText,
   stripInnerBlockLabelFromContextText,
 } from './operationLogTextUtils';
@@ -16,8 +15,12 @@ export const isContextRow = (row: LogRow) => {
 export const stripDiagramTypeFromRows = (rows: LogRow[], isRunning: boolean) => {
   for (const row of rows) {
     const sourceText = row.contentText ?? row.text;
-    const typeLabel = resolveDiagramTypeShortLabelFromText(sourceText);
-    const strippedContent = stripInnerBlockLabelFromContextText(stripDiagramTypeFromText(sourceText));
+    const typeLabel = row.diagramTypeLabel ?? null;
+    const strippedContent = stripInnerBlockLabelFromContextText(
+      row.diagramType
+        ? stripDiagramTypeFromText(sourceText, row.diagramType)
+        : sourceText
+    );
     row.contentText = strippedContent;
     row.text = row.labelText ? `${row.labelText} — ${strippedContent}` : strippedContent;
     if (typeLabel) {
@@ -33,4 +36,3 @@ export const stripDiagramTypeFromRows = (rows: LogRow[], isRunning: boolean) => 
     }
   }
 };
-

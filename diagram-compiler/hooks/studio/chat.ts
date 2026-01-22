@@ -155,6 +155,7 @@ export const createChatHandler = (ctx: StudioContext) => {
           const contextEvent = buildContextEventForLog({
             phase: 'chat',
             contextScope: 'chat',
+            diagramType: ctx.appState.diagramType,
             selectionLine,
             systemPrompt,
             messages: llmMessages,

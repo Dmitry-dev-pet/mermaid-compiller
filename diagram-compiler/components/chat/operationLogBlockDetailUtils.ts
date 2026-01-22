@@ -1,6 +1,6 @@
-import type { OperationEvent } from '../../types';
+import type { DiagramType, OperationEvent } from '../../types';
 import { getDiagramTypeShortLabel } from '../../utils/diagramTypeMeta';
-import { normalizeDiagramType } from '../../utils/diagramTypes';
+import { isDiagramType, normalizeDiagramType } from '../../utils/diagramTypes';
 
 export const parseBlockDetail = (detail: string) => {
   const match = detail.match(/^(\d+\/\d+)\s*-\s*(.+)$/);
@@ -12,9 +12,14 @@ export const parseBlockDetail = (detail: string) => {
 };
 
 export const resolveNotebookTypes = (events: OperationEvent[]) => {
-  const blockTypes = new Map<number, string>();
+  const blockTypes = new Map<number, DiagramType>();
   for (const event of events) {
     if (typeof event.blockIndex !== 'number') continue;
+    const directType = event.diagramType;
+    if (directType) {
+      blockTypes.set(event.blockIndex, directType);
+      continue;
+    }
     if (!event.detail) continue;
     if (event.title !== 'Block' && event.title !== 'Block attempt' && event.title !== 'Block validation') {
       continue;
@@ -25,13 +30,13 @@ export const resolveNotebookTypes = (events: OperationEvent[]) => {
     const [rawType] = parsed.rest.split(' - ');
     const normalized = normalizeDiagramType(rawType?.trim() ?? '') ?? rawType?.trim() ?? '';
     if (!normalized) continue;
+    if (!isDiagramType(normalized)) continue;
     blockTypes.set(event.blockIndex, normalized);
   }
   const counts = new Map<string, number>();
   for (const type of blockTypes.values()) {
-    const label = getDiagramTypeShortLabel(type as never);
+    const label = getDiagramTypeShortLabel(type);
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   return Array.from(counts.entries()).map(([label, count]) => (count > 1 ? `${label}×${count}` : label));
 };
-
