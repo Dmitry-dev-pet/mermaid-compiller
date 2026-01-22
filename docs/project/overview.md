@@ -9,6 +9,15 @@ Mermaid Diagram Compiler — SPA для генерации и редактиро
 - Гарантировать валидность Mermaid-кода перед рендером.
 - Давать мгновенную визуализацию, удобные инструменты навигации (zoom/pan, fullscreen, fit) и безопасный экспорт.
 
+## Архитектура (кратко)
+
+- UI собирается в `diagram-compiler/components/`, логика вынесена в хуки (`hooks/core`, `hooks/studio`, `hooks/preview`).
+- Центральный orchestrator: `hooks/studio/useDiagramStudio` + `runStudioOperation`.
+- Preview вынесен в специализированные хуки: рендер SVG, markdown блоки, scroll sync, whiteboard.
+- История/сессии и ревизии Mermaid-кода хранятся в IndexedDB.
+
+Подробная архитектура: `docs/project/architecture.md`.
+
 ## Ключевые возможности
 
 - Chat/Build разделены: Chat структурирует intent без кода, Build генерирует валидный Mermaid.
@@ -37,4 +46,4 @@ Mermaid Diagram Compiler — SPA для генерации и редактиро
 
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (унификация UI-контролов, выравнивание хедеров).
+Обновлено: 2026-01-22. Согласовано с текущей реализацией (preview hooks, operation logs, whiteboard).

@@ -1,33 +1,59 @@
 # C4 L3 — Components (SPA)
 
-## Основные компоненты UI
+## UI-компоненты (верхний уровень)
 
-- `Header` — настройки подключения (провайдер/ключ/модель), тема.
-- `ChatColumn` — история сообщений + выбор типа диаграммы + действия Chat/Build.
-- `EditorColumn` — редактор Mermaid-кода + Analyze/Fix/Run.
-- `PreviewColumn` — рендер диаграммы и управление превью.
-- `components/chat/ChatOperationLog` — операционные логи (Plan/Diagrams), тайминги и подсказки контекста.
-- `components/ui/*` — UI-примитивы (Button/Tab/Input/Select/Radio/PanelHeader) для единого стиля контролов и хедеров.
+- `Header` — настройки подключения (provider/key/model), тема, статус.
+- `ChatColumn` — история сообщений + Chat/Build + управление проектами.
+- `EditorColumn` — редактор Mermaid + Analyze/Fix/Snapshot + Build Docs + вкладки markdown.
+- `PreviewColumn` — SVG/Markdown preview, zoom/pan/fit, whiteboard/ED.
+- `components/chat/ChatOperationLog` — рендер operation logs по view-model.
+- `components/ui/*` — единые UI‑примитивы (Button/Tab/Input/Select/PanelHeader).
 
-## Основные хуки/слои
+## Хуки и подсистемы
 
-- `hooks/studio/useDiagramStudio` — «оркестратор» состояния приложения.
-- `hooks/studio/useNotebookBuild` — сборка Markdown notebook (planner + последовательные build).
-- `hooks/studio/useOperationLog` — сбор/гидрация и работа с operation logs.
-- `hooks/studio/runStudioOperation` — обертка для операций (Chat/Build/Fix/Analyze) с логированием, таймаутами и итогами.
-- `hooks/core/useAI` — конфигурация провайдера, подключение, список моделей.
-- `hooks/core/useMermaid` — код, статус валидности, асинхронная валидация.
-- `hooks/core/useHistory` + `services/history/*` — IndexedDB: Session/TimeStep/DiagramRevision.
-- `services/llm/*` — стратегии провайдеров (OpenRouter/Cliproxy).
-- `services/docsContextService.ts` — сбор сниппетов документации для промптов.
-- `services/llmRequestRunner.ts` — таймауты/повторы запросов LLM.
-- `services/notebookPlanService.ts` + `services/notebookPlanSchema.ts` — парсинг и валидация `NotebookPlan`.
+### Оркестрация (studio)
+
+- `hooks/studio/useDiagramStudio` — центральный orchestrator состояния.
+- `hooks/studio/runStudioOperation` — wrapper для Chat/Build/Fix/Analyze.
+- `hooks/studio/useNotebookBuild` — planner + последовательный build блоков notebook.
+- `hooks/studio/useFixFlow` — auto-fix Mermaid.
+- `hooks/studio/useOperationLog` — сбор/гидрация operation logs.
+- `hooks/studio/useProjects` — управление сессиями.
+
+### Preview subsystem
+
+- `hooks/preview/useMermaidSvgRender` — Mermaid → SVG (single diagram).
+- `hooks/preview/useSvgPanZoom` — pan/zoom/fit для SVG.
+- `hooks/preview/useMermaidCodeBlockRenderer` — Mermaid‑блоки внутри Markdown/Build Docs.
+- `hooks/preview/useMarkdownPreview` — markdown → HTML.
+- `hooks/preview/useMarkdownPreviewMeta` — derived state (theme/look/direction/flowchart styles).
+- `hooks/preview/usePreviewScrollSync` — scroll sync между Editor и Preview.
+- `hooks/preview/usePreviewWhiteboard` — whiteboard/ED режимы, темы, авто‑sync.
+- `hooks/preview/useBuildDocsPreview` — превью Build Docs/Prompts.
+
+### Core hooks
+
+- `hooks/core/useAI` — подключение к LLM, модели, provider.
+- `hooks/core/useMermaid` — Mermaid код + async validation.
+- `hooks/core/useHistory` — IndexedDB (Session/TimeStep/DiagramRevision).
+- `hooks/core/useChat` — сообщения.
+- `hooks/core/useLayout` — theme/size/fullscreen.
+
+### Services
+
+- `services/llm/*` — стратегии OpenRouter/Cliproxy.
+- `services/llmRequestRunner.ts` — таймауты/повторы.
+- `services/mermaidService.ts` + `services/mermaid/*` — parsing/validate/sanitize.
+- `services/docsContextService.ts` — build docs context from local docs.
+- `services/history/*` — IndexedDB.
+- `services/notebookPlanService.ts` — `NotebookPlan` parsing/validation.
 
 ## Схема взаимодействий
 
 ```mermaid
 flowchart TD
-  UI[UI Components\n(Header/Chat/Editor/Preview)] --> Studio[hooks/studio/useDiagramStudio]
+  UI[UI Components
+(Header/Chat/Editor/Preview)] --> Studio[hooks/studio/useDiagramStudio]
   Studio --> AI[hooks/core/useAI]
   Studio --> Mermaid[hooks/core/useMermaid]
   Studio --> History[hooks/core/useHistory]
@@ -36,12 +62,18 @@ flowchart TD
   Studio --> NB[useNotebookBuild]
   Studio --> Runner[llmRequestRunner]
 
+  Preview[PreviewColumn] --> PreviewHooks[hooks/preview/*]
+  PreviewHooks --> MermaidRender[useMermaidSvgRender]
+  PreviewHooks --> PanZoom[useSvgPanZoom]
+  PreviewHooks --> Whiteboard[usePreviewWhiteboard]
+
   LLM --> OR[OpenRouterStrategy]
   LLM --> CP[CliproxyStrategy]
 
-  History --> IDB[(IndexedDB\nservices/history)]
+  History --> IDB[(IndexedDB
+services/history)]
 ```
 
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (UI-примитивы, выравнивание хедеров).
+Обновлено: 2026-01-22. Согласовано с текущей реализацией (preview hooks, operation logs).

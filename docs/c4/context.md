@@ -46,4 +46,4 @@ UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (унификация UI-контролов, выравнивание хедеров).
+Обновлено: 2026-01-22. Согласовано с текущей реализацией (preview hooks, whiteboard, operation logs).
