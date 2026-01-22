@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowUpRight, MessageSquare, Play, Plus, Trash2, Loader2 } f
 import { LLMRequestPreview, Message, PromptPreviewMode, PromptTokenCounts } from '../types';
 import type { DiagramType } from '../types';
 import ChatProjects from './ChatProjects';
+import { Button } from './ui/Button';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../utils/uiModes';
 import './chat-markdown.css';
 import ChatMarkdownTabs from './chat/ChatMarkdownTabs';
@@ -616,6 +617,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
       style={{ backgroundColor: 'var(--panel-bg, #f3f4f6)' }}
     >
         <ChatProjects
+          mode="panel"
+          chatStatus={isProcessing ? 'running' : 'idle'}
           projects={projects}
           activeProjectId={activeProjectId}
           onNewProject={onNewProject}
@@ -642,14 +645,15 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
           style={{ borderColor: 'var(--panel-border, #e5e7eb)' }}
         >
           <span>Чат диаграммы</span>
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={onBackToNotebookMainChat}
-            className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            className="h-auto px-1 py-0 text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           >
             <ArrowLeft size={12} />
             Назад в основной чат
-          </button>
+          </Button>
         </div>
       )}
 
@@ -809,14 +813,16 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                           {messageText}
                         </div>
                         {notebookBuildMeta && typeof onOpenNotebookBlock === 'function' && (
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon"
                             onClick={() => onOpenNotebookBlock?.(notebookBuildMeta.blockIndex)}
-                            className="shrink-0 rounded-full p-1 text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200"
+                            className="h-6 w-6 shrink-0 text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200"
                             title="Open diagram"
                           >
                             <ArrowUpRight size={12} />
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -901,32 +907,34 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         <div className="mt-2 flex flex-col gap-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-3">
-              <button
+              <Button
                 onClick={onNewProject}
-                className="text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 transition-colors"
+                variant="ghost"
+                className="h-auto px-1 py-0 text-xs text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 transition-colors"
                 title="Новый проект (сброс чата, диаграммы и истории)"
                 type="button"
               >
                 <Plus size={12} /> Новый проект
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={onClear}
-                className="text-xs text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors"
+                variant="ghost"
+                className="h-auto px-1 py-0 text-xs text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors"
                 title="Clear chat history"
                 type="button"
               >
                 <Trash2 size={12} /> Clear spec
-              </button>
+              </Button>
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
               <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline whitespace-nowrap">
                 Enter: Chat • Ctrl/Cmd+Enter: Build
               </span>
-              <button
+              <Button
                 onClick={() => handleSubmit('chat')}
                 disabled={!input.trim() || isProcessing}
-                className={`px-2.5 py-1.5 text-xs rounded-md disabled:opacity-80 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
+                className={`px-2.5 py-1.5 text-xs rounded-md transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
                   !input.trim() || isProcessing
                     ? MODE_BUTTON_DISABLED
                     : MODE_UI.chat.button
@@ -939,11 +947,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                   <MessageSquare size={14} />
                 )}{' '}
                 Chat
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => handleSubmit('build')}
                 disabled={(!input.trim() && !hasIntent) || isProcessing}
-                className={`px-2.5 py-1.5 text-xs rounded-md disabled:opacity-80 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
+                className={`px-2.5 py-1.5 text-xs rounded-md transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
                   (!input.trim() && !hasIntent) || isProcessing
                     ? MODE_BUTTON_DISABLED
                     : MODE_UI.build.button
@@ -956,7 +964,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
                   <Play size={14} />
                 )}{' '}
                 Build
-              </button>
+              </Button>
             </div>
           </div>
 

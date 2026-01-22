@@ -3,7 +3,10 @@ import { ChevronDown, Check, X, Wifi, WifiOff, Loader2, Filter, LogOut, Moon, Ey
 import { AIConfig, CliproxyFilters, ConnectionState, OpenRouterFilters, ThemePresetId } from '../types';
 import { APP_THEME_PRESETS } from '../utils/appTheme';
 import { Button } from './ui/Button';
+import { Input } from './ui/Input';
 import PanelHeader from './ui/PanelHeader';
+import { RadioGroup, RadioOption } from './ui/Radio';
+import { Select } from './ui/Select';
 
 interface HeaderProps {
   aiConfig: AIConfig;
@@ -17,6 +20,7 @@ interface HeaderProps {
   llmTimeoutMs: number;
   onLLMTimeoutMsChange: (timeoutMs: number) => void;
   notebookTabs?: React.ReactNode;
+  projectsHeader?: React.ReactNode;
 }
 
 const HeaderNotebookSlot: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
@@ -36,6 +40,7 @@ const Header: React.FC<HeaderProps> = ({
   llmTimeoutMs,
   onLLMTimeoutMsChange,
   notebookTabs,
+  projectsHeader,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
@@ -212,7 +217,16 @@ const Header: React.FC<HeaderProps> = ({
     >
       <div className="flex items-center gap-4 min-w-0 pr-2">
         <h1 className="font-bold text-lg tracking-tight text-slate-800 dark:text-slate-100">Diagram Compiler</h1>
-        
+        {projectsHeader && <div className="flex-1 min-w-0">{projectsHeader}</div>}
+      </div>
+
+      <div className="h-full w-1 bg-transparent" aria-hidden="true" />
+
+      <div className="min-w-0">
+        <HeaderNotebookSlot>{notebookTabs}</HeaderNotebookSlot>
+      </div>
+
+      <div className="flex items-center gap-4 text-[10px] text-slate-500 dark:text-slate-400 font-medium pl-3">
         {/* AI Control Plane Trigger */}
         <div className="relative" ref={dropdownRef}>
           <Button 
@@ -231,33 +245,25 @@ const Header: React.FC<HeaderProps> = ({
 
           {/* Dropdown Panel */}
           {isOpen && (
-            <div className="absolute top-full left-0 mt-2 w-[400px] bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-4 animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+            <div className="absolute top-full right-0 mt-2 w-[400px] bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-4 animate-in fade-in slide-in-from-top-2 duration-200 z-50">
               
               {/* Provider Selection */}
               <div className="mb-4">
                 <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">Provider</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer dark:text-slate-300">
-                    <input 
-                      type="radio" 
-                      name="provider" 
-                      checked={aiConfig.provider === 'openrouter'}
-                      onChange={() => switchProvider('openrouter')}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm">OpenRouter</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer dark:text-slate-300">
-                    <input 
-                      type="radio" 
-                      name="provider" 
-                      checked={aiConfig.provider === 'cliproxy'}
-                      onChange={() => switchProvider('cliproxy')}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm">My Proxy</span>
-                  </label>
-                </div>
+                <RadioGroup>
+                  <RadioOption
+                    name="provider"
+                    checked={aiConfig.provider === 'openrouter'}
+                    onChange={() => switchProvider('openrouter')}
+                    label="OpenRouter"
+                  />
+                  <RadioOption
+                    name="provider"
+                    checked={aiConfig.provider === 'cliproxy'}
+                    onChange={() => switchProvider('cliproxy')}
+                    label="My Proxy"
+                  />
+                </RadioGroup>
               </div>
 
               {/* Connection Settings */}
@@ -271,7 +277,7 @@ const Header: React.FC<HeaderProps> = ({
                     <div>
                       <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Key</label>
                       <div className="relative">
-                        <input 
+                        <Input 
                           type="text"
                           autoComplete="new-password"
                           name="openrouter-secret"
@@ -281,16 +287,19 @@ const Header: React.FC<HeaderProps> = ({
                           value={aiConfig.openRouterKey}
                           onChange={(e) => updateConfig({ openRouterKey: e.target.value })}
                           placeholder="sk-or-..."
-                          className="w-full px-2 py-1.5 pr-8 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                          size="md"
+                          className="pr-8"
                         />
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon"
                           onClick={() => setShowOpenRouterKey((prev) => !prev)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                           aria-label={showOpenRouterKey ? 'Hide API key' : 'Show API key'}
                         >
                           {showOpenRouterKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -298,20 +307,20 @@ const Header: React.FC<HeaderProps> = ({
                   <div className="space-y-3">
                      <div>
                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
-                      <input 
+                      <Input 
                         type="text" 
                         autoComplete="off"
                         name="proxy-endpoint"
                         value={aiConfig.proxyEndpoint}
                         onChange={(e) => updateConfig({ proxyEndpoint: e.target.value })}
                         placeholder="http://localhost:8317"
-                        className="w-full px-2 py-1.5 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        size="md"
                       />
                     </div>
                     <div>
                       <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Proxy Key</label>
                       <div className="relative">
-                        <input 
+                        <Input 
                           type="text"
                           autoComplete="new-password"
                           name="proxy-secret"
@@ -321,16 +330,19 @@ const Header: React.FC<HeaderProps> = ({
                           value={aiConfig.proxyKey || ''}
                           onChange={(e) => updateConfig({ proxyKey: e.target.value })}
                           placeholder="test"
-                          className="w-full px-2 py-1.5 pr-8 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                          size="md"
+                          className="pr-8"
                         />
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon"
                           onClick={() => setShowProxyKey((prev) => !prev)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                           aria-label={showProxyKey ? 'Hide proxy key' : 'Show proxy key'}
                         >
                           {showProxyKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -348,21 +360,21 @@ const Header: React.FC<HeaderProps> = ({
                   </span>
                   
                   {connectionState.status !== 'connected' ? (
-                    <button 
+                    <Button
                       onClick={onConnect}
                       disabled={connectionState.status === 'connecting'}
-                      className="px-3 py-1 bg-slate-900 dark:bg-slate-700 text-white text-xs font-medium rounded hover:bg-slate-800 dark:hover:bg-slate-600 disabled:opacity-50 flex items-center gap-1"
+                      className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600"
                     >
                       {connectionState.status === 'connecting' && <Loader2 size={12} className="animate-spin" />}
                       Test connection
-                    </button>
+                    </Button>
                   ) : (
-                    <button 
+                    <Button
                       onClick={onDisconnect}
-                      className="px-3 py-1 text-red-600 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/20 rounded flex items-center gap-1"
+                      className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
                     >
                       <LogOut size={12} /> Disconnect
-                    </button>
+                    </Button>
                   )}
                 </div>
               </form>
@@ -372,22 +384,23 @@ const Header: React.FC<HeaderProps> = ({
                 <div className="mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Model</label>
-                    <button 
+                    <Button 
                       onClick={() => setShowFilters(!showFilters)}
-                      className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline"
+                      variant="ghost"
+                      className="h-auto px-1 py-0 text-xs text-blue-600 dark:text-blue-400 hover:underline"
                     >
                       <Filter size={10} /> {showFilters ? 'Hide filters' : 'Filters'}
-                    </button>
+                    </Button>
                   </div>
 
                   {showFilters && (
                     <div className="mb-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded text-xs grid grid-cols-2 gap-2 border border-slate-100 dark:border-slate-700 dark:text-slate-300">
                       <div className="col-span-2">
                         <label className="block text-[10px] uppercase text-slate-400 mb-1">Vendor</label>
-                        <select
+                        <Select
                           value={activeFilters.vendor}
                           onChange={(e) => updateFilters({ vendor: e.target.value })}
-                          className="w-full px-2 py-1 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                          size="sm"
                         >
                           <option value="">
                             All vendors ({baseFilteredModels.length})
@@ -397,15 +410,15 @@ const Header: React.FC<HeaderProps> = ({
                               {vendor} ({count})
                             </option>
                           ))}
-                        </select>
+                        </Select>
                       </div>
                       {isOpenRouter && (
                         <div className="col-span-2">
                           <label className="block text-[10px] uppercase text-slate-400 mb-1">Min Context Window</label>
-                          <select
+                          <Select
                             value={activeFilters.minContextWindow}
                             onChange={(e) => updateFilters({ minContextWindow: Number(e.target.value) })}
-                            className="w-full px-2 py-1 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            size="sm"
                           >
                             <option value="0">Any size</option>
                             <option value="32000">32k+</option>
@@ -413,7 +426,7 @@ const Header: React.FC<HeaderProps> = ({
                             <option value="128000">128k+</option>
                             <option value="200000">200k+</option>
                             <option value="1000000">1M+</option>
-                          </select>
+                          </Select>
                         </div>
                       )}
                       {isOpenRouter && (
@@ -439,10 +452,11 @@ const Header: React.FC<HeaderProps> = ({
                     </div>
                   )}
 
-                  <select 
+                  <Select 
                     value={aiConfig.selectedModelId}
                     onChange={(e) => updateSelectedModel(e.target.value)}
-                    className="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white dark:bg-slate-900 dark:text-slate-200"
+                    size="md"
+                    className="p-2"
                   >
                     <option value="" disabled>Select a model...</option>
                     {filteredModels.map(m => (
@@ -450,13 +464,13 @@ const Header: React.FC<HeaderProps> = ({
                         {m.name} {m.contextLength ? `(${formatContextLength(m.contextLength)})` : ''} {m.isFree ? '(Free)' : ''}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               )}
 
               <div className="mt-3 flex items-center justify-between gap-3">
                 <label className="text-xs text-slate-500 dark:text-slate-400">Timeout (s)</label>
-                <input
+                <Input
                   type="number"
                   min={5}
                   max={300}
@@ -467,7 +481,8 @@ const Header: React.FC<HeaderProps> = ({
                     const clamped = Math.max(5, Math.min(300, Math.floor(parsed)));
                     onLLMTimeoutMsChange(clamped * 1000);
                   }}
-                  className="w-24 px-2 py-1.5 text-sm border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  size="md"
+                  className="w-24"
                 />
               </div>
 
@@ -477,15 +492,6 @@ const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
-      </div>
-
-      <div className="h-full w-1 bg-transparent" aria-hidden="true" />
-
-      <div className="min-w-0">
-        <HeaderNotebookSlot>{notebookTabs}</HeaderNotebookSlot>
-      </div>
-
-      <div className="flex items-center gap-4 text-[10px] text-slate-500 dark:text-slate-400 font-medium pl-3">
         <div className="relative" ref={themeDropdownRef}>
           <Button
             type="button"
@@ -514,9 +520,10 @@ const Header: React.FC<HeaderProps> = ({
                     : preset.id === 'abyss' ? Layers
                       : Palette;
                 return (
-                  <button
+                  <Button
                     key={preset.id}
                     type="button"
+                    variant="ghost"
                     onClick={() => {
                       onThemeChange(preset.id);
                       setIsThemeOpen(false);
@@ -533,7 +540,7 @@ const Header: React.FC<HeaderProps> = ({
                       <span className="font-medium">{preset.label}</span>
                     </span>
                     {isSelected && <Check size={14} className="opacity-80" />}
-                  </button>
+                  </Button>
                 );
               })}
             </div>

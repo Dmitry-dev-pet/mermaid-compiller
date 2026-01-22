@@ -7,6 +7,8 @@ import { getMarkdownDiagramTabTooltip } from '../utils/markdownTabs';
 import { useFloatingTooltip } from '../hooks/useFloatingTooltip';
 import type { DiagramMarker } from '../hooks/core/useHistory';
 import { HEADER_CONTROL_BUTTON } from '../utils/uiControlStyles';
+import { Button } from './ui/Button';
+import { Tab, TabList } from './ui/Tabs';
 import { MODE_BUTTON_DISABLED, MODE_UI, UiMode } from '../utils/uiModes';
 import { buildHistoryChipModels, HISTORY_CHIP_INACTIVE_CLASS_BY_MODE } from '../utils/historyChipUtils';
 
@@ -94,8 +96,8 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
     <>
       <div className="flex items-center gap-2 min-h-8 px-2 py-1 bg-transparent">
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
+          <Tab
+            isActive={isNotebookSelected}
             onClick={() => {
               onBuildDocsScopeChange?.('notebook');
               if (activeTab !== 'build_docs') onActiveTabChange('code');
@@ -103,19 +105,15 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
             onMouseEnter={(e) => showTooltip(e, 'Notebook')}
             onMouseMove={(e) => showTooltip(e, 'Notebook')}
             onMouseLeave={hideTooltip}
-            className={`px-2 py-0.5 text-[10px] rounded border ${
-              isNotebookSelected
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 opacity-60'
-            }`}
+            className={!isNotebookSelected ? 'opacity-60' : ''}
             title="Notebook"
           >
             Notebook
-          </button>
+          </Tab>
           <span className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
         </div>
 
-        <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto">
+        <TabList className="min-w-0 flex-1 overflow-x-auto">
           {markdownMermaidBlocks.map((block, index) => {
             const isActive = isDiagramSelected && index === markdownMermaidActiveIndex;
             const diagnostics = markdownMermaidDiagnostics[index];
@@ -129,9 +127,8 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
             });
             const tabClass = getTabClassName(isInvalid, isActive);
             return (
-              <button
+              <Tab
                 key={`md-mermaid-tab-${block.index}`}
-                type="button"
                 onClick={() => {
                   onBuildDocsScopeChange?.('diagram');
                   onMarkdownMermaidActiveIndexChange(index);
@@ -142,28 +139,29 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
                 onMouseEnter={(e) => showTooltip(e, tooltipText)}
                 onMouseMove={(e) => showTooltip(e, tooltipText)}
                 onMouseLeave={hideTooltip}
-                className={`px-2 py-0.5 text-[10px] rounded border shrink-0 ${tabClass}`}
+                isActive={isActive}
+                className={`shrink-0 ${tabClass}`}
                 title={tooltipText}
               >
                 {diagramShortLabel}
-              </button>
+              </Tab>
             );
           })}
 
-          <button
-            type="button"
+          <Tab
             onClick={onAppendMarkdownMermaidBlock}
-            className="px-2 py-0.5 text-[10px] rounded border bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 inline-flex items-center gap-1 shrink-0"
+            isActive={false}
+            className="shrink-0"
             title="Add empty mermaid block"
           >
             <Plus size={12} /> Block
-          </button>
+          </Tab>
 
           {onSelectDiagramStep && historyChips.length > 0 && (
             <>
               <span className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
               {historyChips.map((chip) => (
-                <button
+                <Button
                   key={chip.marker.stepId}
                   type="button"
                   onClick={() => handleHistoryChipClick(chip.marker)}
@@ -174,11 +172,11 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
                   title={chip.tooltip}
                 >
                   {chip.label}
-                </button>
+                </Button>
               ))}
             </>
           )}
-        </div>
+        </TabList>
       </div>
       {tooltipPortal}
     </>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Button } from '../ui/Button';
 import { ArrowUpRight } from 'lucide-react';
 import type { Message } from '../../types';
 import { getAttemptIndicator, parseNotebookBuildMessage } from './chatMessageUtils';
@@ -93,14 +94,16 @@ const ChatStatusGroup: React.FC<Props> = ({ messages, isProcessing, isLatestGrou
                   </span>
                 )}
                 {canOpenNotebook && (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => onOpenNotebookBlock?.(notebookBuildMeta.blockIndex)}
-                    className="shrink-0 rounded-full p-1 text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200"
+                    className="h-6 w-6 shrink-0 text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200"
                     title="Open diagram"
                   >
                     <ArrowUpRight size={12} />
-                  </button>
+                  </Button>
                 )}
               </div>
             );

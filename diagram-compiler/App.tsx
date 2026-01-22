@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'; // No need for useCallback anymore directly here
 import Header from './components/Header';
+import ChatProjects from './components/ChatProjects';
 import ChatColumn from './components/ChatColumn';
 import EditorColumn from './components/EditorColumn';
 import PreviewColumn from './components/PreviewColumn';
@@ -350,6 +351,28 @@ function App() {
         llmTimeoutMs={appState.llmTimeoutMs}
         onLLMTimeoutMsChange={setLLMTimeoutMs}
         notebookTabs={notebookTabs}
+        projectsHeader={(
+          <ChatProjects
+            mode="header"
+            projects={projects}
+            activeProjectId={activeProjectId}
+            onNewProject={startNewProject}
+            onOpenProject={openProject}
+            onRenameProject={renameProject}
+            onDeleteProject={removeProject}
+            onUndoDeleteProject={undoRemoveProject}
+            onPreviewProjectSnapshot={showProjectPreview}
+            onClearProjectPreview={clearProjectPreview}
+            deleteUndoMs={deleteUndoMs}
+            diagramType={appState.diagramType}
+            onDiagramTypeChange={setDiagramType}
+            mainDiagramTypes={appState.mainDiagramTypes}
+            onMainDiagramTypesChange={setMainDiagramTypes}
+            detectedDiagramType={detectedDiagramType}
+            notebookBuildCount={appState.notebookBuildCount}
+            onNotebookBuildCountChange={setNotebookBuildCount}
+          />
+        )}
       />
 
       <div

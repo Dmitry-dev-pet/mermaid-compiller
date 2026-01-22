@@ -1,12 +1,17 @@
 import React from 'react';
-import { Bookmark, Check, Copy, FileCode2, Loader2, PenTool, RefreshCw } from 'lucide-react';
+import { Bookmark, Check, Copy, Loader2, PenTool, RefreshCw } from 'lucide-react';
 import { AUTO_FIX_MAX_ATTEMPTS } from '../../constants';
 import { EditorTab, MermaidState } from '../../types';
 import type { DiagramMarker } from '../../hooks/core/useHistory';
-import { HEADER_CONTROL_BUTTON, HEADER_CONTROL_ICON_BUTTON, HEADER_CONTROL_SELECT } from '../../utils/uiControlStyles';
+import { HEADER_CONTROL_BUTTON } from '../../utils/uiControlStyles';
 import { MODE_BUTTON_DISABLED, MODE_UI } from '../../utils/uiModes';
 import { buildHistoryChipModels, HISTORY_CHIP_INACTIVE_CLASS_BY_MODE } from '../../utils/historyChipUtils';
 import PanelHeader from '../ui/PanelHeader';
+import { Button } from '../ui/Button';
+import { Select } from '../ui/Select';
+import HeaderRow from '../ui/HeaderRow';
+import HeaderSection from '../ui/HeaderSection';
+import ModeToggle from '../ui/ModeToggle';
 
 interface EditorHeaderProps {
   mermaidState: MermaidState;
@@ -59,12 +64,10 @@ interface EditorHeaderProps {
   selectedStepId = null,
   onSelectDiagramStep,
 }) => {
-  const actionButtonBase =
-    'h-7 px-2 text-[10px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1 shrink-0 whitespace-nowrap normal-case tracking-normal';
   const isAnalyzing = isProcessing && activeOperationKind === 'analyze';
   const isFixing = isProcessing && activeOperationKind === 'fix';
+  const isCodeActive = activeTab === 'code' || activeTab === 'markdown_mermaid';
 
-  const editorTitle = isBuildDocsTab ? 'Prompts' : 'Editor';
   const historyChips = React.useMemo(() => {
     if (!onSelectDiagramStep) return [];
     if (isBuildDocsTab) return [];
@@ -85,150 +88,145 @@ interface EditorHeaderProps {
   }, [diagramMarkers, isBuildDocsTab, onSelectDiagramStep, selectedStepId]);
 
   return (
-    <PanelHeader
-      className="h-24 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-col gap-2"
-    >
-      <div className="flex items-center justify-between gap-3 min-w-0 normal-case tracking-normal">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="min-w-0 truncate font-semibold text-[var(--control-text)] inline-flex items-center gap-2">
-            <FileCode2 size={14} className="text-slate-400 dark:text-slate-500" />
-            {editorTitle}
-          </div>
-
-          <div className="flex items-center gap-2 min-w-0 text-xs font-mono">
-            {!isMarkdown && mermaidState.status === 'invalid' && (
-              <span
-                className="inline-flex h-3 w-3 rounded-full bg-red-500 ring-1 ring-red-700"
-                title={`Invalid diagram${mermaidState.errorLine ? ` (Line ${mermaidState.errorLine})` : ''}`}
-              />
-            )}
-            {mermaidState.status === 'empty' && <span className="text-slate-400">Empty</span>}
-            {!isMarkdown && mermaidState.status === 'edited' && (
-              <span className="text-amber-600 dark:text-amber-400">⚠ Edited</span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-1.5 font-sans shrink-0">
-          <button
-            onClick={onAnalyze}
-            disabled={!canAnalyze}
-            className={`${actionButtonBase} ${canAnalyze ? MODE_UI.analyze.button : MODE_BUTTON_DISABLED}`}
-            title="Explain this diagram in chat"
-          >
-            {isAnalyzing ? <Loader2 size={10} className="animate-spin" /> : <PenTool size={10} />} Analyze
-          </button>
-
-          <select
-            value={analyzeLanguage}
-            onChange={(e) => onAnalyzeLanguageChange(e.target.value)}
-            className={HEADER_CONTROL_SELECT}
-            title="Analyze language"
-            disabled={isProcessing || isReadOnly}
-          >
-            <option value="auto">Auto</option>
-            <option value="English">EN</option>
-            <option value="Russian">RU</option>
-          </select>
-
-          <button
-            onClick={onFixSyntax}
-            disabled={!isAIReady || isProcessing || !canFix}
-            className={`${actionButtonBase} ${canFix ? MODE_UI.fix.button : MODE_BUTTON_DISABLED}`}
-            title={`Attempt to fix syntax errors (up to ${AUTO_FIX_MAX_ATTEMPTS} tries)`}
-          >
-            <RefreshCw size={10} className={isFixing ? 'animate-spin' : ''} /> Fix ({AUTO_FIX_MAX_ATTEMPTS})
-          </button>
-
-          <button
-            onClick={onSnapshot}
-            disabled={!canSnapshot}
-            className={`${actionButtonBase} ${
-              canSnapshot
-                ? 'text-white bg-slate-700 hover:bg-slate-800 border border-slate-700'
-                : 'text-slate-400 bg-slate-200 dark:bg-slate-800 dark:text-slate-500 border border-slate-300/60 dark:border-slate-500/60'
-            }`}
-            title="Save current diagram state to history"
-          >
-            <Bookmark size={10} /> Snapshot
-          </button>
-
-          <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
-
-          <button
-            onClick={onCopy}
-            className={HEADER_CONTROL_ICON_BUTTON}
-            title={
-              isMarkdownMermaidTab
-                ? 'Copy mermaid block'
-                : isBuildDocsTab
-                ? 'Copy docs'
-                : 'Copy code'
-            }
-          >
-            {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
-          </button>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-2 normal-case tracking-normal">
-        <div className="flex items-center gap-1 min-w-0">
-          <button
-            type="button"
-            onClick={() => onActiveTabChange('code')}
-            className={`px-2 py-0.5 text-[10px] rounded border ${
-              activeTab === 'code' || activeTab === 'markdown_mermaid'
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-            }`}
-          >
-            Code
-          </button>
-          <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
-          <button
-            type="button"
-            onClick={() => onActiveTabChange('build_docs')}
-            className={`px-2 py-0.5 text-[10px] rounded border ${
-              activeTab === 'build_docs'
-                ? 'bg-slate-700 text-white border-slate-700'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-            }`}
-            title="Prompt context"
-          >
-            Prompts
-          </button>
-
-          {!!historyChips.length && (
+    <PanelHeader className="h-24 flex flex-col gap-2">
+      <HeaderSection tone="primary" className="uppercase">
+        <HeaderRow
+          left={(
+            <ModeToggle
+              options={[
+                {
+                  id: 'code',
+                  label: 'Code',
+                  title: 'Code',
+                  active: isCodeActive,
+                  onClick: () => onActiveTabChange('code'),
+                },
+                {
+                  id: 'prompts',
+                  label: 'Prompts',
+                  title: 'Prompts',
+                  active: !isCodeActive,
+                  onClick: () => onActiveTabChange('build_docs'),
+                },
+              ]}
+            />
+          )}
+          center={(
+            <div className="flex items-center gap-2 min-w-0 text-xs font-mono">
+              {!isMarkdown && mermaidState.status === 'invalid' && (
+                <span
+                  className="inline-flex h-3 w-3 rounded-full bg-red-500 ring-1 ring-red-700"
+                  title={`Invalid diagram${mermaidState.errorLine ? ` (Line ${mermaidState.errorLine})` : ''}`}
+                />
+              )}
+              {mermaidState.status === 'empty' && <span className="text-slate-400">Empty</span>}
+              {!isMarkdown && mermaidState.status === 'edited' && (
+                <span className="text-amber-600 dark:text-amber-400">⚠ Edited</span>
+              )}
+            </div>
+          )}
+          right={(
             <>
-              <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1 shrink-0" />
-              <div className="flex items-center gap-1 min-w-0 overflow-x-auto">
-                {historyChips.map((chip) => (
-                  <button
-                    key={chip.marker.stepId}
-                    type="button"
-                    onClick={() => void Promise.resolve(onSelectDiagramStep?.(chip.marker)).catch(() => {})}
-                    className={chip.className}
-                    title={chip.tooltip}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
+              <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+
+              <Button
+                onClick={onCopy}
+                variant="default"
+                size="icon"
+                title={
+                  isMarkdownMermaidTab
+                    ? 'Copy mermaid block'
+                    : isBuildDocsTab
+                    ? 'Copy docs'
+                    : 'Copy code'
+                }
+              >
+                {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+              </Button>
             </>
           )}
-        </div>
+        />
+      </HeaderSection>
 
-        <div className="text-[10px] text-[var(--control-muted-text)]">
-          <span>
-            Source:{' '}
-            {mermaidState.source === 'user'
-              ? 'User'
-              : mermaidState.source === 'compiled'
-              ? 'Compiled'
-              : 'User (Override)'}
-          </span>
-        </div>
-      </div>
+      <HeaderSection tone="secondary">
+        <HeaderRow
+          left={(
+            <>
+              <Button
+                onClick={onAnalyze}
+                disabled={!canAnalyze}
+                className={`${canAnalyze ? MODE_UI.analyze.button : MODE_BUTTON_DISABLED} normal-case tracking-normal`}
+                title="Explain this diagram in chat"
+              >
+                {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <PenTool size={12} />} Analyze
+              </Button>
+
+              <Select
+                value={analyzeLanguage}
+                onChange={(e) => onAnalyzeLanguageChange(e.target.value)}
+                size="xs"
+                className="shrink-0 font-medium text-center"
+                style={{ width: 64, minWidth: 64 }}
+                title="Analyze language"
+                disabled={isProcessing || isReadOnly}
+              >
+                <option value="auto">Auto</option>
+                <option value="English">EN</option>
+                <option value="Russian">RU</option>
+              </Select>
+
+              <Button
+                onClick={onFixSyntax}
+                disabled={!isAIReady || isProcessing || !canFix}
+                className={`${canFix ? MODE_UI.fix.button : MODE_BUTTON_DISABLED} normal-case tracking-normal`}
+                title={`Attempt to fix syntax errors (up to ${AUTO_FIX_MAX_ATTEMPTS} tries)`}
+              >
+                <RefreshCw size={12} className={isFixing ? 'animate-spin' : ''} /> Fix ({AUTO_FIX_MAX_ATTEMPTS})
+              </Button>
+
+              <Button
+                onClick={onSnapshot}
+                disabled={!canSnapshot}
+                className={`${
+                  canSnapshot
+                    ? 'text-white bg-slate-700 hover:bg-slate-800 border border-slate-700'
+                    : 'text-slate-400 bg-slate-200 dark:bg-slate-800 dark:text-slate-500 border border-slate-300/60 dark:border-slate-500/60'
+                } normal-case tracking-normal`}
+                title="Save current diagram state to history"
+              >
+                <Bookmark size={12} /> Snapshot
+              </Button>
+              {!!historyChips.length && (
+                <div className="flex items-center gap-1 min-w-0 overflow-x-auto">
+                  {historyChips.map((chip) => (
+                    <Button
+                      key={chip.marker.stepId}
+                      type="button"
+                      onClick={() => void Promise.resolve(onSelectDiagramStep?.(chip.marker)).catch(() => {})}
+                      className={chip.className}
+                      title={chip.tooltip}
+                    >
+                      {chip.label}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          right={(
+            <div className="text-[10px] text-[var(--control-muted-text)]">
+              <span>
+                Source:{' '}
+                {mermaidState.source === 'user'
+                  ? 'User'
+                  : mermaidState.source === 'compiled'
+                  ? 'Compiled'
+                  : 'User (Override)'}
+              </span>
+            </div>
+          )}
+        />
+      </HeaderSection>
     </PanelHeader>
   );
 };

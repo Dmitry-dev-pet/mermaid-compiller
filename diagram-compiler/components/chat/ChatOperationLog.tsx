@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Button } from '../ui/Button';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { OperationLog } from '../../types';
 import { LLM_TIMEOUT_MS } from '../../constants';
@@ -74,10 +75,11 @@ const ChatOperationLog: React.FC<Props> = ({
           }}
         >
           <span className="inline-flex items-center gap-1.5">
-            <button
+            <Button
               type="button"
+              variant="ghost"
               aria-label={open ? 'Collapse log' : 'Expand log'}
-              className="inline-flex w-3 text-[var(--control-muted-text)] select-none"
+              className="h-4 w-3 px-0 text-[var(--control-muted-text)] select-none"
               onClick={(event) => {
                 if (isRunning) return;
                 event.preventDefault();
@@ -87,7 +89,7 @@ const ChatOperationLog: React.FC<Props> = ({
               }}
             >
               {open ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />}
-            </button>
+            </Button>
             <span className="select-text text-[var(--control-text)]">{summaryLabel}</span>
           </span>
         </summary>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Button } from '../ui/Button';
 import type { DocsMode } from '../../types';
 import type { OperationLogTextRow } from './operationLogUtils';
 import OperationLogTooltip from './OperationLogTooltip';
@@ -41,9 +42,10 @@ const OperationLogRowText: React.FC<Props> = ({
 
   const renderFileButton = (label: string) => {
     return (
-      <button
+      <Button
         type="button"
-        className="underline decoration-dotted hover:text-[var(--control-text)]"
+        variant="ghost"
+        className="h-auto px-0 py-0 underline decoration-dotted hover:text-[var(--control-text)]"
         onClick={(eventClick) => {
           if (!onOpenBuildDocsFile) return;
           eventClick.preventDefault();
@@ -55,7 +57,7 @@ const OperationLogRowText: React.FC<Props> = ({
         title="Открыть в Prompts"
       >
         {label}
-      </button>
+      </Button>
     );
   };
 
@@ -64,10 +66,11 @@ const OperationLogRowText: React.FC<Props> = ({
     const trimmedLine = line.trim();
     if (/^prompt$/i.test(trimmedLine) && onOpenBuildDocsFile) {
       return (
-        <button
+        <Button
           key={`line-${index}`}
           type="button"
-          className="underline decoration-dotted hover:text-[var(--control-text)]"
+          variant="ghost"
+          className="h-auto px-0 py-0 underline decoration-dotted hover:text-[var(--control-text)]"
           onClick={(eventClick) => {
             eventClick.preventDefault();
             eventClick.stopPropagation();
@@ -78,7 +81,7 @@ const OperationLogRowText: React.FC<Props> = ({
           title="Открыть system prompt в Prompts"
         >
           {trimmedLine}
-        </button>
+        </Button>
       );
     }
 

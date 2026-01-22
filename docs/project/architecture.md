@@ -14,6 +14,7 @@
    - `ChatProjects` — список проектов (сессий), продолжение/переименование/удаление.
    - `EditorColumn` — редактор Mermaid-кода, Analyze/Fix/Snapshot, язык анализа, вкладка Build Docs и вкладки Mermaid-блоков Markdown.
    - `PreviewColumn` — SVG-рендер, zoom/pan, fullscreen.
+   - `components/ui/*` — UI-примитивы (Button/Tab/Input/Select/Radio/PanelHeader) для единого стиля контролов и хедеров.
 
 2. **Хуки** (`diagram-compiler/hooks`)
    - `hooks/core/*` — базовые хуки состояния и UI.
@@ -96,4 +97,4 @@
 
 ---
 
-Обновлено: 2026-01-08. Согласовано с текущей реализацией (operation log utils, resizable panes, notebook build).
+Обновлено: 2026-01-22. Согласовано с текущей реализацией (UI-примитивы, выравнивание хедеров).

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Button } from '../ui/Button';
 import { Maximize, Minus, Plus } from 'lucide-react';
 import { MermaidState } from '../../types';
 
@@ -126,36 +127,39 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
       )}
       {showZoomControls && !isBuildDocsMode && svgMarkup && !isMarkdownMode && (
         <div className="absolute bottom-3 right-3 z-20 flex flex-col items-center gap-1 rounded-lg border border-slate-200/70 dark:border-slate-700/70 bg-white/90 dark:bg-slate-900/90 shadow-sm px-1.5 py-1.5">
-          <button
+          <Button
             type="button"
             onClick={onZoomIn}
-            className="h-7 w-7 rounded-md border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+            size="icon"
+            className="h-7 w-7 text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
             title="Zoom in"
             aria-label="Zoom in"
           >
             <Plus size={14} className="mx-auto" />
-          </button>
+          </Button>
           <div className="text-[11px] font-mono text-slate-700 dark:text-slate-200 select-none">
             {`${zoomPercent}%`}
           </div>
-          <button
+          <Button
             type="button"
             onClick={onZoomOut}
-            className="h-7 w-7 rounded-md border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+            size="icon"
+            className="h-7 w-7 text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
             title="Zoom out"
             aria-label="Zoom out"
           >
             <Minus size={14} className="mx-auto" />
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={onFitToViewport}
-            className="mt-1 h-7 w-7 rounded-md border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+            size="icon"
+            className="mt-1 h-7 w-7 text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
             title="Fit"
             aria-label="Fit"
           >
             <Maximize size={14} className="mx-auto" />
-          </button>
+          </Button>
         </div>
       )}
       {!isBuildDocsMode && isMarkdownMode && (

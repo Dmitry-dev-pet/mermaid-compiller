@@ -19,6 +19,7 @@
 ## Где что находится
 
 - SPA-приложение: `diagram-compiler/` (React + Vite + TypeScript).
+- UI-примитивы (Button/Tab/Input/Select/Radio/PanelHeader): `diagram-compiler/components/ui/`.
 - Локальная Mermaid-документация: `diagram-compiler/public/mermaid-docs`.
 - Полный снэпшот документации Mermaid: `mermaid-docs/11.12.2`.
 - C4/Memory Bank: `docs/c4/`.
@@ -30,4 +31,4 @@
 
 ---
 
-Обновлено: 2026-01-08. Согласовано с текущей реализацией (операционные логи, тултипы контекста, ресайз ввода).
+Обновлено: 2026-01-22. Согласовано с текущей реализацией (унификация UI-контролов, выравнивание хедеров).

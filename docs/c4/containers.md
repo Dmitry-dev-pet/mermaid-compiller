@@ -34,4 +34,4 @@ UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 
 ---
 
-Обновлено: 2026-01-11. Согласовано с текущей реализацией (operation logs, notebook build, timeout UI).
+Обновлено: 2026-01-22. Согласовано с текущей реализацией (унификация UI-контролов, header alignment).

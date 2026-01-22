@@ -23,4 +23,9 @@
 
 ---
 
-Обновлено: 2025-12-27.
+Maintenance:
+19. [x] Unify UI controls (Button/Tab/Input/Select/Radio) and align header toggles across columns.
+
+---
+
+Обновлено: 2026-01-22.

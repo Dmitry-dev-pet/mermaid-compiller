@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import { Button } from '../ui/Button';
 import { exportToBlob } from '@excalidraw/excalidraw';
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types';
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types';
@@ -157,28 +158,28 @@ const WhiteboardDebugOverlay: React.FC<WhiteboardDebugOverlayProps> = ({
     <div className="pointer-events-auto absolute top-2 left-2 z-50 select-text rounded border border-slate-300/40 bg-white/80 px-2 py-1 text-[11px] text-slate-700 dark:border-slate-600/50 dark:bg-slate-900/70 dark:text-slate-200">
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <button
+          <Button
             type="button"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
               void copyDebugOverlayToClipboard();
             }}
-            className="rounded border border-slate-300/60 bg-white/60 px-2 py-0.5 text-[11px] text-slate-700 hover:bg-white/90 dark:border-slate-600/60 dark:bg-slate-800/50 dark:text-slate-200 dark:hover:bg-slate-800/80"
+            className="px-2 py-0.5 text-[11px] text-slate-700 hover:bg-white/90 dark:text-slate-200 dark:hover:bg-slate-800/80"
           >
             Copy
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
               void exportDebugPng();
             }}
-            className="rounded border border-slate-300/60 bg-white/60 px-2 py-0.5 text-[11px] text-slate-700 hover:bg-white/90 dark:border-slate-600/60 dark:bg-slate-800/50 dark:text-slate-200 dark:hover:bg-slate-800/80"
+            className="px-2 py-0.5 text-[11px] text-slate-700 hover:bg-white/90 dark:text-slate-200 dark:hover:bg-slate-800/80"
           >
             PNG
-          </button>
+          </Button>
         </div>
         <div className="flex items-center gap-2">
           {debugCopiedAt ? (
@@ -187,17 +188,17 @@ const WhiteboardDebugOverlay: React.FC<WhiteboardDebugOverlayProps> = ({
             </span>
           ) : null}
           {debugCopyOpen ? (
-            <button
+            <Button
               type="button"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 setDebugCopyOpen(false);
               }}
-              className="rounded border border-slate-300/60 bg-white/50 px-2 py-0.5 text-[11px] text-slate-700 hover:bg-white/90 dark:border-slate-600/60 dark:bg-slate-800/40 dark:text-slate-200 dark:hover:bg-slate-800/80"
+              className="px-2 py-0.5 text-[11px] text-slate-700 hover:bg-white/90 dark:text-slate-200 dark:hover:bg-slate-800/80"
             >
               Close
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>

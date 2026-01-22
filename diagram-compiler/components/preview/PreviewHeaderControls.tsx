@@ -1,13 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Circle, Code2, Copy, Download, Layers, Link2, Maximize, Maximize2, Minimize2, Moon, Palette, PenLine, RefreshCw, SquarePen, Sun } from 'lucide-react';
+import { ChevronDown, Circle, Code2, Copy, Layers, Link2, Moon, Palette, PenLine, Pencil, SquarePen } from 'lucide-react';
 import { MermaidDirection } from '../../utils/inlineDirectionCommand';
 import { MermaidLook } from '../../utils/inlineLookCommand';
 import type { FlowchartEdgeStyle, FlowchartEdgeStyleUpdate } from '../../utils/flowchartArrowStyle';
 import type { FlowchartLinkStylePresetId } from '../../utils/flowchartLinkStyle';
 import { FLOWCHART_CURVES, FlowchartCurve } from '../../utils/flowchartCurveConfig';
 import { MermaidThemePresetId } from '../../utils/mermaidThemePreset';
-import { CONTROL_BASE, HEADER_CONTROL_BUTTON } from '../../utils/uiControlStyles';
+import { CONTROL_BASE } from '../../utils/uiControlStyles';
+import { Button } from '../ui/Button';
 import PanelHeader from '../ui/PanelHeader';
+import HeaderRow from '../ui/HeaderRow';
+import HeaderSection from '../ui/HeaderSection';
+import ModeToggle from '../ui/ModeToggle';
+import PreviewToolsRow from './PreviewToolsRow';
 
 interface PreviewHeaderControlsProps {
   title: string;
@@ -214,8 +219,9 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
     }
   };
 
-  const pinnedButtonBase =
-    'relative inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors select-none';
+  const edLabelStyle = {
+    fontFamily: '"Bradley Hand", "Segoe Print", "Comic Sans MS", "Chalkboard SE", cursive',
+  } as const;
 
   const chip = (value: string) => (
     <span className="inline-flex items-center justify-center w-7 h-6 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 font-mono text-[10px] tabular-nums">
@@ -225,320 +231,176 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
 
   const hasStyleControls =
     !isBuildDocsMode && (showThemeControl || showDirectionControl || showLookControl || showArrowControl);
-  const canZoomControls = !isBuildDocsMode && !isMarkdownMode && !isWhiteboardMode;
-  const canExportControls = !isBuildDocsMode && !isWhiteboardMode;
   const canNotebookExcalidrawToggle = !isBuildDocsMode && isMarkdownMode && showNotebookExcalidrawToggle;
 
   return (
-    <PanelHeader
-      className="relative h-24 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex flex-col gap-2"
-    >
-      <div className="pointer-events-none absolute right-4 bottom-2 z-30">
-        <div className="pointer-events-auto inline-flex rounded-md border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/60 backdrop-blur px-1 py-1 shadow-sm">
-          <button
-            type="button"
-            onClick={() => onSetPinnedMode('mermaid')}
-            className={`${pinnedButtonBase} rounded-[6px] ${
-              pinnedMode === 'mermaid'
-                ? 'bg-white text-slate-900 shadow dark:bg-slate-800 dark:text-slate-50'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-50'
-            }`}
-            aria-pressed={pinnedMode === 'mermaid'}
-            title="Mermaid"
-          >
-            <Code2 size={14} />
-            Mermaid
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (!pinnedCanEd) return;
-              onSetPinnedMode('ed');
-            }}
-            disabled={!pinnedCanEd}
-            className={`${pinnedButtonBase} rounded-[6px] ${
-              pinnedMode === 'ed'
-                ? 'bg-white text-slate-900 shadow dark:bg-slate-800 dark:text-slate-50'
-                : pinnedCanEd
-                  ? 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-50'
-                  : 'text-slate-400 dark:text-slate-600 cursor-not-allowed'
-            }`}
-            aria-pressed={pinnedMode === 'ed'}
-            title={pinnedCanEd ? 'Excalidraw' : (pinnedEdDisabledReason ?? 'Excalidraw is unavailable')}
-          >
-            <PenLine size={14} />
-            ED
-            <span
-              className={`ml-1 inline-flex h-2 w-2 rounded-full ${
-                pinnedMode === 'ed'
-                  ? pinnedDirty
-                    ? 'bg-amber-500 dark:bg-amber-300'
-                    : 'bg-emerald-500/70 dark:bg-emerald-300/70'
-                  : pinnedDirty
-                    ? 'bg-amber-500/70 dark:bg-amber-300/70'
-                    : 'bg-transparent'
-              }`}
-              aria-hidden
-            />
-          </button>
-        </div>
-      </div>
-      <div className="flex items-center justify-between gap-3 min-w-0">
-        <div className="flex items-center gap-3 min-w-0 normal-case tracking-normal">
-          <div className="min-w-0 truncate font-semibold text-[var(--control-text)]">{title}</div>
-
-        </div>
-
-        {!isBuildDocsMode && (
-          <div className="flex items-center gap-2 normal-case tracking-normal">
-            {canZoomControls ? null : null}
-
-            {canExportControls && (
-              <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
-                <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
-                  Export
-                </span>
-                <button
-                  type="button"
-                  onClick={onExportSvg}
-                  disabled={!svgMarkup || isExporting || isMarkdownMode}
-                  className={`${HEADER_CONTROL_BUTTON} ml-1`}
-                  title="Export SVG"
-                >
-                  <Download size={14} />
-                  SVG
-                </button>
-
-                <button
-                  type="button"
-                  onClick={onExportPng}
-                  disabled={!svgMarkup || isExporting || isMarkdownMode}
-                  className={HEADER_CONTROL_BUTTON}
-                  title="Export PNG"
-                >
-                  <Download size={14} />
-                  PNG
-                </button>
-              </div>
-            )}
-
-            {canNotebookExcalidrawToggle && (
-              <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
-                <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
-                  View
-                </span>
-                <button
-                  type="button"
-                  onClick={onToggleNotebookExcalidraw}
-                  className={`${HEADER_CONTROL_BUTTON} ml-1`}
-                  title={isNotebookExcalidrawMode ? 'Back to notebook preview' : 'Render active diagram in Excalidraw'}
-                  aria-label={isNotebookExcalidrawMode ? 'Back to notebook preview' : 'Render active diagram in Excalidraw'}
-                  aria-pressed={isNotebookExcalidrawMode}
-                >
-                  {isNotebookExcalidrawMode ? <Maximize size={14} /> : <SquarePen size={14} />}
-                  {isNotebookExcalidrawMode ? 'Notebook' : 'ED'}
-                </button>
-              </div>
-            )}
-
-            {showWhiteboardToggle && (
-              <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
-                <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
-                  Mode
-                </span>
-                <button
-                  type="button"
-                  onClick={onToggleWhiteboard}
-                  className={`${HEADER_CONTROL_BUTTON} ml-1`}
-                  title={isWhiteboardMode ? 'Back to Mermaid preview' : 'Edit in whiteboard'}
-                  aria-label={isWhiteboardMode ? 'Back to preview' : 'Edit in whiteboard'}
-                >
-                  {isWhiteboardMode ? <Maximize size={14} /> : <PenLine size={14} />}
-                  {isWhiteboardMode ? 'Preview' : 'Whiteboard'}
-                  {isWhiteboardMode ? (
-                    <span
-                      className={`ml-2 inline-flex h-2 w-2 rounded-full ${
-                        isWhiteboardDirty
-                          ? 'bg-amber-500 dark:bg-amber-300'
-                          : 'bg-emerald-500/70 dark:bg-emerald-300/70'
-                      }`}
-                      title={isWhiteboardDirty ? 'Unsaved changes' : 'Saved'}
-                      aria-label={isWhiteboardDirty ? 'Unsaved changes' : 'Saved'}
-                    />
-                  ) : null}
-                </button>
-                {isWhiteboardMode && (
-                  <button
-                    type="button"
-                    onClick={onWhiteboardSyncFromCode}
-                    className={HEADER_CONTROL_BUTTON}
-                    title="Sync from Mermaid code (overwrites whiteboard)"
-                    aria-label="Sync from Mermaid code"
-                  >
-                    <RefreshCw size={14} />
-                    Sync
-                  </button>
-                )}
-                {isWhiteboardMode && (
-                  <button
-                    type="button"
-                    onClick={onToggleWhiteboardAutoSync}
-                    className={`${HEADER_CONTROL_BUTTON} ${
-                      isWhiteboardAutoSync
-                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
-                        : ''
-                    }`}
-                    title={isWhiteboardAutoSync ? 'Disable auto sync from code' : 'Enable auto sync from code'}
-                    aria-label={isWhiteboardAutoSync ? 'Disable auto sync from code' : 'Enable auto sync from code'}
-                    aria-pressed={isWhiteboardAutoSync}
-                  >
-                    <Link2 size={14} />
-                    Auto
-                  </button>
-                )}
-              </div>
-            )}
-
-            {showExcalidrawThemeControl && (
-              <div className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-1">
-                <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
-                  ED
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onSetExcalidrawTheme('light')}
-                  className={`${HEADER_CONTROL_BUTTON} ml-1 ${
-                    excalidrawTheme === 'light'
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
-                      : ''
-                  }`}
-                  title="Excalidraw theme: light"
-                  aria-label="Excalidraw theme: light"
-                  aria-pressed={excalidrawTheme === 'light'}
-                >
-                  <Sun size={14} />
-                  Light
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSetExcalidrawTheme('dark')}
-                  className={`${HEADER_CONTROL_BUTTON} ${
-                    excalidrawTheme === 'dark'
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
-                      : ''
-                  }`}
-                  title="Excalidraw theme: dark"
-                  aria-label="Excalidraw theme: dark"
-                  aria-pressed={excalidrawTheme === 'dark'}
-                >
-                  <Moon size={14} />
-                  Dark
-                </button>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={onToggleFullScreen}
-              className={HEADER_CONTROL_BUTTON}
-              title={isFullScreen ? 'Exit full screen' : 'Full screen'}
-              aria-label={isFullScreen ? 'Exit full screen' : 'Full screen'}
-            >
-              {isFullScreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              Full screen
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between gap-3 min-w-0">
-        <div className="flex items-center gap-3 min-w-0 normal-case tracking-normal">
-          {hasStyleControls && (
-            <div className="relative" ref={styleMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsStyleOpen((prev) => !prev)}
-                disabled={!codeForRender.trim()}
-                className={HEADER_CONTROL_BUTTON}
-                aria-label="Open style menu"
-                aria-haspopup="menu"
-                aria-expanded={isStyleOpen}
-                title="Style (theme, look, flowchart controls)"
-              >
-                <Palette size={14} className="opacity-80" aria-hidden />
-                <span>Style</span>
-                <span className="inline-flex items-center gap-2 text-[var(--control-muted-text)]">
-                  <span className="inline-flex items-center gap-1">
-                    {React.createElement(themeIcon, { size: 14, className: 'opacity-70' })}
-                    <span className="text-[10px] font-mono">{themeLabel}</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    {React.createElement(lookIcon, { size: 14, className: 'opacity-70' })}
-                    <span className="text-[10px] font-mono">{lookLabel}</span>
-                  </span>
-                  {showArrowControl && (
-                    <span className="inline-flex items-center gap-1" title={`curve=${curveLabel}`}>
-                      <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
-                        Curve
+    <PanelHeader className="relative h-24 flex flex-col gap-2">
+      <HeaderSection tone="primary" className="uppercase">
+      <HeaderRow
+          left={
+            <ModeToggle
+              options={[
+                {
+                  id: 'mermaid',
+                  label: (
+                    <>
+                      <Code2 size={12} />
+                      Mermaid
+                    </>
+                  ),
+                  title: 'Mermaid',
+                  active: pinnedMode === 'mermaid',
+                  onClick: () => onSetPinnedMode('mermaid'),
+                },
+                {
+                  id: 'ed',
+                  label: (
+                    <>
+                      <PenLine size={12} />
+                      <span className="italic" style={edLabelStyle}>Excalidraw</span>
+                      <span className="ml-1 inline-flex items-center text-[9px] text-slate-500 dark:text-slate-300">
+                        <Pencil size={9} />
                       </span>
-                      <span className="text-[10px] font-mono">{curveLabel}</span>
-                    </span>
-                  )}
-                </span>
-                <ChevronDown
-                  size={12}
-                  className={`opacity-70 transition-transform ${isStyleOpen ? 'rotate-180' : ''}`}
-                />
-              </button>
+                      <span
+                        className={`ml-1 inline-flex h-2 w-2 rounded-full ${
+                          pinnedMode === 'ed'
+                            ? pinnedDirty
+                              ? 'bg-amber-500 dark:bg-amber-300'
+                              : 'bg-emerald-500/70 dark:bg-emerald-300/70'
+                            : pinnedDirty
+                              ? 'bg-amber-500/70 dark:bg-amber-300/70'
+                              : 'bg-transparent'
+                        }`}
+                        aria-hidden
+                      />
+                    </>
+                  ),
+                  title: pinnedCanEd ? 'Excalidraw' : (pinnedEdDisabledReason ?? 'Excalidraw is unavailable'),
+                  active: pinnedMode === 'ed',
+                  disabled: !pinnedCanEd,
+                  onClick: () => {
+                    if (!pinnedCanEd) return;
+                    onSetPinnedMode('ed');
+                  },
+                },
+              ]}
+            />
+          }
+          right={
+            <PreviewToolsRow
+              isBuildDocsMode={isBuildDocsMode}
+              isMarkdownMode={isMarkdownMode}
+              svgMarkup={svgMarkup}
+              isExporting={isExporting}
+              onExportSvg={onExportSvg}
+              onExportPng={onExportPng}
+              canNotebookExcalidrawToggle={canNotebookExcalidrawToggle}
+              isNotebookExcalidrawMode={isNotebookExcalidrawMode}
+              onToggleNotebookExcalidraw={onToggleNotebookExcalidraw}
+              showWhiteboardToggle={showWhiteboardToggle}
+              isWhiteboardMode={isWhiteboardMode}
+              isWhiteboardDirty={isWhiteboardDirty}
+              isWhiteboardAutoSync={isWhiteboardAutoSync}
+              onToggleWhiteboard={onToggleWhiteboard}
+              onWhiteboardSyncFromCode={onWhiteboardSyncFromCode}
+              onToggleWhiteboardAutoSync={onToggleWhiteboardAutoSync}
+              showExcalidrawThemeControl={showExcalidrawThemeControl}
+              excalidrawTheme={excalidrawTheme}
+              onSetExcalidrawTheme={onSetExcalidrawTheme}
+              isFullScreen={isFullScreen}
+              onToggleFullScreen={onToggleFullScreen}
+            />
+          }
+        />
+      </HeaderSection>
 
-              {isStyleOpen && (
-                <div
-                  className="absolute left-0 top-full z-50 mt-1 w-[min(28rem,90vw)] rounded-md border border-[var(--panel-border)] bg-[var(--menu-bg)] shadow-lg"
-                  role="menu"
-                  aria-label="Style"
+      <HeaderSection tone="secondary">
+        <HeaderRow
+          left={
+            hasStyleControls ? (
+              <div className="relative" ref={styleMenuRef}>
+                <Button
+                  type="button"
+                  onClick={() => setIsStyleOpen((prev) => !prev)}
+                  disabled={!codeForRender.trim()}
+                  aria-label="Open style menu"
+                  aria-haspopup="menu"
+                  aria-expanded={isStyleOpen}
+                  title="Style (theme, look, flowchart controls)"
                 >
-                  <div className="px-2 py-2 space-y-3 normal-case tracking-normal">
-                  {showThemeControl && (
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wide">
-                            Theme
-                          </span>
-                        <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">{themeLabel}</span>
-                      </div>
-                      <div className="mt-1 grid grid-cols-3 gap-1.5">
-                        {themeOptions.map((item) => {
-                            const isSelected =
-                              !isThemePresetMixed && (selectedThemePreset ?? '') === item.id;
-                          return (
-                            <button
-                              key={item.id || 'none'}
-                              type="button"
-                              onClick={() => onSetThemePreset((item.id || null) as MermaidThemePresetId | null)}
-                              className={`rounded border px-2 py-1 text-[11px] transition-colors ${
-                                isSelected
-                                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                                  : CONTROL_BASE
-                              }`}
-                            >
-                                <span className="inline-flex items-center justify-between w-full gap-2">
-                                  <span className="inline-flex items-center gap-2 min-w-0">
-                                    {React.createElement(item.icon, { size: 14, className: 'opacity-80 shrink-0' })}
-                                    <span className="font-medium truncate">{item.label}</span>
-                                  </span>
-                                  <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">
-                                    {item.id || 'none'}
-                                  </span>
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                  <Palette size={12} className="opacity-80" aria-hidden />
+                  <span>Style</span>
+                  <span className="inline-flex items-center gap-2 text-[var(--control-muted-text)]">
+                    <span className="inline-flex items-center gap-1">
+                      {React.createElement(themeIcon, { size: 12, className: 'opacity-70' })}
+                      <span className="text-[10px] font-mono">{themeLabel}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      {React.createElement(lookIcon, { size: 12, className: 'opacity-70' })}
+                      <span className="text-[10px] font-mono">{lookLabel}</span>
+                    </span>
+                    {showArrowControl && (
+                      <span className="inline-flex items-center gap-1" title={`curve=${curveLabel}`}>
+                        <span className="text-[10px] text-[var(--control-muted-text)] font-semibold uppercase tracking-wide">
+                          Curve
+                        </span>
+                        <span className="text-[10px] font-mono">{curveLabel}</span>
+                      </span>
                     )}
+                  </span>
+                  <ChevronDown
+                    size={12}
+                    className={`opacity-70 transition-transform ${isStyleOpen ? 'rotate-180' : ''}`}
+                  />
+                </Button>
 
-                  {showLookControl && (
+                {isStyleOpen && (
+                  <div
+                    className="absolute left-0 top-full z-50 mt-1 w-[min(28rem,90vw)] rounded-md border border-[var(--panel-border)] bg-[var(--menu-bg)] shadow-lg"
+                    role="menu"
+                    aria-label="Style"
+                  >
+                    <div className="px-2 py-2 space-y-3 normal-case tracking-normal">
+                      {showThemeControl && (
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wide">
+                              Theme
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">{themeLabel}</span>
+                          </div>
+                          <div className="mt-1 grid grid-cols-3 gap-1.5">
+                            {themeOptions.map((item) => {
+                              const isSelected =
+                                !isThemePresetMixed && (selectedThemePreset ?? '') === item.id;
+                              return (
+                                <Button
+                                  key={item.id || 'none'}
+                                  type="button"
+                                  onClick={() => onSetThemePreset((item.id || null) as MermaidThemePresetId | null)}
+                                  className={`rounded border px-2 py-1 text-[11px] transition-colors ${
+                                    isSelected
+                                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
+                                      : CONTROL_BASE
+                                  }`}
+                                >
+                                  <span className="inline-flex items-center justify-between w-full gap-2">
+                                    <span className="inline-flex items-center gap-2 min-w-0">
+                                      {React.createElement(item.icon, { size: 14, className: 'opacity-80 shrink-0' })}
+                                      <span className="font-medium truncate">{item.label}</span>
+                                    </span>
+                                    <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">
+                                      {item.id || 'none'}
+                                    </span>
+                                  </span>
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                    {showLookControl && (
                     <div>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wide">
@@ -550,7 +412,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                         {lookOptions.map((item) => {
                           const isSelected = (selectedInlineLook || '') === item.id;
                           return (
-                            <button
+                            <Button
                               key={item.id || 'none'}
                               type="button"
                               onClick={() => onSetInlineLook((item.id || null) as MermaidLook | null)}
@@ -569,7 +431,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                   {item.id || 'none'}
                                 </span>
                               </span>
-                            </button>
+                            </Button>
                           );
                         })}
                       </div>
@@ -585,7 +447,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                         <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">{selectedInlineDirection || '(none)'}</span>
                       </div>
                       <div className="mt-1 grid grid-cols-5 gap-1.5">
-                        <button
+                        <Button
                           type="button"
                           onClick={() => onSetInlineDirection(null)}
                           disabled={isMarkdownMode}
@@ -597,11 +459,11 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                           title={isMarkdownMode ? 'Direction is disabled in markdown mode' : undefined}
                         >
                           <span className="font-mono">(none)</span>
-                        </button>
+                        </Button>
                         {directionOptions.map((dir) => {
                           const isSelected = selectedInlineDirection === dir;
                           return (
-                            <button
+                            <Button
                               key={dir}
                               type="button"
                               onClick={() => onSetInlineDirection(dir)}
@@ -614,7 +476,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               title={isMarkdownMode ? 'Direction is disabled in markdown mode' : undefined}
                             >
                               <span className="font-mono">{dir}</span>
-                            </button>
+                            </Button>
                           );
                         })}
                       </div>
@@ -651,7 +513,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               ).map((item) => {
                                 const isSelected = endCapLabel === item.cap;
                                 return (
-                                  <button
+                                  <Button
                                     key={item.cap}
                                     type="button"
                                     onClick={() => onSetFlowchartEdgeStyle({ endCap: item.cap })}
@@ -667,7 +529,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                         {item.sample}
                                       </span>
                                     </div>
-                                  </button>
+                                  </Button>
                                 );
                               })}
                             </div>
@@ -686,7 +548,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                 const isSelected = styleLabel === item.style;
                                 const isDisabled = endCapLabel === 'circle' || endCapLabel === 'cross';
                                 return (
-                                  <button
+                                  <Button
                                     key={item.style}
                                     type="button"
                                     onClick={() => onSetFlowchartEdgeStyle({ lineStyle: item.style })}
@@ -704,7 +566,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                         {item.sample}
                                       </span>
                                     </div>
-                                  </button>
+                                  </Button>
                                 );
                               })}
                             </div>
@@ -716,7 +578,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               {([1, 2, 3] as const).map((len) => {
                                 const isSelected = lengthLabel === len;
                                 return (
-                                  <button
+                                  <Button
                                     key={len}
                                     type="button"
                                     onClick={() => onSetFlowchartEdgeStyle({ length: len })}
@@ -742,7 +604,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                                   : len === 1 ? '-->' : len === 2 ? '--->' : '---->'}
                                       </span>
                                     </div>
-                                  </button>
+                                  </Button>
                                 );
                               })}
                             </div>
@@ -760,7 +622,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                 const isSelected = directionLabel === item.dir;
                                 const isDisabled = endCapLabel !== 'arrow';
                                 return (
-                                  <button
+                                  <Button
                                     key={item.dir}
                                     type="button"
                                     onClick={() => onSetFlowchartEdgeStyle({ direction: item.dir })}
@@ -778,7 +640,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                         {item.sample}
                                       </span>
                                     </div>
-                                  </button>
+                                  </Button>
                                 );
                               })}
                             </div>
@@ -789,7 +651,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               Curve
                             </div>
                             <div className="grid grid-cols-4 gap-1.5">
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => onSetFlowchartCurve(null)}
                                 className={`rounded border px-2 py-1 text-[11px] transition-colors ${
@@ -799,11 +661,11 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                 }`}
                               >
                                 <span className="font-mono">(none)</span>
-                              </button>
+                              </Button>
                               {FLOWCHART_CURVES.map((curve) => {
                                 const isSelected = !isFlowchartCurveMixed && flowchartCurve === curve;
                                 return (
-                                  <button
+                                  <Button
                                     key={curve}
                                     type="button"
                                     onClick={() => onSetFlowchartCurve(curve)}
@@ -815,7 +677,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                     title={`curve: ${curve}`}
                                   >
                                     <span className="font-mono">{curve}</span>
-                                  </button>
+                                  </Button>
                                 );
                               })}
                             </div>
@@ -839,7 +701,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               ).map((item) => {
                                 const isSelected = flowchartLinkStylePreset === item.id;
                                 return (
-                                  <button
+                                  <Button
                                     key={item.id}
                                     type="button"
                                     onClick={() => onSetFlowchartLinkStylePreset(item.id)}
@@ -855,10 +717,10 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                         {item.sample}
                                       </span>
                                     </div>
-                                  </button>
+                                  </Button>
                                 );
                               })}
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => onSetFlowchartLinkStylePreset('accent')}
                                 className={`rounded border px-2 py-1 text-[11px] transition-colors ${
@@ -874,15 +736,15 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                                     blue
                                   </span>
                                 </div>
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
                                 disabled={flowchartLinkStylePreset !== 'custom'}
                                 className="rounded border border-[var(--panel-border)] bg-[var(--control-bg)] px-2 py-1 text-[11px] text-[var(--control-muted-text)] disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Custom linkStyle detected in code"
                               >
                                 Custom
-                              </button>
+                              </Button>
                             </div>
 
                             <div className="my-2 border-t border-[var(--panel-border)]" />
@@ -891,7 +753,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               Templates
                             </div>
                             <div className="grid grid-cols-2 gap-1.5">
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => void copyTemplate('-- label -->')}
                                 className="rounded border border-[var(--panel-border)] bg-[var(--control-bg)] px-2 py-1.5 text-[11px] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)] inline-flex items-center justify-between gap-2"
@@ -899,8 +761,8 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               >
                                 <span className="font-mono">-- label --&gt;</span>
                                 <Copy size={12} className="opacity-70" />
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
                                 onClick={() => void copyTemplate('-->|label|-->')}
                                 className="rounded border border-[var(--panel-border)] bg-[var(--control-bg)] px-2 py-1.5 text-[11px] text-[var(--control-text)] hover:bg-[var(--control-bg-hover)] inline-flex items-center justify-between gap-2"
@@ -908,7 +770,7 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
                               >
                                 <span className="font-mono">--&gt;|label|--&gt;</span>
                                 <Copy size={12} className="opacity-70" />
-                              </button>
+                              </Button>
                             </div>
                           </div>
                       </div>
@@ -918,29 +780,28 @@ const PreviewHeaderControls: React.FC<PreviewHeaderControlsProps> = ({
               </div>
             )}
           </div>
-          )}
-        </div>
-        {!isBuildDocsMode && (
-          <div className="flex items-center gap-2 normal-case tracking-normal">
-            {showScrollSyncToggle && (
-              <button
-                type="button"
-                onClick={onToggleScrollSync}
-                className={`h-7 px-2 rounded border transition-colors shrink-0 inline-flex items-center gap-1 text-[10px] font-medium ${
-                  isScrollSyncEnabled
-                    ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
-                    : CONTROL_BASE
-                }`}
-                title={isScrollSyncEnabled ? 'Disable scroll sync' : 'Enable scroll sync'}
-                aria-label={isScrollSyncEnabled ? 'Disable scroll sync' : 'Enable scroll sync'}
-              >
-                <Link2 size={14} />
-                Scroll sync
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+        ) : null
+        }
+        right={
+          !isBuildDocsMode && showScrollSyncToggle ? (
+            <Button
+              type="button"
+              onClick={onToggleScrollSync}
+              className={`h-7 px-2 rounded border transition-colors shrink-0 inline-flex items-center gap-1 text-[10px] font-medium ${
+                isScrollSyncEnabled
+                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
+                  : CONTROL_BASE
+              }`}
+              title={isScrollSyncEnabled ? 'Disable scroll sync' : 'Enable scroll sync'}
+              aria-label={isScrollSyncEnabled ? 'Disable scroll sync' : 'Enable scroll sync'}
+            >
+              <Link2 size={14} />
+              Scroll sync
+            </Button>
+          ) : null
+        }
+      />
+      </HeaderSection>
     </PanelHeader>
   );
 };

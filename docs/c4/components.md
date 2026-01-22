@@ -7,6 +7,7 @@
 - `EditorColumn` — редактор Mermaid-кода + Analyze/Fix/Run.
 - `PreviewColumn` — рендер диаграммы и управление превью.
 - `components/chat/ChatOperationLog` — операционные логи (Plan/Diagrams), тайминги и подсказки контекста.
+- `components/ui/*` — UI-примитивы (Button/Tab/Input/Select/Radio/PanelHeader) для единого стиля контролов и хедеров.
 
 ## Основные хуки/слои
 
@@ -43,4 +44,4 @@ flowchart TD
 
 ---
 
-Обновлено: 2026-01-11. Согласовано с текущей реализацией (operation logs, notebook build, timeout UI).
+Обновлено: 2026-01-22. Согласовано с текущей реализацией (UI-примитивы, выравнивание хедеров).

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Button } from '../ui/Button';
 import MarkdownIt from 'markdown-it';
 import { DIAGRAM_TYPES } from '../../utils/diagramTypes';
 
@@ -111,29 +112,31 @@ const ChatMarkdownTabsInner: React.FC<InnerProps> = ({ rawText, isLatest, markdo
 
   const renderTabs = () => (
     <div className="chat-md-tabs">
-      <button
+      <Button
         type="button"
+        variant="ghost"
         className={`chat-md-tab ${resolvedOpenTitle === '__all__' ? 'chat-md-tab-active' : ''}`}
         onClick={() => setOpenTitle(resolvedOpenTitle === '__all__' ? null : '__all__')}
         title="Show all"
         aria-label="Show all sections"
       >
         ▼
-      </button>
+      </Button>
       <span className="chat-md-divider">|</span>
       {sections.map((section, index) => {
         const title = section.title || 'Section';
         const isActive = resolvedOpenTitle === title;
         return (
           <React.Fragment key={`tab-${title}`}>
-            <button
+            <Button
               type="button"
+              variant="ghost"
               className={`chat-md-tab ${isActive ? 'chat-md-tab-active' : ''}`}
               onClick={() => setOpenTitle(isActive ? null : title)}
               title={title}
             >
               <span dangerouslySetInnerHTML={{ __html: renderMarkdownInline(title) }} />
-            </button>
+            </Button>
             {index < sections.length - 1 && <span className="chat-md-divider">|</span>}
           </React.Fragment>
         );

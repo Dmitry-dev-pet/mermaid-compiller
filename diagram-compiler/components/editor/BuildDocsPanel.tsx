@@ -3,7 +3,7 @@ import { highlight, languages } from 'prismjs';
 import type { DocsEntry } from '../../services/docsContextService';
 import type { DocsMode, PromptTokenCounts } from '../../types';
 import { DOCS_MODE_ORDER } from '../../utils/docsModes';
-import { HEADER_CONTROL_BUTTON } from '../../utils/uiControlStyles';
+import { Button } from '../ui/Button';
 import { Sparkles } from 'lucide-react';
 import { isSystemPromptPath } from '../../utils/systemPrompts';
 import {
@@ -156,15 +156,14 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
               <span>Docs</span>{' '}
               <span className="font-mono text-[9px] opacity-70">{MERMAID_VERSION}</span>
             </div>
-            <button
+            <Button
               type="button"
-              className={HEADER_CONTROL_BUTTON}
               onClick={onResetBuildDocsSelections}
               title="Reset docs selection to minimal defaults (affects all modes)"
             >
               <Sparkles className="h-3 w-3" />
               Default
-            </button>
+            </Button>
           </div>
         )}
         <div className="w-full overflow-auto rounded-md border border-[var(--panel-border)] bg-[var(--menu-bg)]">
@@ -176,10 +175,11 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                     const isActiveMode = docsMode === mode;
                     return (
                       <th key={mode} className="px-2 py-1 font-medium text-center uppercase tracking-wide">
-                        <button
+                        <Button
                           type="button"
                           onClick={() => onDocsModeChange(mode)}
-                          className={`w-full rounded px-1 py-1 ${
+                          variant="ghost"
+                          className={`w-full rounded px-1 py-1 text-[10px] ${
                             isActiveMode
                               ? 'bg-indigo-600/20 text-indigo-700 dark:text-indigo-200'
                               : 'hover:bg-[var(--menu-bg-hover)]'
@@ -189,7 +189,7 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                           <div className="flex flex-col items-center leading-tight">
                             <div>{mode}</div>
                           </div>
-                        </button>
+                        </Button>
                       </th>
                     );
                   })}
@@ -224,14 +224,15 @@ const BuildDocsPanel: React.FC<BuildDocsPanelProps> = ({
                   return (
                     <tr key={entry.path} className={isActive ? 'bg-[var(--menu-bg-hover)]' : ''}>
                       <td className="px-2 py-1">
-                        <button
+                        <Button
                           type="button"
                           onClick={() => onBuildDocsActivePathChange(entry.path)}
-                          className="truncate max-w-[220px] text-left hover:underline"
+                          variant="ghost"
+                          className="h-auto px-0 py-0 text-left truncate max-w-[220px] hover:underline"
                           title={entry.path}
                         >
                           {isVirtual ? resolveEntryName(entry.path) : fileName}
-                        </button>
+                        </Button>
                       </td>
                       {DOCS_MODE_ORDER.map((mode) => {
                         const isCross = isActive && docsMode === mode;
