@@ -1,6 +1,6 @@
 # Plan
 
-Статус: выполнено.
+Статус: выполнено (база) + активный рефакторинг/поддержка.
 
 1. [x] Describe the session data model and persistence in IndexedDB.
 2. [x] Add session storage layer (create/list/load/delete) alongside existing history services.
@@ -28,4 +28,16 @@ Maintenance:
 
 ---
 
-Обновлено: 2026-01-22.
+Refactor / maintenance (после 2026-01-22):
+20. [x] Split Mermaid helpers into `services/mermaid/*` (markdown/validate/llm) with stable `mermaidService` exports.
+21. [x] Refactor Preview rendering into surfaces + hooks (content mode, header model, markdown meta, scroll sync, SVG render/panzoom).
+22. [x] Restructure operation logs view models + anchored inline logs in chat, add/expand tests.
+23. [x] Extract Studio orchestration into dedicated hooks (tabs/hydration/chat flow/chat context/whiteboard/project preview).
+24. [x] Improve Excalidraw canvas background/theme controls and persist behavior for notebook.
+25. [x] Refactor chat/project UI: extract projects menu + diagram type picker + message list/summary components.
+26. [x] Support whiteboard bundle per markdown block (resolve/update by active block index).
+27. [x] Expand unit tests for build pipeline/autofix/operation runner/log context and docs context.
+
+---
+
+Обновлено: 2026-01-23.

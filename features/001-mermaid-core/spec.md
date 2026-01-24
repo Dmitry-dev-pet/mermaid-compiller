@@ -1,14 +1,17 @@
 # Mermaid Core Spec
 
 ## Scope
+
 - Maintain the Diagram Compiler SPA functionality for Mermaid editing, markdown previews, and diagram navigation.
 
 ## Current task
-Статус: выполнено, режим поддержки.
+
+Статус: активная поддержка / рефакторинг.
 
 Фича: менеджер проектов (сессий) в панели чата.
 
 Реализовано:
+
 - Проект = сессия пользователя, которую можно продолжить.
 - Действия: создать новую сессию, продолжить/открыть существующую, удалить, переименовать.
 - Хранилище: IndexedDB (данные сессии не в localStorage).
@@ -16,6 +19,7 @@
 - Персистентность: сохраняются настройки UI и LLM (включая опциональные параметры модели).
 
 Реализовано (предыдущие задачи):
+
 - Preview navigation buttons visible for markdown diagrams in `markdown_mermaid`.
 - Inline direction follows Mermaid syntax (`TD` only for flowchart headers, `direction` statements for class/state/ER/requirement).
 - Markdown-wide theme selection applies to all Mermaid blocks.
@@ -29,6 +33,7 @@
 Фича: режим фиксации Markdown (последовательное исправление всех невалидных блоков).
 
 Требования:
+
 - Одна кнопка Fix запускает режим.
 - В режиме Fix для Markdown блоки исправляются по очереди.
 - Остановка на первом неуспешном блоке.
@@ -36,24 +41,55 @@
 
 Следующие шаги: только косметика/maintenance.
 
+Обновление (текущее состояние кода):
+
+- Большой рефакторинг Preview: монолитный рендер разбит на поверхности (`PreviewSurface`) и хуки.
+  - Режимы превью: `svg`, `markdown`, `buildDocs`, `whiteboard`, `notebookTiles`, `empty`.
+  - Выделены хуки для хедера/режима превью/рендера SVG/scroll-sync.
+- Поверхности превью выделены в отдельные компоненты:
+  - `diagram-compiler/components/preview/PreviewSurface.tsx`.
+  - `diagram-compiler/components/preview/surfaces/*` (SVG/Markdown/BuildDocs/Whiteboard/NotebookTiles/Empty).
+- Рефакторинг Studio orchestration:
+  - Вынесены студийные подсистемы в отдельные хуки (`useStudioTabs`, `useStudioHydration`, `useStudioChatContext`, `useStudioChatFlow`, `useStudioWhiteboard`).
+  - Контекстные чаты (main vs блоки) и автоматическая прокладка `contextId/mode/blockIndex` в history meta.
+- Whiteboard/Excalidraw сохранение теперь учитывает markdown notebook:
+  - Whiteboard хранится как bundle, где сцены раздельны по блокам.
+  - Активная сцена выбирается по текущему `markdownMermaidActiveIndex`.
+- Рефакторинг Chat UI:
+  - Логика вью-модели вынесена в `useChatColumnViewModel`.
+  - Введены выделенные компоненты списка сообщений/summary.
+  - Статус-сообщения и operation logs корректно отделяются/привязываются (anchored) к сообщениям.
+- Проекты (сессии) и управление ими вынесены в отдельные UI-части:
+  - Меню проектов (sort/rename/delete/continue/preview) и управление открытием.
+  - Пикер типа диаграммы стал самостоятельным компонентом, с наборами типов и пресетами N для notebook-build.
+- Header/UI декомпозирован на более мелкие компоненты:
+  - Верхняя панель использует отдельные меню для AI и темы.
+- Mermaid services: разбиение сервиса на модули (`services/mermaid/markdown|validate|llm`) с реэкспортом через `services/mermaidService`.
+- Excalidraw/whiteboard: улучшения темы/фона canvas и их персистентности (в т.ч. для notebook-режима).
+- Укреплены тесты на критические пайплайны (autofix/build/notebook/operation logs/контекст) и утилиты.
+
 Поддержка (последние изменения):
+
 - Операционные логи (Plan/Diagrams) и тултипы контекста (messages/docs).
 - Таймаут LLM и его настройка в панели чата.
 - Ресайз панели ввода в чате.
 - Унификация UI-контролов (Button/Tab/Input/Select/Radio) и визуальное выравнивание хедеров/переключателей.
 
 Обновление поведения проектов:
+
 - Удаление проекта без предупреждения.
 - После удаления доступна кнопка Undo (отмена удаления).
 
 Фича: режим сборки MD notebook из чата (несколько диаграмм по одной кнопке Build).
 
 Идея:
+
 - В чате рядом с Build доступен toggle `MD notebook`.
 - Если toggle включен, Build генерирует не одну диаграмму, а Markdown-файл с несколькими Mermaid-блоками.
 - Для согласованности терминов используется общий план (planner) и glossary; промпт каждой диаграммы независим.
 
 Требования (UX):
+
 - Toggle `MD notebook` расположен рядом (как switch/toggle) и влияет на поведение Build.
 - Рядом с toggle доступно поле `N` (количество диаграмм, optional).
   - Если пользователь задал `N`, planner обязан построить план ровно на `N` диаграмм (приоритет пользователя).
@@ -61,6 +97,7 @@
 - Генерация запускается только по кнопке Build (toggle сам по себе ничего не создает).
 
 Требования (flow):
+
 - По нажатию Build в notebook-режиме выполняется planner-запрос, который возвращает структурированный JSON `NotebookPlan`:
   - итоговое `resolvedN`
   - список диаграмм (каждая: `diagramType`, `title`, `goal`, `buildPrompt`, `acceptance`)
@@ -85,6 +122,7 @@
   - Чаты блоков сохраняются в истории/сессии (IndexedDB) и восстанавливаются.
 
 UI (Build Docs):
+
 - В режиме `build_docs` окно редактора делится на две панели (вертикально, сверху вниз) 50/50.
 - Верхняя панель: текущий документ/системный промпт (как сейчас).
 - Нижняя панель: Intent с подсветкой Markdown.
@@ -93,14 +131,32 @@ UI (Build Docs):
 - Все LLM-запросы защищены таймаутом; при таймауте выполняются повторы только для текущего шага (по умолчанию 3 попытки).
 
 Требования (docs):
+
 - Для каждой диаграммы используется релевантный docs context, определяемый текущим `appState.diagramType` (вариант B).
 - Planner также использует docs context, но не привязан к одному блоку; его задача — подобрать типы диаграмм и независимые промпты.
 - Chat в notebook-режиме возвращает intent для planner (структура с разделами Summary/Diagrams/Glossary/Constraints/Open questions).
 
 ## Constraints
+
 - Keep UI state in hooks; components should remain presentation-focused.
 - Use existing React + Tailwind patterns in `diagram-compiler/`.
 
+## Current architecture notes (high-level)
+
+- `diagram-compiler/hooks/studio/useDiagramStudio.ts` остаётся точкой оркестрации, но большая часть логики вынесена в специализированные хуки (tabs/hydration/chat context/chat flow/whiteboard).
+- `diagram-compiler/components/PreviewColumn.tsx` собирает модель/props, а рендер превью разнесён по `diagram-compiler/components/preview/PreviewSurface.tsx` и `diagram-compiler/components/preview/surfaces/*`.
+- Preview-логика разделена на небольшие хуки:
+  - выбор режима отображения (`diagram-compiler/hooks/preview/usePreviewContentMode.ts`)
+  - модель хедера (`diagram-compiler/hooks/preview/usePreviewHeaderModel.ts`)
+  - scroll-sync (`diagram-compiler/hooks/preview/usePreviewScrollSync.ts`)
+  - SVG render/zoom (`diagram-compiler/hooks/preview/useMermaidSvgRender.ts`, `diagram-compiler/hooks/preview/useSvgPanZoom.ts`)
+- Chat UI декомпозирован: view-model (`diagram-compiler/components/chat/useChatColumnViewModel.ts`) + отдельные компоненты (`diagram-compiler/components/chat/ChatMessageList.tsx`, `diagram-compiler/components/chat/ChatSummaryCard.tsx`, проекты/пикер типов).
+- Mermaid utilities структурированы по назначению:
+  - markdown parsing/edit (`diagram-compiler/services/mermaid/markdown.ts`)
+  - validate/init (`diagram-compiler/services/mermaid/validate.ts`)
+  - LLM response parsing (`diagram-compiler/services/mermaid/llm.ts`)
+  - re-export/compat (`diagram-compiler/services/mermaidService.ts`)
+
 ---
 
-Обновлено: 2026-01-22.
+Обновлено: 2026-01-23.

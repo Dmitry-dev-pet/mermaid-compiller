@@ -18,10 +18,12 @@
 
 ## Рендеринг
 
-`PreviewColumn` рендерит разными режимами:
+`PreviewColumn` рендерит разными режимами (через surfaces):
 
-- **Mermaid:** перед вызовом `mermaid.render` применяется inline направление/тема/стиль. После рендера монтируется SVG, вызывается `bindFunctions`, включается `svg-pan-zoom`.
-- **Markdown:** контент рендерится через `markdown-it`; `code` блоки с `language-mermaid` заменяются на SVG через `mermaid.render`. При ошибке Mermaid-блок заменяется inline-ошибкой на месте блока.
+- **Mermaid (SVG surface):** рендер в SVG, затем mount в DOM, `bindFunctions`, pan/zoom/fit.
+- **Markdown (Markdown surface):** markdown → HTML, mermaid fenced blocks заменяются на SVG через renderer; ошибки показываются inline на месте блока.
+- **Build Docs (BuildDocs surface):** отображение системных промптов/доков (как markdown).
+- **Whiteboard/Notebook tiles surfaces:** Excalidraw-представления (whiteboard edit / notebook tiles).
 - При ошибке рендера показывается оверлей с текстом ошибки; для статуса `invalid` показывается предупреждение вместо SVG.
 
 ## Нюансы синтаксиса (практика)
@@ -30,7 +32,7 @@
 
 ## Zoom/Pan и fullscreen
 
-- Используется `svg-pan-zoom`; на каждой перерисовке вызываются `resize` + `fit` + `center`.
+- Используется `svg-pan-zoom` (через `hooks/preview/useSvgPanZoom.ts`); на каждой перерисовке вызываются `resize` + `fit` + `center`.
 - Доступны кнопки Zoom In/Out, Fit и fullscreen (на всю ширину трех колонок); zoom отображается в процентах.
 
 ## Inline-настройки
@@ -38,6 +40,15 @@
 - В шапке превью: выбор темы (`theme`), направления (`direction`) и стиля (`look`).
 - Переключатель режима превью (Mermaid/Excalidraw) расположен в шапке и стилизован как единый toggle, в одном ряду с другими контролами.
 - Выбранные значения добавляются в код как директивы (`%%{theme: ...}%%`, `%%{direction: ...}%%`, `%%{init: { look: ...}}%%`) и сразу учитываются в валидации/рендере.
+
+## Структура Mermaid-сервисов
+
+Mermaid helpers разделены по назначению:
+
+- `diagram-compiler/services/mermaid/markdown.ts` — markdown-like detection + манипуляции блоками.
+- `diagram-compiler/services/mermaid/validate.ts` — `initializeMermaid`, `validateMermaid`, inline directives.
+- `diagram-compiler/services/mermaid/llm.ts` — парсинг ответов LLM (extract code/JSON).
+- `diagram-compiler/services/mermaidService.ts` — совместимый re-export.
 
 ## Системные промпты в Build Docs
 
@@ -54,4 +65,4 @@
 
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (preview toggle, выравнивание контролов).
+Обновлено: 2026-01-23. Согласовано с текущей реализацией (preview surfaces, mermaid services split).

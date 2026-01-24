@@ -14,12 +14,14 @@
 Рекомендуемые варианты установки:
 
 Вариант A (из корня):
+
 ```bash
 npm install
 npm --prefix diagram-compiler install
 ```
 
 Вариант B (внутри SPA):
+
 ```bash
 cd diagram-compiler
 npm install
@@ -28,11 +30,13 @@ npm install
 ## Запуск dev-сервера
 
 Из корня:
+
 ```bash
 npm run dev
 ```
 
 Или из `diagram-compiler/`:
+
 ```bash
 npm run dev
 ```
@@ -40,12 +44,14 @@ npm run dev
 ## Сборка и превью
 
 Из корня:
+
 ```bash
 npm run build
 npm run preview
 ```
 
 Или из `diagram-compiler/`:
+
 ```bash
 npm run build
 npm run preview
@@ -54,11 +60,13 @@ npm run preview
 ## Проверка типов
 
 Из корня:
+
 ```bash
 npm run typecheck
 ```
 
 Или из `diagram-compiler/`:
+
 ```bash
 npm run typecheck
 ```
@@ -66,6 +74,7 @@ npm run typecheck
 ## Запуск production-статики
 
 После сборки:
+
 ```bash
 node server.js
 ```
@@ -83,4 +92,4 @@ node server.js
 
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (UI-косметика, без влияния на setup).
+Обновлено: 2026-01-23. Согласовано с текущей реализацией (без изменений процесса setup, актуализация дат).

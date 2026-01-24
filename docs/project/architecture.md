@@ -5,12 +5,16 @@ Mermaid Diagram Compiler — SPA в `diagram-compiler/`, собранная на
 ## Быстрая карта папок
 
 - `diagram-compiler/components/` — UI-компоненты и layout.
+  - `components/chat/*` — сообщения/summary + projects menu + operation logs.
+  - `components/preview/*` — preview surfaces (SVG/Markdown/BuildDocs/Whiteboard/Notebook tiles).
+  - `components/header/*` — меню AI/Theme в шапке.
 - `diagram-compiler/hooks/` — состояние и orchestration.
   - `hooks/core/` — базовые состояния (AI, Mermaid, layout, history, chat).
   - `hooks/editor/` — вкладки/Build Docs, редакторские сценарии.
   - `hooks/preview/` — рендер/zoom/markdown/whiteboard (Preview).
   - `hooks/studio/` — оркестрация (Chat/Build/Fix/Analyze/Notebook, projects, logs).
 - `diagram-compiler/services/` — LLM, Mermaid-валидация, docs context, history/IndexedDB.
+  - `services/mermaid/*` — markdown/validate/llm helpers (re-export через `services/mermaidService.ts`).
 - `diagram-compiler/utils/` — парсеры/нормализация, small helpers.
 - `docs/c4/` — C4: контекст/контейнеры/компоненты/данные.
 
@@ -19,9 +23,12 @@ Mermaid Diagram Compiler — SPA в `diagram-compiler/`, собранная на
 ### UI-компоненты
 
 - `Header` — провайдер/ключи/модель, тема, статус подключения.
-- `ChatColumn` — сообщения, выбор типа диаграммы, Chat/Build, проекты.
+  - Меню: `components/header/AiControlPlaneMenu` и `components/header/ThemeMenu`.
+- `ChatColumn` — ввод, Chat/Build, сообщения и summary, inline operation logs, проекты.
+  - Основные элементы: `components/chat/ChatMessageList`, `components/chat/ChatSummaryCard`, `components/chat/ProjectsMenu`, `components/chat/DiagramTypePicker`.
 - `EditorColumn` — код Mermaid, Analyze/Fix/Snapshot, Build Docs и вкладки markdown-блоков.
 - `PreviewColumn` — превью: SVG, markdown, notebook-ED, whiteboard, zoom/pan/fit.
+  - Рендер превью разнесён в `components/preview/PreviewSurface` + `components/preview/surfaces/*`.
 - `components/ui/*` — единые примитивы (Button/Tab/Input/Select/PanelHeader).
 
 Компоненты получают готовые данные и callbacks из хуков; сами не держат “умную” логику.
@@ -49,12 +56,21 @@ Mermaid Diagram Compiler — SPA в `diagram-compiler/`, собранная на
 - `useMarkdownPreview` — markdown to HTML + renderer.
 - `useMarkdownPreviewMeta` — derived state для inline-параметров (theme/look/direction/flowchart styles).
 - `usePreviewScrollSync` — scroll sync между Editor и Preview.
+- `usePreviewContentMode` — выбор поверхности превью (svg/markdown/buildDocs/whiteboard/notebook tiles).
+- `usePreviewHeaderModel` — единая модель состояния/коллбеков для контролов превью.
 - `usePreviewWhiteboard` — whiteboard/Excalidraw, notebook-ED, персистенс тем/фона.
 - `useBuildDocsPreview` — выбор активного “Prompt” документа и HTML превью.
 
 #### Studio (`hooks/studio/`)
 
 - `useDiagramStudio` — центральная оркестрация состояния и действий.
+- Декомпозиция orchestration (стабильные подхуки):
+  - `useStudioTabs` — editor tab + build docs scope.
+  - `useStudioHydration` — гидрация сообщений/мермейда/operation logs из истории.
+  - `useStudioChatContext` — определение активного chat context (main vs block).
+  - `useStudioChatFlow` — выполнение Chat/Build в нужном diagram context (для notebook блоков).
+  - `useStudioWhiteboard` — загрузка/сохранение whiteboard (в т.ч. bundle по markdown блокам).
+  - `useProjectPreview` — превью снапшота проекта.
 - `runStudioOperation` — единый wrapper для Chat/Build/Fix/Analyze (операции, логи, history).
 - `useNotebookBuild` — planner + build блоков Markdown notebook.
 - `useFixFlow` — автопоправка Mermaid.
@@ -139,6 +155,8 @@ Mermaid Diagram Compiler — SPA в `diagram-compiler/`, собранная на
   - темой/фоном canvas (per diagram key),
   - авто-синхронизацией Mermaid → Excalidraw.
 
+В markdown notebook режиме whiteboard хранится как bundle, с раздельными сценами по блокам и выбором активной сцены по индексу активного блока.
+
 ## Operation logs
 
 - `useOperationLog` хранит operation events по шагам.
@@ -159,4 +177,4 @@ Mermaid Diagram Compiler — SPA в `diagram-compiler/`, собранная на
 
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (preview hooks, whiteboard, operation logs).
+Обновлено: 2026-01-23. Согласовано с текущей реализацией (preview surfaces/hooks, studio subhooks, chat refactor).

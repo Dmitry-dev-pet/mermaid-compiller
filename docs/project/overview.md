@@ -13,7 +13,7 @@ Mermaid Diagram Compiler — SPA для генерации и редактиро
 
 - UI собирается в `diagram-compiler/components/`, логика вынесена в хуки (`hooks/core`, `hooks/studio`, `hooks/preview`).
 - Центральный orchestrator: `hooks/studio/useDiagramStudio` + `runStudioOperation`.
-- Preview вынесен в специализированные хуки: рендер SVG, markdown блоки, scroll sync, whiteboard.
+- Preview разнесён на surfaces + хуки: рендер SVG, markdown блоки, scroll sync, whiteboard, notebook tiles.
 - История/сессии и ревизии Mermaid-кода хранятся в IndexedDB.
 
 Подробная архитектура: `docs/project/architecture.md`.
@@ -24,8 +24,10 @@ Mermaid Diagram Compiler — SPA для генерации и редактиро
 - Markdown notebook режим: Build может создавать файл с несколькими Mermaid-блоками по плану (planner).
 - Полный список типов из локальной документации; при смене типа подгружаются Build Docs файлы и обновляется контекст Build.
 - Операционные логи с таймингом и секциями Plan/Diagrams; контекст (messages/docs) доступен через тултипы.
+- Логи можно «прикреплять» к сообщениям (inline/anchored), чтобы прогресс и результат были рядом.
 - Проекты (сессии) с редактируемым названием; если название не меняли, оно авто-генерируется после первого Chat.
 - Превью умеет рендерить Markdown и Mermaid-блоки, есть inline-настройки темы/направления/стиля диаграммы.
+- Whiteboard/Excalidraw поддерживает отдельные сцены для блоков в markdown notebook (bundle по блокам).
 - Экспорт диаграммы в SVG/PNG с инлайном ресурсов и защитой от `foreignObject`/таинтед canvas.
 - Build Docs вкладка с табами файлов документации и системных промптов для каждого режима, плюс чекбоксы включения в контекст.
 - Авто-подключение к LLM при запуске, хранение настроек в localStorage.
@@ -46,4 +48,4 @@ Mermaid Diagram Compiler — SPA для генерации и редактиро
 
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (preview hooks, operation logs, whiteboard).
+Обновлено: 2026-01-23. Согласовано с текущей реализацией (preview surfaces/hooks, anchored logs, notebook whiteboard).

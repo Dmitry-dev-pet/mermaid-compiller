@@ -23,4 +23,20 @@
 
 ---
 
-Обновлено: 2026-01-22.
+Поддержка/рефакторинг (актуализация):
+
+- [x] Вынести Mermaid-логику в `diagram-compiler/services/mermaid/*` (markdown/validate/llm) и сохранить совместимый `diagram-compiler/services/mermaidService.ts`.
+- [x] Разбить превью на поверхности и модели:
+  - `diagram-compiler/components/preview/PreviewSurface.tsx` + `diagram-compiler/components/preview/surfaces/*`.
+  - `diagram-compiler/hooks/preview/usePreviewContentMode.ts` + `diagram-compiler/hooks/preview/usePreviewHeaderModel.ts`.
+- [x] Вынести ChatColumn view model в `diagram-compiler/components/chat/useChatColumnViewModel.ts` и добавить компоненты сообщений/summary.
+- [x] Обновить работу operation logs: структурированные метаданные, inline/anchored отображение, тесты.
+- [x] Декомпозировать `useDiagramStudio` на специализированные хуки студии (`useStudioTabs`, `useStudioHydration`, `useStudioChatContext`, `useStudioChatFlow`, `useStudioWhiteboard`, `useProjectPreview`).
+- [x] Улучшить Excalidraw whiteboard: управление темой/фоном canvas и персистентность для notebook.
+- [x] Вынести UI проектов и выбора типов в отдельные компоненты (projects menu, diagram type picker, message list/summary).
+- [x] Поддержать whiteboard bundle по markdown-блокам (выбор/сохранение сцены по активному индексу).
+- [x] Расширить покрытие тестами критических пайплайнов (build/autofix/notebook) и утилит (operation logs, log context, docs context).
+
+---
+
+Обновлено: 2026-01-23.

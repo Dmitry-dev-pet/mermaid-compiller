@@ -34,4 +34,4 @@ UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (preview hooks, operation logs).
+Обновлено: 2026-01-23. Согласовано с текущей реализацией (preview surfaces/hooks, studio subhooks).

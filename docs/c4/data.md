@@ -3,6 +3,7 @@
 ## Цель
 
 Хранить локально:
+
 - историю действий пользователя/ИИ (TimeStep),
 - ревизии Mermaid-кода (DiagramRevision),
 - возможность навигации по «рендерам диаграммы» из чата.
@@ -16,6 +17,7 @@
 ## Правило «одна диаграмма на шаг»
 
 Каждый `TimeStep` содержит `currentRevisionId`:
+
 - если шаг меняет диаграмму — указывает на новую ревизию,
 - если шаг не меняет диаграмму (например, `chat`) — копирует `currentRevisionId` предыдущего шага,
 - в режиме notebook шаги `build` содержат метаданные блока (`blockIndex`, `diagramType`, `success`).
@@ -61,10 +63,16 @@ erDiagram
 ## meta (TimeStep)
 
 `TimeStep.meta` хранит UI/операционные данные шага (не влияющие на Mermaid-код), например:
+
 - `operationLog` — события операции, тайминги, контекст (messages/docs/system prompt) для тултипов.
 - `autoTitle` — авто-имя проекта, извлеченное из первого Chat и примененное к `HistorySession.title`.
 - notebook-build поля: `blockIndex`, `diagramType`, `success`.
 
+Примечание про whiteboard:
+
+- Whiteboard может храниться как bundle для markdown notebook: сцены раздельны по блокам.
+- Это влияет на размер `DiagramRevision.whiteboard` (если используется) и на логику выбора активной сцены в UI.
+
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (UI-косметика, модель данных без изменений).
+Обновлено: 2026-01-23. Согласовано с текущей реализацией (operation logs, notebook block meta, whiteboard bundle).

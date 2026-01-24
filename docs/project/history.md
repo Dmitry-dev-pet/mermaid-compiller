@@ -9,6 +9,7 @@
 - **DiagramRevision** — ревизия Mermaid-кода.
 
 Сессия включает метаданные проекта:
+
 - `title` — название проекта.
 - `updatedAt` — время последнего изменения (для сортировки списка).
 - `settings` — настройки сессии (UI + LLM, опциональные параметры модели).
@@ -22,6 +23,7 @@
 ## Типы шагов
 
 `TimeStepType`:
+
 - `seed`, `manual_edit`, `chat`, `build`, `fix`, `analyze`, `recompile`, `system`.
 
 `manual_edit` используется только для **Snapshot** (ручной фиксации). Обычные ручные правки обновляют текущую ревизию без создания нового шага.
@@ -37,6 +39,7 @@
 База: `dc_history` (версия 2).
 
 Объекты:
+
 - `sessions`: ключ `id`, индексы `byCreatedAt`, `byUpdatedAt`.
 - `steps`: ключ `id`, индексы `bySessionId`, `bySessionIndex`, `bySessionCreatedAt`.
 - `revisions`: ключ `id`, индексы `bySessionId`, `byCreatedByStepId`, `bySessionCreatedAt`.
@@ -53,4 +56,4 @@
 
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (UI-косметика, модель истории без изменений).
+Обновлено: 2026-01-23. Согласовано с текущей реализацией (contextId/mode/blockIndex meta, operation logs hydration).

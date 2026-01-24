@@ -12,6 +12,7 @@
 ## Источники истины
 
 Функциональные требования и принципы:
+
 - `docs/constitution.md`
 - `features/001-mermaid-core/spec.md`
 - `features/001-mermaid-core/plan.md`
@@ -19,4 +20,4 @@
 
 ---
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (preview hooks, operation logs).
+Обновлено: 2026-01-23. Согласовано с текущей реализацией (preview surfaces/hooks, studio subhooks).
