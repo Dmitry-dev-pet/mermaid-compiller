@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DiagramType, DocsMode } from '../../types';
-import { fetchDocsEntries, formatDocsContext, getDocsPaths } from '../../services/docsContextService';
-import type { DocsEntry } from '../../services/docsContextService';
-import { safeParse } from '../../utils';
-import { getNotebookPlannerDocsPaths } from '../../services/docsContextService';
-import { DOCS_MODE_ORDER } from '../../utils/docsModes';
-import { isPromptsVirtualPath } from '../../utils/promptsVirtualPaths';
-import { isSystemPromptPath } from '../../utils/systemPrompts';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DiagramType, DocsMode } from "../../types";
+import {
+  fetchDocsEntries,
+  formatDocsContext,
+  getDocsPaths,
+} from "../../services/docsContextService";
+import type { DocsEntry } from "../../services/docsContextService";
+import { safeParse } from "../../utils";
+import { getNotebookPlannerDocsPaths } from "../../services/docsContextService";
+import { DOCS_MODE_ORDER } from "../../utils/docsModes";
+import { isPromptsVirtualPath } from "../../utils/promptsVirtualPaths";
+import { isSystemPromptPath } from "../../utils/systemPrompts";
 
 type DocsSelectionState = {
   mode: DocsMode;
@@ -15,9 +19,13 @@ type DocsSelectionState = {
   systemPromptRawByMode: Record<DocsMode, boolean>;
 };
 
-const PLAN_DEFAULT_DOCS = new Set(getNotebookPlannerDocsPaths().map(({ path }) => path));
+const isDiagramSyntaxDoc = (path: string) => path.includes("/docs/syntax/");
+
+const PLAN_DEFAULT_DOCS = new Set(
+  getNotebookPlannerDocsPaths().map(({ path }) => path),
+);
 const DEFAULT_DOCS_STATE: DocsSelectionState = {
-  mode: 'build',
+  mode: "build",
   selections: {
     chat: {},
     build: {},
@@ -26,11 +34,11 @@ const DEFAULT_DOCS_STATE: DocsSelectionState = {
     plan: {},
   },
   activePaths: {
-    chat: '',
-    build: '',
-    analyze: '',
-    fix: '',
-    plan: '',
+    chat: "",
+    build: "",
+    analyze: "",
+    fix: "",
+    plan: "",
   },
   systemPromptRawByMode: {
     chat: false,
@@ -45,7 +53,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
   const [buildDocsEntries, setBuildDocsEntries] = useState<DocsEntry[]>([]);
   const [buildDocsType, setBuildDocsType] = useState<DiagramType | null>(null);
   const [docsState, setDocsState] = useState<DocsSelectionState>(() => {
-    const parsed = safeParse('dc_docs_selection_v2', DEFAULT_DOCS_STATE);
+    const parsed = safeParse("dc_docs_selection_v2", DEFAULT_DOCS_STATE);
     return {
       ...DEFAULT_DOCS_STATE,
       ...parsed,
@@ -70,13 +78,20 @@ export const useBuildDocs = (diagramType: DiagramType) => {
   const buildDocsRequestRef = useRef(0);
 
   const ensureDocsSelectionsForEntries = useCallback((entries: DocsEntry[]) => {
-    const nextSelections: DocsSelectionState['selections'] = { ...docsStateRef.current.selections };
+    const nextSelections: DocsSelectionState["selections"] = {
+      ...docsStateRef.current.selections,
+    };
     let changed = false;
     DOCS_MODE_ORDER.forEach((mode) => {
       const modeSelection = { ...nextSelections[mode] };
       entries.forEach((entry) => {
         if (modeSelection[entry.path] === undefined) {
-          modeSelection[entry.path] = mode === 'plan' ? PLAN_DEFAULT_DOCS.has(entry.path) : true;
+          modeSelection[entry.path] =
+            mode === "plan"
+              ? PLAN_DEFAULT_DOCS.has(entry.path)
+              : mode === "chat"
+                ? false
+                : true;
           changed = true;
         }
       });
@@ -85,57 +100,91 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     return { selections: nextSelections, changed };
   }, []);
 
-  const loadBuildDocsEntries = useCallback(async (type: DiagramType) => {
-    const requestId = ++buildDocsRequestRef.current;
-    let entries = await fetchDocsEntries(type);
-    if (requestId !== buildDocsRequestRef.current) {
-      return { entries: [], selections: DEFAULT_DOCS_STATE.selections, activePaths: DEFAULT_DOCS_STATE.activePaths };
-    }
-    if (!entries.length) {
-      entries = getDocsPaths(type).map(({ path, isOptional }) => ({ path, text: '', isOptional }));
-    }
-
-    const { selections: nextSelections } = ensureDocsSelectionsForEntries(entries);
-    const nextActivePaths: DocsSelectionState['activePaths'] = { ...docsStateRef.current.activePaths };
-    DOCS_MODE_ORDER.forEach((mode) => {
-      const prevPath = nextActivePaths[mode];
-      // Preserve "virtual" prompt paths (System/Intent/Notebook plan) and
-      // system prompt pseudo-files across doc-set reloads (e.g. switching active diagram).
-      if (prevPath && (isPromptsVirtualPath(prevPath) || isSystemPromptPath(prevPath))) {
-        return;
+  const loadBuildDocsEntries = useCallback(
+    async (type: DiagramType) => {
+      const requestId = ++buildDocsRequestRef.current;
+      let entries = await fetchDocsEntries(type);
+      if (requestId !== buildDocsRequestRef.current) {
+        return {
+          entries: [],
+          selections: DEFAULT_DOCS_STATE.selections,
+          activePaths: DEFAULT_DOCS_STATE.activePaths,
+        };
       }
-      if (!prevPath || !entries.some((entry) => entry.path === prevPath)) {
-        if (mode === 'plan') {
-          nextActivePaths[mode] =
-            entries.find((entry) => PLAN_DEFAULT_DOCS.has(entry.path))?.path
-            ?? entries[0]?.path
-            ?? '';
-        } else {
-          nextActivePaths[mode] = entries[0]?.path ?? '';
+      if (!entries.length) {
+        entries = getDocsPaths(type).map(({ path, isOptional }) => ({
+          path,
+          text: "",
+          isOptional,
+        }));
+      }
+
+      const { selections: nextSelections } =
+        ensureDocsSelectionsForEntries(entries);
+      const nextActivePaths: DocsSelectionState["activePaths"] = {
+        ...docsStateRef.current.activePaths,
+      };
+      DOCS_MODE_ORDER.forEach((mode) => {
+        const prevPath = nextActivePaths[mode];
+        // Preserve "virtual" prompt paths (System/Intent/Notebook plan) and
+        // system prompt pseudo-files across doc-set reloads (e.g. switching active diagram).
+        if (
+          prevPath &&
+          (isPromptsVirtualPath(prevPath) || isSystemPromptPath(prevPath))
+        ) {
+          return;
         }
-      }
-    });
+        if (!prevPath || !entries.some((entry) => entry.path === prevPath)) {
+          if (mode === "plan") {
+            nextActivePaths[mode] =
+              entries.find((entry) => PLAN_DEFAULT_DOCS.has(entry.path))
+                ?.path ??
+              entries[0]?.path ??
+              "";
+          } else {
+            nextActivePaths[mode] = entries[0]?.path ?? "";
+          }
+        }
+      });
 
-    setBuildDocsEntries(entries);
-    setBuildDocsType(type);
-    setDocsState((prev) => ({
-      ...prev,
-      selections: nextSelections,
-      activePaths: nextActivePaths,
-    }));
-    return { entries, selections: nextSelections, activePaths: nextActivePaths };
-  }, [ensureDocsSelectionsForEntries]);
+      setBuildDocsEntries(entries);
+      setBuildDocsType(type);
+      setDocsState((prev) => ({
+        ...prev,
+        selections: nextSelections,
+        activePaths: nextActivePaths,
+      }));
+      return {
+        entries,
+        selections: nextSelections,
+        activePaths: nextActivePaths,
+      };
+    },
+    [ensureDocsSelectionsForEntries],
+  );
 
   const ensureViewerDocsEntries = useCallback(async () => {
     if (buildDocsEntries.length && buildDocsType) {
-      return { entries: buildDocsEntries, selections: docsState.selections, activePaths: docsState.activePaths };
+      return {
+        entries: buildDocsEntries,
+        selections: docsState.selections,
+        activePaths: docsState.activePaths,
+      };
     }
     return await loadBuildDocsEntries(buildDocsType ?? diagramType);
-  }, [buildDocsEntries, buildDocsType, diagramType, docsState.activePaths, docsState.selections, loadBuildDocsEntries]);
+  }, [
+    buildDocsEntries,
+    buildDocsType,
+    diagramType,
+    docsState.activePaths,
+    docsState.selections,
+    loadBuildDocsEntries,
+  ]);
 
   const fetchContextDocsEntries = useCallback(async () => {
     if (buildDocsType === diagramType && buildDocsEntries.length) {
-      const { selections: nextSelections, changed } = ensureDocsSelectionsForEntries(buildDocsEntries);
+      const { selections: nextSelections, changed } =
+        ensureDocsSelectionsForEntries(buildDocsEntries);
       if (changed) {
         setDocsState((prev) => ({
           ...prev,
@@ -146,9 +195,14 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     }
     let entries = await fetchDocsEntries(diagramType);
     if (!entries.length) {
-      entries = getDocsPaths(diagramType).map(({ path, isOptional }) => ({ path, text: '', isOptional }));
+      entries = getDocsPaths(diagramType).map(({ path, isOptional }) => ({
+        path,
+        text: "",
+        isOptional,
+      }));
     }
-    const { selections: nextSelections, changed } = ensureDocsSelectionsForEntries(entries);
+    const { selections: nextSelections, changed } =
+      ensureDocsSelectionsForEntries(entries);
     if (changed) {
       setDocsState((prev) => ({
         ...prev,
@@ -156,49 +210,74 @@ export const useBuildDocs = (diagramType: DiagramType) => {
       }));
     }
     return { entries, selections: nextSelections };
-  }, [buildDocsEntries, buildDocsType, diagramType, ensureDocsSelectionsForEntries]);
+  }, [
+    buildDocsEntries,
+    buildDocsType,
+    diagramType,
+    ensureDocsSelectionsForEntries,
+  ]);
 
-  const getDocsContext = useCallback(async (mode: DocsMode) => {
-    const { entries, selections } = await fetchContextDocsEntries();
-    const selection = selections[mode] ?? {};
-    const selected = entries.filter((entry) => selection[entry.path] !== false);
-    return formatDocsContext(selected);
-  }, [fetchContextDocsEntries]);
+  const getDocsContext = useCallback(
+    async (mode: DocsMode) => {
+      const { entries, selections } = await fetchContextDocsEntries();
+      const selection = selections[mode] ?? {};
+      const selected = entries.filter(
+        (entry) => selection[entry.path] !== false,
+      );
+      return formatDocsContext(selected);
+    },
+    [fetchContextDocsEntries],
+  );
 
-  const getViewerDocsContext = useCallback(async (mode: DocsMode) => {
-    const { entries, selections } = await ensureViewerDocsEntries();
-    const selection = selections[mode] ?? {};
-    const selected = entries.filter((entry) => selection[entry.path] !== false);
-    return formatDocsContext(selected);
-  }, [ensureViewerDocsEntries]);
+  const getViewerDocsContext = useCallback(
+    async (mode: DocsMode) => {
+      const { entries, selections } = await ensureViewerDocsEntries();
+      const selection = selections[mode] ?? {};
+      const selected = entries.filter(
+        (entry) => selection[entry.path] !== false,
+      );
+      return formatDocsContext(selected);
+    },
+    [ensureViewerDocsEntries],
+  );
 
-  const getDocsSelectionSummary = useCallback(async (mode: DocsMode) => {
-    const { entries, selections } = await fetchContextDocsEntries();
-    const selection = selections[mode] ?? {};
-    const included = entries.filter((entry) => selection[entry.path] !== false);
-    const excluded = entries.filter((entry) => selection[entry.path] === false);
-    return {
-      total: entries.length,
-      included: included.length,
-      excluded: excluded.length,
-      includedPaths: included.map((entry) => entry.path),
-      excludedPaths: excluded.map((entry) => entry.path),
-    };
-  }, [fetchContextDocsEntries]);
-
-  const toggleBuildDocSelection = useCallback((path: string, isIncluded: boolean) => {
-    setDocsState((prev) => {
-      const mode = prev.mode;
-      const nextSelection = { ...prev.selections[mode], [path]: isIncluded };
+  const getDocsSelectionSummary = useCallback(
+    async (mode: DocsMode) => {
+      const { entries, selections } = await fetchContextDocsEntries();
+      const selection = selections[mode] ?? {};
+      const included = entries.filter(
+        (entry) => selection[entry.path] !== false,
+      );
+      const excluded = entries.filter(
+        (entry) => selection[entry.path] === false,
+      );
       return {
-        ...prev,
-        selections: {
-          ...prev.selections,
-          [mode]: nextSelection,
-        },
+        total: entries.length,
+        included: included.length,
+        excluded: excluded.length,
+        includedPaths: included.map((entry) => entry.path),
+        excludedPaths: excluded.map((entry) => entry.path),
       };
-    });
-  }, []);
+    },
+    [fetchContextDocsEntries],
+  );
+
+  const toggleBuildDocSelection = useCallback(
+    (path: string, isIncluded: boolean) => {
+      setDocsState((prev) => {
+        const mode = prev.mode;
+        const nextSelection = { ...prev.selections[mode], [path]: isIncluded };
+        return {
+          ...prev,
+          selections: {
+            ...prev.selections,
+            [mode]: nextSelection,
+          },
+        };
+      });
+    },
+    [],
+  );
 
   const setBuildDocsActivePath = useCallback((path: string) => {
     setDocsState((prev) => ({
@@ -210,31 +289,35 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     }));
   }, []);
 
-  const setBuildDocsActivePathForMode = useCallback((mode: DocsMode, path: string) => {
-    setDocsState((prev) => ({
-      ...prev,
-      activePaths: {
-        ...prev.activePaths,
-        [mode]: path,
-      },
-    }));
-  }, []);
+  const setBuildDocsActivePathForMode = useCallback(
+    (mode: DocsMode, path: string) => {
+      setDocsState((prev) => ({
+        ...prev,
+        activePaths: {
+          ...prev.activePaths,
+          [mode]: path,
+        },
+      }));
+    },
+    [],
+  );
 
   const setDocsMode = useCallback((mode: DocsMode) => {
     setDocsState((prev) => ({ ...prev, mode }));
   }, []);
 
-    const buildDocsSelectionKey = useMemo(() => {
-    if (!buildDocsEntries.length) return '';
-    return DOCS_MODE_ORDER
-      .map((mode) => {
-        const selection = docsState.selections[mode] ?? {};
-        const key = buildDocsEntries
-          .map((entry) => `${entry.path}:${selection[entry.path] !== false ? '1' : '0'}`)
-          .join('|');
-        return `${mode}:${key}`;
-      })
-      .join('::');
+  const buildDocsSelectionKey = useMemo(() => {
+    if (!buildDocsEntries.length) return "";
+    return DOCS_MODE_ORDER.map((mode) => {
+      const selection = docsState.selections[mode] ?? {};
+      const key = buildDocsEntries
+        .map(
+          (entry) =>
+            `${entry.path}:${selection[entry.path] !== false ? "1" : "0"}`,
+        )
+        .join("|");
+      return `${mode}:${key}`;
+    }).join("::");
   }, [buildDocsEntries, docsState.selections]);
 
   const setSystemPromptRaw = useCallback((mode: DocsMode, isRaw: boolean) => {
@@ -247,32 +330,44 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     }));
   }, []);
 
-  const setBuildDocSelectionForMode = useCallback((mode: DocsMode, path: string, isIncluded: boolean) => {
-    setDocsState((prev) => ({
-      ...prev,
-      selections: {
-        ...prev.selections,
-        [mode]: {
-          ...prev.selections[mode],
-          [path]: isIncluded,
+  const setBuildDocSelectionForMode = useCallback(
+    (mode: DocsMode, path: string, isIncluded: boolean) => {
+      setDocsState((prev) => ({
+        ...prev,
+        selections: {
+          ...prev.selections,
+          [mode]: {
+            ...prev.selections[mode],
+            [path]: isIncluded,
+          },
         },
-      },
-    }));
-  }, []);
+      }));
+    },
+    [],
+  );
 
   const resetDocsSelectionsToDefault = useCallback(() => {
     if (!buildDocsEntries.length) return;
     setDocsState((prev) => {
-      const nextSelections: DocsSelectionState['selections'] = { ...prev.selections };
+      const nextSelections: DocsSelectionState["selections"] = {
+        ...prev.selections,
+      };
       const syntaxDocPath =
-        buildDocsEntries.find((entry) => entry.path.startsWith('packages/mermaid/src/docs/syntax/'))?.path ?? '';
-      const syntaxReferencePath = 'packages/mermaid/src/docs/intro/syntax-reference.md';
+        buildDocsEntries.find((entry) =>
+          entry.path.startsWith("packages/mermaid/src/docs/syntax/"),
+        )?.path ?? "";
+      const syntaxReferencePath =
+        "packages/mermaid/src/docs/intro/syntax-reference.md";
 
       for (const mode of DOCS_MODE_ORDER) {
         const modeSelection: Record<string, boolean> = {};
-        if (mode === 'plan') {
+        if (mode === "plan") {
           for (const entry of buildDocsEntries) {
             modeSelection[entry.path] = PLAN_DEFAULT_DOCS.has(entry.path);
+          }
+        } else if (mode === "chat") {
+          for (const entry of buildDocsEntries) {
+            modeSelection[entry.path] = false;
           }
         } else {
           const defaultPath = syntaxDocPath || syntaxReferencePath;
@@ -295,7 +390,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
   }, [diagramType, loadBuildDocsEntries]);
 
   useEffect(() => {
-    localStorage.setItem('dc_docs_selection_v2', JSON.stringify(docsState));
+    localStorage.setItem("dc_docs_selection_v2", JSON.stringify(docsState));
   }, [docsState]);
 
   return {
@@ -303,7 +398,7 @@ export const useBuildDocs = (diagramType: DiagramType) => {
     buildDocsType,
     buildDocsSelection: docsState.selections[docsState.mode] ?? {},
     buildDocsSelectionKey,
-    buildDocsActivePath: docsState.activePaths[docsState.mode] ?? '',
+    buildDocsActivePath: docsState.activePaths[docsState.mode] ?? "",
     setBuildDocsActivePath,
     setBuildDocsActivePathForMode,
     docsMode: docsState.mode,

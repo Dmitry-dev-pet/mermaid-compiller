@@ -1,53 +1,41 @@
 import React from 'react';
-import { Button } from '../ui/Button';
+import type { MermaidState } from '../../../types';
+import { Button } from '../../ui/Button';
 import { Maximize, Minus, Plus } from 'lucide-react';
-import { MermaidState } from '../../types';
 
-interface PreviewBodyProps {
+type SvgSurfaceProps = {
   viewportRef: React.RefObject<HTMLDivElement>;
   svgMountRef: React.RefObject<HTMLDivElement>;
-  markdownMountRef: React.RefObject<HTMLDivElement>;
-  docsMountRef: React.RefObject<HTMLDivElement>;
-  isBuildDocsMode: boolean;
-  isMarkdownMode: boolean;
-  isMarkdownMermaidMode: boolean;
-  isMarkdownMermaidInvalid: boolean;
-  renderError: string | null;
-  mermaidState: MermaidState;
-  activeMarkdownErrorMessage: string | null;
-  codeForRender: string;
   svgMarkup: string;
   exportError: string | null;
-  hasBuildDocs: boolean;
-  onMarkdownScroll?: () => void;
+  renderError: string | null;
+  mermaidState: MermaidState;
+  isMarkdownMermaidInvalid: boolean;
+  isMarkdownMermaidMode: boolean;
+  activeMarkdownErrorMessage: string | null;
+  codeForRender: string;
   onToggleFullScreen: () => void;
-  zoomPercent: number;
   showZoomControls: boolean;
+  zoomPercent: number;
   onZoomOut: () => void;
   onZoomIn: () => void;
   onFitToViewport: () => void;
-}
+};
 
-const PreviewBody: React.FC<PreviewBodyProps> = ({
+const SvgSurface: React.FC<SvgSurfaceProps> = ({
   viewportRef,
   svgMountRef,
-  markdownMountRef,
-  docsMountRef,
-  isBuildDocsMode,
-  isMarkdownMode,
-  isMarkdownMermaidMode,
-  isMarkdownMermaidInvalid,
-  renderError,
-  mermaidState,
-  activeMarkdownErrorMessage,
-  codeForRender,
   svgMarkup,
   exportError,
-  hasBuildDocs,
-  onMarkdownScroll,
+  renderError,
+  mermaidState,
+  isMarkdownMermaidInvalid,
+  isMarkdownMermaidMode,
+  activeMarkdownErrorMessage,
+  codeForRender,
   onToggleFullScreen,
-  zoomPercent,
   showZoomControls,
+  zoomPercent,
   onZoomOut,
   onZoomIn,
   onFitToViewport,
@@ -57,7 +45,7 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
       ref={viewportRef}
       className="flex-1 relative overflow-hidden flex items-center justify-center"
     >
-      {exportError && !isBuildDocsMode && !isMarkdownMode && (
+      {exportError && (
         <div
           className="absolute top-3 left-3 z-20 max-w-[60%] rounded border border-red-200/70 dark:border-red-900/60 bg-red-50/90 dark:bg-red-950/40 backdrop-blur px-2 py-1 text-[10px] text-red-700 dark:text-red-200 truncate"
           onDoubleClick={(e) => e.stopPropagation()}
@@ -66,21 +54,7 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
         </div>
       )}
 
-      {isBuildDocsMode && (
-        <div className="absolute inset-0 overflow-auto text-sm text-slate-700 dark:text-slate-200 leading-6 p-4">
-          {hasBuildDocs ? (
-            <div ref={docsMountRef} className="markdown-body" />
-          ) : (
-            <div className="text-slate-400 dark:text-slate-500 text-sm">No documentation loaded.</div>
-          )}
-        </div>
-      )}
-
-      {!isBuildDocsMode &&
-        renderError &&
-        mermaidState.status !== 'invalid' &&
-        !isMarkdownMode &&
-        !isMarkdownMermaidInvalid && (
+      {renderError && mermaidState.status !== 'invalid' && !isMarkdownMermaidInvalid && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
           <div className="text-center p-6 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-lg max-w-sm">
             <h3 className="text-red-700 dark:text-red-400 font-medium mb-1">Render failed</h3>
@@ -90,7 +64,8 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
           </div>
         </div>
       )}
-      {!isBuildDocsMode && isMarkdownMermaidInvalid && (
+
+      {isMarkdownMermaidInvalid && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
           <div className="text-center p-6 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-lg max-w-sm">
             <h3 className="text-red-700 dark:text-red-400 font-medium mb-1">Cannot render diagram</h3>
@@ -100,7 +75,8 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
           </div>
         </div>
       )}
-      {!isBuildDocsMode && mermaidState.status === 'invalid' && !isMarkdownMode && !isMarkdownMermaidMode && (
+
+      {!isMarkdownMermaidInvalid && mermaidState.status === 'invalid' && !isMarkdownMermaidMode && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
           <div className="text-center p-6 bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-lg max-w-sm">
             <h3 className="text-red-700 dark:text-red-400 font-medium mb-1">Cannot render diagram</h3>
@@ -111,11 +87,11 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
         </div>
       )}
 
-      {!isBuildDocsMode && !codeForRender.trim() && !isMarkdownMode && (
+      {!codeForRender.trim() && (
         <div className="text-slate-400 dark:text-slate-500 text-sm">No valid diagram to display.</div>
       )}
 
-      {!isBuildDocsMode && svgMarkup && !isMarkdownMode && (
+      {svgMarkup && (
         <div
           ref={svgMountRef}
           className="absolute inset-0"
@@ -125,7 +101,8 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
           }}
         />
       )}
-      {showZoomControls && !isBuildDocsMode && svgMarkup && !isMarkdownMode && (
+
+      {showZoomControls && svgMarkup && (
         <div className="absolute bottom-3 right-3 z-20 flex flex-col items-center gap-1 rounded-lg border border-slate-200/70 dark:border-slate-700/70 bg-white/90 dark:bg-slate-900/90 shadow-sm px-1.5 py-1.5">
           <Button
             type="button"
@@ -162,15 +139,8 @@ const PreviewBody: React.FC<PreviewBodyProps> = ({
           </Button>
         </div>
       )}
-      {!isBuildDocsMode && isMarkdownMode && (
-        <div
-          ref={markdownMountRef}
-          onScroll={onMarkdownScroll}
-          className="markdown-body absolute inset-0 overflow-auto p-4 text-sm text-slate-700 dark:text-slate-200 leading-6"
-        />
-      )}
     </div>
   );
 };
 
-export default PreviewBody;
+export default SvgSurface;

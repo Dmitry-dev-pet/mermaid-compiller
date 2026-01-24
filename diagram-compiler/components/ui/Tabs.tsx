@@ -1,6 +1,6 @@
 import React, { forwardRef } from 'react';
 
-export interface TabListProps extends React.HTMLAttributes<HTMLDivElement> {}
+export type TabListProps = React.HTMLAttributes<HTMLDivElement>;
 
 export const TabList = forwardRef<HTMLDivElement, TabListProps>(({ className = '', ...props }, ref) => {
   return (

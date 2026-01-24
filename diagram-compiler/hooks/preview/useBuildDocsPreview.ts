@@ -1,5 +1,5 @@
 import type MarkdownIt from 'markdown-it';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { getSystemPromptModeFromPath, isSystemPromptPath } from '../../utils/systemPrompts';
 import {
   PROMPTS_VIRTUAL_INTENT_PATH,
@@ -37,13 +37,13 @@ export const useBuildDocsPreview = ({
   buildDocsNotebookPlanText,
   markdownRenderer,
 }: UseBuildDocsPreviewArgs) => {
-  const resolveSystemPromptForPath = (path: string) => {
+  const resolveSystemPromptForPath = useCallback((path: string) => {
     const mode = getSystemPromptModeFromPath(path);
     if (!mode) return '';
     const useRaw = systemPromptRawByMode[mode] ?? false;
     const prompt = useRaw ? buildDocsSystemPrompts[mode]?.raw : buildDocsSystemPrompts[mode]?.redacted;
     return prompt || buildDocsSystemPrompts[mode]?.raw || 'No system prompt available.';
-  };
+  }, [buildDocsSystemPrompts, systemPromptRawByMode]);
 
   const activeBuildDoc = useMemo(() => {
     if (buildDocsActivePath === PROMPTS_VIRTUAL_SYSTEM_PATH) {
@@ -78,6 +78,7 @@ export const useBuildDocsPreview = ({
     buildDocsRequestPreviewText,
     buildDocsSystemPrompts,
     docsMode,
+    resolveSystemPromptForPath,
     systemPromptRawByMode,
   ]);
 

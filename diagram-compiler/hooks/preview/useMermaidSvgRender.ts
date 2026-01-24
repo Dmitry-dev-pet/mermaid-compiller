@@ -1,6 +1,9 @@
-import { useEffect, useState, type MutableRefObject } from 'react';
-import mermaid from 'mermaid';
-import { applyInlineMermaidDirectives, validateMermaidDiagramCode } from '../../services/mermaidService';
+import { useEffect, useState, type MutableRefObject } from "react";
+import mermaid from "mermaid";
+import {
+  prepareMermaid,
+  validatePreparedMermaid,
+} from "../../services/mermaidService";
 
 type UseMermaidSvgRenderArgs = {
   code: string;
@@ -23,13 +26,13 @@ export const useMermaidSvgRender = ({
   enrichError,
   bindFunctionsRef,
 }: UseMermaidSvgRenderArgs) => {
-  const [svgMarkup, setSvgMarkup] = useState('');
+  const [svgMarkup, setSvgMarkup] = useState("");
   const [renderError, setRenderError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!enabled) {
       bindFunctionsRef.current = null;
-      setSvgMarkup('');
+      setSvgMarkup("");
       setRenderError(null);
       return;
     }
@@ -37,12 +40,15 @@ export const useMermaidSvgRender = ({
     const trimmed = code.trim();
     if (!trimmed) {
       bindFunctionsRef.current = null;
-      setSvgMarkup('');
+      setSvgMarkup("");
       setRenderError(null);
       return;
     }
 
-    if ((!isMarkdownMermaidMode && !isMermaidValid) || isMarkdownMermaidInvalid) {
+    if (
+      (!isMarkdownMermaidMode && !isMermaidValid) ||
+      isMarkdownMermaidInvalid
+    ) {
       return;
     }
 
@@ -50,26 +56,33 @@ export const useMermaidSvgRender = ({
       try {
         setRenderError(null);
         const id = `mermaid-${Date.now()}`;
-        const validation = await validateMermaidDiagramCode(code, { logError: false });
+        const prepared = prepareMermaid(code);
+        const validation = await validatePreparedMermaid(prepared, {
+          logError: false,
+        });
         if (validation.isValid === false) {
-          setRenderError(enrichError(code, validation.errorMessage ?? 'Syntax Error'));
-          setSvgMarkup('');
+          setRenderError(
+            enrichError(code, validation.errorMessage ?? "Syntax Error"),
+          );
+          setSvgMarkup("");
           return;
         }
-        const inlineCode = applyInlineMermaidDirectives(code);
-        const { svg, bindFunctions } = await mermaid.render(id, inlineCode);
+        const { svg, bindFunctions } = await mermaid.render(
+          id,
+          prepared.inlineCode,
+        );
         bindFunctionsRef.current = bindFunctions ?? null;
 
-        if (!svg || !svg.includes('<svg')) {
-          throw new Error('Mermaid returned empty SVG');
+        if (!svg || !svg.includes("<svg")) {
+          throw new Error("Mermaid returned empty SVG");
         }
 
         setSvgMarkup(svg);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         setRenderError(enrichError(code, message));
-        setSvgMarkup('');
-        console.error('Render failed', error);
+        setSvgMarkup("");
+        console.error("Render failed", error);
       }
     };
 

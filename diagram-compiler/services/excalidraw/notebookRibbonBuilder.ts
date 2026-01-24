@@ -467,8 +467,17 @@ export const buildNotebookExcalidrawScene = async (args: {
   const contentWidth = maxWidth + padX * 2;
   const dividerWidth = contentWidth;
 
-  const headerStroke = args.theme === 'dark' ? '#e5e7eb' : '#111827';
-  const dividerStroke = args.theme === 'dark' ? '#334155' : '#cbd5e1';
+  const baseHeaderStroke =
+    typeof baseThemeVariables.primaryTextColor === 'string' && baseThemeVariables.primaryTextColor.trim()
+      ? baseThemeVariables.primaryTextColor.trim()
+      : (typeof baseThemeVariables.lineColor === 'string' && baseThemeVariables.lineColor.trim())
+        ? baseThemeVariables.lineColor.trim()
+        : '#0f172a';
+  const headerStroke = baseHeaderStroke;
+  const dividerStroke =
+    typeof baseThemeVariables.lineColor === 'string' && baseThemeVariables.lineColor.trim()
+      ? baseThemeVariables.lineColor.trim()
+      : '#334155';
 
   const mergedElements: Array<Record<string, unknown>> = [];
   const mergedFiles: BinaryFiles = {};

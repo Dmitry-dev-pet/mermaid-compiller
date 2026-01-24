@@ -1,6 +1,6 @@
 import React, { forwardRef } from 'react';
 
-export interface RadioGroupProps extends React.HTMLAttributes<HTMLDivElement> {}
+export type RadioGroupProps = React.HTMLAttributes<HTMLDivElement>;
 
 export const RadioGroup: React.FC<RadioGroupProps> = ({ className = '', ...props }) => {
   return <div className={`flex items-center gap-3 ${className}`.trim()} {...props} />;

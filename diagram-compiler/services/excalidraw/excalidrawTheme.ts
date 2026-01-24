@@ -1,4 +1,6 @@
 export const CANVAS_BG_DARK = '#1e1e1e';
+import { removeExcalidrawDarkCanvasFilterFromColor } from './excalidrawCanvasFilter';
+
 export const CANVAS_BG_LIGHT = '#ffffff';
 
 const parseHexColor = (color: string): { r: number; g: number; b: number } | null => {
@@ -52,21 +54,29 @@ export const applyMermaidThemeToExcalidrawElements = <T,>(
     ? { line: '#cbd5e1', text: '#e5e7eb', fill: 'transparent' }
     : { line: '#0f172a', text: '#0f172a', fill: 'transparent' };
 
-  const lineColor =
+  const normalizeColorForTheme = (color: string) => {
+    if (opts.uiTheme !== 'dark') return color;
+    return removeExcalidrawDarkCanvasFilterFromColor(color) ?? color;
+  };
+
+  const lineColor = normalizeColorForTheme(
     opts.forceTheme
       ? defaults.line
       : (typeof vars?.lineColor === 'string' && vars.lineColor.trim()) ? String(vars.lineColor).trim()
-        : defaults.line;
-  const textColor =
+        : defaults.line
+  );
+  const textColor = normalizeColorForTheme(
     opts.forceTheme
       ? defaults.text
       : (typeof vars?.primaryTextColor === 'string' && vars.primaryTextColor.trim()) ? String(vars.primaryTextColor).trim()
-        : defaults.text;
-  const nodeFill =
+        : defaults.text
+  );
+  const nodeFill = normalizeColorForTheme(
     opts.forceTheme
       ? defaults.fill
       : (typeof vars?.primaryColor === 'string' && vars.primaryColor.trim()) ? String(vars.primaryColor).trim()
-        : defaults.fill;
+        : defaults.fill
+  );
 
   const shouldFixContrast = (color: unknown): boolean => {
     if (typeof color !== 'string') return true;
@@ -113,4 +123,3 @@ export const applyMermaidThemeToExcalidrawElements = <T,>(
     return next as T;
   });
 };
-

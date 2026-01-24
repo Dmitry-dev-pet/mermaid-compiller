@@ -40,6 +40,7 @@ import {
 import {
   resolveExcalidrawStoredCanvasColor,
   resolveExcalidrawVisibleCanvasColor,
+  removeExcalidrawDarkCanvasFilterFromColor,
 } from '../../services/excalidraw/excalidrawCanvasFilter';
 import {
   buildSceneMeta,
@@ -1025,6 +1026,19 @@ const DiagramWhiteboard: React.FC<Props> = ({
     return mermaidBackgroundCandidate;
   }, [backgroundMode, mermaidBackgroundCandidate]);
 
+  const resolveMermaidStoredBackground = useCallback((visible: string | null, nextTheme: 'light' | 'dark') => {
+    const trimmed = visible?.trim() ?? '';
+    if (!trimmed) return visible;
+    if (nextTheme !== 'dark') return trimmed;
+    return removeExcalidrawDarkCanvasFilterFromColor(trimmed) ?? trimmed;
+  }, []);
+
+  const effectiveBackgroundStored = useMemo(() => {
+    if (backgroundMode === 'excalidraw') return null;
+    const nextTheme = normalizeTheme(theme);
+    return resolveMermaidStoredBackground(effectiveBackgroundColor ?? null, nextTheme);
+  }, [backgroundMode, effectiveBackgroundColor, resolveMermaidStoredBackground, theme]);
+
   const lastSavedJsonRef = useRef<string>(initialSceneJson ?? '');
   const pendingSaveRef = useRef<number | null>(null);
   const latestJsonRef = useRef<string>(initialSceneJson ?? '');
@@ -1046,24 +1060,25 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const [lastMermaidToExcalidrawError, setLastMermaidToExcalidrawError] = useState<string | null>(null);
   // Stored in Excalidraw `appState.viewBackgroundColor` (pre-filtered in dark theme).
   const [canvasBackground, setCanvasBackground] = useState<string | null>(null);
-  // What the user expects to see (post-filter color in dark theme).
-  const [canvasBackgroundVisible, setCanvasBackgroundVisible] = useState<string | null>(null);
-  const lastCanvasBackgroundRef = useRef<string | null>(null);
-  const canvasBackgroundByThemeRef = useRef<{ light: string | null; dark: string | null }>({
+  const initialBackgroundByTheme = {
     light: (typeof initialCanvasBackgroundByTheme?.light === 'string' && initialCanvasBackgroundByTheme.light.trim())
       ? initialCanvasBackgroundByTheme.light.trim()
       : null,
     dark: (typeof initialCanvasBackgroundByTheme?.dark === 'string' && initialCanvasBackgroundByTheme.dark.trim())
       ? initialCanvasBackgroundByTheme.dark.trim()
       : null,
-  });
-  const canvasBackgroundVisibleRef = useRef<string | null>(
-    (typeof initialCanvasBackgroundByTheme?.light === 'string' && initialCanvasBackgroundByTheme.light.trim())
-      ? initialCanvasBackgroundByTheme.light.trim()
-      : (typeof initialCanvasBackgroundByTheme?.dark === 'string' && initialCanvasBackgroundByTheme.dark.trim())
-        ? initialCanvasBackgroundByTheme.dark.trim()
-        : null
-  );
+  };
+  const initialVisibleBackground = (() => {
+    const nextTheme = normalizeTheme(theme);
+    return nextTheme === 'dark'
+      ? (initialBackgroundByTheme.dark ?? null)
+      : (initialBackgroundByTheme.light ?? null);
+  })();
+  // What the user expects to see (post-filter color in dark theme).
+  const [canvasBackgroundVisible, setCanvasBackgroundVisible] = useState<string | null>(initialVisibleBackground);
+  const lastCanvasBackgroundRef = useRef<string | null>(null);
+  const canvasBackgroundByThemeRef = useRef<{ light: string | null; dark: string | null }>(initialBackgroundByTheme);
+  const canvasBackgroundVisibleRef = useRef<string | null>(initialVisibleBackground);
   const expectedCanvasBackgroundRef = useRef<string | null>(null);
   const lastBuiltSignatureRef = useRef<string>('');
   const inFlightSignatureRef = useRef<string>('');
@@ -1082,8 +1097,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
   const canvasBackgroundAutoVisible = useMemo(() => {
     // When the user hasn't chosen a custom ED background, use a sensible initial value.
+    if (backgroundMode === 'excalidraw') {
+      return canvasBackgroundForTheme?.trim() || CANVAS_BG_LIGHT;
+    }
     return (mermaidBackgroundCandidate ?? canvasBackgroundForTheme)?.trim() || CANVAS_BG_LIGHT;
-  }, [canvasBackgroundForTheme, mermaidBackgroundCandidate]);
+  }, [backgroundMode, canvasBackgroundForTheme, mermaidBackgroundCandidate]);
 
   const resolveStoredCanvasBackground = useCallback((visible: string, nextTheme: 'light' | 'dark'): string => {
     const trimmed = visible.trim();
@@ -1137,7 +1155,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
   const prepareInitialData = useCallback((scene: ExcalidrawInitialDataState): ExcalidrawInitialDataState => {
     const sceneAppState = (scene.appState ?? {}) as Partial<AppState>;
-    const themeVars = backgroundMode === 'excalidraw' ? null : extractFrontmatterThemeVariables(mermaidCode);
+    const themeVars = extractFrontmatterThemeVariables(mermaidCode);
     const contrastBackground =
       backgroundMode === 'excalidraw'
         ? (canvasBackgroundVisible ?? canvasBackgroundAutoVisible ?? CANVAS_BG_LIGHT)
@@ -1146,7 +1164,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       backgroundColor: contrastBackground,
       themeVariables: themeVars,
       uiTheme: theme,
-      forceTheme: backgroundMode === 'excalidraw',
+      forceTheme: false,
     }) as unknown as ExcalidrawInitialDataState['elements'];
     const targetZoom = clampWhiteboardZoom(zoomPercent / 100);
     const nextBackground = (() => {
@@ -1157,7 +1175,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         if (fromScene) return fromScene;
         return resolveStoredCanvasBackground(canvasBackgroundAutoVisible, normalizeTheme(theme));
       }
-      return effectiveBackgroundColor ?? sceneAppState.viewBackgroundColor ?? undefined;
+      return effectiveBackgroundStored ?? sceneAppState.viewBackgroundColor ?? undefined;
     })();
     return {
       ...scene,
@@ -1171,7 +1189,20 @@ const DiagramWhiteboard: React.FC<Props> = ({
         viewModePatch: VIEW_MODE_APPSTATE_PATCH,
       }),
     };
-  }, [VIEW_MODE_APPSTATE_PATCH, backgroundMode, canvasBackgroundAutoVisible, canvasBackgroundForTheme, canvasBackgroundVisible, effectiveBackgroundColor, isViewMode, mermaidCode, resolveStoredCanvasBackground, theme, zoomPercent]);
+  }, [
+    VIEW_MODE_APPSTATE_PATCH,
+    backgroundMode,
+    canvasBackgroundAutoVisible,
+    canvasBackgroundForTheme,
+    canvasBackgroundVisible,
+    effectiveBackgroundColor,
+    effectiveBackgroundStored,
+    isViewMode,
+    mermaidCode,
+    resolveStoredCanvasBackground,
+    theme,
+    zoomPercent,
+  ]);
 
   const handlePointerUp = useCallback((_: AppState['activeTool'], pointerDownState: any) => {
     if (!isViewMode) return;
@@ -1193,8 +1224,11 @@ const DiagramWhiteboard: React.FC<Props> = ({
     lastBuiltSignatureRef.current = '';
     inFlightSignatureRef.current = '';
     buildRunIdRef.current += 1;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInitialDataState(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setBuildError(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsSceneBuilding(false);
   }, [syncKey]);
 
@@ -1236,21 +1270,21 @@ const DiagramWhiteboard: React.FC<Props> = ({
       }
     }
     canvasBackgroundByThemeRef.current = nextBgByTheme;
-    // "Independent ED background": treat stored values as a single visible color.
-    const mergedVisible =
-      (typeof nextBgByTheme.light === 'string' && nextBgByTheme.light.trim()) ? nextBgByTheme.light.trim()
-        : (typeof nextBgByTheme.dark === 'string' && nextBgByTheme.dark.trim()) ? nextBgByTheme.dark.trim()
-          : null;
-    canvasBackgroundVisibleRef.current = mergedVisible;
-    setCanvasBackgroundVisible(mergedVisible);
-    canvasBackgroundByThemeRef.current = { light: mergedVisible, dark: mergedVisible };
-    onCanvasBackgroundByThemeChange?.({ light: mergedVisible, dark: mergedVisible });
+    const nextTheme = normalizeTheme(theme);
+    const nextVisible = nextTheme === 'dark'
+      ? (nextBgByTheme.dark ?? null)
+      : (nextBgByTheme.light ?? null);
+    canvasBackgroundVisibleRef.current = nextVisible;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCanvasBackgroundVisible(nextVisible);
+    onCanvasBackgroundByThemeChange?.({ ...nextBgByTheme });
     if (initialSceneJson === null && !isDirtyRef.current) {
       lastBuiltSignatureRef.current = '';
       inFlightSignatureRef.current = '';
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInitialDataState(null);
     }
-  }, [initialSceneJson, onCanvasBackgroundByThemeChange, onDirtyChange]);
+  }, [initialSceneJson, onCanvasBackgroundByThemeChange, onDirtyChange, theme]);
 
   useEffect(() => {
     if (!api) return;
@@ -1275,12 +1309,12 @@ const DiagramWhiteboard: React.FC<Props> = ({
       }
       return effectiveBackgroundColor ?? null;
     })();
-    const themeVars = backgroundMode === 'excalidraw' ? null : extractFrontmatterThemeVariables(mermaidCode);
+    const themeVars = extractFrontmatterThemeVariables(mermaidCode);
     const themedElements = applyMermaidThemeToExcalidrawElements(nextElements, {
       backgroundColor: contrastBackground,
       themeVariables: themeVars,
       uiTheme: theme,
-      forceTheme: backgroundMode === 'excalidraw',
+      forceTheme: false,
     }) as unknown as ExcalidrawInitialDataState['elements'];
 
     skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
@@ -1312,7 +1346,6 @@ const DiagramWhiteboard: React.FC<Props> = ({
     if (!elements.length) return;
 
     const themeVars = (() => {
-      if (backgroundMode === 'excalidraw') return null;
       const rawThemeVars = extractFrontmatterThemeVariables(mermaidCode);
       const vars = rawThemeVars ? { ...rawThemeVars } : null;
       if (vars && 'background' in vars) {
@@ -1329,7 +1362,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
       backgroundColor: contrastBackground,
       themeVariables: themeVars,
       uiTheme: nextTheme,
-      forceTheme: true,
+      forceTheme: false,
     }) as unknown as ExcalidrawInitialDataState['elements'];
     skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
     api.updateScene({
@@ -1580,7 +1613,6 @@ const DiagramWhiteboard: React.FC<Props> = ({
       diagramTypeHint,
       svgChars: svgMarkup.trim() ? svgMarkup.length : 0,
       sceneKey,
-      pendingFitKey: pendingFitSceneKeyRef.current,
     };
   }, [buildError, debugEnabled, diagramTypeHint, initialDataState, isSceneBuilding, lastGenerator, lastMermaidToExcalidrawError, sceneKey, svgMarkup]);
 
@@ -1592,7 +1624,10 @@ const DiagramWhiteboard: React.FC<Props> = ({
       const current = api.getAppState();
       const nextBackground = (() => {
         if (backgroundMode === 'excalidraw') {
-          const userVisible = canvasBackgroundVisibleRef.current?.trim() || null;
+          const storedVisible = nextTheme === 'dark'
+            ? (canvasBackgroundByThemeRef.current.dark ?? null)
+            : (canvasBackgroundByThemeRef.current.light ?? null);
+          const userVisible = (storedVisible ?? canvasBackgroundVisibleRef.current)?.trim() || null;
           const resolvedVisible = (userVisible ?? canvasBackgroundAutoVisible)?.trim() || CANVAS_BG_LIGHT;
           const stored = resolveStoredCanvasBackground(resolvedVisible, nextTheme);
           if (stored !== lastCanvasBackgroundRef.current) {
@@ -1606,7 +1641,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
           }
           return stored;
         }
-        return effectiveBackgroundColor ?? undefined;
+        return effectiveBackgroundStored ?? undefined;
       })();
       expectedCanvasBackgroundRef.current = typeof nextBackground === 'string' ? nextBackground : null;
       if (
@@ -1630,7 +1665,15 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
     const raf = requestAnimationFrame(() => apply());
     return () => cancelAnimationFrame(raf);
-  }, [api, backgroundMode, canvasBackgroundAutoVisible, effectiveBackgroundColor, isViewMode, resolveStoredCanvasBackground, theme]);
+  }, [
+    api,
+    backgroundMode,
+    canvasBackgroundAutoVisible,
+    effectiveBackgroundStored,
+    isViewMode,
+    resolveStoredCanvasBackground,
+    theme,
+  ]);
 
   useEffect(() => {
     if (!api) return;
@@ -1783,14 +1826,17 @@ const DiagramWhiteboard: React.FC<Props> = ({
       const nextBg = typeof appState.viewBackgroundColor === 'string' ? appState.viewBackgroundColor : null;
       if (nextBg !== lastCanvasBackgroundRef.current) {
         const expectedBg = expectedCanvasBackgroundRef.current;
-        if (expectedBg === null || nextBg !== expectedBg) {
-          const visible = nextBg ? resolveVisibleCanvasBackground(nextBg, effectiveTheme) : null;
-          canvasBackgroundVisibleRef.current = visible;
-          setCanvasBackgroundVisible(visible);
-          canvasBackgroundByThemeRef.current.light = visible;
-          canvasBackgroundByThemeRef.current.dark = visible;
-          onCanvasBackgroundByThemeChange?.({ ...canvasBackgroundByThemeRef.current });
-        }
+          if (expectedBg === null || nextBg !== expectedBg) {
+            const visible = nextBg ? resolveVisibleCanvasBackground(nextBg, effectiveTheme) : null;
+            canvasBackgroundVisibleRef.current = visible;
+            setCanvasBackgroundVisible(visible);
+            const nextByTheme = {
+              ...canvasBackgroundByThemeRef.current,
+              [effectiveTheme]: visible,
+            } as { light: string | null; dark: string | null };
+            canvasBackgroundByThemeRef.current = nextByTheme;
+            onCanvasBackgroundByThemeChange?.({ ...nextByTheme });
+          }
         lastCanvasBackgroundRef.current = nextBg;
         setCanvasBackground(nextBg);
       }
@@ -1970,7 +2016,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     if (initialDataState) return initialDataState;
     const background = (() => {
       if (backgroundMode === 'excalidraw') return canvasBackgroundForTheme;
-      return effectiveBackgroundColor ?? undefined;
+      return effectiveBackgroundStored ?? undefined;
     })();
     return buildWhiteboardInitialData({
       scene: null,
@@ -1980,7 +2026,17 @@ const DiagramWhiteboard: React.FC<Props> = ({
       backgroundColor: background,
       zoomPercent,
     });
-  }, [backgroundMode, canvasBackgroundForTheme, effectiveBackgroundColor, initialDataState, isViewMode, sceneMeta, theme, zoomPercent]);
+  }, [
+    backgroundMode,
+    canvasBackgroundForTheme,
+    effectiveBackgroundColor,
+    effectiveBackgroundStored,
+    initialDataState,
+    isViewMode,
+    sceneMeta,
+    theme,
+    zoomPercent,
+  ]);
 
   return (
     <div
@@ -2010,7 +2066,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         enabled={debugEnabled}
         debugOverlay={debugOverlay}
         debugRuntime={debugRuntime}
-        lastFitCalc={lastFitCalcRef.current as WhiteboardFitCalc | null}
+        lastFitCalc={null}
         sceneKey={sceneKey}
         diagramTypeHint={diagramTypeHint}
         lastGenerator={lastGenerator}
@@ -2018,8 +2074,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
         scrollMode={scrollMode}
         zoomMode={zoomMode}
         isViewMode={isViewMode}
-        pendingFitSceneKey={pendingFitSceneKeyRef.current}
-        lockedScrollX={lockedScrollXRef.current}
+        pendingFitSceneKey={null}
+        lockedScrollX={null}
         apiRef={apiRef}
         effectiveBackgroundColor={effectiveBackgroundColor}
       />

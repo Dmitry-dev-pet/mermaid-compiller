@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types';
 import type { DiagramType } from '../../types';
 import type { MermaidThemePresetId } from '../../utils/mermaidThemePreset';
+import { MERMAID_THEME_PRESETS } from '../../utils/mermaidThemePreset';
 import type { MermaidMarkdownBlock } from '../../services/mermaidService';
 import { buildNotebookExcalidrawScene } from '../../services/excalidraw/notebookRibbonBuilder';
 import { hashString } from '../../utils/hashString';
+import { extractFrontmatterThemeVariables } from '../../utils/mermaidFrontmatterThemeVariables';
+import { isDarkColor } from '../../services/excalidraw/excalidrawTheme';
 
 const EXCALIDRAW_THEME_STORAGE_KEY = 'mlg.excalidrawThemeByDiagramKey.v1';
 const EXCALIDRAW_CANVAS_BG_STORAGE_KEY = 'mlg.excalidrawCanvasBackgroundByDiagramKey.v1';
@@ -128,9 +131,12 @@ export const usePreviewWhiteboard = ({
 
   const diagramThemeKey = useMemo(() => {
     const code = codeForRender.trim();
-    if (!code) return null;
-    return `diagram:${hashString(code)}`;
-  }, [codeForRender]);
+    if (code) return `diagram:${hashString(code)}`;
+    const scene = whiteboardSceneJson?.trim();
+    if (scene) return `whiteboard:${hashString(scene)}`;
+    if (historyRevisionId) return `whiteboard:${historyRevisionId}`;
+    return null;
+  }, [codeForRender, historyRevisionId, whiteboardSceneJson]);
 
   const notebookThemeKey = useMemo(() => {
     const markdown = mermaidCode.trim();
@@ -138,15 +144,44 @@ export const usePreviewWhiteboard = ({
     return `notebook:${hashString(markdown)}`;
   }, [mermaidCode]);
 
+  const preferredDiagramExcalidrawTheme = useMemo<'light' | 'dark'>(() => {
+    if (!isThemePresetMixed && selectedThemePreset) {
+      const preset = MERMAID_THEME_PRESETS.find((p) => p.id === selectedThemePreset);
+      if (preset?.themeVariables?.darkMode === true) return 'dark';
+      if (preset?.themeVariables?.darkMode === false) return 'light';
+    }
+    const vars = extractFrontmatterThemeVariables(codeForRender);
+    if (typeof vars?.darkMode === 'boolean') return vars.darkMode ? 'dark' : 'light';
+    if (typeof previewBackgroundColor === 'string' && previewBackgroundColor.trim()) {
+      const dark = isDarkColor(previewBackgroundColor);
+      if (dark !== null) return dark ? 'dark' : 'light';
+    }
+    return theme;
+  }, [codeForRender, isThemePresetMixed, previewBackgroundColor, selectedThemePreset, theme]);
+
+  const preferredNotebookExcalidrawTheme = useMemo<'light' | 'dark'>(() => {
+    const presetId = !isThemePresetMixed && selectedThemePreset ? selectedThemePreset : appThemePresetId;
+    const preset = MERMAID_THEME_PRESETS.find((p) => p.id === presetId);
+    if (preset?.themeVariables?.darkMode === true) return 'dark';
+    if (preset?.themeVariables?.darkMode === false) return 'light';
+    const vars = extractFrontmatterThemeVariables(mermaidCode);
+    if (typeof vars?.darkMode === 'boolean') return vars.darkMode ? 'dark' : 'light';
+    if (typeof previewBackgroundColor === 'string' && previewBackgroundColor.trim()) {
+      const dark = isDarkColor(previewBackgroundColor);
+      if (dark !== null) return dark ? 'dark' : 'light';
+    }
+    return theme;
+  }, [appThemePresetId, isThemePresetMixed, mermaidCode, previewBackgroundColor, selectedThemePreset, theme]);
+
   const excalidrawTheme = useMemo<'light' | 'dark'>(() => {
     const stored = diagramThemeKey ? excalidrawThemeByDiagramKey[diagramThemeKey] : undefined;
     const fromScene = readExcalidrawThemeFromSceneJson(whiteboardSceneJson);
-    return stored ?? fromScene ?? theme;
-  }, [diagramThemeKey, excalidrawThemeByDiagramKey, theme, whiteboardSceneJson]);
+    return stored ?? fromScene ?? preferredDiagramExcalidrawTheme;
+  }, [diagramThemeKey, excalidrawThemeByDiagramKey, preferredDiagramExcalidrawTheme, whiteboardSceneJson]);
 
   const notebookExcalidrawTheme = useMemo<'light' | 'dark'>(() => {
-    return excalidrawThemeByDiagramKey[notebookThemeKey] ?? theme;
-  }, [excalidrawThemeByDiagramKey, notebookThemeKey, theme]);
+    return excalidrawThemeByDiagramKey[notebookThemeKey] ?? preferredNotebookExcalidrawTheme;
+  }, [excalidrawThemeByDiagramKey, notebookThemeKey, preferredNotebookExcalidrawTheme]);
 
   const diagramCanvasBackgroundByTheme = useMemo(() => {
     return diagramThemeKey ? (excalidrawCanvasBackgroundByDiagramKey[diagramThemeKey] ?? null) : null;
@@ -180,6 +215,44 @@ export const usePreviewWhiteboard = ({
   }, [excalidrawThemeByDiagramKey]);
 
   useEffect(() => {
+    if (!diagramThemeKey) return;
+    setExcalidrawThemeByDiagramKey((prev) => {
+      if (prev[diagramThemeKey]) return prev;
+      return { ...prev, [diagramThemeKey]: preferredDiagramExcalidrawTheme };
+    });
+  }, [diagramThemeKey, preferredDiagramExcalidrawTheme]);
+
+  useEffect(() => {
+    if (!diagramThemeKey) return;
+    setExcalidrawThemeByDiagramKey((prev) => {
+      const current = prev[diagramThemeKey];
+      if (!current) return prev;
+      if (current === preferredDiagramExcalidrawTheme) return prev;
+      if (current !== theme) return prev;
+      return { ...prev, [diagramThemeKey]: preferredDiagramExcalidrawTheme };
+    });
+  }, [diagramThemeKey, preferredDiagramExcalidrawTheme, theme]);
+
+  useEffect(() => {
+    const key = notebookThemeKey;
+    setExcalidrawThemeByDiagramKey((prev) => {
+      if (prev[key]) return prev;
+      return { ...prev, [key]: preferredNotebookExcalidrawTheme };
+    });
+  }, [notebookThemeKey, preferredNotebookExcalidrawTheme]);
+
+  useEffect(() => {
+    const key = notebookThemeKey;
+    setExcalidrawThemeByDiagramKey((prev) => {
+      const current = prev[key];
+      if (!current) return prev;
+      if (current === preferredNotebookExcalidrawTheme) return prev;
+      if (current !== theme) return prev;
+      return { ...prev, [key]: preferredNotebookExcalidrawTheme };
+    });
+  }, [notebookThemeKey, preferredNotebookExcalidrawTheme, theme]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         EXCALIDRAW_CANVAS_BG_STORAGE_KEY,
@@ -194,6 +267,7 @@ export const usePreviewWhiteboard = ({
     if (!diagramThemeKey) return;
     const fromScene = readExcalidrawThemeFromSceneJson(whiteboardSceneJson);
     if (!fromScene) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setExcalidrawThemeByDiagramKey((prev) => {
       if (prev[diagramThemeKey] === fromScene) return prev;
       if (prev[diagramThemeKey]) return prev;
@@ -203,6 +277,7 @@ export const usePreviewWhiteboard = ({
 
   useEffect(() => {
     if (isNotebookExcalidrawMode && !canNotebookExcalidraw) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsNotebookExcalidrawMode(false);
     }
   }, [canNotebookExcalidraw, isNotebookExcalidrawMode]);
@@ -215,6 +290,7 @@ export const usePreviewWhiteboard = ({
 
   useEffect(() => {
     if (!isNotebookExcalidrawMode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setNotebookExcalidrawScene(null);
       lastNotebookExcalidrawSignatureRef.current = '';
       inFlightNotebookExcalidrawSignatureRef.current = '';
@@ -391,10 +467,12 @@ export const usePreviewWhiteboard = ({
     if (!snapshot.svg.trim()) return;
 
     if (!isWhiteboardAutoSync && isWhiteboardDirty) return;
-
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsWhiteboardDirty(false);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWhiteboardInitialSceneOverride(null);
     void Promise.resolve(onSaveWhiteboardSceneJson(null)).catch(() => {});
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWhiteboardResetKey((v) => v + 1);
   }, [
     canWhiteboard,
@@ -407,6 +485,8 @@ export const usePreviewWhiteboard = ({
   ]);
 
   return {
+    preferredDiagramExcalidrawTheme,
+    preferredNotebookExcalidrawTheme,
     isNotebookExcalidrawMode,
     setIsNotebookExcalidrawMode,
     notebookExcalidrawScene,

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { buildOperationLogViewModel } from './operationLogViewModelBuilder';
 import type { OperationLog } from '../../types';
 
-const createEvent = (args: Partial<OperationLog['events'][number]> & { id: string; opId: string }) => ({
+const createEvent = (
+  args: Partial<OperationLog['events'][number]> & { id: string; opId: string }
+): OperationLog['events'][number] => ({
   createdAt: 1,
   phase: 'build',
   level: 'info',

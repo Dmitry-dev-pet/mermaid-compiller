@@ -1,4 +1,4 @@
-import type { PromptLanguage } from './types';
+import type { PromptLanguage } from "./types";
 
 export const PLAN_NOTEBOOK_TEMPLATES: Record<PromptLanguage, string> = {
   English: `# Role
@@ -23,6 +23,9 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
 - Use a shared glossary to keep terminology consistent.
 - Keep goals concise and non-overlapping.{{languageInstruction}}
 - When choosing diagramType, use intro/diagram-type-guide.md as the primary reference for type selection.
+- Type-specific intent hints:
+  - architecture: never use flowchart arrows (->, <-) or A[Text]; describe links in A:R -- L:B format and list services/groups/junctions explicitly. Use ASCII letter-only ids (A–Z/a–z), no digits or underscores; labels go in [Title].
+  - flowchart/state: use <br/> for line breaks in labels; avoid end as a node id (use End).
 
 # JSON Schema (informal)
 {
@@ -70,6 +73,9 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
 - Используй общий glossary для согласованности терминов.
 - Цели должны быть краткими и не пересекаться.{{languageInstruction}}
 - При выборе diagramType опирайся на intro/diagram-type-guide.md как на основной справочник по типам.
+- Подсказки по типам для intent:
+  - architecture: не используй flowchart-стрелки (->, <-) и узлы A[Text]; описывай связи как A:R -- L:B и перечисляй services/groups/junctions. Идентификаторы — только ASCII буквы, без цифр и подчёркиваний; названия — в [Title].
+  - flowchart/state: для переносов в подписях используй <br/>; не используй end как id узла (пиши End).
 
 # JSON Schema (неформально)
 {

@@ -1,31 +1,10 @@
 import React from 'react';
 import { Download, Link2, Maximize2, Maximize, Minimize2, Moon, PenLine, RefreshCw, SquarePen, Sun } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { CONTROL_BASE, HEADER_CONTROL_BUTTON } from '../../utils/uiControlStyles';
+import { HEADER_CONTROL_BUTTON } from '../../utils/uiControlStyles';
+import type { PreviewHeaderToolsModel } from '../../hooks/preview/usePreviewHeaderModel';
 
-type PreviewToolsRowProps = {
-  isBuildDocsMode: boolean;
-  isMarkdownMode: boolean;
-  svgMarkup: string;
-  isExporting: boolean;
-  onExportSvg: () => void;
-  onExportPng: () => void;
-  canNotebookExcalidrawToggle: boolean;
-  isNotebookExcalidrawMode: boolean;
-  onToggleNotebookExcalidraw: () => void;
-  showWhiteboardToggle: boolean;
-  isWhiteboardMode: boolean;
-  isWhiteboardDirty: boolean;
-  isWhiteboardAutoSync: boolean;
-  onToggleWhiteboard: () => void;
-  onWhiteboardSyncFromCode: () => void;
-  onToggleWhiteboardAutoSync: () => void;
-  showExcalidrawThemeControl: boolean;
-  excalidrawTheme: 'light' | 'dark';
-  onSetExcalidrawTheme: (nextTheme: 'light' | 'dark') => void;
-  isFullScreen: boolean;
-  onToggleFullScreen: () => void;
-};
+type PreviewToolsRowProps = PreviewHeaderToolsModel;
 
 const PreviewToolsRow: React.FC<PreviewToolsRowProps> = ({
   isBuildDocsMode,
