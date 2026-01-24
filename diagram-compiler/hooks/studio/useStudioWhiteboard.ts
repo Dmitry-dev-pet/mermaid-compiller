@@ -62,7 +62,6 @@ export const useStudioWhiteboard = ({
     }
     void getRevision(revId).then((rev) => {
       const raw = rev?.whiteboard ?? null;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWhiteboardFromRaw(raw);
     });
   }, [getRevision, historySession?.currentRevisionId, setWhiteboardFromRaw]);

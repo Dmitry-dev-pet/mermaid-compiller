@@ -12,15 +12,11 @@ interface UseNotebookChatParams {
   isNotebookDataEnabled: boolean;
   getNotebookChatIndex: () => number | null;
   markdownMermaidBlocksLength: number;
-  markdownMermaidActiveIndex: number;
   historySteps: TimeStep[];
   getMessagesForContext: (contextId: string) => Message[];
   setMessagesForContext: (contextId: string, action: SetStateAction<Message[]>) => void;
   diagramIntent: DiagramIntent | null;
   setDiagramIntent: Dispatch<SetStateAction<DiagramIntent | null>>;
-  systemPrompt: string;
-  systemPromptRedacted: string;
-  isSystemPromptRaw: boolean;
 }
 
 interface UseNotebookChatViewParams {
@@ -108,18 +104,9 @@ const buildInitMessage = (): Message => ({
 
 const buildNotebookChatMessages = (
   info: NotebookChatInfo | null,
-  includeRaw: boolean,
-  systemPrompt: string,
-  systemPromptRedacted: string
 ) => {
   const init = buildInitMessage();
   const base = info ? stripNotebookSyntheticMessages(info.messages) : [];
-  const resolvedPrompt = systemPromptRedacted || systemPrompt || 'No system prompt available.';
-  const raw = info?.rawIntent
-    ? [{ ...info.rawIntent, id: 'notebook-raw-intent' }]
-    : [];
-  void includeRaw;
-  void raw;
   return [init, ...base];
 };
 
@@ -146,15 +133,11 @@ export const useNotebookChat = ({
   isNotebookDataEnabled,
   getNotebookChatIndex,
   markdownMermaidBlocksLength,
-  markdownMermaidActiveIndex,
   historySteps,
   getMessagesForContext,
   setMessagesForContext,
   diagramIntent,
   setDiagramIntent,
-  systemPrompt,
-  systemPromptRedacted,
-  isSystemPromptRaw,
 }: UseNotebookChatParams) => {
   const notebookChatRef = useRef<Record<number, NotebookChatInfo>>({});
   const notebookChatIndexRef = useRef<number | null>(null);
@@ -187,12 +170,7 @@ export const useNotebookChat = ({
     notebookChatIndexRef.current = index;
     const contextId = resolveChatContextId(isNotebookChatMode, index);
     const info = notebookChatRef.current[index] ?? { messages: [] };
-    const nextMessages = buildNotebookChatMessages(
-      info,
-      isSystemPromptRaw,
-      systemPrompt,
-      systemPromptRedacted
-    );
+    const nextMessages = buildNotebookChatMessages(info);
     const currentMessages = getMessagesForContext(contextId);
     const hasRealMessages = currentMessages.some((message) => (
       message.id !== 'init'
@@ -244,15 +222,12 @@ export const useNotebookChat = ({
     getMessagesForContext,
     isNotebookChatMode,
     historySteps,
-    isSystemPromptRaw,
     diagramIntent,
     setDiagramIntent,
     notebookChatIndexRef,
     notebookChatRef,
     markdownMermaidBlocksLength,
     setMessagesForContext,
-    systemPrompt,
-    systemPromptRedacted,
   ]);
 
   useEffect(() => {

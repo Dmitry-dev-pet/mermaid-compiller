@@ -346,7 +346,7 @@ export const createChatHandler = (ctx: StudioContext) => {
               );
             }
           }
-          let replyText = useNotebookIntent
+          const replyText = useNotebookIntent
             ? intentText
             : isRefinementRequest
               ? stripIntentScaffold(replyWithoutTitle)

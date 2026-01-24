@@ -300,9 +300,7 @@ describe('mermaidToExcalidrawService (integration)', () => {
         ];
       })
     );
-    // eslint-disable-next-line no-console
     console.log(`\\n--- ${label} ---`);
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify({ counts, skeletons: args.skeletons, files: filesSummary }, null, 2));
   };
 

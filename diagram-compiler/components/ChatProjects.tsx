@@ -131,6 +131,11 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   };
 
   useEffect(() => {
+    if (isExpanded) return;
+    onClearProjectPreview();
+  }, [isExpanded, onClearProjectPreview]);
+
+  useEffect(() => {
     return () => {
       if (undoTimerRef.current) {
         window.clearTimeout(undoTimerRef.current);

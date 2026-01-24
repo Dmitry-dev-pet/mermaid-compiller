@@ -220,7 +220,6 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
         } catch (error) {
           // Keep retrying until it succeeds (Excalidraw can throw during early mount).
           if (args.debugEnabled) {
-            // eslint-disable-next-line no-console
             console.warn('[whiteboard] scrollToContent failed; retrying', error);
           }
         }
@@ -262,7 +261,6 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
       const measured = args.containerRef.current
         ? { w: args.containerRef.current.clientWidth, h: args.containerRef.current.clientHeight }
         : null;
-      const vw = measured?.w ?? (current as any).width ?? 0;
       const vh = measured?.h ?? (current as any).height ?? 0;
       const safeTop = readCssVarInt('--sat');
       const safeBottom = readCssVarInt('--sab');
@@ -278,7 +276,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
           return { minY: cached.minY, maxY };
         }
         try {
-          const [minX, minY, maxX, maxY] = getCommonBounds(api.getSceneElements() as any);
+          const [, minY, , maxY] = getCommonBounds(api.getSceneElements() as any);
           if (![minY, maxY].every((n) => Number.isFinite(n))) return null;
           return { minY, maxY };
         } catch {
@@ -335,7 +333,6 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
       const measured = args.containerRef.current
         ? { w: args.containerRef.current.clientWidth, h: args.containerRef.current.clientHeight }
         : null;
-      const vw = measured?.w ?? (current as any).width ?? 0;
       const vh = measured?.h ?? (current as any).height ?? 0;
       const safeTop = readCssVarInt('--sat');
       const safeBottom = readCssVarInt('--sab');
@@ -352,7 +349,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
           return { minY: cached.minY, maxY };
         }
         try {
-          const [minX, minY, maxX, maxY] = getCommonBounds(api.getSceneElements() as any);
+          const [, minY, , maxY] = getCommonBounds(api.getSceneElements() as any);
           if (![minY, maxY].every((n) => Number.isFinite(n))) return null;
           return { minY, maxY };
         } catch {

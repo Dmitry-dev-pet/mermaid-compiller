@@ -19,8 +19,6 @@ type DocsSelectionState = {
   systemPromptRawByMode: Record<DocsMode, boolean>;
 };
 
-const isDiagramSyntaxDoc = (path: string) => path.includes("/docs/syntax/");
-
 const PLAN_DEFAULT_DOCS = new Set(
   getNotebookPlannerDocsPaths().map(({ path }) => path),
 );

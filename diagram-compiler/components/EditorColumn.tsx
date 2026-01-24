@@ -87,7 +87,6 @@ interface EditorColumnProps {
     Pick<MermaidState, "isValid" | "errorMessage" | "errorLine" | "status">
   >;
   markdownMermaidActiveIndex: number;
-  onMarkdownMermaidActiveIndexChange: (index: number) => void;
   onActiveTabChange: (tab: EditorTab) => void;
   isScrollSyncEnabled: boolean;
   scrollSyncPayload: ScrollSyncPayload | null;
@@ -129,7 +128,6 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   markdownMermaidBlocks,
   markdownMermaidDiagnostics,
   markdownMermaidActiveIndex,
-  onMarkdownMermaidActiveIndexChange,
   onActiveTabChange,
   isScrollSyncEnabled,
   scrollSyncPayload,
@@ -210,9 +208,6 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     { length: Math.max(editorLineCount, 1) },
     (_, i) => i + 1,
   );
-  const markdownValidCount = markdownMermaidDiagnostics.filter(
-    (diag) => diag?.isValid === true,
-  ).length;
   const markdownInvalidCount = markdownMermaidDiagnostics.filter(
     (diag) => diag?.isValid === false,
   ).length;

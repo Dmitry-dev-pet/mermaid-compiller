@@ -51,13 +51,9 @@ const OperationLogRowText: React.FC<Props> = ({
     problemLines.some((line) => /^(Before|До):/i.test(line)) &&
     problemLines.some((line) => /^(After|После):/i.test(line));
   const problemMatch = hasProblemIndex && hasBeforeAfter;
-  const beforeLine = problemMatch
-    ? (problemLines.find((line) => /^(Before|До):/i.test(line)) ?? "")
-    : "";
   const afterLine = problemMatch
     ? (problemLines.find((line) => /^(After|После):/i.test(line)) ?? "")
     : "";
-  const beforeValue = beforeLine.replace(/^(Before|До):\s*/i, "");
   const afterValue = afterLine.replace(/^(After|После):\s*/i, "");
 
   const resolveDiffRange = (before: string, after: string) => {
