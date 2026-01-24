@@ -369,7 +369,7 @@ export const buildOperationLogViewModel = (
     }
   }
 
-  stripDiagramTypeFromRows(rows, isRunning);
+  stripDiagramTypeFromRows(rows);
 
   const viewRows = buildViewRows(rows);
   return { summaryLabel, summaryLine, rows: viewRows };

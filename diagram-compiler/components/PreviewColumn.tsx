@@ -63,7 +63,6 @@ interface PreviewColumnProps {
   markdownMermaidDiagnostics: Array<Pick<MermaidState, 'isValid' | 'errorMessage' | 'errorLine' | 'status'>>;
   markdownMermaidActiveIndex: number;
   onMarkdownMermaidActiveIndexChange: (index: number) => void;
-  onAppendMarkdownMermaidBlock: () => void;
   onActiveEditorTabChange: (tab: EditorTab) => void;
   hoveredMarkdownIndex: number | null;
   onHoverMarkdownIndex: (index: number | null) => void;
@@ -103,7 +102,6 @@ const PreviewColumn: React.FC<PreviewColumnProps> = ({
   markdownMermaidDiagnostics,
   markdownMermaidActiveIndex,
   onMarkdownMermaidActiveIndexChange,
-  onAppendMarkdownMermaidBlock,
   onActiveEditorTabChange,
   hoveredMarkdownIndex,
   onHoverMarkdownIndex,

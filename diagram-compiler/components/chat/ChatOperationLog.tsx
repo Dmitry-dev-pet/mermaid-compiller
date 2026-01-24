@@ -95,7 +95,7 @@ const ChatOperationLog: React.FC<Props> = ({
         </summary>
         <div className="mt-1 rounded border border-[var(--panel-border)] bg-[var(--menu-bg)]">
           <div className="px-2 py-1 space-y-0.5">
-            {rows.map((event, index) => {
+            {rows.map((event) => {
               const isNewBlock = event.isNewBlock;
               const statusIcon = event.leftBadge?.status === 'ok'
                 ? (

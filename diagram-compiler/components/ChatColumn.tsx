@@ -1,6 +1,5 @@
 import React, {
   useCallback,
-  useMemo,
   useRef,
   useEffect,
   useState,
@@ -243,6 +242,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   const handleSubmit = (mode: "chat" | "build", e?: React.FormEvent) => {
     e?.preventDefault();
     if (isProcessing) return;
+
+    onClearProjectPreview();
 
     if (mode === "chat") {
       if (!input.trim()) return;

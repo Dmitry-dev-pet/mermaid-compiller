@@ -24,7 +24,7 @@ import type {
 import type { ExcalidrawElement, OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import { useWhiteboardViewLock, type WhiteboardDebugRuntime } from './useWhiteboardViewLock';
 import DiagramWhiteboardCanvas from './DiagramWhiteboardCanvas';
-import WhiteboardDebugOverlay, { type WhiteboardFitCalc } from './WhiteboardDebugOverlay';
+import WhiteboardDebugOverlay from './WhiteboardDebugOverlay';
 import {
   buildWhiteboardAppState,
   buildWhiteboardInitialData,
@@ -56,9 +56,6 @@ import {
 } from '../../services/excalidraw/whiteboardSceneMeta';
 import { buildSceneFromMermaidCode } from '../../services/excalidraw/whiteboardSceneBuilder';
 import { tryParseInitialScene } from '../../services/excalidraw/whiteboardSceneParse';
-
-type ExcalidrawElementSkeletonList = NonNullable<Parameters<typeof convertToExcalidrawElements>[0]>;
-type ExcalidrawElementSkeleton = ExcalidrawElementSkeletonList[number];
 
 type Props = {
   theme: 'light' | 'dark';
@@ -172,29 +169,6 @@ const parseSvgWidthHeight = (svg: string): { width: number; height: number } | n
   return { width, height };
 };
 
-const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T> => {
-  return await new Promise<T>((resolve, reject) => {
-    let done = false;
-    const finishResolve = (value: T) => {
-      if (done) return;
-      done = true;
-      resolve(value);
-    };
-    const finishReject = (error: unknown) => {
-      if (done) return;
-      done = true;
-      reject(error);
-    };
-    const timer = window.setTimeout(() => finishReject(new Error(`Timeout after ${ms}ms`)), ms);
-    promise.then((value) => {
-      window.clearTimeout(timer);
-      finishResolve(value);
-    }).catch((error) => {
-      window.clearTimeout(timer);
-      finishReject(error);
-    });
-  });
-};
 
 const defer = (fn: () => void) => {
   if (typeof queueMicrotask === 'function') {
@@ -1133,7 +1107,6 @@ const DiagramWhiteboard: React.FC<Props> = ({
   const {
     lockedScrollXRef,
     pendingFitSceneKeyRef,
-    lastFitCalcRef,
     scheduleFitToContent,
     scheduleClampScroll,
     handleWheel,
@@ -1224,12 +1197,12 @@ const DiagramWhiteboard: React.FC<Props> = ({
     lastBuiltSignatureRef.current = '';
     inFlightSignatureRef.current = '';
     buildRunIdRef.current += 1;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setInitialDataState(null);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setBuildError(null);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsSceneBuilding(false);
+    const raf = window.requestAnimationFrame(() => {
+      setInitialDataState(null);
+      setBuildError(null);
+      setIsSceneBuilding(false);
+    });
+    return () => window.cancelAnimationFrame(raf);
   }, [syncKey]);
 
   useEffect(() => {
@@ -1275,15 +1248,18 @@ const DiagramWhiteboard: React.FC<Props> = ({
       ? (nextBgByTheme.dark ?? null)
       : (nextBgByTheme.light ?? null);
     canvasBackgroundVisibleRef.current = nextVisible;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCanvasBackgroundVisible(nextVisible);
+    const raf = window.requestAnimationFrame(() => {
+      setCanvasBackgroundVisible(nextVisible);
+      if (initialSceneJson === null && !isDirtyRef.current) {
+        setInitialDataState(null);
+      }
+    });
     onCanvasBackgroundByThemeChange?.({ ...nextBgByTheme });
     if (initialSceneJson === null && !isDirtyRef.current) {
       lastBuiltSignatureRef.current = '';
       inFlightSignatureRef.current = '';
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setInitialDataState(null);
     }
+    return () => window.cancelAnimationFrame(raf);
   }, [initialSceneJson, onCanvasBackgroundByThemeChange, onDirtyChange, theme]);
 
   useEffect(() => {
@@ -1864,8 +1840,6 @@ const DiagramWhiteboard: React.FC<Props> = ({
         || resolveStoredCanvasBackground(canvasBackgroundAutoVisible, effectiveTheme);
       const bgVisible = resolveVisibleCanvasBackground(bgStored, effectiveTheme);
       const bgDark = (isDarkColor(bgVisible) ?? (effectiveTheme === 'dark'));
-      const expectedLine = bgDark ? '#cbd5e1' : '#0f172a';
-      const expectedText = bgDark ? '#e5e7eb' : '#0f172a';
 
       const needsNormalize = elements.some((el) => {
         if (!el) return false;

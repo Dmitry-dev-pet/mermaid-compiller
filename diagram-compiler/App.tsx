@@ -71,14 +71,12 @@ function App() {
     diagramIntent,
     promptPreviewByMode,
     editorTab,
-    buildDocsScope,
-    buildDocsEntries,
-    buildDocsSelection,
-    toggleBuildDocSelection,
-    buildDocsSelectionKey,
-    buildDocsActivePath,
-    setBuildDocsActivePath,
-    setBuildDocsActivePathForMode,
+	    buildDocsScope,
+	    buildDocsEntries,
+	    buildDocsSelectionKey,
+	    buildDocsActivePath,
+	    setBuildDocsActivePath,
+	    setBuildDocsActivePathForMode,
     docsMode,
     setDocsMode,
     systemPromptRawByMode,
@@ -102,14 +100,13 @@ function App() {
     removeProject,
     undoRemoveProject,
     deleteUndoMs,
-    showProjectPreview,
-    clearProjectPreview,
-    previewMermaidState,
-    toggleTheme,
-    setThemePreset,
-    setAnalyzeLanguage,
-    setLLMTimeoutMs,
-    togglePreviewFullScreen,
+	    showProjectPreview,
+	    clearProjectPreview,
+	    previewMermaidState,
+	    setThemePreset,
+	    setAnalyzeLanguage,
+	    setLLMTimeoutMs,
+	    togglePreviewFullScreen,
     toggleScrollSync,
     setNotebookBuildCount,
     buildDocsIntentText,
@@ -121,13 +118,12 @@ function App() {
     appendMarkdownMermaidBlock,
     openNotebookBlock,
     backToNotebookMainChat,
-    isNotebookChatMode,
-    operationLogs,
-    activeOperationLog,
-    activeOperationKind,
-    historySessionCurrentRevisionId,
-    whiteboardSceneJson,
-    whiteboardBundleJson,
+	    isNotebookChatMode,
+	    operationLogs,
+	    activeOperationKind,
+	    historySessionCurrentRevisionId,
+	    whiteboardSceneJson,
+	    whiteboardBundleJson,
     saveWhiteboardForCurrentRevision,
   } = useDiagramStudio();
   const buildDocsSystemPrompts = {
@@ -599,17 +595,12 @@ function App() {
                     markdownMermaidDiagnostics={
                       markdownMermaidDiagnosticsForView
                     }
-                    markdownMermaidActiveIndex={
-                      markdownMermaidActiveIndexForView
-                    }
-                    onMarkdownMermaidActiveIndexChange={
-                      isProjectPreview
-                        ? () => {}
-                        : setMarkdownMermaidActiveIndex
-                    }
-                    onActiveTabChange={
-                      isProjectPreview ? () => {} : setEditorTab
-                    }
+	                    markdownMermaidActiveIndex={
+	                      markdownMermaidActiveIndexForView
+	                    }
+	                    onActiveTabChange={
+	                      isProjectPreview ? () => {} : setEditorTab
+	                    }
                     isScrollSyncEnabled={appState.isScrollSyncEnabled}
                     scrollSyncPayload={scrollSyncPayload}
                     onScrollSync={handleEditorScrollSync}
@@ -776,16 +767,13 @@ function App() {
                         ? () => {}
                         : setMarkdownMermaidActiveIndex
                     }
-                    onActiveEditorTabChange={
-                      isProjectPreview ? () => {} : setEditorTab
-                    }
-                    onAppendMarkdownMermaidBlock={
-                      isProjectPreview ? () => {} : appendMarkdownMermaidBlock
-                    }
-                    hoveredMarkdownIndex={hoveredMarkdownIndexForView}
-                    onHoverMarkdownIndex={
-                      isProjectPreview ? () => {} : setHoveredMarkdownIndex
-                    }
+	                    onActiveEditorTabChange={
+	                      isProjectPreview ? () => {} : setEditorTab
+	                    }
+	                    hoveredMarkdownIndex={hoveredMarkdownIndexForView}
+	                    onHoverMarkdownIndex={
+	                      isProjectPreview ? () => {} : setHoveredMarkdownIndex
+	                    }
                     historyRevisionId={historySessionCurrentRevisionId}
                     whiteboardSceneJson={whiteboardSceneJson}
                     whiteboardBundleJson={whiteboardBundleJson}
@@ -928,16 +916,13 @@ function App() {
               onMarkdownMermaidActiveIndexChange={
                 isProjectPreview ? () => {} : setMarkdownMermaidActiveIndex
               }
-              onActiveEditorTabChange={
-                isProjectPreview ? () => {} : setEditorTab
-              }
-              onAppendMarkdownMermaidBlock={
-                isProjectPreview ? () => {} : appendMarkdownMermaidBlock
-              }
-              hoveredMarkdownIndex={hoveredMarkdownIndexForView}
-              onHoverMarkdownIndex={
-                isProjectPreview ? () => {} : setHoveredMarkdownIndex
-              }
+	              onActiveEditorTabChange={
+	                isProjectPreview ? () => {} : setEditorTab
+	              }
+	              hoveredMarkdownIndex={hoveredMarkdownIndexForView}
+	              onHoverMarkdownIndex={
+	                isProjectPreview ? () => {} : setHoveredMarkdownIndex
+	              }
               historyRevisionId={historySessionCurrentRevisionId}
               whiteboardSceneJson={whiteboardSceneJson}
               whiteboardBundleJson={whiteboardBundleJson}

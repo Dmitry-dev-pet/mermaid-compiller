@@ -47,8 +47,6 @@ import {
 import { buildOperationLogViewModel } from "../../components/chat/operationLogUtils";
 import {
   buildContextEventForLog,
-  formatDocsDetailForLog,
-  summarizeMessagesForLog,
 } from "./logContextUtils";
 import { toRunnerContextEvent } from "./operationTracer";
 import { buildSelectionLine } from "./selectionLine";
@@ -967,18 +965,6 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
             }),
           );
           const blockDocs = formatDocsContext(blockDocsEntries);
-          const selectionSummary =
-            await deps.getDocsSelectionSummary?.("build");
-          const includedPaths = docsEntries.length
-            ? docsEntries
-                .filter((entry) => buildSelection[entry.path] !== false)
-                .map((entry) => entry.path)
-            : (selectionSummary?.includedPaths ?? []);
-          const docsDetail = formatDocsDetailForLog({
-            docsContext: blockDocs,
-            selectionSummary: includedPaths.length ? { includedPaths } : null,
-          });
-
           updateBlockMessage(`Сборка: ${blockLabel} — старт.`);
           logEvent({
             phase: "build",

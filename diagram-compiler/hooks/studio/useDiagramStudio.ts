@@ -24,7 +24,6 @@ import type {
   DiagramIntent,
   DiagramType,
   DocsMode,
-  MermaidState,
   ModelParams,
   Message,
   OperationKind,
@@ -41,19 +40,18 @@ import { createAnalyticsAdapter } from "../../services/analyticsAdapter";
 import { useNotebookBuild } from "./useNotebookBuild";
 import { useFixFlow } from "./useFixFlow";
 import { useNotebookContext } from "./useNotebookContext";
+import { useStudioHistoryRecorder } from "./useStudioHistoryRecorder";
+import { useStudioOperationController } from "./useStudioOperationController";
 import {
   MAIN_CHAT_CONTEXT_ID,
   resolveOperationLogContextId,
 } from "../../utils/contextIds";
-import type { LLMRequestStartNotice } from "../../services/llmRequestRunner";
 import {
   getSystemPromptModeFromPath,
   isSystemPromptPath,
 } from "../../utils/systemPrompts";
 
 export const useDiagramStudio = () => {
-  const [activeLLMRequest, setActiveLLMRequest] =
-    useState<LLMRequestStartNotice | null>(null);
   const { aiConfig, setAiConfig, connectionState, connectAI, disconnectAI } =
     useAI();
   const { mermaidState, setMermaidState, handleMermaidChange } = useMermaid();
@@ -106,8 +104,14 @@ export const useDiagramStudio = () => {
     loadSessionSnapshot,
   } = useHistory();
 
-  const [isProcessing, setIsProcessing] = useState(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const {
+    isProcessing,
+    setIsProcessing,
+    stopActiveOperation,
+    getAbortSignal,
+    runWithAbortController,
+    onLLMRequestStart: handleLLMRequestStart,
+  } = useStudioOperationController();
   const [diagramIntentByContext, setDiagramIntentByContext] = useState<
     Record<string, DiagramIntent | null>
   >({});
@@ -133,36 +137,6 @@ export const useDiagramStudio = () => {
     resolve: () => void;
   } | null>(null);
 
-  const prepareAbortController = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    return controller;
-  }, []);
-
-  const clearAbortController = useCallback(
-    (controller?: AbortController | null) => {
-      if (!controller || abortControllerRef.current === controller) {
-        abortControllerRef.current = null;
-      }
-    },
-    [],
-  );
-
-  const stopActiveOperation = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-  }, []);
-
-  const getAbortSignal = useCallback(
-    () => abortControllerRef.current?.signal ?? null,
-    [],
-  );
-
   const {
     markdownMermaidBlocks,
     markdownMermaidDiagnostics,
@@ -176,7 +150,6 @@ export const useDiagramStudio = () => {
 
   const {
     operationLogs,
-    activeOperationLog,
     setOperationLogs,
     startOperation,
     addOperationEvent,
@@ -202,59 +175,16 @@ export const useDiagramStudio = () => {
     setActiveContextId,
   });
 
-  const safeAppendTimeStep = useCallback(
-    (args: Parameters<typeof appendTimeStep>[0]) => {
-      const nextMeta = { ...(args.meta ?? {}) } as Record<string, unknown>;
-      const isNotebookScope =
-        isNotebookChatMode &&
-        (args.type === "build" ||
-          args.type === "chat" ||
-          args.type === "analyze");
-      if (typeof nextMeta.contextId !== "string") {
-        if (
-          nextMeta.mode === "notebook" &&
-          typeof nextMeta.blockIndex === "number"
-        ) {
-          nextMeta.contextId = `block:${nextMeta.blockIndex}`;
-        } else {
-          nextMeta.contextId = activeChatContextId;
-        }
-      }
-      if (!("mode" in nextMeta)) {
-        nextMeta.mode = isNotebookScope
-          ? "notebook"
-          : isMarkdownLike(mermaidState.code)
-            ? "markdown"
-            : "mermaid";
-      }
-      if (
-        (isNotebookScope || editorTab === "markdown_mermaid") &&
-        typeof nextMeta.blockIndex !== "number" &&
-        markdownMermaidBlocks.length > 0
-      ) {
-        nextMeta.blockIndex = Math.max(
-          0,
-          Math.min(
-            markdownMermaidActiveIndex,
-            markdownMermaidBlocks.length - 1,
-          ),
-        );
-        nextMeta.totalBlocks = markdownMermaidBlocks.length;
-      }
-      return appendTimeStep({ ...args, meta: nextMeta }).catch((e) => {
-        console.error("Failed to record history step", e);
-      });
-    },
-    [
-      activeChatContextId,
-      appendTimeStep,
-      editorTab,
-      markdownMermaidActiveIndex,
-      markdownMermaidBlocks.length,
-      mermaidState.code,
-      isNotebookChatMode,
-    ],
-  );
+  const { safeAppendTimeStep, safeRecordTimeStep } = useStudioHistoryRecorder({
+    appendTimeStep,
+    isNotebookChatMode,
+    activeChatContextId,
+    mermaidCode: mermaidState.code,
+    editorTab,
+    markdownMermaidBlocksLength: markdownMermaidBlocks.length,
+    markdownMermaidActiveIndex,
+    getNotebookChatIndex,
+  });
 
   const {
     whiteboardSceneJson,
@@ -312,31 +242,6 @@ export const useDiagramStudio = () => {
   const resetDiagramIntents = useCallback(() => {
     setDiagramIntentByContext({});
   }, []);
-
-  const safeRecordTimeStep = useCallback(
-    (args: Parameters<typeof appendTimeStep>[0]) => {
-      if (
-        (args.type === "chat" ||
-          args.type === "analyze" ||
-          args.type === "build") &&
-        isNotebookChatMode
-      ) {
-        const blockIndex = getNotebookChatIndex();
-        if (blockIndex !== null) {
-          return safeAppendTimeStep({
-            ...args,
-            meta: {
-              ...args.meta,
-              mode: "notebook",
-              blockIndex,
-            },
-          });
-        }
-      }
-      return safeAppendTimeStep(args);
-    },
-    [getNotebookChatIndex, isNotebookChatMode, safeAppendTimeStep],
-  );
 
   const historyModeByStepId = useMemo(() => {
     const map = new Map<string, string | undefined>();
@@ -621,15 +526,11 @@ export const useDiagramStudio = () => {
     isNotebookDataEnabled,
     getNotebookChatIndex,
     markdownMermaidBlocksLength: markdownMermaidBlocks.length,
-    markdownMermaidActiveIndex,
     historySteps,
     getMessagesForContext,
     setMessagesForContext,
     diagramIntent,
     setDiagramIntent: setDiagramIntentForActiveContext,
-    systemPrompt: promptPreviewByMode.chat?.systemPrompt ?? "",
-    systemPromptRedacted: promptPreviewByMode.chat?.systemPromptRedacted ?? "",
-    isSystemPromptRaw: systemPromptRawByMode.chat,
   });
   const resolvedBuildDocsIntentText = useMemo(
     () => buildDocsIntentText?.trim() || "",
@@ -810,10 +711,6 @@ export const useDiagramStudio = () => {
     [appState.diagramType, setDiagramType],
   );
 
-  const handleLLMRequestStart = useCallback((notice: LLMRequestStartNotice) => {
-    setActiveLLMRequest(notice);
-  }, []);
-
   const { handleNotebookBuild } = useNotebookBuild({
     aiConfig,
     modelParams,
@@ -946,18 +843,6 @@ export const useDiagramStudio = () => {
     getOperationLog,
   });
 
-  const runWithAbortController = useCallback(
-    async <T>(action: () => Promise<T>) => {
-      const controller = prepareAbortController();
-      try {
-        return await action();
-      } finally {
-        clearAbortController(controller);
-      }
-    },
-    [clearAbortController, prepareAbortController],
-  );
-
   const baseHandleChatMessageWithAbort = useCallback(
     (text: string) => runWithAbortController(() => baseHandleChatMessage(text)),
     [baseHandleChatMessage, runWithAbortController],
@@ -989,15 +874,7 @@ export const useDiagramStudio = () => {
     [handleRecompile, runWithAbortController],
   );
 
-  useEffect(() => {
-    if (!isProcessing && activeLLMRequest) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setActiveLLMRequest(null);
-    }
-  }, [activeLLMRequest, isProcessing]);
-
   const {
-    runWithActiveDiagramContext,
     handleChatMessage,
     handleBuildFromPrompt,
   } = useStudioChatFlow({

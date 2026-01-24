@@ -95,13 +95,11 @@ export const buildSceneFromMermaidCode = async (args: {
       };
     }
     if (args.debug) {
-      // eslint-disable-next-line no-console
       console.warn('[whiteboard] mermaid-to-excalidraw returned 0 elements; falling back to svg-vectors');
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (args.debug) {
-      // eslint-disable-next-line no-console
       console.warn('[whiteboard] mermaid-to-excalidraw failed; falling back to svg-vectors', message);
     }
     const svgVectors = await trySvgVectors();

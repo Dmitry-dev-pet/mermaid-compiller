@@ -73,10 +73,8 @@ const OperationLogTooltip: React.FC<Props> = ({
 
   useLayoutEffect(() => {
     if (!shouldRenderPortal) return;
-    setPosition(computePosition());
     const raf = window.requestAnimationFrame(() => setPosition(computePosition()));
     return () => window.cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldRenderPortal, content]);
 
   useEffect(() => {
@@ -88,7 +86,6 @@ const OperationLogTooltip: React.FC<Props> = ({
       window.removeEventListener('resize', handle);
       window.removeEventListener('scroll', handle, true);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldRenderPortal]);
 
   useEffect(() => {

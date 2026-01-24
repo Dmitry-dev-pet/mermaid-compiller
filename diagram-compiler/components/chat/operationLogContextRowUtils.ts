@@ -13,7 +13,7 @@ export const isContextRow = (row: LogRow) => {
   return isContextRowText(row.text);
 };
 
-export const stripDiagramTypeFromRows = (rows: LogRow[], isRunning: boolean) => {
+export const stripDiagramTypeFromRows = (rows: LogRow[]) => {
   for (const row of rows) {
     const sourceText = row.contentText ?? row.text;
     const inferredLabel = row.diagramTypeLabel ?? resolveDiagramTypeShortLabelFromText(sourceText) ?? null;

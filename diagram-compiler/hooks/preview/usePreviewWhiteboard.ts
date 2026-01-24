@@ -216,6 +216,7 @@ export const usePreviewWhiteboard = ({
 
   useEffect(() => {
     if (!diagramThemeKey) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setExcalidrawThemeByDiagramKey((prev) => {
       if (prev[diagramThemeKey]) return prev;
       return { ...prev, [diagramThemeKey]: preferredDiagramExcalidrawTheme };
@@ -224,6 +225,7 @@ export const usePreviewWhiteboard = ({
 
   useEffect(() => {
     if (!diagramThemeKey) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setExcalidrawThemeByDiagramKey((prev) => {
       const current = prev[diagramThemeKey];
       if (!current) return prev;
@@ -235,6 +237,7 @@ export const usePreviewWhiteboard = ({
 
   useEffect(() => {
     const key = notebookThemeKey;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setExcalidrawThemeByDiagramKey((prev) => {
       if (prev[key]) return prev;
       return { ...prev, [key]: preferredNotebookExcalidrawTheme };
@@ -243,6 +246,7 @@ export const usePreviewWhiteboard = ({
 
   useEffect(() => {
     const key = notebookThemeKey;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setExcalidrawThemeByDiagramKey((prev) => {
       const current = prev[key];
       if (!current) return prev;
@@ -469,10 +473,8 @@ export const usePreviewWhiteboard = ({
     if (!isWhiteboardAutoSync && isWhiteboardDirty) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsWhiteboardDirty(false);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWhiteboardInitialSceneOverride(null);
     void Promise.resolve(onSaveWhiteboardSceneJson(null)).catch(() => {});
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWhiteboardResetKey((v) => v + 1);
   }, [
     canWhiteboard,
