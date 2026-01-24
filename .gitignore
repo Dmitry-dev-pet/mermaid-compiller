@@ -6,7 +6,11 @@
 node_modules/
 diagram-compiler/node_modules/
 diagram-compiler/.env*
+.env
 *.log
+diagram-compiler/coverage/
+*.code-workspace
+opencode.json
 
 # Local experiments
 agent/
