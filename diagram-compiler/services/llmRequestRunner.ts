@@ -1,5 +1,5 @@
-import { LLM_TIMEOUT_MS, LLM_TIMEOUT_RETRIES } from '../constants';
-import { TimeoutError, withTimeout } from './llmTimeout';
+import { LLM_TIMEOUT_MS, LLM_TIMEOUT_RETRIES } from "../constants";
+import { TimeoutError, withTimeout } from "./llmTimeout";
 
 type TimeoutNotice = {
   attempt: number;
@@ -16,6 +16,7 @@ type RunLLMRequestArgs<T> = {
   onTimeout?: (notice: TimeoutNotice) => void;
   onStart?: (notice: LLMRequestStartNotice) => void;
   onFinish?: (notice: LLMRequestFinishNotice) => void;
+  signal?: AbortSignal | null;
 };
 
 export type LLMRequestStartNotice = {
@@ -32,15 +33,28 @@ export type LLMRequestFinishNotice = {
   startedAt: number;
   finishedAt: number;
   durationMs: number;
-  status: 'success' | 'timeout' | 'error';
+  status: "success" | "timeout" | "error";
 };
 
-export const runLLMRequest = async <T>(args: RunLLMRequestArgs<T>): Promise<T> => {
+export const runLLMRequest = async <T>(
+  args: RunLLMRequestArgs<T>,
+): Promise<T> => {
   const maxAttempts = args.retries ?? LLM_TIMEOUT_RETRIES;
   const timeoutMs = args.timeoutMs ?? LLM_TIMEOUT_MS;
   let lastError: unknown;
+  const createAbortError = () => {
+    const error = new Error("LLM request aborted");
+    error.name = "AbortError";
+    return error;
+  };
+  const isAbortError = (error: unknown) =>
+    error instanceof Error &&
+    (error.name === "AbortError" || /aborted/i.test(error.message));
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (args.signal?.aborted) {
+      throw createAbortError();
+    }
     const startedAt = Date.now();
     args.onStart?.({
       task: args.task,
@@ -49,7 +63,11 @@ export const runLLMRequest = async <T>(args: RunLLMRequestArgs<T>): Promise<T> =
       startedAt,
     });
     try {
-      const result = await withTimeout(args.run(), timeoutMs);
+      const result = await withTimeout(
+        args.run(),
+        timeoutMs,
+        args.signal ?? undefined,
+      );
       const finishedAt = Date.now();
       args.onFinish?.({
         task: args.task,
@@ -58,12 +76,13 @@ export const runLLMRequest = async <T>(args: RunLLMRequestArgs<T>): Promise<T> =
         startedAt,
         finishedAt,
         durationMs: finishedAt - startedAt,
-        status: 'success',
+        status: "success",
       });
       return result;
     } catch (error) {
       lastError = error;
       const finishedAt = Date.now();
+      const aborted = isAbortError(error);
       args.onFinish?.({
         task: args.task,
         attempt,
@@ -71,8 +90,11 @@ export const runLLMRequest = async <T>(args: RunLLMRequestArgs<T>): Promise<T> =
         startedAt,
         finishedAt,
         durationMs: finishedAt - startedAt,
-        status: error instanceof TimeoutError ? 'timeout' : 'error',
+        status: error instanceof TimeoutError ? "timeout" : "error",
       });
+      if (aborted) {
+        throw error;
+      }
       if (error instanceof TimeoutError) {
         if (attempt < maxAttempts) {
           args.onTimeout?.({
@@ -88,5 +110,7 @@ export const runLLMRequest = async <T>(args: RunLLMRequestArgs<T>): Promise<T> =
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error(`LLM request failed for ${args.task}.`);
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`LLM request failed for ${args.task}.`);
 };

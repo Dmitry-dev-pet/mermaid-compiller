@@ -1,35 +1,53 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { DocsMode, EditorTab, MermaidState, PromptPreviewMode, PromptPreviewTab } from '../types';
-import { highlight, languages } from 'prismjs';
-import 'prismjs/themes/prism.css';
-import 'prismjs/components/prism-markup';
-import 'prismjs/components/prism-markdown';
-import './syntax-dark.css';
-import { isMarkdownLike, MermaidMarkdownBlock, replaceMermaidBlockInMarkdown } from '../services/mermaidService';
-import type { DocsEntry } from '../services/docsContextService';
-import type { DiagramMarker } from '../hooks/core/useHistory';
-import { ScrollSyncPayload, ScrollSyncMeasure, useScrollSync } from '../hooks/studio/useScrollSync';
-import { computeMarkdownBlockScrollTops, resolveActiveMarkdownBlockIndex } from '../utils/markdownBlocks';
-import { EDITOR_LINE_HEIGHT, EDITOR_PADDING } from '../utils/uiTokens';
-import { useBuildDocsState } from '../hooks/editor/useBuildDocsState';
-import { useEditorTabs } from '../hooks/editor/useEditorTabs';
-import { useMarkdownMermaidBlockState } from '../hooks/markdown/useMarkdownMermaidBlockState';
-import { transformMarkdownMermaid } from '../utils/markdownMermaid';
-import BuildDocsPanel from './editor/BuildDocsPanel';
-import CodeEditorPanel from './editor/CodeEditorPanel';
-import EditorHeader from './editor/EditorHeader';
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  DocsMode,
+  EditorTab,
+  MermaidState,
+  PromptPreviewMode,
+  PromptPreviewTab,
+} from "../types";
+import { highlight, languages } from "prismjs";
+import "prismjs/themes/prism.css";
+import "prismjs/components/prism-markup";
+import "prismjs/components/prism-markdown";
+import "./syntax-dark.css";
+import {
+  isMarkdownLike,
+  MermaidMarkdownBlock,
+  replaceMermaidBlockInMarkdown,
+} from "../services/mermaidService";
+import type { DocsEntry } from "../services/docsContextService";
+import type { DiagramMarker } from "../hooks/core/useHistory";
+import {
+  ScrollSyncPayload,
+  ScrollSyncMeasure,
+  useScrollSync,
+} from "../hooks/studio/useScrollSync";
+import {
+  computeMarkdownBlockScrollTops,
+  resolveActiveMarkdownBlockIndex,
+} from "../utils/markdownBlocks";
+import { EDITOR_LINE_HEIGHT, EDITOR_PADDING } from "../utils/uiTokens";
+import { useBuildDocsState } from "../hooks/editor/useBuildDocsState";
+import { useEditorTabs } from "../hooks/editor/useEditorTabs";
+import { useMarkdownMermaidBlockState } from "../hooks/markdown/useMarkdownMermaidBlockState";
+import { transformMarkdownMermaid } from "../utils/markdownMermaid";
+import BuildDocsPanel from "./editor/BuildDocsPanel";
+import CodeEditorPanel from "./editor/CodeEditorPanel";
+import EditorHeader from "./editor/EditorHeader";
 
 // Define minimal Mermaid grammar
 languages.mermaid = {
-  'comment': /%%.*/,
-  'string': {
+  comment: /%%.*/,
+  string: {
     pattern: /(["'])(?:(?!\1)[^\\\r\n]|\\.)*\1/,
-    greedy: true
+    greedy: true,
   },
-  'keyword': /\b(?:graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|mindmap|subgraph|end|participant|actor|class|style|linkStyle)\b/,
-  'arrow': /-->|---|-.->|==>|==|-.|--/,
-  'operator': /[|:;]+/,
-  'variable': /\b[A-Za-z_][A-Za-z0-9_]*\b/
+  keyword:
+    /\b(?:graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|mindmap|subgraph|end|participant|actor|class|style|linkStyle)\b/,
+  arrow: /-->|---|-.->|==>|==|-.|--/,
+  operator: /[|:;]+/,
+  variable: /\b[A-Za-z_][A-Za-z0-9_]*\b/,
 };
 
 interface EditorColumnProps {
@@ -40,12 +58,12 @@ interface EditorColumnProps {
   onSnapshot: () => void;
   isAIReady: boolean;
   isProcessing: boolean;
-  activeOperationKind?: 'chat' | 'build' | 'analyze' | 'fix' | 'compile' | null;
+  activeOperationKind?: "chat" | "build" | "analyze" | "fix" | "compile" | null;
   isReadOnly: boolean;
   analyzeLanguage: string;
   onAnalyzeLanguageChange: (lang: string) => void;
   appLanguage: string;
-  buildDocsScope?: 'notebook' | 'diagram';
+  buildDocsScope?: "notebook" | "diagram";
   promptPreviewByMode: Record<PromptPreviewMode, PromptPreviewTab | null>;
   intentText?: string;
   notebookPlanText?: string;
@@ -54,14 +72,20 @@ interface EditorColumnProps {
   activeTab: EditorTab;
   buildDocsEntries: DocsEntry[];
   buildDocsSelectionsByMode: Record<DocsMode, Record<string, boolean>>;
-  onToggleBuildDocForMode: (mode: DocsMode, path: string, isIncluded: boolean) => void;
+  onToggleBuildDocForMode: (
+    mode: DocsMode,
+    path: string,
+    isIncluded: boolean,
+  ) => void;
   onResetBuildDocsSelections?: () => void;
   buildDocsActivePath: string;
   onBuildDocsActivePathChange: (path: string) => void;
   systemPromptRawByMode: Record<DocsMode, boolean>;
   onSystemPromptRawChange: (mode: DocsMode, isRaw: boolean) => void;
   markdownMermaidBlocks: MermaidMarkdownBlock[];
-  markdownMermaidDiagnostics: Array<Pick<MermaidState, 'isValid' | 'errorMessage' | 'errorLine' | 'status'>>;
+  markdownMermaidDiagnostics: Array<
+    Pick<MermaidState, "isValid" | "errorMessage" | "errorLine" | "status">
+  >;
   markdownMermaidActiveIndex: number;
   onMarkdownMermaidActiveIndexChange: (index: number) => void;
   onActiveTabChange: (tab: EditorTab) => void;
@@ -117,24 +141,22 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
-  const editorValueRef = useRef<string>('');
+  const editorValueRef = useRef<string>("");
   const [copied, setCopied] = React.useState(false);
   const hasNotebookData = markdownMermaidBlocks.length > 0;
-  const isBuildDocsTab = activeTab === 'build_docs';
-  const {
-    systemPromptEntry,
-    isSystemPromptRaw,
-  } = useBuildDocsState({
-    docsMode,
-    analyzeLanguage,
-    appLanguage,
-    buildDocsScope: hasNotebookData ? (buildDocsScope ?? null) : null,
-    promptPreviewByMode,
-    systemPromptRawByMode,
-    buildDocsEntries,
-    buildDocsActivePath,
-    onBuildDocsActivePathChange,
-  });
+  const isBuildDocsTab = activeTab === "build_docs";
+  const { systemPromptEntry, isSystemPromptRaw, activeDocEntry } =
+    useBuildDocsState({
+      docsMode,
+      analyzeLanguage,
+      appLanguage,
+      buildDocsScope: hasNotebookData ? (buildDocsScope ?? null) : null,
+      promptPreviewByMode,
+      systemPromptRawByMode,
+      buildDocsEntries,
+      buildDocsActivePath,
+      onBuildDocsActivePathChange,
+    });
   const {
     isMarkdownMermaidMode,
     activeBlock: activeMarkdownBlock,
@@ -152,64 +174,78 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   const markdownBlockScrollTops = useMemo(() => {
     if (!isMarkdownLike(mermaidState.code)) return [];
     return computeMarkdownBlockScrollTops(
-      mermaidState.code ?? '',
+      mermaidState.code ?? "",
       markdownMermaidBlocks,
       EDITOR_LINE_HEIGHT,
-      EDITOR_PADDING
+      EDITOR_PADDING,
     );
   }, [markdownMermaidBlocks, mermaidState.code]);
 
   const resolveMarkdownBlockIndexForScroll = useCallback(
-    (scrollTop: number) => resolveActiveMarkdownBlockIndex(markdownBlockScrollTops, scrollTop),
-    [markdownBlockScrollTops]
+    (scrollTop: number) =>
+      resolveActiveMarkdownBlockIndex(markdownBlockScrollTops, scrollTop),
+    [markdownBlockScrollTops],
   );
 
   const handleCopy = () => {
     const textToCopy = isMarkdownMermaidMode
-      ? activeMarkdownBlock?.code || ''
+      ? activeMarkdownBlock?.code || ""
       : isBuildDocsTab
-      ? activeDocEntry?.text || ''
-      : mermaidState.code;
+        ? activeDocEntry?.text || ""
+        : mermaidState.code;
     if (!textToCopy.trim()) return;
     navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const editorValue = isMarkdownMermaidMode ? activeMarkdownBlock?.code ?? '' : mermaidState.code;
+  const editorValue = isMarkdownMermaidMode
+    ? (activeMarkdownBlock?.code ?? "")
+    : mermaidState.code;
   useEffect(() => {
     editorValueRef.current = editorValue;
   }, [editorValue]);
-  const editorLineCount = editorValue.split('\n').length;
-  const editorLineNumbers = Array.from({ length: Math.max(editorLineCount, 1) }, (_, i) => i + 1);
-  const markdownValidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === true).length;
-  const markdownInvalidCount = markdownMermaidDiagnostics.filter((diag) => diag?.isValid === false).length;
+  const editorLineCount = editorValue.split("\n").length;
+  const editorLineNumbers = Array.from(
+    { length: Math.max(editorLineCount, 1) },
+    (_, i) => i + 1,
+  );
+  const markdownValidCount = markdownMermaidDiagnostics.filter(
+    (diag) => diag?.isValid === true,
+  ).length;
+  const markdownInvalidCount = markdownMermaidDiagnostics.filter(
+    (diag) => diag?.isValid === false,
+  ).length;
   const hasMarkdownBlocks = hasNotebookData;
   const isMarkdown = isMarkdownLike(mermaidState.code) || hasMarkdownBlocks;
-  const canFix = !isReadOnly && (isMarkdown
-    ? markdownInvalidCount > 0
-    : mermaidState.status === 'invalid');
-  const analyzeCode = markdownMermaidBlocks.length > 0
-    ? activeMarkdownBlock?.code ?? ''
-    : mermaidState.code;
-  const isAnalyzeValid = markdownMermaidBlocks.length > 0
-    ? activeMarkdownDiagnostics?.isValid !== false
-    : mermaidState.isValid;
-  const fixErrorMessage = markdownMermaidBlocks.length > 0
-    ? activeMarkdownDiagnostics?.errorMessage ?? ''
-    : mermaidState.errorMessage ?? '';
+  const canFix =
+    !isReadOnly &&
+    (isMarkdown ? markdownInvalidCount > 0 : mermaidState.status === "invalid");
+  const analyzeCode =
+    markdownMermaidBlocks.length > 0
+      ? (activeMarkdownBlock?.code ?? "")
+      : mermaidState.code;
+  const isAnalyzeValid =
+    markdownMermaidBlocks.length > 0
+      ? activeMarkdownDiagnostics?.isValid !== false
+      : mermaidState.isValid;
+  const fixErrorMessage =
+    markdownMermaidBlocks.length > 0
+      ? (activeMarkdownDiagnostics?.errorMessage ?? "")
+      : (mermaidState.errorMessage ?? "");
   const fixDetailsText = analyzeCode.trim()
-    ? `Code:\n\`\`\`mermaid\n${analyzeCode}\n\`\`\`\n\nError:\n${fixErrorMessage || 'No error details.'}`
-    : '';
-  const canAnalyze = isAIReady
-    && !isProcessing
-    && !isReadOnly
-    && !!analyzeCode.trim()
-    && isAnalyzeValid;
+    ? `Code:\n\`\`\`mermaid\n${analyzeCode}\n\`\`\`\n\nError:\n${fixErrorMessage || "No error details."}`
+    : "";
+  const canAnalyze =
+    isAIReady &&
+    !isProcessing &&
+    !isReadOnly &&
+    !!analyzeCode.trim() &&
+    isAnalyzeValid;
   const highlightMarkdownWithMermaid = (code: string) => {
     return transformMarkdownMermaid(code, {
-      markdown: (segment) => highlight(segment, languages.markdown, 'markdown'),
-      mermaid: (segment) => highlight(segment, languages.mermaid, 'mermaid'),
+      markdown: (segment) => highlight(segment, languages.markdown, "markdown"),
+      mermaid: (segment) => highlight(segment, languages.mermaid, "mermaid"),
     });
   };
   const highlightMarkdownWithActiveBlock = (code: string) => {
@@ -238,21 +274,27 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     if (isMarkdown) {
       return highlightMarkdownWithActiveBlock(code);
     }
-    return highlight(code, languages.mermaid, 'mermaid');
+    return highlight(code, languages.mermaid, "mermaid");
   };
   const highlightMarkdownMermaidCode = (code: string) => {
-    return highlight(code, languages.mermaid, 'mermaid');
+    return highlight(code, languages.mermaid, "mermaid");
   };
   const isSnapshotInvalid = isMarkdownMermaidMode
     ? activeMarkdownDiagnostics?.isValid === false
     : !mermaidState.isValid;
-  const canSnapshot = !isReadOnly && !!mermaidState.code.trim() && !isProcessing && !isSnapshotInvalid;
+  const canSnapshot =
+    !isReadOnly &&
+    !!mermaidState.code.trim() &&
+    !isProcessing &&
+    !isSnapshotInvalid;
   const editorErrorLine = isMarkdownMermaidMode
     ? isMarkdownMermaidInvalid
-      ? activeMarkdownDiagnostics?.errorLine ?? null
+      ? (activeMarkdownDiagnostics?.errorLine ?? null)
       : null
-    : mermaidState.errorLine ?? null;
-  const editorHighlight = isMarkdownMermaidMode ? highlightMarkdownMermaidCode : highlightEditorCode;
+    : (mermaidState.errorLine ?? null);
+  const editorHighlight = isMarkdownMermaidMode
+    ? highlightMarkdownMermaidCode
+    : highlightEditorCode;
 
   const { handleActiveTabChange } = useEditorTabs({
     activeTab,
@@ -262,10 +304,14 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
     editorValueRef,
   });
 
-  const canSyncScroll = isScrollSyncEnabled && isMarkdown && !isMarkdownMermaidMode && !isBuildDocsTab;
+  const canSyncScroll =
+    isScrollSyncEnabled &&
+    isMarkdown &&
+    !isMarkdownMermaidMode &&
+    !isBuildDocsTab;
   const { handleScrollSync } = useScrollSync({
     enabled: canSyncScroll,
-    source: 'editor',
+    source: "editor",
     scrollRef: scrollContainerRef,
     scrollSyncPayload,
     onScrollSync,
@@ -284,19 +330,22 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
   return (
     <div
       className="flex flex-col h-full bg-transparent border-l border-r"
-      style={{ backgroundColor: 'var(--panel-alt-bg, #ffffff)', borderColor: 'var(--panel-border, #e5e7eb)' }}
+      style={{
+        backgroundColor: "var(--panel-alt-bg, #ffffff)",
+        borderColor: "var(--panel-border, #e5e7eb)",
+      }}
     >
-        <EditorHeader
-          mermaidState={mermaidState}
-          isMarkdown={isMarkdown}
-          isProcessing={isProcessing}
-          activeOperationKind={activeOperationKind}
-          isAIReady={isAIReady}
-          isReadOnly={isReadOnly}
-          canAnalyze={canAnalyze}
-          analyzeLanguage={analyzeLanguage}
-          onAnalyzeLanguageChange={onAnalyzeLanguageChange}
-          onAnalyze={onAnalyze}
+      <EditorHeader
+        mermaidState={mermaidState}
+        isMarkdown={isMarkdown}
+        isProcessing={isProcessing}
+        activeOperationKind={activeOperationKind}
+        isAIReady={isAIReady}
+        isReadOnly={isReadOnly}
+        canAnalyze={canAnalyze}
+        analyzeLanguage={analyzeLanguage}
+        onAnalyzeLanguageChange={onAnalyzeLanguageChange}
+        onAnalyze={onAnalyze}
         onFixSyntax={onFixSyntax}
         canFix={canFix}
         onSnapshot={onSnapshot}
@@ -304,7 +353,7 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
         onCopy={handleCopy}
         copied={copied}
         activeTab={activeTab}
-          onActiveTabChange={handleActiveTabChange}
+        onActiveTabChange={handleActiveTabChange}
         isMarkdownMermaidTab={isMarkdownMermaidMode}
         isBuildDocsTab={isBuildDocsTab}
         diagramMarkers={diagramMarkers}
@@ -326,9 +375,11 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               fix: promptPreviewByMode.fix?.tokenCounts,
             }}
             intentText={intentText}
-            intentPreviewText={promptPreviewByMode[docsMode]?.intentText ?? ''}
-            requestPreviewText={promptPreviewByMode[docsMode]?.content ?? ''}
-            requestPreviewRawText={promptPreviewByMode[docsMode]?.rawContent ?? ''}
+            intentPreviewText={promptPreviewByMode[docsMode]?.intentText ?? ""}
+            requestPreviewText={promptPreviewByMode[docsMode]?.content ?? ""}
+            requestPreviewRawText={
+              promptPreviewByMode[docsMode]?.rawContent ?? ""
+            }
             notebookPlanText={notebookPlanText}
             analyzeCode={analyzeCode}
             fixDetailsText={fixDetailsText}
@@ -355,7 +406,11 @@ const EditorColumn: React.FC<EditorColumnProps> = ({
               editorValueRef.current = value;
               if (isMarkdownMermaidMode) {
                 if (!activeMarkdownBlock) return;
-                const nextMarkdown = replaceMermaidBlockInMarkdown(mermaidState.code, activeMarkdownBlock, value);
+                const nextMarkdown = replaceMermaidBlockInMarkdown(
+                  mermaidState.code,
+                  activeMarkdownBlock,
+                  value,
+                );
                 onChange(nextMarkdown);
                 return;
               }

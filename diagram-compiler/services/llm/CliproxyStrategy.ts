@@ -1,8 +1,14 @@
-import type { AIConfig, Message, Model, DiagramType, ModelParams } from '../../types';
-import { LLMProviderStrategy } from './LLMProviderStrategy';
-import { buildSystemPrompt } from './prompts';
-import { deriveModelVendor } from './modelVendor';
-import { resolveModelParams } from './modelParams';
+import type {
+  AIConfig,
+  Message,
+  Model,
+  DiagramType,
+  ModelParams,
+} from "../../types";
+import { LLMProviderStrategy } from "./LLMProviderStrategy";
+import { buildSystemPrompt } from "./prompts";
+import { deriveModelVendor } from "./modelVendor";
+import { resolveModelParams } from "./modelParams";
 
 interface CliproxyModel {
   id: string;
@@ -11,7 +17,6 @@ interface CliproxyModel {
 }
 
 type CliproxyModelEntry = CliproxyModel | string;
-
 
 /**
  * Cliproxy-specific implementation of LLMProviderStrategy
@@ -23,38 +28,40 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     messages: Message[],
     config: AIConfig,
     systemPrompt?: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const baseUrl = config.proxyEndpoint.replace(/\/$/, '');
+    const baseUrl = config.proxyEndpoint.replace(/\/$/, "");
     const apiKey = config.proxyKey;
     const model = config.selectedModelId;
 
     if (!baseUrl) throw new Error("Cliproxy API Endpoint not configured");
     if (!model) throw new Error("No model selected for Cliproxy");
-    if (!apiKey) console.warn("Cliproxy API Key not configured. Proceeding without key.");
-
+    if (!apiKey)
+      console.warn("Cliproxy API Key not configured. Proceeding without key.");
 
     const endpoint = `${baseUrl}/v1/chat/completions`;
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     };
-    
+
     // Only add Authorization header if apiKey is present
     if (apiKey) {
-      headers['Authorization'] = `Bearer ${apiKey}`;
+      headers["Authorization"] = `Bearer ${apiKey}`;
     }
 
     // Convert internal Message type to OpenAI format
     const apiMessages = [
-      ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-      ...messages.map(m => ({ role: m.role, content: m.content }))
+      ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
     try {
       const response = await fetch(endpoint, {
-        method: 'POST',
+        method: "POST",
         headers,
+        signal: signal ?? undefined,
         body: JSON.stringify({
           model,
           messages: apiMessages,
@@ -65,10 +72,10 @@ export class CliproxyStrategy implements LLMProviderStrategy {
       if (!response.ok) {
         const errText = await response.text();
         const requestId =
-          response.headers.get('x-request-id') ||
-          response.headers.get('x-openrouter-request-id') ||
-          response.headers.get('cf-ray');
-        let errorMessage = `API Error (${response.status} ${response.statusText || 'Unknown'})`;
+          response.headers.get("x-request-id") ||
+          response.headers.get("x-openrouter-request-id") ||
+          response.headers.get("cf-ray");
+        let errorMessage = `API Error (${response.status} ${response.statusText || "Unknown"})`;
         if (requestId) errorMessage += ` [request-id: ${requestId}]`;
         try {
           const errJson = JSON.parse(errText);
@@ -78,7 +85,7 @@ export class CliproxyStrategy implements LLMProviderStrategy {
           if (errJson.error?.type) parts.push(`type=${errJson.error.type}`);
           if (errJson.message) parts.push(errJson.message);
           if (parts.length > 0) {
-            errorMessage += `: ${parts.join(' | ')}`;
+            errorMessage += `: ${parts.join(" | ")}`;
           }
           errorMessage += `: ${JSON.stringify(errJson).slice(0, 2000)}`;
         } catch {
@@ -90,9 +97,9 @@ export class CliproxyStrategy implements LLMProviderStrategy {
       }
 
       const data = await response.json();
-      return data.choices?.[0]?.message?.content || '';
+      return data.choices?.[0]?.message?.content || "";
     } catch (error: unknown) {
-      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      if (error instanceof TypeError && error.message === "Failed to fetch") {
         throw new Error(`Connection failed to ${baseUrl}. Check CORS/Network.`);
       }
       throw error;
@@ -100,14 +107,14 @@ export class CliproxyStrategy implements LLMProviderStrategy {
   }
 
   async fetchModels(config: AIConfig): Promise<Model[]> {
-    const baseUrl = config.proxyEndpoint.replace(/\/$/, '');
+    const baseUrl = config.proxyEndpoint.replace(/\/$/, "");
     const apiKey = config.proxyKey;
-    
+
     if (!baseUrl) return [];
 
     const headers: Record<string, string> = {};
     if (apiKey) {
-      headers['Authorization'] = `Bearer ${apiKey}`;
+      headers["Authorization"] = `Bearer ${apiKey}`;
     }
 
     const tryEndpoint = async (path: string): Promise<unknown | null> => {
@@ -121,31 +128,32 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     };
 
     // Try standard endpoints for models
-    let data = await tryEndpoint('/v1/models');
-    if (!data) data = await tryEndpoint('/models');
-    if (!data) data = await tryEndpoint('/api/models');
+    let data = await tryEndpoint("/v1/models");
+    if (!data) data = await tryEndpoint("/models");
+    if (!data) data = await tryEndpoint("/api/models");
 
     if (!data) {
       return [];
     }
 
     const hasDataArray = (value: unknown): value is { data: unknown } =>
-      typeof value === 'object' && value !== null && 'data' in value;
+      typeof value === "object" && value !== null && "data" in value;
 
     let rawList: CliproxyModelEntry[] = [];
-    if (hasDataArray(data) && Array.isArray(data.data)) rawList = data.data as CliproxyModelEntry[];
+    if (hasDataArray(data) && Array.isArray(data.data))
+      rawList = data.data as CliproxyModelEntry[];
     else if (Array.isArray(data)) rawList = data as CliproxyModelEntry[];
 
     // Apply filtering if necessary, Cliproxy might return a pre-filtered list or not support it.
     // For now, assuming raw list directly maps.
     return rawList.map((m) => {
-      const id = typeof m === 'string' ? m : m.id;
-      const name = typeof m === 'string' ? m : (m.name || m.id);
+      const id = typeof m === "string" ? m : m.id;
+      const name = typeof m === "string" ? m : m.name || m.id;
 
       return {
         id,
         name,
-        contextLength: typeof m === 'string' ? 0 : (m.context_length || 0),
+        contextLength: typeof m === "string" ? 0 : m.context_length || 0,
         isFree: false, // Cliproxy typically proxies paid models or local ones
         vendor: deriveModelVendor(id, name),
       };
@@ -158,10 +166,21 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     diagramType: DiagramType,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('generate', { diagramType, docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    const systemPrompt = buildSystemPrompt("generate", {
+      diagramType,
+      docsContext,
+      language,
+    });
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async fixDiagram(
@@ -170,13 +189,14 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     config: AIConfig,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('fix', { docsContext, language });
+    const systemPrompt = buildSystemPrompt("fix", { docsContext, language });
 
     const fixMsg: Message = {
-      id: 'fix-req',
-      role: 'user',
+      id: "fix-req",
+      role: "user",
       content: `Code:
 
 
@@ -185,11 +205,17 @@ ${code}
 
 Error: ${errorMessage}
 
-Fix it.`, 
-      timestamp: Date.now()
+Fix it.`,
+      timestamp: Date.now(),
     };
 
-    return this.fetchCompletion([fixMsg], config, systemPrompt, modelParams);
+    return this.fetchCompletion(
+      [fixMsg],
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async chat(
@@ -198,10 +224,21 @@ Fix it.`,
     diagramType: DiagramType,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('chat', { diagramType, docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    const systemPrompt = buildSystemPrompt("chat", {
+      diagramType,
+      docsContext,
+      language,
+    });
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async chatDiagram(
@@ -210,10 +247,21 @@ Fix it.`,
     diagramType: DiagramType,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('chat_diagram', { diagramType, docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    const systemPrompt = buildSystemPrompt("chat_diagram", {
+      diagramType,
+      docsContext,
+      language,
+    });
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async chatNotebook(
@@ -223,15 +271,22 @@ Fix it.`,
     docsContext: string,
     language: string,
     allowedDiagramTypes: DiagramType[] | null,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('chat_notebook', {
+    const systemPrompt = buildSystemPrompt("chat_notebook", {
       diagramType,
       allowedDiagramTypes,
       docsContext,
       language,
     });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async analyzeDiagram(
@@ -239,23 +294,33 @@ Fix it.`,
     config: AIConfig,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('analyze', { docsContext, language });
+    const systemPrompt = buildSystemPrompt("analyze", {
+      docsContext,
+      language,
+    });
 
     const analyzeMsg: Message = {
-      id: 'analyze-req',
-      role: 'user',
+      id: "analyze-req",
+      role: "user",
       content: `Analyze and explain the following Mermaid code:
 
 \`\`\`mermaid
 ${code}
 \`\`\`
-`, 
-      timestamp: Date.now()
+`,
+      timestamp: Date.now(),
     };
 
-    return this.fetchCompletion([analyzeMsg], config, systemPrompt, modelParams);
+    return this.fetchCompletion(
+      [analyzeMsg],
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async planNotebook(
@@ -263,10 +328,20 @@ ${code}
     config: AIConfig,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('plan_notebook', { docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    const systemPrompt = buildSystemPrompt("plan_notebook", {
+      docsContext,
+      language,
+    });
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async summarizeBuild(
@@ -274,9 +349,19 @@ ${code}
     config: AIConfig,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('summary', { docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    const systemPrompt = buildSystemPrompt("summary", {
+      docsContext,
+      language,
+    });
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 }

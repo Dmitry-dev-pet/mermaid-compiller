@@ -1,15 +1,20 @@
-import type { AIConfig, Message, Model, DiagramType, ModelParams } from '../../types';
-import { LLMProviderStrategy } from './LLMProviderStrategy';
-import { buildSystemPrompt } from './prompts';
-import { deriveModelVendor } from './modelVendor';
-import { resolveModelParams } from './modelParams';
+import type {
+  AIConfig,
+  Message,
+  Model,
+  DiagramType,
+  ModelParams,
+} from "../../types";
+import { LLMProviderStrategy } from "./LLMProviderStrategy";
+import { buildSystemPrompt } from "./prompts";
+import { deriveModelVendor } from "./modelVendor";
+import { resolveModelParams } from "./modelParams";
 
 interface OpenRouterModel {
   id: string;
   name?: string;
   context_length?: number;
 }
-
 
 /**
  * OpenRouter-specific implementation of LLMProviderStrategy
@@ -21,9 +26,10 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
     messages: Message[],
     config: AIConfig,
     systemPrompt?: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const baseUrl = config.openRouterEndpoint.replace(/\/$/, '');
+    const baseUrl = config.openRouterEndpoint.replace(/\/$/, "");
     const apiKey = config.openRouterKey;
     const model = config.selectedModelId;
 
@@ -31,29 +37,29 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
     if (!model) throw new Error("No model selected for OpenRouter");
     if (!apiKey) throw new Error("OpenRouter API Key not configured");
 
-
-    const v1BaseUrl = baseUrl.endsWith('/v1') ? baseUrl : `${baseUrl}/v1`;
+    const v1BaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
     const endpoint = `${v1BaseUrl}/chat/completions`;
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
     };
-    
+
     // OpenRouter specific headers
-    headers['X-Title'] = 'Mermaid Graph Gen';
+    headers["X-Title"] = "Mermaid Graph Gen";
 
     // Convert internal Message type to OpenAI format
     const apiMessages = [
-      ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-      ...messages.map(m => ({ role: m.role, content: m.content }))
+      ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
     try {
       const response = await fetch(endpoint, {
-        method: 'POST',
+        method: "POST",
         headers,
+        signal: signal ?? undefined,
         body: JSON.stringify({
           model,
           messages: apiMessages,
@@ -64,10 +70,10 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
       if (!response.ok) {
         const errText = await response.text();
         const requestId =
-          response.headers.get('x-request-id') ||
-          response.headers.get('x-openrouter-request-id') ||
-          response.headers.get('cf-ray');
-        let errorMessage = `API Error (${response.status} ${response.statusText || 'Unknown'})`;
+          response.headers.get("x-request-id") ||
+          response.headers.get("x-openrouter-request-id") ||
+          response.headers.get("cf-ray");
+        let errorMessage = `API Error (${response.status} ${response.statusText || "Unknown"})`;
         if (requestId) errorMessage += ` [request-id: ${requestId}]`;
         try {
           const errJson = JSON.parse(errText);
@@ -77,7 +83,7 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
           if (errJson.error?.type) parts.push(`type=${errJson.error.type}`);
           if (errJson.message) parts.push(errJson.message);
           if (parts.length > 0) {
-            errorMessage += `: ${parts.join(' | ')}`;
+            errorMessage += `: ${parts.join(" | ")}`;
           }
           errorMessage += `: ${JSON.stringify(errJson).slice(0, 2000)}`;
         } catch {
@@ -89,9 +95,9 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
       }
 
       const data = await response.json();
-      return data.choices?.[0]?.message?.content || '';
+      return data.choices?.[0]?.message?.content || "";
     } catch (error: unknown) {
-      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      if (error instanceof TypeError && error.message === "Failed to fetch") {
         throw new Error(`Connection failed to ${baseUrl}. Check CORS/Network.`);
       }
       throw error;
@@ -99,23 +105,27 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
   }
 
   async fetchModels(config: AIConfig): Promise<Model[]> {
-    const baseUrl = config.openRouterEndpoint.replace(/\/$/, '');
+    const baseUrl = config.openRouterEndpoint.replace(/\/$/, "");
     const apiKey = config.openRouterKey;
-    
+
     if (!baseUrl) return [];
     if (!apiKey) return []; // Cannot fetch models without API key for OpenRouter
 
     const headers: Record<string, string> = {
-      'Authorization': `Bearer ${apiKey}`
+      Authorization: `Bearer ${apiKey}`,
     };
 
     try {
-      const v1BaseUrl = baseUrl.endsWith('/v1') ? baseUrl : `${baseUrl}/v1`;
+      const v1BaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
       const response = await fetch(`${v1BaseUrl}/models`, { headers });
       if (!response.ok) {
         // If authentication fails, or other error, return empty
-        console.warn("Failed to fetch OpenRouter models:", response.status, await response.text());
+        console.warn(
+          "Failed to fetch OpenRouter models:",
+          response.status,
+          await response.text(),
+        );
         return [];
       }
       const data = await response.json();
@@ -128,7 +138,7 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
         id: m.id,
         name: m.name || m.id,
         contextLength: m.context_length || 0,
-        isFree: m.id.includes('free'), // naive check
+        isFree: m.id.includes("free"), // naive check
         vendor: deriveModelVendor(m.id, m.name),
       }));
     } catch (error) {
@@ -143,10 +153,21 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
     diagramType: DiagramType,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('generate', { diagramType, docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    const systemPrompt = buildSystemPrompt("generate", {
+      diagramType,
+      docsContext,
+      language,
+    });
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async fixDiagram(
@@ -155,13 +176,14 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
     config: AIConfig,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('fix', { docsContext, language });
+    const systemPrompt = buildSystemPrompt("fix", { docsContext, language });
 
     const fixMsg: Message = {
-      id: 'fix-req',
-      role: 'user',
+      id: "fix-req",
+      role: "user",
       content: `Code:
 
 
@@ -170,11 +192,17 @@ ${code}
 
 Error: ${errorMessage}
 
-Fix it.`, 
-      timestamp: Date.now()
+Fix it.`,
+      timestamp: Date.now(),
     };
 
-    return this.fetchCompletion([fixMsg], config, systemPrompt, modelParams);
+    return this.fetchCompletion(
+      [fixMsg],
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async chat(
@@ -183,10 +211,21 @@ Fix it.`,
     diagramType: DiagramType,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('chat', { diagramType, docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    const systemPrompt = buildSystemPrompt("chat", {
+      diagramType,
+      docsContext,
+      language,
+    });
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async chatDiagram(
@@ -195,10 +234,21 @@ Fix it.`,
     diagramType: DiagramType,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('chat_diagram', { diagramType, docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    const systemPrompt = buildSystemPrompt("chat_diagram", {
+      diagramType,
+      docsContext,
+      language,
+    });
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async chatNotebook(
@@ -208,15 +258,22 @@ Fix it.`,
     docsContext: string,
     language: string,
     allowedDiagramTypes: DiagramType[] | null,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('chat_notebook', {
+    const systemPrompt = buildSystemPrompt("chat_notebook", {
       diagramType,
       allowedDiagramTypes,
       docsContext,
       language,
     });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async analyzeDiagram(
@@ -224,23 +281,33 @@ Fix it.`,
     config: AIConfig,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('analyze', { docsContext, language });
+    const systemPrompt = buildSystemPrompt("analyze", {
+      docsContext,
+      language,
+    });
 
     const analyzeMsg: Message = {
-      id: 'analyze-req',
-      role: 'user',
+      id: "analyze-req",
+      role: "user",
       content: `Analyze and explain the following Mermaid code:
 
 \`\`\`mermaid
 ${code}
 \`\`\`
-`, 
-      timestamp: Date.now()
+`,
+      timestamp: Date.now(),
     };
 
-    return this.fetchCompletion([analyzeMsg], config, systemPrompt, modelParams);
+    return this.fetchCompletion(
+      [analyzeMsg],
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async planNotebook(
@@ -248,10 +315,20 @@ ${code}
     config: AIConfig,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('plan_notebook', { docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    const systemPrompt = buildSystemPrompt("plan_notebook", {
+      docsContext,
+      language,
+    });
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 
   async summarizeBuild(
@@ -259,9 +336,19 @@ ${code}
     config: AIConfig,
     docsContext: string,
     language: string,
-    modelParams?: ModelParams | null
+    modelParams?: ModelParams | null,
+    signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt('summary', { docsContext, language });
-    return this.fetchCompletion(messages, config, systemPrompt, modelParams);
+    const systemPrompt = buildSystemPrompt("summary", {
+      docsContext,
+      language,
+    });
+    return this.fetchCompletion(
+      messages,
+      config,
+      systemPrompt,
+      modelParams,
+      signal,
+    );
   }
 }

@@ -1,9 +1,9 @@
-import type { OperationPhase } from '../../types';
-import { runLLMRequest } from '../../services/llmRequestRunner';
-import type { LLMRequestStartNotice } from '../../services/llmRequestRunner';
-import type { LLMRequestFinishNotice } from '../../services/llmRequestRunner';
-import type { StudioContext } from './actionsContext';
-import type { StudioOperationHelpers } from './runStudioOperation';
+import type { OperationPhase } from "../../types";
+import { runLLMRequest } from "../../services/llmRequestRunner";
+import type { LLMRequestStartNotice } from "../../services/llmRequestRunner";
+import type { LLMRequestFinishNotice } from "../../services/llmRequestRunner";
+import type { StudioContext } from "./actionsContext";
+import type { StudioOperationHelpers } from "./runStudioOperation";
 
 type TimeoutNotice = {
   attempt: number;
@@ -15,22 +15,23 @@ type TimeoutNotice = {
 type RunLLMArgs<T> = {
   task: string;
   phase: OperationPhase;
-  run: () => Promise<T>;
+  run: (signal?: AbortSignal | null) => Promise<T>;
   retries: number;
   timeoutMs: number;
   stageTitle?: string;
-  stageContextScope?: import('../../types').OperationEvent['contextScope'];
+  stageContextScope?: import("../../types").OperationEvent["contextScope"];
   contextEvent?: {
     title?: string;
     detail: string;
     tooltipMessages?: string;
     tooltipDocs?: string;
-    kind?: import('../../types').OperationEvent['kind'];
-    contextScope?: import('../../types').OperationEvent['contextScope'];
+    kind?: import("../../types").OperationEvent["kind"];
+    contextScope?: import("../../types").OperationEvent["contextScope"];
   };
   onTimeoutDetail?: (notice: TimeoutNotice) => string;
   onStart?: (notice: LLMRequestStartNotice) => void;
   onFinish?: (notice: LLMRequestFinishNotice) => void;
+  signal?: AbortSignal | null;
 };
 
 export type StudioOperationRunner = {
@@ -38,20 +39,22 @@ export type StudioOperationRunner = {
 };
 
 export const createStudioOperationRunner = (
-  ctx: Pick<StudioContext, 'onLLMRequestStart'>,
-  helpers: Pick<StudioOperationHelpers, 'logEvent'>
+  ctx: Pick<StudioContext, "onLLMRequestStart" | "getAbortSignal">,
+  helpers: Pick<StudioOperationHelpers, "logEvent">,
 ): StudioOperationRunner => {
-  const runLLM: StudioOperationRunner['runLLM'] = async (args) => {
+  const runLLM: StudioOperationRunner["runLLM"] = async (args) => {
     const stageTitle = args.stageTitle;
     const contextEvent = args.contextEvent;
     let stageStarted = false;
     let contextLogged = false;
+    const signal = args.signal ?? ctx.getAbortSignal?.() ?? undefined;
 
     return runLLMRequest({
       task: args.task,
-      run: args.run,
+      run: () => args.run(signal ?? undefined),
       retries: args.retries,
       timeoutMs: args.timeoutMs,
+      signal,
       onStart: (notice) => {
         ctx.onLLMRequestStart?.(notice);
         args.onStart?.(notice);
@@ -59,31 +62,31 @@ export const createStudioOperationRunner = (
           contextLogged = true;
           helpers.logEvent({
             phase: args.phase,
-            level: 'info',
-            title: contextEvent.title ?? 'Контекст',
+            level: "info",
+            title: contextEvent.title ?? "Контекст",
             detail: contextEvent.detail,
             tooltipMessages: contextEvent.tooltipMessages,
             tooltipDocs: contextEvent.tooltipDocs,
-            kind: contextEvent.kind ?? 'context',
+            kind: contextEvent.kind ?? "context",
             contextScope: contextEvent.contextScope ?? args.stageContextScope,
           });
         }
         helpers.logEvent({
           phase: args.phase,
-          level: 'info',
-          title: 'LLM',
+          level: "info",
+          title: "LLM",
           detail: `start ${notice.task}`,
-          kind: 'status',
+          kind: "status",
           contextScope: args.stageContextScope,
         });
         if (stageTitle && !stageStarted) {
           stageStarted = true;
           helpers.logEvent({
             phase: args.phase,
-            level: 'info',
+            level: "info",
             title: stageTitle,
-            detail: 'generating',
-            kind: 'status',
+            detail: "generating",
+            kind: "status",
             contextScope: args.stageContextScope,
           });
         }
@@ -94,10 +97,10 @@ export const createStudioOperationRunner = (
           : `LLM timeout (${notice.attempt}/${notice.maxAttempts})`;
         helpers.logEvent({
           phase: args.phase,
-          level: 'warn',
-          title: 'Timeout',
+          level: "warn",
+          title: "Timeout",
           detail,
-          kind: 'status',
+          kind: "status",
           contextScope: args.stageContextScope,
         });
       },
@@ -105,21 +108,21 @@ export const createStudioOperationRunner = (
         args.onFinish?.(notice);
         helpers.logEvent({
           phase: args.phase,
-          level: notice.status === 'success' ? 'info' : 'warn',
-          title: 'LLM',
+          level: notice.status === "success" ? "info" : "warn",
+          title: "LLM",
           detail: notice.status,
           metrics: { durationMs: notice.durationMs },
-          kind: 'status',
+          kind: "status",
           contextScope: args.stageContextScope,
         });
-        if (stageTitle && notice.status === 'success') {
+        if (stageTitle && notice.status === "success") {
           helpers.logEvent({
             phase: args.phase,
-            level: 'info',
+            level: "info",
             title: stageTitle,
-            detail: 'ready',
+            detail: "ready",
             metrics: { durationMs: notice.durationMs },
-            kind: 'status',
+            kind: "status",
             contextScope: args.stageContextScope,
           });
         }

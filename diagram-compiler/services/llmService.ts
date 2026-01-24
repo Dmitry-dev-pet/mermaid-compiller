@@ -1,7 +1,13 @@
-import type { AIConfig, Message, DiagramType, Model, ModelParams } from '../types';
-import { LLMProviderStrategy } from './llm/LLMProviderStrategy';
-import { OpenRouterStrategy } from './llm/OpenRouterStrategy';
-import { CliproxyStrategy } from './llm/CliproxyStrategy';
+import type {
+  AIConfig,
+  Message,
+  DiagramType,
+  Model,
+  ModelParams,
+} from "../types";
+import { LLMProviderStrategy } from "./llm/LLMProviderStrategy";
+import { OpenRouterStrategy } from "./llm/OpenRouterStrategy";
+import { CliproxyStrategy } from "./llm/CliproxyStrategy";
 
 // Instantiate strategies
 const openRouterStrategy = new OpenRouterStrategy();
@@ -15,9 +21,9 @@ const cliproxyStrategy = new CliproxyStrategy();
  */
 const getStrategy = (config: AIConfig): LLMProviderStrategy => {
   switch (config.provider) {
-    case 'openrouter':
+    case "openrouter":
       return openRouterStrategy;
-    case 'cliproxy':
+    case "cliproxy":
       return cliproxyStrategy;
     default:
       throw new Error(`Unsupported LLM provider: ${config.provider}`);
@@ -35,10 +41,19 @@ export const generateDiagram = async (
   diagramType: DiagramType,
   docsContext: string,
   language: string,
-  modelParams?: ModelParams | null
+  modelParams?: ModelParams | null,
+  signal?: AbortSignal | null,
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.generateDiagram(messages, config, diagramType, docsContext, language, modelParams);
+  return strategy.generateDiagram(
+    messages,
+    config,
+    diagramType,
+    docsContext,
+    language,
+    modelParams,
+    signal,
+  );
 };
 
 export const fixDiagram = async (
@@ -47,10 +62,19 @@ export const fixDiagram = async (
   config: AIConfig,
   docsContext: string,
   language: string,
-  modelParams?: ModelParams | null
+  modelParams?: ModelParams | null,
+  signal?: AbortSignal | null,
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.fixDiagram(code, error, config, docsContext, language, modelParams);
+  return strategy.fixDiagram(
+    code,
+    error,
+    config,
+    docsContext,
+    language,
+    modelParams,
+    signal,
+  );
 };
 
 export const chat = async (
@@ -59,10 +83,19 @@ export const chat = async (
   diagramType: DiagramType,
   docsContext: string,
   language: string,
-  modelParams?: ModelParams | null
+  modelParams?: ModelParams | null,
+  signal?: AbortSignal | null,
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.chat(messages, config, diagramType, docsContext, language, modelParams);
+  return strategy.chat(
+    messages,
+    config,
+    diagramType,
+    docsContext,
+    language,
+    modelParams,
+    signal,
+  );
 };
 
 export const chatDiagram = async (
@@ -71,10 +104,19 @@ export const chatDiagram = async (
   diagramType: DiagramType,
   docsContext: string,
   language: string,
-  modelParams?: ModelParams | null
+  modelParams?: ModelParams | null,
+  signal?: AbortSignal | null,
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.chatDiagram(messages, config, diagramType, docsContext, language, modelParams);
+  return strategy.chatDiagram(
+    messages,
+    config,
+    diagramType,
+    docsContext,
+    language,
+    modelParams,
+    signal,
+  );
 };
 
 export const analyzeDiagram = async (
@@ -82,10 +124,18 @@ export const analyzeDiagram = async (
   config: AIConfig,
   docsContext: string,
   language: string,
-  modelParams?: ModelParams | null
+  modelParams?: ModelParams | null,
+  signal?: AbortSignal | null,
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.analyzeDiagram(code, config, docsContext, language, modelParams);
+  return strategy.analyzeDiagram(
+    code,
+    config,
+    docsContext,
+    language,
+    modelParams,
+    signal,
+  );
 };
 
 export const planNotebook = async (
@@ -93,10 +143,18 @@ export const planNotebook = async (
   config: AIConfig,
   docsContext: string,
   language: string,
-  modelParams?: ModelParams | null
+  modelParams?: ModelParams | null,
+  signal?: AbortSignal | null,
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.planNotebook(messages, config, docsContext, language, modelParams);
+  return strategy.planNotebook(
+    messages,
+    config,
+    docsContext,
+    language,
+    modelParams,
+    signal,
+  );
 };
 
 export const summarizeBuild = async (
@@ -104,10 +162,18 @@ export const summarizeBuild = async (
   config: AIConfig,
   docsContext: string,
   language: string,
-  modelParams?: ModelParams | null
+  modelParams?: ModelParams | null,
+  signal?: AbortSignal | null,
 ): Promise<string> => {
   const strategy = getStrategy(config);
-  return strategy.summarizeBuild(messages, config, docsContext, language, modelParams);
+  return strategy.summarizeBuild(
+    messages,
+    config,
+    docsContext,
+    language,
+    modelParams,
+    signal,
+  );
 };
 
 export const chatNotebook = async (
@@ -117,7 +183,8 @@ export const chatNotebook = async (
   docsContext: string,
   language: string,
   allowedDiagramTypes: DiagramType[] | null,
-  modelParams?: ModelParams | null
+  modelParams?: ModelParams | null,
+  signal?: AbortSignal | null,
 ): Promise<string> => {
   const strategy = getStrategy(config);
   return strategy.chatNotebook(
@@ -127,6 +194,7 @@ export const chatNotebook = async (
     docsContext,
     language,
     allowedDiagramTypes,
-    modelParams
+    modelParams,
+    signal,
   );
 };
