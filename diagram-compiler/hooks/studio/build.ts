@@ -123,11 +123,14 @@ export const createBuildHandler = (ctx: StudioContext) => {
             : [intentMessage];
 
           const selectionSummary = await ctx.getDocsSelectionSummary?.("build");
-          const systemPrompt = buildSystemPrompt("generate", {
-            diagramType: ctx.appState.diagramType,
-            docsContext: "Documentation context redacted.",
-            language,
-          });
+          const systemPrompt = buildSystemPrompt(
+            "generate",
+            ctx.buildLLMRequestContext({
+              diagramType: ctx.appState.diagramType,
+              docsContext: "Documentation context redacted.",
+              language,
+            }),
+          );
           const buildContextEvent = buildContextEventForLog({
             phase: "planning",
             contextScope: "build",
@@ -168,6 +171,7 @@ export const createBuildHandler = (ctx: StudioContext) => {
             llmMessages,
             docs,
             language,
+            thinkingStyle: ctx.appState.thinkingStyle,
             maxAttempts: BUILD_MAX_ATTEMPTS,
             autoFixMaxAttempts: AUTO_FIX_MAX_ATTEMPTS,
             timeoutMs,
@@ -412,11 +416,14 @@ export const createBuildHandler = (ctx: StudioContext) => {
               content: summaryInput,
               timestamp: Date.now(),
             } as const;
-            const systemPrompt = buildSystemPrompt("summary", {
-              docsContext: "Documentation context redacted.",
-              language,
-              diagramType: ctx.appState.diagramType,
-            });
+            const systemPrompt = buildSystemPrompt(
+              "summary",
+              ctx.buildLLMRequestContext({
+                docsContext: "Documentation context redacted.",
+                language,
+                diagramType: ctx.appState.diagramType,
+              }),
+            );
             const summaryContextEvent = buildContextEventForLog({
               phase: "build",
               contextScope: "summary",
@@ -438,8 +445,11 @@ export const createBuildHandler = (ctx: StudioContext) => {
                 summarizeBuild(
                   [summaryMessage],
                   ctx.aiConfig,
-                  "",
-                  language,
+                  ctx.buildLLMRequestContext({
+                    diagramType: ctx.appState.diagramType,
+                    docsContext: "",
+                    language,
+                  }),
                   ctx.modelParams,
                   signal,
                 ),

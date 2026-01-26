@@ -8,8 +8,8 @@ describe('notebookPlanService', () => {
       schemaVersion: NOTEBOOK_PLAN_SCHEMA_VERSION,
       resolvedN: 2,
       diagrams: [
-        { title: 'Diagram A', diagramType: 'flowchart', buildPrompt: 'build A' },
-        { title: 'Diagram B', diagramType: 'sequence', buildPrompt: 'build B' },
+        { title: 'Diagram A', diagramType: 'flowchart', description: 'Shows flow', buildPrompt: 'build A' },
+        { title: 'Diagram B', diagramType: 'sequence', description: 'Shows messages', buildPrompt: 'build B' },
       ],
     });
 
@@ -24,7 +24,7 @@ describe('notebookPlanService', () => {
       "schemaVersion": "${NOTEBOOK_PLAN_SCHEMA_VERSION}",
       "resolvedN": 1,
       "diagrams": [
-        { "title": "Diagram A", "diagramType": "flowchart", "buildPrompt": "build A", },
+        { "title": "Diagram A", "diagramType": "flowchart", "description": "Shows flow", "buildPrompt": "build A", },
       ],
       "notes": ["ok",],
     }`;
@@ -49,9 +49,9 @@ describe('notebookPlanService', () => {
         schemaVersion: NOTEBOOK_PLAN_SCHEMA_VERSION,
         resolvedN: 3,
         diagrams: [
-          { title: 'A', diagramType: 'flowchart', buildPrompt: 'a' },
-          { title: 'B', diagramType: 'sequence', buildPrompt: 'b' },
-          { title: 'C', diagramType: 'class', buildPrompt: 'c' },
+          { title: 'A', diagramType: 'flowchart', description: 'A desc', buildPrompt: 'a' },
+          { title: 'B', diagramType: 'sequence', description: 'B desc', buildPrompt: 'b' },
+          { title: 'C', diagramType: 'class', description: 'C desc', buildPrompt: 'c' },
         ],
       },
       2

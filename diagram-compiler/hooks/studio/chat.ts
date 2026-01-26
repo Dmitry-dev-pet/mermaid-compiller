@@ -185,12 +185,15 @@ export const createChatHandler = (ctx: StudioContext) => {
             : ctx.isNotebookChatMode || isRefinementRequest
               ? "chat_diagram"
               : "chat";
-          const systemPrompt = buildSystemPrompt(promptMode, {
-            diagramType: ctx.appState.diagramType,
-            allowedDiagramTypes: allowedNotebookTypes,
-            docsContext: "Documentation context redacted.",
-            language,
-          });
+          const systemPrompt = buildSystemPrompt(
+            promptMode,
+            ctx.buildLLMRequestContext({
+              diagramType: ctx.appState.diagramType,
+              allowedDiagramTypes: allowedNotebookTypes,
+              docsContext: "Documentation context redacted.",
+              language,
+            }),
+          );
           const selectionLine = buildSelectionLine({
             diagramType: ctx.appState.diagramType,
             allowedDiagramTypes: allowedNotebookTypes,
@@ -222,10 +225,12 @@ export const createChatHandler = (ctx: StudioContext) => {
                 ? chatNotebook(
                     llmMessages,
                     ctx.aiConfig,
-                    ctx.appState.diagramType,
-                    docs,
-                    language,
-                    allowedNotebookTypes,
+                    ctx.buildLLMRequestContext({
+                      diagramType: ctx.appState.diagramType,
+                      allowedDiagramTypes: allowedNotebookTypes,
+                      docsContext: docs,
+                      language,
+                    }),
                     ctx.modelParams,
                     signal,
                   )
@@ -233,18 +238,24 @@ export const createChatHandler = (ctx: StudioContext) => {
                   ? chatDiagram(
                       llmMessages,
                       ctx.aiConfig,
-                      ctx.appState.diagramType,
-                      docs,
-                      language,
+                      ctx.buildLLMRequestContext({
+                        diagramType: ctx.appState.diagramType,
+                        allowedDiagramTypes: allowedNotebookTypes,
+                        docsContext: docs,
+                        language,
+                      }),
                       ctx.modelParams,
                       signal,
                     )
                   : chat(
                       llmMessages,
                       ctx.aiConfig,
-                      ctx.appState.diagramType,
-                      docs,
-                      language,
+                      ctx.buildLLMRequestContext({
+                        diagramType: ctx.appState.diagramType,
+                        allowedDiagramTypes: allowedNotebookTypes,
+                        docsContext: docs,
+                        language,
+                      }),
                       ctx.modelParams,
                       signal,
                     ),

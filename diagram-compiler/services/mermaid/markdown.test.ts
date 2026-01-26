@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   appendEmptyMermaidBlockToMarkdown,
   createMermaidNotebookMarkdown,
+  createMermaidNotebookMarkdownFromPlan,
   detectMermaidDiagramType,
   extractMermaidBlocksFromMarkdown,
   isMarkdownLike,
@@ -56,6 +57,22 @@ describe('mermaid markdown helpers', () => {
 
     const appended = appendEmptyMermaidBlockToMarkdown(notebook);
     expect(appended).toContain('## Diagram 3');
+  });
+
+  it('creates notebook markdown from plan with descriptions', () => {
+    const markdown = createMermaidNotebookMarkdownFromPlan({
+      schemaVersion: 'notebook-plan@1',
+      resolvedN: 2,
+      diagrams: [
+        { title: 'Auth', diagramType: 'flowchart', description: 'Login flow', buildPrompt: 'x' },
+        { title: 'Billing', diagramType: 'sequence', description: 'Payment sequence', buildPrompt: 'y' },
+      ],
+    });
+    expect(markdown).toContain('# Diagram notebook');
+    expect(markdown).toContain('## Auth');
+    expect(markdown).toContain('> Login flow');
+    expect(markdown).toContain('## Billing');
+    expect(markdown).toContain('> Payment sequence');
   });
 
   it('applies theme/look and flowchart tweaks for mermaid blocks', () => {

@@ -36,6 +36,7 @@ const baseAppState: AppState = {
   analyzeLanguage: 'auto',
   notebookBuildCount: null,
   llmTimeoutMs: LLM_TIMEOUT_MS,
+  thinkingStyle: 'simple',
 };
 
 describe('buildAnalyticsContext', () => {

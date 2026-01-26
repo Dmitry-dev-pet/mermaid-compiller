@@ -16,7 +16,8 @@ import {
   sanitizeMermaidByType,
 } from "../../utils/mermaidSanitizer";
 import { augmentMermaidErrorForAutoFix } from "../../utils/mermaidAutoFixHints";
-import type { AIConfig, DiagramType, Message, ModelParams } from "../../types";
+import type { AIConfig, DiagramType, Message, ModelParams, ThinkingStyle } from "../../types";
+import type { LLMRequestContext } from "../../services/llm/types";
 import type { StudioOperationRunner } from "./operationRunner";
 
 type BuildAttemptCallbacks = {
@@ -55,6 +56,7 @@ type BuildPipelineOptions = {
   llmMessages: Message[];
   docs: string;
   language: string;
+  thinkingStyle?: ThinkingStyle;
   maxAttempts: number;
   autoFixMaxAttempts: number;
   buildRequestRetries?: number;
@@ -138,6 +140,7 @@ export const runBuildPipeline = async (
     llmMessages,
     docs,
     language,
+    thinkingStyle,
     maxAttempts,
     autoFixMaxAttempts,
     buildRequestRetries = 1,
@@ -172,6 +175,12 @@ export const runBuildPipeline = async (
       callbacks?.onError?.(attempt, maxAttempts, message);
     },
     execute: async () => {
+      const requestContext: LLMRequestContext = {
+        diagramType,
+        docsContext: docs,
+        language,
+        thinkingStyle,
+      };
       const rawCode = runner
         ? await runner.runLLM({
             task: "build",
@@ -180,9 +189,7 @@ export const runBuildPipeline = async (
               generateDiagram(
                 llmMessages,
                 aiConfig,
-                diagramType,
-                docs,
-                language,
+                requestContext,
                 modelParams,
                 signal,
               ),
@@ -198,9 +205,7 @@ export const runBuildPipeline = async (
               generateDiagram(
                 llmMessages,
                 aiConfig,
-                diagramType,
-                docs,
-                language,
+                requestContext,
                 modelParams,
               ),
             retries: buildRequestRetries,
@@ -306,6 +311,12 @@ export const runBuildPipeline = async (
         errorLine || undefined,
       );
       const fixInput = prepareMermaid(code, diagramType).sanitizedCode;
+      const fixContext: LLMRequestContext = {
+        diagramType,
+        docsContext: docs,
+        language,
+        thinkingStyle,
+      };
       const fixedRaw = runner
         ? await runner.runLLM({
             task: "auto-fix",
@@ -315,8 +326,7 @@ export const runBuildPipeline = async (
                 fixInput,
                 enrichedErrorMessage,
                 aiConfig,
-                docs,
-                language,
+                fixContext,
                 modelParams,
                 signal,
               ),
@@ -331,8 +341,7 @@ export const runBuildPipeline = async (
                 fixInput,
                 enrichedErrorMessage,
                 aiConfig,
-                docs,
-                language,
+                fixContext,
                 modelParams,
               ),
             retries: autoFixRequestRetries,

@@ -1,10 +1,5 @@
-import type {
-  AIConfig,
-  Message,
-  DiagramType,
-  Model,
-  ModelParams,
-} from "../types";
+import type { AIConfig, Message, Model, ModelParams } from "../types";
+import type { LLMRequestContext } from "./llm/types";
 import { LLMProviderStrategy } from "./llm/LLMProviderStrategy";
 import { OpenRouterStrategy } from "./llm/OpenRouterStrategy";
 import { CliproxyStrategy } from "./llm/CliproxyStrategy";
@@ -38,9 +33,7 @@ export const fetchModels = async (config: AIConfig): Promise<Model[]> => {
 export const generateDiagram = async (
   messages: Message[],
   config: AIConfig,
-  diagramType: DiagramType,
-  docsContext: string,
-  language: string,
+  context: LLMRequestContext,
   modelParams?: ModelParams | null,
   signal?: AbortSignal | null,
 ): Promise<string> => {
@@ -48,9 +41,7 @@ export const generateDiagram = async (
   return strategy.generateDiagram(
     messages,
     config,
-    diagramType,
-    docsContext,
-    language,
+    context,
     modelParams,
     signal,
   );
@@ -60,8 +51,7 @@ export const fixDiagram = async (
   code: string,
   error: string,
   config: AIConfig,
-  docsContext: string,
-  language: string,
+  context: LLMRequestContext,
   modelParams?: ModelParams | null,
   signal?: AbortSignal | null,
 ): Promise<string> => {
@@ -70,8 +60,7 @@ export const fixDiagram = async (
     code,
     error,
     config,
-    docsContext,
-    language,
+    context,
     modelParams,
     signal,
   );
@@ -80,9 +69,7 @@ export const fixDiagram = async (
 export const chat = async (
   messages: Message[],
   config: AIConfig,
-  diagramType: DiagramType,
-  docsContext: string,
-  language: string,
+  context: LLMRequestContext,
   modelParams?: ModelParams | null,
   signal?: AbortSignal | null,
 ): Promise<string> => {
@@ -90,9 +77,7 @@ export const chat = async (
   return strategy.chat(
     messages,
     config,
-    diagramType,
-    docsContext,
-    language,
+    context,
     modelParams,
     signal,
   );
@@ -101,9 +86,7 @@ export const chat = async (
 export const chatDiagram = async (
   messages: Message[],
   config: AIConfig,
-  diagramType: DiagramType,
-  docsContext: string,
-  language: string,
+  context: LLMRequestContext,
   modelParams?: ModelParams | null,
   signal?: AbortSignal | null,
 ): Promise<string> => {
@@ -111,9 +94,7 @@ export const chatDiagram = async (
   return strategy.chatDiagram(
     messages,
     config,
-    diagramType,
-    docsContext,
-    language,
+    context,
     modelParams,
     signal,
   );
@@ -122,8 +103,7 @@ export const chatDiagram = async (
 export const analyzeDiagram = async (
   code: string,
   config: AIConfig,
-  docsContext: string,
-  language: string,
+  context: LLMRequestContext,
   modelParams?: ModelParams | null,
   signal?: AbortSignal | null,
 ): Promise<string> => {
@@ -131,8 +111,7 @@ export const analyzeDiagram = async (
   return strategy.analyzeDiagram(
     code,
     config,
-    docsContext,
-    language,
+    context,
     modelParams,
     signal,
   );
@@ -141,8 +120,7 @@ export const analyzeDiagram = async (
 export const planNotebook = async (
   messages: Message[],
   config: AIConfig,
-  docsContext: string,
-  language: string,
+  context: LLMRequestContext,
   modelParams?: ModelParams | null,
   signal?: AbortSignal | null,
 ): Promise<string> => {
@@ -150,8 +128,7 @@ export const planNotebook = async (
   return strategy.planNotebook(
     messages,
     config,
-    docsContext,
-    language,
+    context,
     modelParams,
     signal,
   );
@@ -160,8 +137,7 @@ export const planNotebook = async (
 export const summarizeBuild = async (
   messages: Message[],
   config: AIConfig,
-  docsContext: string,
-  language: string,
+  context: LLMRequestContext,
   modelParams?: ModelParams | null,
   signal?: AbortSignal | null,
 ): Promise<string> => {
@@ -169,8 +145,7 @@ export const summarizeBuild = async (
   return strategy.summarizeBuild(
     messages,
     config,
-    docsContext,
-    language,
+    context,
     modelParams,
     signal,
   );
@@ -179,10 +154,7 @@ export const summarizeBuild = async (
 export const chatNotebook = async (
   messages: Message[],
   config: AIConfig,
-  diagramType: DiagramType,
-  docsContext: string,
-  language: string,
-  allowedDiagramTypes: DiagramType[] | null,
+  context: LLMRequestContext,
   modelParams?: ModelParams | null,
   signal?: AbortSignal | null,
 ): Promise<string> => {
@@ -190,10 +162,7 @@ export const chatNotebook = async (
   return strategy.chatNotebook(
     messages,
     config,
-    diagramType,
-    docsContext,
-    language,
-    allowedDiagramTypes,
+    context,
     modelParams,
     signal,
   );

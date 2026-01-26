@@ -1,5 +1,13 @@
 import type { DiagramType } from "../types";
 
+const normalizeEscapedBr = (code: string) => {
+  // LLMs (or intermediate renderers) may HTML-escape `<br/>` inside labels.
+  // Mermaid expects a real `<br/>` tag for line breaks in labels.
+  return code
+    .replace(/&amp;lt;br\s*\/?&amp;gt;/gi, "<br/>")
+    .replace(/&lt;br\s*\/?&gt;/gi, "<br/>");
+};
+
 const sanitizeArrowSyntax = (code: string) => {
   // Mermaid flowchart/state diagrams use `-->` / `<--`. LLMs sometimes emit `->` / `<-`.
   // Convert only the "single dash" variants, avoiding valid arrows like `-->`, `-.->`, `==>`,
@@ -311,27 +319,29 @@ export const sanitizeMermaidByType = (
   diagramType: DiagramType,
   code: string,
 ) => {
+  const normalized = normalizeEscapedBr(code);
   if (diagramType === "auto") {
-    const trimmed = code.trimStart();
-    if (trimmed.startsWith("flowchart")) return sanitizeFlowchartLabels(code);
-    if (/^stateDiagram/i.test(trimmed)) return sanitizeArrowSyntax(code);
+    const trimmed = normalized.trimStart();
+    if (trimmed.startsWith("flowchart"))
+      return sanitizeFlowchartLabels(normalized);
+    if (/^stateDiagram/i.test(trimmed)) return sanitizeArrowSyntax(normalized);
     if (trimmed.startsWith("erDiagram"))
-      return sanitizeMermaidByType("er", code);
+      return sanitizeMermaidByType("er", normalized);
     if (trimmed.startsWith("architecture-beta"))
-      return sanitizeArchitectureIds(code);
-    return code;
+      return sanitizeArchitectureIds(normalized);
+    return normalized;
   }
   if (diagramType === "flowchart") {
-    return sanitizeFlowchartLabels(code);
+    return sanitizeFlowchartLabels(normalized);
   }
   if (diagramType === "architecture") {
-    return sanitizeArchitectureIds(code);
+    return sanitizeArchitectureIds(normalized);
   }
   if (diagramType === "state") {
-    return sanitizeStateLabels(sanitizeArrowSyntax(code));
+    return sanitizeStateLabels(sanitizeArrowSyntax(normalized));
   }
   if (diagramType === "er") {
-    const lines = code.split(/\r?\n/);
+    const lines = normalized.split(/\r?\n/);
     let inEntity = false;
     const sanitized = lines.map((line) => {
       const trimmed = line.trim();
@@ -360,7 +370,7 @@ export const sanitizeMermaidByType = (
     });
     return sanitized.join("\n");
   }
-  return code;
+  return normalized;
 };
 
 export const formatMermaidErrorLine = (

@@ -21,6 +21,7 @@ import { normalizeIntentText } from "../../utils/intent";
 import type { StepMeta, TimeStepType } from "../../services/history/types";
 import type { LLMRequestStartNotice } from "../../services/llmRequestRunner";
 import type { HistorySession } from "../../services/history/types";
+import type { LLMRequestContext } from "../../services/llm/types";
 
 export type MermaidUpdateTarget =
   | { mode: "markdown"; block: MermaidMarkdownBlock }
@@ -113,6 +114,12 @@ export type StudioContext = StudioActionsDeps & {
   getRelevantMessages: () => Message[];
   isNotebookChatEnabled: boolean;
   isNotebookChatMode: boolean;
+  buildLLMRequestContext: (args: {
+    diagramType?: import("../../types").DiagramType;
+    allowedDiagramTypes?: import("../../types").DiagramType[] | null;
+    docsContext: string;
+    language: string;
+  }) => LLMRequestContext;
   resolveLanguage: (text?: string) => string;
   resolveAnalyzeLanguage: () => string;
   normalizeText: (text: string) => string;
@@ -372,6 +379,25 @@ ${code}
 
   const getNotebookChatIndex = () => deps.getNotebookChatIndex?.() ?? null;
 
+  const buildLLMRequestContext = (args: {
+    diagramType?: import("../../types").DiagramType;
+    allowedDiagramTypes?: import("../../types").DiagramType[] | null;
+    docsContext: string;
+    language: string;
+  }): LLMRequestContext => {
+    const resolvedDiagramType = args.diagramType ?? deps.appState.diagramType;
+    const resolvedAllowedDiagramTypes =
+      args.allowedDiagramTypes ??
+      (resolvedDiagramType === "auto" ? deps.appState.mainDiagramTypes : null);
+    return {
+      diagramType: resolvedDiagramType,
+      allowedDiagramTypes: resolvedAllowedDiagramTypes,
+      docsContext: args.docsContext,
+      language: args.language,
+      thinkingStyle: deps.appState.thinkingStyle,
+    };
+  };
+
   const safeRecordTimeStep: StudioActionsDeps["recordTimeStep"] = async (
     args,
   ) => {
@@ -387,6 +413,7 @@ ${code}
     getRelevantMessages,
     isNotebookChatEnabled,
     isNotebookChatMode,
+    buildLLMRequestContext,
     resolveLanguage,
     resolveAnalyzeLanguage,
     normalizeText,

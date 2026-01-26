@@ -7,7 +7,7 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from '@excalidraw/excalidraw/types';
-import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
+import type { ExcalidrawElement, OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 
 type DiagramWhiteboardCanvasProps = {
   initialData: ExcalidrawInitialDataState;
@@ -16,7 +16,13 @@ type DiagramWhiteboardCanvasProps = {
   onThemeChange?: (nextTheme: 'light' | 'dark') => void;
   onApiReady: (api: ExcalidrawImperativeAPI) => void;
   onChange: (elements: readonly OrderedExcalidrawElement[], appState: AppState, files: BinaryFiles) => void;
-  onPointerUp: (activeTool: AppState['activeTool'], pointerDownState: any) => void;
+  onPointerUp: (
+    activeTool: AppState['activeTool'],
+    pointerDownState: {
+      drag?: { hasOccurred?: boolean };
+      hit?: { element?: ExcalidrawElement | null };
+    },
+  ) => void;
   onScrollChange: (scrollX: number, scrollY: number, zoom: AppState['zoom']) => void;
 };
 

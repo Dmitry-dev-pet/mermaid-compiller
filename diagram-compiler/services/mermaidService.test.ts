@@ -11,7 +11,14 @@ import mermaid from 'mermaid';
 import { extractMermaidCode, parseMermaidJsonResponse, validateMermaid } from './mermaidService';
 
 describe('mermaidService', () => {
-  const mermaidMock = mermaid as unknown as { initialize: any; parse: any };
+  const mermaidMock = mermaid as unknown as {
+    initialize: (...args: unknown[]) => unknown;
+    parse: {
+      mockReset: () => void;
+      mockResolvedValueOnce: (value: unknown) => void;
+      mockRejectedValueOnce: (error: Error) => void;
+    };
+  };
 
   beforeEach(() => {
     mermaidMock.parse.mockReset();

@@ -76,7 +76,6 @@ export const useBuildDocsPreview = ({
     buildDocsNotebookPlanText,
     buildDocsRequestPreviewRawText,
     buildDocsRequestPreviewText,
-    buildDocsSystemPrompts,
     docsMode,
     resolveSystemPromptForPath,
     systemPromptRawByMode,

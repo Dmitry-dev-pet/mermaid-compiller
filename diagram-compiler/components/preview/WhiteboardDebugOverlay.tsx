@@ -48,6 +48,15 @@ type WhiteboardDebugOverlayProps = {
   effectiveBackgroundColor: string | null;
 };
 
+const readNumber = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+const resolveZoomValue = (zoom: AppState['zoom']): number | null => {
+  if (typeof zoom === 'number') return zoom;
+  const value = (zoom as { value?: unknown } | null)?.value;
+  return typeof value === 'number' ? value : null;
+};
+
 const WhiteboardDebugOverlay: React.FC<WhiteboardDebugOverlayProps> = ({
   enabled,
   debugOverlay,
@@ -72,6 +81,8 @@ const WhiteboardDebugOverlay: React.FC<WhiteboardDebugOverlayProps> = ({
   const copyDebugOverlayToClipboard = useCallback(async () => {
     const api = apiRef.current;
     const appState = api?.getAppState?.() as AppState | undefined;
+    const appStateRecord = appState ? (appState as Record<string, unknown>) : null;
+    const zoomValue = appState ? resolveZoomValue(appState.zoom) : null;
     const payload = {
       sceneKey,
       pendingFitSceneKey,
@@ -82,15 +93,15 @@ const WhiteboardDebugOverlay: React.FC<WhiteboardDebugOverlayProps> = ({
       viewMode: isViewMode,
       appState: appState
         ? {
-          width: (appState as any).width,
-          height: (appState as any).height,
-          zoom: (appState.zoom as any)?.value ?? appState.zoom,
-          scrollX: appState.scrollX,
-          scrollY: appState.scrollY,
-          openSidebar: (appState as any).openSidebar ?? null,
-          openMenu: (appState as any).openMenu ?? null,
-          openDialog: (appState as any).openDialog ?? null,
-          openPopup: (appState as any).openPopup ?? null,
+          width: readNumber(appStateRecord?.width),
+          height: readNumber(appStateRecord?.height),
+          zoom: zoomValue ?? appState.zoom,
+          scrollX: appState.scrollX ?? null,
+          scrollY: appState.scrollY ?? null,
+          openSidebar: appStateRecord?.openSidebar ?? null,
+          openMenu: appStateRecord?.openMenu ?? null,
+          openDialog: appStateRecord?.openDialog ?? null,
+          openPopup: appStateRecord?.openPopup ?? null,
         }
         : null,
       overlay: debugOverlay,
@@ -127,23 +138,24 @@ const WhiteboardDebugOverlay: React.FC<WhiteboardDebugOverlayProps> = ({
     const api = apiRef.current;
     if (!api) return;
     try {
-      const elementsAll = api.getSceneElements() as unknown as ExcalidrawElement[];
-      const elements = elementsAll.filter((el) => (el as any)?.isDeleted !== true) as any;
+      const elementsAll = api.getSceneElements() as readonly ExcalidrawElement[];
+      const elements = elementsAll.filter((el) => !el.isDeleted);
       const appState = api.getAppState() as AppState;
       const files = (api.getFiles?.() ?? {}) as BinaryFiles;
       const background = (effectiveBackgroundColor?.trim() || appState.viewBackgroundColor || '#ffffff') as string;
+      const exportState: AppState = {
+        ...appState,
+        exportBackground: true,
+        viewBackgroundColor: background,
+      };
       const blob = await exportToBlob({
         elements,
-        appState: {
-          ...appState,
-          exportBackground: true,
-          viewBackgroundColor: background,
-        } as any,
+        appState: exportState,
         files,
         mimeType: 'image/png',
         quality: 1,
         exportPadding: 32,
-      } as any);
+      });
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank', 'noopener,noreferrer');
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);

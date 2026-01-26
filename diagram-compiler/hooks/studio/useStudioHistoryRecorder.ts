@@ -2,7 +2,9 @@ import { useCallback } from "react";
 import type { EditorTab } from "../../types";
 import { isMarkdownLike } from "../../services/mermaidService";
 
-type UseStudioHistoryRecorderArgs<TAppendTimeStep extends (args: any) => any> = {
+type UseStudioHistoryRecorderArgs<
+  TAppendTimeStep extends (args: unknown) => unknown,
+> = {
   appendTimeStep: TAppendTimeStep;
   isNotebookChatMode: boolean;
   activeChatContextId: string;
@@ -14,7 +16,7 @@ type UseStudioHistoryRecorderArgs<TAppendTimeStep extends (args: any) => any> = 
 };
 
 export const useStudioHistoryRecorder = <
-  TAppendTimeStep extends (args: any) => any,
+  TAppendTimeStep extends (args: unknown) => unknown,
 >({
   appendTimeStep,
   isNotebookChatMode,

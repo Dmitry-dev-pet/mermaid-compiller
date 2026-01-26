@@ -1,4 +1,14 @@
-const readBody = async (req: any) => {
+type AnalyticsRequest = {
+  method?: string;
+  body?: unknown;
+  on: (event: 'data' | 'end', cb: (chunk: Buffer | string) => void) => void;
+};
+
+type AnalyticsResponse = {
+  status: (code: number) => { json: (payload: unknown) => void };
+};
+
+const readBody = async (req: AnalyticsRequest) => {
   if (req.body && typeof req.body === 'object') return req.body;
   if (typeof req.body === 'string') {
     try {
@@ -11,7 +21,7 @@ const readBody = async (req: any) => {
   return new Promise<unknown>((resolve) => {
     let data = '';
     req.on('data', (chunk) => {
-      data += chunk;
+      data += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
     });
     req.on('end', () => {
       try {
@@ -23,7 +33,7 @@ const readBody = async (req: any) => {
   });
 };
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: AnalyticsRequest, res: AnalyticsResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, error: 'method_not_allowed' });
     return;

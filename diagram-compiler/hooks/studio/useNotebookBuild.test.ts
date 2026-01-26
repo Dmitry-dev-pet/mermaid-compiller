@@ -6,6 +6,7 @@ const buildRawPlan = (count: number) => {
   const diagrams = Array.from({ length: count }, (_, index) => ({
     title: `Diagram ${index + 1}`,
     diagramType: 'flowchart',
+    description: `Description ${index + 1}`,
     buildPrompt: `build ${index + 1}`,
   }));
   return JSON.stringify({

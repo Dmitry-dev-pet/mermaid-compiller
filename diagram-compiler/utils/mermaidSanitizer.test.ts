@@ -52,6 +52,19 @@ describe('mermaidSanitizer', () => {
     expect(result).toContain('A-->B');
   });
 
+  it('decodes HTML-escaped <br/> inside labels', () => {
+    const input = [
+      "flowchart TD",
+      "subgraph PipelineStages['Pipeline&lt;br/&gt;Stages']",
+      "A['Unit&lt;br/&gt;Test'] --> B['Integration&lt;br&gt;Test']",
+      "end",
+    ].join('\n');
+    const result = sanitizeMermaidByType('flowchart', input);
+    expect(result).toContain("Pipeline<br/>Stages");
+    expect(result).toContain("Unit<br/>Test");
+    expect(result).toContain("Integration<br/>Test");
+  });
+
   it('sanitizes ER attribute values wrapped in quotes', () => {
     const input = [
       'erDiagram',

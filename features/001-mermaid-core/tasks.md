@@ -39,4 +39,17 @@
 
 ---
 
+Storage Providers (2026-01-25):
+
+- [x] Определить интерфейс провайдера хранения + capabilities (local/hosted/byo).
+- [x] Реализовать bundle проекта (session + steps + revisions) и формат бэкапа.
+- [x] Добавить UI Backup (Export/Import) в Projects menu.
+- [x] Реализовать hosted Supabase provider (projects table + optimistic version).
+- [x] Реализовать BYO Supabase provider (конфиг + проверка схемы).
+- [x] Добавить E2EE слой (passphrase, KDF, AES-GCM, wrapped vault key).
+- [x] Реализовать share links (viewer/editor) через Edge Functions.
+- [x] Добавить UX конфликтов (overwrite/open cloud/save copy).
+
+---
+
 Обновлено: 2026-01-23.

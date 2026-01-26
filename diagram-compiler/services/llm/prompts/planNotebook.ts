@@ -12,8 +12,9 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
 - Use the user's request and optional requestedN.
 - If requestedN is provided and > 0, you MUST use it as resolvedN.
 - If requestedNRange is provided (e.g., 2-4), choose resolvedN within that range.
-- If requestedN is null, choose 2–4 diagrams by default (prefer 3 unless the request clearly implies fewer/more).
+- If requestedN is null, choose 3–5 diagrams by default (prefer 4 unless the request clearly implies fewer/more).
 - Each diagram must have an independent buildPrompt and explicit diagramType.
+- Each diagram must include a short description (1–2 sentences) explaining what the diagram shows.
 - diagramType must be one of the values from supportedDiagramTypes provided in the user message.
 - If forcedDiagramType is provided in the user message, EVERY diagramType must equal it.
 - If allowedDiagramTypes is provided in the user message, choose each diagramType only from that list (you do NOT need to use all of them).
@@ -42,6 +43,7 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
     "title": string,
     "diagramType": string,
     "goal": string,
+    "description": string,
     "buildPrompt": string,
     "acceptance": string[]
   }],
@@ -62,8 +64,9 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
 - Используй запрос пользователя и optional requestedN.
 - Если requestedN задан и > 0, ОБЯЗАТЕЛЬНО используй его как resolvedN.
 - Если requestedNRange задан (например, 2-4), выбери resolvedN в пределах этого диапазона.
-- Если requestedN равен null, по умолчанию выбери 2–4 диаграммы (предпочитай 3, если запрос не требует иного).
+- Если requestedN равен null, по умолчанию выбери 3–5 диаграмм (предпочитай 4, если запрос не требует иного).
 - Каждая диаграмма должна иметь независимый buildPrompt и явный diagramType.
+- Каждая диаграмма должна содержать краткое описание (1–2 предложения), что она показывает.
 - diagramType должен быть одним из значений supportedDiagramTypes, переданных в сообщении пользователя.
 - Если forcedDiagramType задан в сообщении пользователя, КАЖДЫЙ diagramType должен быть равен ему.
 - Если allowedDiagramTypes задан в сообщении пользователя, каждый diagramType выбирай ТОЛЬКО из этого списка (не обязательно использовать все типы из списка).
@@ -92,6 +95,7 @@ Plan a multi-diagram Markdown notebook and return a structured JSON plan.
     "title": string,
     "diagramType": string,
     "goal": string,
+    "description": string,
     "buildPrompt": string,
     "acceptance": string[]
   }],

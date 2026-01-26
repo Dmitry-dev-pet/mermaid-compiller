@@ -7,7 +7,7 @@ export const ACTIVE_SESSION_KEY = 'dc_active_session_id';
 
 const now = () => Date.now();
 
-const newId = () => {
+export const generateHistoryId = () => {
   const c = globalThis.crypto;
   if (c && 'randomUUID' in c && typeof c.randomUUID === 'function') return c.randomUUID();
   return `id_${now()}_${Math.random().toString(36).slice(2)}`;
@@ -51,7 +51,7 @@ export type CreateSessionArgs = {
 export const createSession = async (args: CreateSessionArgs = {}): Promise<HistorySession> => {
   const createdAt = now();
   const session: HistorySession = {
-    id: newId(),
+    id: generateHistoryId(),
     createdAt,
     updatedAt: createdAt,
     title: args.title ?? formatDefaultSessionTitle(createdAt),
@@ -153,7 +153,7 @@ export const recordStep = async (
       session.title = autoTitle;
     }
 
-    const stepId = newId();
+    const stepId = generateHistoryId();
     const createdAt = now();
 
     const step: TimeStep = {
@@ -171,7 +171,7 @@ export const recordStep = async (
 
     const nextMermaid = args.nextMermaid?.code?.trim() ? args.nextMermaid : null;
     if (nextMermaid) {
-      const revisionId = newId();
+      const revisionId = generateHistoryId();
       revision = {
         id: revisionId,
         sessionId: session.id,
@@ -266,6 +266,24 @@ export const listSteps = async (sessionId: string): Promise<TimeStep[]> => {
         const cursor = req.result;
         if (!cursor) return resolve(out);
         out.push(cursor.value as TimeStep);
+        cursor.continue();
+      };
+    });
+  });
+};
+
+export const listRevisions = async (sessionId: string): Promise<DiagramRevision[]> => {
+  return withTx([STORE_REVISIONS], 'readonly', async (tx) => {
+    const index = tx.objectStore(STORE_REVISIONS).index('bySessionCreatedAt');
+    const range = IDBKeyRange.bound([sessionId, 0], [sessionId, Number.MAX_SAFE_INTEGER]);
+    return new Promise<DiagramRevision[]>((resolve, reject) => {
+      const out: DiagramRevision[] = [];
+      const req = index.openCursor(range);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) return resolve(out);
+        out.push(cursor.value as DiagramRevision);
         cursor.continue();
       };
     });

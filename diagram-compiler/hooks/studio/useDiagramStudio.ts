@@ -6,6 +6,7 @@ import { useChat } from "../core/useChat";
 import { createStudioActions } from "./studioActions";
 import { useHistory } from "../core/useHistory";
 import { getRevision } from "../../services/history/store";
+import type { ProjectBundleFile } from "../../services/history/bundle";
 import { useBuildDocs } from "./useBuildDocs";
 import { useMarkdownMermaid } from "./useMarkdownMermaid";
 import { useOperationLog } from "./useOperationLog";
@@ -20,6 +21,9 @@ import { useStudioTabs } from "./useStudioTabs";
 import type { DiagramMarker } from "../core/useHistory";
 import { useStudioHydration } from "./useStudioHydration";
 import { useStudioChatFlow } from "./useStudioChatFlow";
+import { StorageConflictError } from "../../services/storage/types";
+import { useStorageConfig } from "../core/useStorageConfig";
+import { createSupabaseByoProvider } from "../../services/storage";
 import type {
   DiagramIntent,
   DiagramType,
@@ -102,6 +106,8 @@ export const useDiagramStudio = () => {
     deleteUndoMs: historyDeleteUndoMs,
     loadSessionPreview,
     loadSessionSnapshot,
+    exportProjectBundle,
+    importProjectBundle,
   } = useHistory();
 
   const {
@@ -293,6 +299,13 @@ export const useDiagramStudio = () => {
   const setNotebookBuildCount = useCallback(
     (count: number | string | null) => {
       setAppState((prev) => ({ ...prev, notebookBuildCount: count }));
+    },
+    [setAppState],
+  );
+
+  const setThinkingStyle = useCallback(
+    (style: import("../../types").ThinkingStyle) => {
+      setAppState((prev) => ({ ...prev, thinkingStyle: style }));
     },
     [setAppState],
   );
@@ -496,6 +509,7 @@ export const useDiagramStudio = () => {
     mainDiagramTypes: appState.mainDiagramTypes,
     analyzeLanguage: appState.analyzeLanguage ?? "auto",
     appLanguage: appState.language ?? "auto",
+    thinkingStyle: appState.thinkingStyle,
     isNotebookChatMode,
     isNotebookDataEnabled,
     promptScope:
@@ -591,6 +605,87 @@ export const useDiagramStudio = () => {
     lastManualRecordedCodeRef,
     isHydratingRef,
   });
+
+  const { byoConfig, updateByoConfig } = useStorageConfig();
+
+  const testByoConfig = useCallback(async () => {
+    const provider = createSupabaseByoProvider(byoConfig);
+    return provider.init();
+  }, [byoConfig]);
+
+  const sanitizeFileName = useCallback((value: string) => {
+    return value
+      .trim()
+      .replace(/[\s/\\]+/g, "-")
+      .replace(/[^a-zA-Z0-9._-]+/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase() || "project";
+  }, []);
+
+  const triggerDownload = useCallback((blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleExportProject = useCallback(
+    async (sessionId: string) => {
+      const bundle = await exportProjectBundle(sessionId);
+      if (!bundle) throw new Error("Project not found");
+      const payload: ProjectBundleFile = {
+        schema: "mermaid-langgraph.project",
+        version: 1,
+        exportedAt: Date.now(),
+        bundle,
+      };
+      const safeTitle = sanitizeFileName(bundle.session.title ?? "project");
+      const ts = new Date(payload.exportedAt).toISOString().replace(/[:.]/g, "-");
+      const filename = `${safeTitle}-${ts}.mlg.json`;
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      triggerDownload(blob, filename);
+    },
+    [exportProjectBundle, sanitizeFileName, triggerDownload]
+  );
+
+  const handleImportProject = useCallback(
+    async (file: File, action: "copy" | "overwrite" | "open" = "copy") => {
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text) as Partial<ProjectBundleFile>;
+        if (parsed?.schema !== "mermaid-langgraph.project" || parsed.version !== 1 || !parsed.bundle) {
+          throw new Error("Invalid project backup format");
+        }
+        if (action === "open" && activeProjectId) {
+          await openProject(activeProjectId);
+          return;
+        }
+        if (action === "overwrite" && activeProjectId) {
+          await importProjectBundle(
+            { ...parsed.bundle, session: { ...parsed.bundle.session, id: activeProjectId } },
+            { mode: "replace", setActive: true }
+          );
+          await openProject(activeProjectId);
+          return;
+        }
+        const session = await importProjectBundle(parsed.bundle, { mode: "new", setActive: true });
+        if (session?.id) {
+          await openProject(session.id);
+        }
+      } catch (error) {
+        if (error instanceof StorageConflictError) {
+          return;
+        }
+        throw error;
+      }
+    },
+    [activeProjectId, importProjectBundle, openProject]
+  );
 
   useEffect(() => {
     if (editorTab !== "build_docs") return;
@@ -711,6 +806,28 @@ export const useDiagramStudio = () => {
     [appState.diagramType, setDiagramType],
   );
 
+  const buildLLMRequestContext = useCallback(
+    (args: {
+      diagramType?: DiagramType;
+      allowedDiagramTypes?: DiagramType[] | null;
+      docsContext: string;
+      language: string;
+    }) => {
+      const resolvedDiagramType = args.diagramType ?? appState.diagramType;
+      const resolvedAllowedDiagramTypes =
+        args.allowedDiagramTypes ??
+        (resolvedDiagramType === "auto" ? appState.mainDiagramTypes : null);
+      return {
+        diagramType: resolvedDiagramType,
+        allowedDiagramTypes: resolvedAllowedDiagramTypes,
+        docsContext: args.docsContext,
+        language: args.language,
+        thinkingStyle: appState.thinkingStyle,
+      };
+    },
+    [appState.diagramType, appState.mainDiagramTypes, appState.thinkingStyle],
+  );
+
   const { handleNotebookBuild } = useNotebookBuild({
     aiConfig,
     modelParams,
@@ -729,6 +846,7 @@ export const useDiagramStudio = () => {
     getDocsContext,
     getDocsSelectionSummary,
     loadBuildDocsEntries,
+    buildLLMRequestContext,
     startOperation: (title, kind) => startOperation(title, "main", kind),
     addOperationEvent,
     finishOperation,
@@ -818,6 +936,8 @@ export const useDiagramStudio = () => {
     aiConfig,
     modelParams,
     appDiagramType: resolvedAppDiagramType,
+    thinkingStyle: appState.thinkingStyle,
+    buildLLMRequestContext,
     connectionStatus: connectionState.status,
     messages: activeMessages,
     mermaidState,
@@ -1052,6 +1172,11 @@ export const useDiagramStudio = () => {
     renameProject,
     removeProject,
     undoRemoveProject,
+    exportProject: handleExportProject,
+    importProject: handleImportProject,
+    byoConfig,
+    updateByoConfig,
+    testByoConfig,
     deleteUndoMs: projectsUndoMs,
     loadSessionPreview,
     showProjectPreview,
@@ -1064,6 +1189,7 @@ export const useDiagramStudio = () => {
     togglePreviewFullScreen,
     toggleScrollSync,
     setNotebookBuildCount,
+    setThinkingStyle,
     buildDocsIntentText: resolvedBuildDocsIntentText,
     buildPromptPreview,
     setPromptPreview,

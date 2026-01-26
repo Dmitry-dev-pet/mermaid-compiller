@@ -40,4 +40,16 @@ Refactor / maintenance (после 2026-01-22):
 
 ---
 
+Storage Providers (2026-01-25):
+28. [x] Define storage provider interface + capabilities (local/hosted/byo).
+29. [x] Add project bundle export/import (session + steps + revisions) and wire into studio.
+30. [x] Add UI for backup/export/import in Projects menu.
+31. [x] Implement hosted Supabase provider (projects table + optimistic versioning).
+32. [x] Implement BYO Supabase provider (config + schema checks).
+33. [x] Add E2EE layer (passphrase, KDF, AES-GCM, wrapped vault key).
+34. [x] Implement share links (viewer/editor) via Edge Functions.
+35. [x] Add conflict UX (overwrite/open cloud/save copy).
+
+---
+
 Обновлено: 2026-01-23.

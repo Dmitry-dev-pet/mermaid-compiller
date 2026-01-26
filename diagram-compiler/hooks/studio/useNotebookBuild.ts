@@ -23,6 +23,7 @@ import { NOTEBOOK_BUILD_RETRY_CONFIG } from "./notebookBuildConfig";
 import {
   extractMermaidBlocksFromMarkdown,
   replaceMermaidBlockInMarkdown,
+  createMermaidNotebookMarkdownFromPlan,
 } from "../../services/mermaidService";
 import {
   formatDocsContext,
@@ -35,6 +36,7 @@ import {
   normalizeNotebookPlan,
   parseNotebookPlan,
 } from "../../services/notebookPlanService";
+import type { LLMRequestContext } from "../../services/llm/types";
 import { runLLMRequest } from "../../services/llmRequestRunner";
 import { TimeoutError } from "../../services/llmTimeout";
 import { formatTimeoutRetryMessage } from "./stepMessageUtils";
@@ -99,6 +101,12 @@ type NotebookBuildDeps = {
     excludedPaths: string[];
   }>;
   loadBuildDocsEntries: (type: DiagramType) => Promise<unknown>;
+  buildLLMRequestContext: (args: {
+    diagramType?: DiagramType;
+    allowedDiagramTypes?: DiagramType[] | null;
+    docsContext: string;
+    language: string;
+  }) => LLMRequestContext;
   startOperation: (
     title: string,
     kind?: import("../../types").OperationKind,
@@ -219,6 +227,10 @@ const formatNotebookRawIntent = (args: {
   );
   pushSection(language === "Russian" ? "Цель" : "Goal", diagram.goal);
   pushSection(
+    language === "Russian" ? "Описание" : "Description",
+    diagram.description,
+  );
+  pushSection(
     language === "Russian" ? "Build Prompt" : "Build Prompt",
     diagram.buildPrompt,
   );
@@ -333,15 +345,6 @@ const parseNotebookRange = (range: string | null) => {
   return { min, max };
 };
 
-const buildNotebookMarkdown = (plan: NotebookPlan) => {
-  const title = plan.title?.trim() || "Diagram notebook";
-  const sections = plan.diagrams.map((diagram, index) => {
-    const heading = diagram.title?.trim() || `Diagram ${index + 1}`;
-    return `## ${heading}\n\n\`\`\`mermaid\n\`\`\``;
-  });
-  return `# ${title}\n\n${sections.join("\n\n")}\n`;
-};
-
 const replaceNotebookBlock = (
   markdown: string,
   index: number,
@@ -412,6 +415,13 @@ export const requestNotebookPlan = async (args: {
   requestedNRange?: string | null;
   docs: string;
   language: string;
+  thinkingStyle?: import("../../types").ThinkingStyle;
+  buildLLMRequestContext?: (args: {
+    diagramType?: DiagramType;
+    allowedDiagramTypes?: DiagramType[] | null;
+    docsContext: string;
+    language: string;
+  }) => LLMRequestContext;
   addMessage: NotebookBuildDeps["addMessage"];
   onLLMRequestStart?: NotebookBuildDeps["onLLMRequestStart"];
   timeoutMs?: number;
@@ -427,8 +437,20 @@ export const requestNotebookPlan = async (args: {
       planNotebook(
         [message],
         args.aiConfig,
-        args.docs,
-        args.language,
+        args.buildLLMRequestContext
+          ? args.buildLLMRequestContext({
+              diagramType: args.forcedDiagramType ?? "auto",
+              allowedDiagramTypes: args.allowedDiagramTypes ?? null,
+              docsContext: args.docs,
+              language: args.language,
+            })
+          : {
+              diagramType: args.forcedDiagramType ?? "auto",
+              allowedDiagramTypes: args.allowedDiagramTypes ?? null,
+              docsContext: args.docs,
+              language: args.language,
+              thinkingStyle: args.thinkingStyle,
+            },
         args.modelParams,
         signal,
       ));
@@ -793,12 +815,15 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           }),
           timestamp: Date.now(),
         };
-        const plannerSystemPrompt = buildSystemPrompt("plan_notebook", {
-          docsContext: "Documentation context redacted.",
-          language,
-          diagramType: forcedDiagramType ?? deps.appState.diagramType,
-          allowedDiagramTypes,
-        });
+        const plannerSystemPrompt = buildSystemPrompt(
+          "plan_notebook",
+          deps.buildLLMRequestContext({
+            docsContext: "Documentation context redacted.",
+            language,
+            diagramType: forcedDiagramType ?? deps.appState.diagramType,
+            allowedDiagramTypes,
+          }),
+        );
         const plannerContextEvent = buildNotebookContextEvent({
           phase: "planning",
           contextScope: "planner",
@@ -830,6 +855,8 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           requestedNRange,
           docs,
           language,
+          thinkingStyle: deps.appState.thinkingStyle,
+          buildLLMRequestContext: deps.buildLLMRequestContext,
           addMessage: createEphemeralMessage,
           timeoutMs: deps.appState.llmTimeoutMs,
           forcedDiagramType,
@@ -868,7 +895,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
           };
         }
 
-        let currentMarkdown = buildNotebookMarkdown(plan);
+        let currentMarkdown = createMermaidNotebookMarkdownFromPlan(plan);
         applyNotebookMarkdown(currentMarkdown);
         deps.setMarkdownMermaidActiveIndex(0);
         pushStatus("Ноутбук\n- создан markdown-скелет");
@@ -995,11 +1022,14 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                 content: `Intent:\n${intentText}`,
                 timestamp: Date.now(),
               };
-              const blockSystemPrompt = buildSystemPrompt("generate", {
-                diagramType: targetDiagramType,
-                docsContext: "Documentation context redacted.",
-                language,
-              });
+              const blockSystemPrompt = buildSystemPrompt(
+                "generate",
+                deps.buildLLMRequestContext({
+                  diagramType: targetDiagramType,
+                  docsContext: "Documentation context redacted.",
+                  language,
+                }),
+              );
               const blockContextEvent = buildNotebookContextEvent({
                 phase: "planning",
                 contextScope: "block",
@@ -1034,6 +1064,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                 llmMessages: [intentMessage],
                 docs: blockDocs,
                 language,
+                thinkingStyle: deps.appState.thinkingStyle,
                 maxAttempts: NOTEBOOK_BUILD_RETRY_CONFIG.diagramAttempts,
                 autoFixMaxAttempts: NOTEBOOK_BUILD_RETRY_CONFIG.autoFixAttempts,
                 buildRequestRetries:
@@ -1456,11 +1487,14 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
               content: summaryInput,
               timestamp: Date.now(),
             } as const;
-            const systemPrompt = buildSystemPrompt("summary", {
-              docsContext: "Documentation context redacted.",
-              language,
-              diagramType: deps.appState.diagramType,
-            });
+            const systemPrompt = buildSystemPrompt(
+              "summary",
+              deps.buildLLMRequestContext({
+                docsContext: "Documentation context redacted.",
+                language,
+                diagramType: deps.appState.diagramType,
+              }),
+            );
             const summaryContextEvent = buildNotebookContextEvent({
               phase: "build",
               contextScope: "summary",
@@ -1482,8 +1516,11 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
                 summarizeBuild(
                   [summaryMessage],
                   deps.aiConfig,
-                  "",
-                  language,
+                  deps.buildLLMRequestContext({
+                    diagramType: deps.appState.diagramType,
+                    docsContext: "",
+                    language,
+                  }),
                   deps.modelParams,
                   signal,
                 ),
@@ -1530,7 +1567,7 @@ export const useNotebookBuild = (deps: NotebookBuildDeps) => {
         deps.setIsProcessing(false);
       }
     },
-    [applyNotebookMarkdown, deps],
+    [applyNotebookMarkdown, createEphemeralMessage, deps],
   );
 
   return { handleNotebookBuild };

@@ -16,6 +16,8 @@ import {
   updateSessionSettings,
   deleteSession as removeSession,
 } from '../../services/history/store';
+import { exportSessionBundle, importSessionBundle } from '../../services/history/bundle';
+import type { ImportSessionBundleOptions, SessionBundle } from '../../services/history/bundle';
 import type { DiagramRevision, HistorySession, SessionPreview, SessionSettings, SessionSnapshot, StepMeta, TimeStep, TimeStepType } from '../../services/history/types';
 
 export type HistoryLoadResult = {
@@ -106,7 +108,7 @@ export const useHistory = () => {
     } finally {
       setIsHistoryReady(true);
     }
-  }, [buildLoadResult, refreshSessions]);
+  }, [buildLoadResult]);
 
   const loadSession = useCallback(async (sessionId: string): Promise<HistoryLoadResult | null> => {
     try {
@@ -127,7 +129,7 @@ export const useHistory = () => {
     } finally {
       setIsHistoryReady(true);
     }
-  }, [buildLoadResult]);
+  }, [buildLoadResult, refreshSessions]);
 
   useEffect(() => {
     void loadHistory().then((res) => setHistoryLoadResult(res));
@@ -325,6 +327,29 @@ export const useHistory = () => {
     }
   }, []);
 
+  const exportProjectBundle = useCallback(async (sessionId: string) => {
+    try {
+      return await exportSessionBundle(sessionId);
+    } catch (e) {
+      console.error('Failed to export project bundle', e);
+      return null;
+    }
+  }, []);
+
+  const importProjectBundle = useCallback(
+    async (bundle: SessionBundle, options?: ImportSessionBundleOptions) => {
+      try {
+        const session = await importSessionBundle(bundle, options);
+        void refreshSessions();
+        return session;
+      } catch (e) {
+        console.error('Failed to import project bundle', e);
+        throw e;
+      }
+    },
+    [refreshSessions]
+  );
+
   return {
     isHistoryReady,
     historySession,
@@ -348,5 +373,7 @@ export const useHistory = () => {
     deleteUndoMs: DELETE_UNDO_MS,
     loadSessionPreview,
     loadSessionSnapshot,
+    exportProjectBundle,
+    importProjectBundle,
   };
 };

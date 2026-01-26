@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Folder, Plus, Trash2 } from 'lucide-react';
-import type { DiagramType } from '../types';
+import type { DiagramType, ThinkingStyle } from '../types';
 import type { HistorySession } from '../services/history/types';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
+import { Select } from './ui/Select';
 import DiagramTypePicker from './chat/DiagramTypePicker';
 import ProjectsMenu from './chat/ProjectsMenu';
 
@@ -17,6 +18,11 @@ type ChatProjectsProps = {
   onUndoDeleteProject: (sessionId: string) => void;
   onPreviewProjectSnapshot: (sessionId: string) => Promise<void>;
   onClearProjectPreview: () => void;
+  onExportProject: (sessionId: string) => Promise<void>;
+  onImportProject: (file: File, action?: 'copy' | 'overwrite' | 'open') => Promise<void>;
+  byoConfig: { url: string; anonKey: string };
+  onByoConfigChange: (updates: { url?: string; anonKey?: string }) => void;
+  onTestByoConfig: () => Promise<{ ok: boolean; error?: string }>;
   deleteUndoMs: number;
   diagramType: DiagramType;
   onDiagramTypeChange: (type: DiagramType) => void;
@@ -25,6 +31,8 @@ type ChatProjectsProps = {
   detectedDiagramType: DiagramType | null;
   notebookBuildCount: number | string | null;
   onNotebookBuildCountChange: (count: number | string | null) => void;
+  thinkingStyle: ThinkingStyle;
+  onThinkingStyleChange: (style: ThinkingStyle) => void;
   mode?: 'header' | 'panel';
   chatStatus?: 'idle' | 'running';
 };
@@ -39,6 +47,11 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   onUndoDeleteProject,
   onPreviewProjectSnapshot,
   onClearProjectPreview,
+  onExportProject,
+  onImportProject,
+  byoConfig,
+  onByoConfigChange,
+  onTestByoConfig,
   deleteUndoMs,
   diagramType,
   onDiagramTypeChange,
@@ -46,6 +59,8 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   onMainDiagramTypesChange,
   notebookBuildCount,
   onNotebookBuildCountChange,
+  thinkingStyle,
+  onThinkingStyleChange,
   mode = 'panel',
   chatStatus = 'idle',
 }) => {
@@ -56,6 +71,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   const [editingProjectTitle, setEditingProjectTitle] = useState('');
   const [undoProjectId, setUndoProjectId] = useState<string | null>(null);
   const [undoProjectTitle, setUndoProjectTitle] = useState('');
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
   const [isDiagramTypePickerOpen, setIsDiagramTypePickerOpen] = useState(false);
   const [diagramTypePickerPlacement, setDiagramTypePickerPlacement] = useState<'expanded' | 'active'>('expanded');
   const undoTimerRef = React.useRef<number | null>(null);
@@ -128,6 +144,20 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
     onNewProject();
     setIsExpanded(false);
     onClearProjectPreview();
+  };
+
+  const requestImport = async (file: File) => {
+    if (activeProjectId) {
+      setPendingImportFile(file);
+      return;
+    }
+    await onImportProject(file, 'copy');
+  };
+
+  const resolveImport = async (action: 'copy' | 'overwrite' | 'open') => {
+    if (!pendingImportFile) return;
+    await onImportProject(pendingImportFile, action);
+    setPendingImportFile(null);
   };
 
   useEffect(() => {
@@ -305,6 +335,21 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
             </span>
           </div>
           <div className="flex items-center justify-end gap-3 text-[11px] text-slate-500 dark:text-slate-400 min-h-7">
+            <div className="flex items-center gap-2">
+              <span>Style</span>
+              <Select
+                value={thinkingStyle}
+                onChange={(e) => onThinkingStyleChange(e.target.value as ThinkingStyle)}
+                size="xs"
+                className="w-[140px] h-7 text-[10px]"
+                aria-label="Thinking style"
+                title="Thinking style"
+              >
+                <option value="simple">Simple / Business</option>
+                <option value="engineering">Engineering / Technical</option>
+                <option value="strict_c4">Strict C4</option>
+              </Select>
+            </div>
             <DiagramTypePicker
               placement="active"
               isOpen={isDiagramTypePickerOpen && diagramTypePickerPlacement === 'active'}
@@ -338,7 +383,37 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
           onCancelEditingProject={cancelEditingProject}
           onOpenProject={handleOpenProject}
           onDeleteProject={handleDelete}
+          onExportProject={onExportProject}
+          onImportProject={requestImport}
+          byoConfig={byoConfig}
+          onByoConfigChange={onByoConfigChange}
+          onTestByoConfig={onTestByoConfig}
         />
+      )}
+
+      {pendingImportFile && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="w-[360px] rounded-lg border border-[var(--panel-border)] bg-[var(--panel-bg)] p-4 shadow-xl">
+            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Import конфликт</div>
+            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              В активном проекте есть изменения. Что сделать с импортом?
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setPendingImportFile(null)}>
+                Cancel
+              </Button>
+              <Button type="button" variant="outline" onClick={() => resolveImport('open')}>
+                Open current
+              </Button>
+              <Button type="button" variant="outline" onClick={() => resolveImport('copy')}>
+                Save as copy
+              </Button>
+              <Button type="button" variant="danger" onClick={() => resolveImport('overwrite')}>
+                Overwrite
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

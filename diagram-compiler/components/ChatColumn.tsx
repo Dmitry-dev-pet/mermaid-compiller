@@ -73,11 +73,18 @@ interface ChatColumnProps {
   onUndoDeleteProject: (sessionId: string) => void;
   onPreviewProjectSnapshot: (sessionId: string) => Promise<void>;
   onClearProjectPreview: () => void;
+  onExportProject: (sessionId: string) => Promise<void>;
+  onImportProject: (file: File, action?: "copy" | "overwrite" | "open") => Promise<void>;
+  byoConfig: { url: string; anonKey: string };
+  onByoConfigChange: (updates: { url?: string; anonKey?: string }) => void;
+  onTestByoConfig: () => Promise<{ ok: boolean; error?: string }>;
   deleteUndoMs: number;
   notebookBuildCount: number | string | null;
   onNotebookBuildCountChange: (count: number | string | null) => void;
   llmTimeoutMs: number;
   appLanguage: string;
+  thinkingStyle: import("../types").ThinkingStyle;
+  onThinkingStyleChange: (style: import("../types").ThinkingStyle) => void;
   operationLogs?: OperationLog[];
   activeOperationKind?: "chat" | "build" | "analyze" | "fix" | "compile" | null;
   onOpenBuildDocsFile?: (
@@ -117,11 +124,18 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
   onUndoDeleteProject,
   onPreviewProjectSnapshot,
   onClearProjectPreview,
+  onExportProject,
+  onImportProject,
+  byoConfig,
+  onByoConfigChange,
+  onTestByoConfig,
   deleteUndoMs,
   notebookBuildCount,
   onNotebookBuildCountChange,
   llmTimeoutMs,
   appLanguage,
+  thinkingStyle,
+  onThinkingStyleChange,
   intentText,
   operationLogs,
   activeOperationKind,
@@ -201,6 +215,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
     isNotebookChatMode,
     operationLogs,
   });
+  const isSmartZeroState =
+    chatMessages.length === 0 &&
+    unanchoredLogs.length === 0 &&
+    !isProcessing &&
+    !isNotebookChatMode;
 
   const formatRequestPreview = useCallback(
     (preview: LLMRequestPreview, options: { redactDocs: boolean }) => {
@@ -247,7 +266,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
     if (mode === "chat") {
       if (!input.trim()) return;
-      onChat(input);
+      if (isSmartZeroState) {
+        onBuild(input);
+      } else {
+        onChat(input);
+      }
       setInput("");
       return;
     }
@@ -392,6 +415,11 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         onUndoDeleteProject={onUndoDeleteProject}
         onPreviewProjectSnapshot={onPreviewProjectSnapshot}
         onClearProjectPreview={onClearProjectPreview}
+        onExportProject={onExportProject}
+        onImportProject={onImportProject}
+        byoConfig={byoConfig}
+        onByoConfigChange={onByoConfigChange}
+        onTestByoConfig={onTestByoConfig}
         deleteUndoMs={deleteUndoMs}
         diagramType={diagramType}
         onDiagramTypeChange={onDiagramTypeChange}
@@ -400,6 +428,8 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
         detectedDiagramType={detectedDiagramType}
         notebookBuildCount={notebookBuildCount}
         onNotebookBuildCountChange={onNotebookBuildCountChange}
+        thinkingStyle={thinkingStyle}
+        onThinkingStyleChange={onThinkingStyleChange}
       />
       {headerAddon}
 
@@ -435,6 +465,13 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
             unanchoredLogs={unanchoredLogs}
             llmTimeoutMs={llmTimeoutMs}
             appLanguage={appLanguage}
+            isZeroState={isSmartZeroState}
+            onZeroStatePrompt={(prompt) => {
+              if (isProcessing) return;
+              setInput(prompt);
+              onBuild(prompt);
+              setInput("");
+            }}
             onOpenNotebookBlock={onOpenNotebookBlock}
             onOpenBuildDocsFile={onOpenBuildDocsFile}
             isProcessing={isProcessing}
@@ -498,7 +535,9 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
             <div className="flex flex-wrap items-center justify-end gap-2">
               <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline whitespace-nowrap">
-                Enter: Chat • Ctrl/Cmd+Enter: Build
+                {isSmartZeroState
+                  ? "Enter: Build • Ctrl/Cmd+Enter: Build"
+                  : "Enter: Chat • Ctrl/Cmd+Enter: Build"}
               </span>
               {isProcessing && onStop && (
                 <Button

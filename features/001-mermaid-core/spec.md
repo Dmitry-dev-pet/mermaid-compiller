@@ -136,6 +136,45 @@ UI (Build Docs):
 - Planner также использует docs context, но не привязан к одному блоку; его задача — подобрать типы диаграмм и независимые промпты.
 - Chat в notebook-режиме возвращает intent для planner (структура с разделами Summary/Diagrams/Glossary/Constraints/Open questions).
 
+## Новая инициатива: Storage Providers + Cloud Sync (опционально)
+
+### Цели
+- Добавить провайдеры хранения проектов: `Local (IndexedDB)`, `Cloud (Hosted Supabase)`, `Cloud (BYO Supabase)`.
+- Сделать cloud-синк **опциональным** (opt-in), default — локально.
+- Поддержать **E2EE** (шифрование на клиенте) для облака.
+- Базовый UX: backup/export/import для проектов как единый bundle.
+- Шаринг: анонимные share-ссылки `viewer/editor` для cloud провайдеров.
+
+### Базовые допущения
+- Проект = `HistorySession` (session + steps + revisions) — текущая модель.
+- Для MVP cloud-синка допускается хранить проект **целиком** одним blob’ом (без событий/снапшотов).
+- История/логи/чаты включаются в bundle проекта (минимально — для восстановления).
+- Вложения/файлы: не входят в MVP (можно добавить позже как отдельный модуль).
+
+### Требования (MVP)
+- **Local provider**: экспорт/импорт проекта (JSON bundle).
+- **Hosted Supabase provider**:
+  - Auth (email/OAuth).
+  - Таблица `projects` с полем `blob` (ciphertext или plaintext).
+  - Optimistic concurrency через `version`.
+  - Share-link viewer/editor через Edge Functions.
+- **BYO Supabase provider**:
+  - Настройка `SUPABASE_URL` + `ANON_KEY`.
+  - Та же схема/Edge Functions (или минимальный REST контракт).
+- **E2EE**:
+  - Клиентское шифрование `AES-GCM`.
+  - Key management через passphrase (KDF) + wrapped vault key.
+  - Share-link содержит секрет ключа в `#fragment` URL (сервер не получает ключ).
+- **Конфликты**:
+  - `put` с `baseVersion` и 409 при конфликте.
+  - UX: overwrite / open cloud / save copy.
+
+### Нефункциональные требования
+- Не ломать текущий offline-first флоу.
+- Сохранять совместимость с текущими сессиями.
+- Строгая типизация, без `any`.
+- UI в hooks, компоненты остаются презентационными.
+
 ## Constraints
 
 - Keep UI state in hooks; components should remain presentation-focused.

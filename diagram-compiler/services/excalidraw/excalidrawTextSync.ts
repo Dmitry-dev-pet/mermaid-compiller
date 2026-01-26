@@ -32,7 +32,7 @@ export const buildContainerTextMap = (elements: readonly OrderedExcalidrawElemen
     if (containerId) {
       map.set(keyForContainer(containerId), { text, originalText });
     }
-    const id = typeof (el as any).id === 'string' ? String((el as any).id) : '';
+    const id = typeof el.id === 'string' ? String(el.id) : '';
     if (id) {
       map.set(keyForId(id), { text, originalText });
     }
@@ -54,7 +54,7 @@ export const applyContainerTextMap = (
   const next = elements.map((el) => {
     if (!isTextElement(el)) return el;
     const containerId = typeof el.containerId === 'string' ? el.containerId : '';
-    const id = typeof (el as any).id === 'string' ? String((el as any).id) : '';
+    const id = typeof el.id === 'string' ? String(el.id) : '';
     const target =
       (containerId ? map.get(keyForContainer(containerId)) : undefined)
       ?? (id ? map.get(keyForId(id)) : undefined);

@@ -21,6 +21,9 @@ const validateDiagram = (diagram: unknown, index: number, errors: string[]) => {
   if (!isNonEmptyString(diagram.title)) {
     errors.push(`diagram[${index}].title is missing`);
   }
+  if (!isNonEmptyString(diagram.description)) {
+    errors.push(`diagram[${index}].description is missing`);
+  }
   if (!isNonEmptyString(diagram.buildPrompt)) {
     errors.push(`diagram[${index}].buildPrompt is missing`);
   }

@@ -2,7 +2,6 @@ import type {
   AIConfig,
   Message,
   Model,
-  DiagramType,
   ModelParams,
 } from "../../types";
 import { LLMProviderStrategy } from "./LLMProviderStrategy";
@@ -163,16 +162,16 @@ export class CliproxyStrategy implements LLMProviderStrategy {
   async generateDiagram(
     messages: Message[],
     config: AIConfig,
-    diagramType: DiagramType,
-    docsContext: string,
-    language: string,
+    context: import("./types").LLMRequestContext,
     modelParams?: ModelParams | null,
     signal?: AbortSignal | null,
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt("generate", {
-      diagramType,
-      docsContext,
-      language,
+      diagramType: context.diagramType ?? "auto",
+      docsContext: context.docsContext,
+      language: context.language,
+      allowedDiagramTypes: context.allowedDiagramTypes,
+      thinkingStyle: context.thinkingStyle,
     });
     return this.fetchCompletion(
       messages,
@@ -187,12 +186,15 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     code: string,
     errorMessage: string,
     config: AIConfig,
-    docsContext: string,
-    language: string,
+    context: import("./types").LLMRequestContext,
     modelParams?: ModelParams | null,
     signal?: AbortSignal | null,
   ): Promise<string> {
-    const systemPrompt = buildSystemPrompt("fix", { docsContext, language });
+    const systemPrompt = buildSystemPrompt("fix", {
+      docsContext: context.docsContext,
+      language: context.language,
+      thinkingStyle: context.thinkingStyle,
+    });
 
     const fixMsg: Message = {
       id: "fix-req",
@@ -221,16 +223,16 @@ Fix it.`,
   async chat(
     messages: Message[],
     config: AIConfig,
-    diagramType: DiagramType,
-    docsContext: string,
-    language: string,
+    context: import("./types").LLMRequestContext,
     modelParams?: ModelParams | null,
     signal?: AbortSignal | null,
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt("chat", {
-      diagramType,
-      docsContext,
-      language,
+      diagramType: context.diagramType ?? "auto",
+      docsContext: context.docsContext,
+      language: context.language,
+      allowedDiagramTypes: context.allowedDiagramTypes,
+      thinkingStyle: context.thinkingStyle,
     });
     return this.fetchCompletion(
       messages,
@@ -244,16 +246,16 @@ Fix it.`,
   async chatDiagram(
     messages: Message[],
     config: AIConfig,
-    diagramType: DiagramType,
-    docsContext: string,
-    language: string,
+    context: import("./types").LLMRequestContext,
     modelParams?: ModelParams | null,
     signal?: AbortSignal | null,
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt("chat_diagram", {
-      diagramType,
-      docsContext,
-      language,
+      diagramType: context.diagramType ?? "auto",
+      docsContext: context.docsContext,
+      language: context.language,
+      allowedDiagramTypes: context.allowedDiagramTypes,
+      thinkingStyle: context.thinkingStyle,
     });
     return this.fetchCompletion(
       messages,
@@ -267,18 +269,16 @@ Fix it.`,
   async chatNotebook(
     messages: Message[],
     config: AIConfig,
-    diagramType: DiagramType,
-    docsContext: string,
-    language: string,
-    allowedDiagramTypes: DiagramType[] | null,
+    context: import("./types").LLMRequestContext,
     modelParams?: ModelParams | null,
     signal?: AbortSignal | null,
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt("chat_notebook", {
-      diagramType,
-      allowedDiagramTypes,
-      docsContext,
-      language,
+      diagramType: context.diagramType ?? "auto",
+      allowedDiagramTypes: context.allowedDiagramTypes ?? null,
+      docsContext: context.docsContext,
+      language: context.language,
+      thinkingStyle: context.thinkingStyle,
     });
     return this.fetchCompletion(
       messages,
@@ -292,14 +292,14 @@ Fix it.`,
   async analyzeDiagram(
     code: string,
     config: AIConfig,
-    docsContext: string,
-    language: string,
+    context: import("./types").LLMRequestContext,
     modelParams?: ModelParams | null,
     signal?: AbortSignal | null,
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt("analyze", {
-      docsContext,
-      language,
+      docsContext: context.docsContext,
+      language: context.language,
+      thinkingStyle: context.thinkingStyle,
     });
 
     const analyzeMsg: Message = {
@@ -326,14 +326,16 @@ ${code}
   async planNotebook(
     messages: Message[],
     config: AIConfig,
-    docsContext: string,
-    language: string,
+    context: import("./types").LLMRequestContext,
     modelParams?: ModelParams | null,
     signal?: AbortSignal | null,
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt("plan_notebook", {
-      docsContext,
-      language,
+      docsContext: context.docsContext,
+      language: context.language,
+      diagramType: context.diagramType ?? "auto",
+      allowedDiagramTypes: context.allowedDiagramTypes ?? null,
+      thinkingStyle: context.thinkingStyle,
     });
     return this.fetchCompletion(
       messages,
@@ -347,14 +349,16 @@ ${code}
   async summarizeBuild(
     messages: Message[],
     config: AIConfig,
-    docsContext: string,
-    language: string,
+    context: import("./types").LLMRequestContext,
     modelParams?: ModelParams | null,
     signal?: AbortSignal | null,
   ): Promise<string> {
     const systemPrompt = buildSystemPrompt("summary", {
-      docsContext,
-      language,
+      docsContext: context.docsContext,
+      language: context.language,
+      diagramType: context.diagramType ?? "auto",
+      allowedDiagramTypes: context.allowedDiagramTypes ?? null,
+      thinkingStyle: context.thinkingStyle,
     });
     return this.fetchCompletion(
       messages,

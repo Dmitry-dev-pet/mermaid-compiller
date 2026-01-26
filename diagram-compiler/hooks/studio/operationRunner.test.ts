@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createStudioOperationRunner } from './operationRunner';
 import { runLLMRequest } from '../../services/llmRequestRunner';
+import type { runLLMRequest as runLLMRequestType } from '../../services/llmRequestRunner';
+
+type RunLLMRequestArgs = Parameters<typeof runLLMRequestType>[0];
 
 vi.mock('../../services/llmRequestRunner', () => ({
-  runLLMRequest: vi.fn(async (args: any) => {
+  runLLMRequest: vi.fn(async (args: RunLLMRequestArgs) => {
     args.onStart?.({ task: args.task });
     args.onTimeout?.({ attempt: 1, maxAttempts: 2, error: new Error('timeout'), task: args.task });
     const result = await args.run();

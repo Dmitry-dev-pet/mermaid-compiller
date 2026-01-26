@@ -101,9 +101,11 @@ export const createRecompileHandler = (ctx: StudioContext) => {
               generateDiagram(
                 llmMessages,
                 ctx.aiConfig,
-                ctx.appState.diagramType,
-                docs,
-                language,
+                ctx.buildLLMRequestContext({
+                  diagramType: ctx.appState.diagramType,
+                  docsContext: docs,
+                  language,
+                }),
                 ctx.modelParams,
                 signal,
               ),
@@ -276,9 +278,11 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
             timestamp: Date.now(),
           };
           const systemPrompt = buildSystemPrompt("fix", {
-            diagramType: detectedDiagramType,
-            docsContext: "Documentation context redacted.",
-            language,
+            ...ctx.buildLLMRequestContext({
+              diagramType: detectedDiagramType ?? ctx.appState.diagramType,
+              docsContext: "Documentation context redacted.",
+              language,
+            }),
           });
           const fixContextEvent = buildContextEventForLog({
             phase: "fix",
@@ -347,8 +351,11 @@ export const createFixSyntaxHandler = (ctx: StudioContext) => {
                       ctx.mermaidState.errorMessage ||
                       "Unknown error",
                     ctx.aiConfig,
-                    docs,
-                    language,
+                    ctx.buildLLMRequestContext({
+                      diagramType: detectedDiagramType ?? ctx.appState.diagramType,
+                      docsContext: docs,
+                      language,
+                    }),
                     ctx.modelParams,
                     signal,
                   ),
@@ -581,11 +588,14 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
             content: analysisInput,
             timestamp: Date.now(),
           };
-          const systemPrompt = buildSystemPrompt("analyze", {
-            diagramType: detectedDiagramType,
-            docsContext: "Documentation context redacted.",
-            language,
-          });
+          const systemPrompt = buildSystemPrompt(
+            "analyze",
+            ctx.buildLLMRequestContext({
+              diagramType: detectedDiagramType,
+              docsContext: "Documentation context redacted.",
+              language,
+            }),
+          );
           const analyzeContextEvent = buildContextEventForLog({
             phase: "analyze",
             contextScope: "analyze",
@@ -613,8 +623,11 @@ export const createAnalyzeHandler = (ctx: StudioContext) => {
               analyzeDiagram(
                 analysisInput,
                 ctx.aiConfig,
-                docs,
-                language,
+                ctx.buildLLMRequestContext({
+                  diagramType: detectedDiagramType ?? ctx.appState.diagramType,
+                  docsContext: docs,
+                  language,
+                }),
                 ctx.modelParams,
                 signal,
               ),

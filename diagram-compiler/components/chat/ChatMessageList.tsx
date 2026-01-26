@@ -1,10 +1,12 @@
 import React from "react";
-import { ArrowUpRight, MessageSquare } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import type { Message, OperationLog } from "../../types";
 import ChatOperationLog from "./ChatOperationLog";
 import { Button } from "../ui/Button";
 import { parseNotebookBuildMessage } from "./chatMessageUtils";
 import { detectLanguage } from "../../utils";
+import SmartZeroState from "./SmartZeroState";
+import { DEFAULT_ZERO_STATE_PRESETS } from "../../services/zeroStatePresets";
 
 type ChatMessageListProps = {
   messages: Message[];
@@ -24,6 +26,8 @@ type ChatMessageListProps = {
   getStatusStyle: (mode?: Message["mode"]) => string;
   summarizeBuildLog: (log: OperationLog) => string;
   chatSummaryMessage: string | null;
+  isZeroState?: boolean;
+  onZeroStatePrompt?: (prompt: string) => void;
   messagesContainerRef: React.RefObject<HTMLDivElement>;
   messagesEndRef: React.RefObject<HTMLDivElement>;
   onMessagesScroll: () => void;
@@ -43,10 +47,14 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   getStatusStyle,
   summarizeBuildLog,
   chatSummaryMessage,
+  isZeroState = false,
+  onZeroStatePrompt,
   messagesContainerRef,
   messagesEndRef,
   onMessagesScroll,
 }) => {
+  const shouldShowZeroState =
+    isZeroState && !unanchoredLogs.length && !isProcessing;
   return (
     <div
       ref={messagesContainerRef}
@@ -69,14 +77,15 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
             </div>
           ))}
           {isProcessing && null}
-          {!unanchoredLogs.length && !isProcessing && (
-            <div className="flex flex-col items-start justify-start text-slate-400 dark:text-slate-500 text-sm text-left px-4 py-3">
-              <MessageSquare size={24} className="mb-2 opacity-50" />
-              <p>Describe your system or process here.</p>
-              <p className="text-xs mt-1">
-                "User logs in, then checks balance..."
-              </p>
-            </div>
+          {shouldShowZeroState && (
+            <SmartZeroState
+              title="Системное исследование"
+              headline="Преврати идею в архитектуру"
+              subtitle="Опиши продукт — я соберу notebook из 3–5 диаграмм и дам контекст."
+              hint="Enter — запуск исследования • Cmd/Ctrl+Enter — Build"
+              presets={DEFAULT_ZERO_STATE_PRESETS}
+              onSelectPreset={onZeroStatePrompt}
+            />
           )}
         </>
       ) : (

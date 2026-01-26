@@ -4,6 +4,7 @@ import { buildSystemPrompt } from '../../services/llm/prompts';
 import { detectLanguage } from '../../utils';
 import { validateMermaidDiagramCode } from '../../services/mermaidService';
 import { normalizeIntentText, resolveIntentFromInput } from '../../utils/intent';
+import type { LLMRequestContext } from '../../services/llm/types';
 
 type ResolveActiveMermaidContext = () => {
   code: string;
@@ -17,6 +18,7 @@ type UsePromptPreviewArgs = {
   mainDiagramTypes: DiagramType[];
   analyzeLanguage: string;
   appLanguage: string;
+  thinkingStyle?: import("../../types").ThinkingStyle;
   isNotebookChatMode: boolean;
   isNotebookDataEnabled: boolean;
   promptScope?: 'notebook' | 'diagram' | null;
@@ -39,6 +41,7 @@ export const usePromptPreview = ({
   mainDiagramTypes,
   analyzeLanguage,
   appLanguage,
+  thinkingStyle,
   isNotebookChatMode,
   isNotebookDataEnabled,
   promptScope = null,
@@ -104,6 +107,21 @@ ${code}
     };
   }, [resolveActiveMermaidContext, resolvedPromptScope]);
 
+  const buildRequestContext = useCallback((
+    args: {
+      diagramType?: DiagramType;
+      docsContext: string;
+      language: string;
+      allowedDiagramTypes?: DiagramType[] | null;
+    }
+  ): LLMRequestContext => ({
+    diagramType: args.diagramType ?? diagramType,
+    docsContext: args.docsContext,
+    language: args.language,
+    allowedDiagramTypes: args.allowedDiagramTypes ?? (diagramType === 'auto' ? mainDiagramTypes : null),
+    thinkingStyle,
+  }), [diagramType, mainDiagramTypes, thinkingStyle]);
+
   const buildPromptPreview = useCallback(async (mode: PromptPreviewMode, inputText: string): Promise<LLMRequestPreview> => {
     const trimmed = inputText.trim();
     const relevantMessages = messages.filter((m) => m.id !== 'init');
@@ -112,17 +130,16 @@ ${code}
       const docsContext = await getDocsContext('plan');
       const language = resolvePreviewLanguage(trimmed, relevantMessages);
       const allowedNotebookTypes = diagramType === 'auto' ? mainDiagramTypes : null;
-      const systemPrompt = buildSystemPrompt('plan_notebook', {
+      const context = buildRequestContext({
+        diagramType,
         docsContext,
         language,
-        diagramType,
         allowedDiagramTypes: allowedNotebookTypes,
       });
+      const systemPrompt = buildSystemPrompt('plan_notebook', context);
       const systemPromptRedacted = buildSystemPrompt('plan_notebook', {
+        ...context,
         docsContext: 'Documentation context redacted.',
-        language,
-        diagramType,
-        allowedDiagramTypes: allowedNotebookTypes,
       });
       const basis =
         trimmed ||
@@ -155,15 +172,15 @@ ${code}
         mode === 'analyze'
           ? resolvePreviewAnalyzeLanguage(relevantMessages)
           : resolvePreviewLanguage(trimmed, relevantMessages);
-      const systemPrompt = buildSystemPrompt(mode, {
+      const context = buildRequestContext({
         diagramType: activeDiagramType,
         docsContext,
         language,
       });
+      const systemPrompt = buildSystemPrompt(mode, context);
       const systemPromptRedacted = buildSystemPrompt(mode, {
-        diagramType: activeDiagramType,
+        ...context,
         docsContext: 'Documentation context redacted.',
-        language,
       });
 
       if (!code) {
@@ -261,16 +278,20 @@ Fix it.`,
           : 'chat';
     const allowedNotebookTypes = diagramType === 'auto' ? mainDiagramTypes : null;
     const systemPrompt = buildSystemPrompt(promptMode, {
-      diagramType,
-      allowedDiagramTypes: allowedNotebookTypes,
-      docsContext,
-      language,
+      ...buildRequestContext({
+        diagramType,
+        docsContext,
+        language,
+        allowedDiagramTypes: allowedNotebookTypes,
+      }),
     });
     const systemPromptRedacted = buildSystemPrompt(promptMode, {
-      diagramType,
-      allowedDiagramTypes: allowedNotebookTypes,
-      docsContext: 'Documentation context redacted.',
-      language,
+      ...buildRequestContext({
+        diagramType,
+        docsContext: 'Documentation context redacted.',
+        language,
+        allowedDiagramTypes: allowedNotebookTypes,
+      }),
     });
 
     let previewMessages = [...relevantMessages];
@@ -326,15 +347,13 @@ Fix it.`,
     diagramType,
     getDocsContext,
     getDiagramContextMessage,
-    isNotebookChatMode,
-    isNotebookDataEnabled,
     mainDiagramTypes,
     messages,
-    promptScope,
     resolvedPromptScope,
     resolveActiveMermaidContext,
     resolvePreviewAnalyzeLanguage,
     resolvePreviewLanguage,
+    buildRequestContext,
   ]);
 
   const setPromptPreview = useCallback((

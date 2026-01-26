@@ -145,16 +145,31 @@ const namespaceScene = (
     if (typeof el.fileId === 'string') {
       el.fileId = mapId(el.fileId, fileIdMap, 'file');
     }
-    if (typeof el.startBinding === 'object' && el.startBinding && typeof (el.startBinding as any).elementId === 'string') {
-      (el.startBinding as any).elementId = mapId((el.startBinding as any).elementId, elementIdMap, 'el');
+    if (typeof el.startBinding === 'object' && el.startBinding) {
+      const startBinding = el.startBinding as { elementId?: unknown };
+      if (typeof startBinding.elementId === 'string') {
+        el.startBinding = {
+          ...startBinding,
+          elementId: mapId(startBinding.elementId, elementIdMap, 'el'),
+        } as typeof el.startBinding;
+      }
     }
-    if (typeof el.endBinding === 'object' && el.endBinding && typeof (el.endBinding as any).elementId === 'string') {
-      (el.endBinding as any).elementId = mapId((el.endBinding as any).elementId, elementIdMap, 'el');
+    if (typeof el.endBinding === 'object' && el.endBinding) {
+      const endBinding = el.endBinding as { elementId?: unknown };
+      if (typeof endBinding.elementId === 'string') {
+        el.endBinding = {
+          ...endBinding,
+          elementId: mapId(endBinding.elementId, elementIdMap, 'el'),
+        } as typeof el.endBinding;
+      }
     }
     if (Array.isArray(el.boundElements)) {
-      el.boundElements = el.boundElements.map((b: any) => {
+      el.boundElements = el.boundElements.map((b) => {
         if (!b || typeof b !== 'object') return b;
-        if (typeof b.id === 'string') return { ...b, id: mapId(b.id, elementIdMap, 'el') };
+        const id = (b as { id?: unknown }).id;
+        if (typeof id === 'string') {
+          return { ...(b as Record<string, unknown>), id: mapId(id, elementIdMap, 'el') };
+        }
         return b;
       });
     }
@@ -163,7 +178,8 @@ const namespaceScene = (
   if (filesRaw) {
     for (const [id, file] of Object.entries(filesRaw)) {
       const nextId = mapId(id, fileIdMap, 'file') as string;
-      files[nextId] = { ...(file as any), id: nextId } as any;
+      const fileRecord = file && typeof file === 'object' ? (file as Record<string, unknown>) : {};
+      files[nextId] = { ...fileRecord, id: nextId } as BinaryFileData;
     }
   }
 
@@ -185,12 +201,13 @@ const getElementsBounds = (elements: readonly Record<string, unknown>[]): Bounds
 
   for (const el of elements) {
     if (!el || typeof el !== 'object') continue;
-    if ((el as any).isDeleted === true) continue;
-    const x = typeof (el as any).x === 'number' ? (el as any).x : null;
-    const y = typeof (el as any).y === 'number' ? (el as any).y : null;
+    const rec = el as Record<string, unknown>;
+    if (rec.isDeleted === true) continue;
+    const x = typeof rec.x === 'number' ? rec.x : null;
+    const y = typeof rec.y === 'number' ? rec.y : null;
     if (x === null || y === null) continue;
 
-    const points = Array.isArray((el as any).points) ? (el as any).points : null;
+    const points = Array.isArray(rec.points) ? rec.points : null;
     if (Array.isArray(points) && points.length >= 1) {
       for (const p of points) {
         if (!Array.isArray(p) || p.length !== 2) continue;
@@ -202,8 +219,8 @@ const getElementsBounds = (elements: readonly Record<string, unknown>[]): Bounds
       continue;
     }
 
-    const w = typeof (el as any).width === 'number' ? (el as any).width : null;
-    const h = typeof (el as any).height === 'number' ? (el as any).height : null;
+    const w = typeof rec.width === 'number' ? rec.width : null;
+    const h = typeof rec.height === 'number' ? rec.height : null;
     if (w !== null && h !== null) {
       visitPoint(x, y);
       visitPoint(x + w, y + h);
@@ -226,13 +243,17 @@ const offsetElements = (
 ) => {
   return elements.map((el) => {
     if (!el || typeof el !== 'object') return el;
-    const x = typeof (el as any).x === 'number' ? (el as any).x : null;
-    const y = typeof (el as any).y === 'number' ? (el as any).y : null;
+    const rec = el as Record<string, unknown>;
+    const x = typeof rec.x === 'number' ? rec.x : null;
+    const y = typeof rec.y === 'number' ? rec.y : null;
     if (x === null || y === null) return el;
     const next: Record<string, unknown> = { ...el, x: x + dx, y: y + dy };
     if (typeof notebookIndex === 'number') {
-      const existing = (next as any).customData;
-      next.customData = { ...(existing && typeof existing === 'object' ? existing : {}), __mlgNotebookIndex: notebookIndex };
+      const existing = (next as { customData?: unknown }).customData;
+      next.customData = {
+        ...(existing && typeof existing === 'object' ? (existing as Record<string, unknown>) : {}),
+        __mlgNotebookIndex: notebookIndex,
+      };
     }
     return next;
   });
@@ -283,7 +304,7 @@ const buildMermaidSvgImageScene = async (args: {
     };
     const files: BinaryFiles = { [fileId]: file };
     const elements = convertToExcalidrawElements(
-      [{ type: 'image', fileId, x: 0, y: 0, width, height, locked: true }] as any,
+      [{ type: 'image', fileId, x: 0, y: 0, width, height, locked: true }] as unknown as Parameters<typeof convertToExcalidrawElements>[0],
       { regenerateIds: false }
     ) as unknown as Array<Record<string, unknown>>;
 
@@ -446,7 +467,7 @@ export const buildNotebookExcalidrawScene = async (args: {
       const label = `${shortType} — ${title}`;
       const imgBounds = getElementsBounds(imgElements);
       scenes.push({
-        elements: imgElements as any,
+        elements: imgElements,
         files: imgFiles,
         bounds: imgBounds ?? fallback.bounds,
         title,
@@ -505,16 +526,18 @@ export const buildNotebookExcalidrawScene = async (args: {
     yOffset += headerHeight + scene.bounds.height + padY * 2;
   }
 
+  const appState: ExcalidrawInitialDataState['appState'] = {
+    theme: args.theme,
+    viewBackgroundColor: args.previewBackgroundColor ?? undefined,
+  };
+
   return {
     type: 'excalidraw',
     version: 2,
     source: 'mermaid-langgraph',
-    elements: mergedElements as any,
-    files: mergedFiles as any,
+    elements: mergedElements as unknown as ExcalidrawInitialDataState['elements'],
+    files: mergedFiles,
     scrollToContent: true,
-    appState: {
-      theme: args.theme,
-      viewBackgroundColor: args.previewBackgroundColor ?? undefined,
-    } as any,
+    appState,
   };
 };

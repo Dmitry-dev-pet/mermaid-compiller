@@ -99,6 +99,11 @@ function App() {
     renameProject,
     removeProject,
     undoRemoveProject,
+    exportProject,
+    importProject,
+    byoConfig,
+    updateByoConfig,
+    testByoConfig,
     deleteUndoMs,
 	    showProjectPreview,
 	    clearProjectPreview,
@@ -109,6 +114,7 @@ function App() {
 	    togglePreviewFullScreen,
     toggleScrollSync,
     setNotebookBuildCount,
+    setThinkingStyle,
     buildDocsIntentText,
     buildPromptPreview,
     setPromptPreview,
@@ -475,6 +481,11 @@ function App() {
             onPreviewProjectSnapshot={showProjectPreview}
             onClearProjectPreview={clearProjectPreview}
             deleteUndoMs={deleteUndoMs}
+            onExportProject={exportProject}
+            onImportProject={importProject}
+            byoConfig={byoConfig}
+            onByoConfigChange={updateByoConfig}
+            onTestByoConfig={testByoConfig}
             diagramType={appState.diagramType}
             onDiagramTypeChange={setDiagramType}
             mainDiagramTypes={appState.mainDiagramTypes}
@@ -482,6 +493,8 @@ function App() {
             detectedDiagramType={detectedDiagramType}
             notebookBuildCount={appState.notebookBuildCount}
             onNotebookBuildCountChange={setNotebookBuildCount}
+            thinkingStyle={appState.thinkingStyle}
+            onThinkingStyleChange={setThinkingStyle}
           />
         }
       />
@@ -524,11 +537,18 @@ function App() {
                 onUndoDeleteProject={undoRemoveProject}
                 onPreviewProjectSnapshot={showProjectPreview}
                 onClearProjectPreview={clearProjectPreview}
+                onExportProject={exportProject}
+                onImportProject={importProject}
+                byoConfig={byoConfig}
+                onByoConfigChange={updateByoConfig}
+                onTestByoConfig={testByoConfig}
                 deleteUndoMs={deleteUndoMs}
                 buildDocsSelectionKey={buildDocsSelectionKey}
                 promptPreviewKey={promptPreviewKey}
                 notebookBuildCount={appState.notebookBuildCount}
                 onNotebookBuildCountChange={setNotebookBuildCount}
+                thinkingStyle={appState.thinkingStyle}
+                onThinkingStyleChange={setThinkingStyle}
                 llmTimeoutMs={appState.llmTimeoutMs}
                 appLanguage={appState.language}
                 intentText={buildDocsIntentText}

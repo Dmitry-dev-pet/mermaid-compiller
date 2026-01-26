@@ -126,7 +126,7 @@ export const useDiagramExport = ({ svgRef, code, theme, appThemePresetId }: UseD
     } finally {
       setIsExporting(false);
     }
-  }, [filenameBase, renderPngCompatibleSvg, svgRef, theme]);
+  }, [appThemePresetId, code, filenameBase, renderPngCompatibleSvg, svgRef]);
 
   return {
     exportSvg,

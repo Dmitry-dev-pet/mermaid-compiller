@@ -1,4 +1,4 @@
-import type { DiagramType } from "../../types";
+import type { DiagramType, ThinkingStyle } from "../../types";
 import type { PromptLanguage } from "./prompts/types";
 import { ANALYZE_TEMPLATES } from "./prompts/analyze";
 import { CHAT_TEMPLATES } from "./prompts/chat";
@@ -25,6 +25,7 @@ type PromptArgs = {
   allowedDiagramTypes?: DiagramType[] | null;
   docsContext: string;
   language: string;
+  thinkingStyle?: ThinkingStyle;
 };
 
 type TemplateValues = {
@@ -81,6 +82,33 @@ const getLanguageInstruction = (
   return promptLanguage === "Russian"
     ? "\nВАЖНО: отвечай на русском."
     : "\nIMPORTANT: Respond in English.";
+};
+
+const getThinkingStyleInstruction = (
+  style: ThinkingStyle | undefined,
+  promptLanguage: PromptLanguage,
+) => {
+  if (!style) return "";
+  if (promptLanguage === "Russian") {
+    switch (style) {
+      case "engineering":
+        return "Стиль мышления: Engineering/Technical. Давай технические детали, методы, API и типы данных, но без лишней воды.";
+      case "strict_c4":
+        return "Стиль мышления: Strict C4. Используй строгую нотацию C4 и уровень Context → Container; избегай углубления в компоненты, если не попросили.";
+      case "simple":
+      default:
+        return "Стиль мышления: Simple/Business. Суть и ценность без технических деталей.";
+    }
+  }
+  switch (style) {
+    case "engineering":
+      return "Thinking style: Engineering/Technical. Include technical details, methods, APIs, and data types without extra fluff.";
+    case "strict_c4":
+      return "Thinking style: Strict C4. Use strict C4 notation and focus on Context → Container; avoid component-level depth unless asked.";
+    case "simple":
+    default:
+      return "Thinking style: Simple/Business. Focus on clarity and business value without deep technical detail.";
+  }
 };
 
 const getDiagramTypeValues = (
@@ -928,11 +956,17 @@ export const buildSystemPrompt = (
     promptLanguage,
   );
   const docsContext = args.docsContext;
-
-  return renderTemplate(template, {
+  const basePrompt = renderTemplate(template, {
     typeRule,
     diagramTypeValues,
     languageInstruction,
     docsContext,
   });
+  const thinkingStyleInstruction = getThinkingStyleInstruction(
+    args.thinkingStyle,
+    promptLanguage,
+  );
+  return thinkingStyleInstruction
+    ? `${basePrompt}\n\n${thinkingStyleInstruction}`
+    : basePrompt;
 };

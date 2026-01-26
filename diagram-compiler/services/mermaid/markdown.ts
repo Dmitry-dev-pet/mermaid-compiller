@@ -1,4 +1,4 @@
-import { DiagramType } from '../../types';
+import { DiagramType, NotebookPlan } from '../../types';
 import { setInlineThemeCommand, type MermaidThemeName } from '../../utils/inlineThemeCommand';
 import { setInlineLookCommand, type MermaidLook } from '../../utils/inlineLookCommand';
 import { MERMAID_BLOCK_PATTERN } from '../../utils/markdownMermaid';
@@ -226,6 +226,25 @@ export const createMermaidNotebookMarkdown = (args?: { blocks?: number; title?: 
   for (let i = 0; i < blocks; i += 1) {
     sections.push(`## Diagram ${i + 1}\n\n\`\`\`mermaid\n\`\`\``);
   }
+  return `# ${title}\n\n${sections.join('\n\n')}\n`;
+};
+
+export const createMermaidNotebookMarkdownFromPlan = (plan: NotebookPlan): string => {
+  const title = plan.title?.trim() || 'Diagram notebook';
+  const formatDescription = (value?: string) => {
+    const lines = (value ?? '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (!lines.length) return '';
+    return lines.map((line) => `> ${line}`).join('\n');
+  };
+  const sections = plan.diagrams.map((diagram, index) => {
+    const heading = diagram.title?.trim() || `Diagram ${index + 1}`;
+    const descriptionBlock = formatDescription(diagram.description);
+    const descriptionSection = descriptionBlock ? `${descriptionBlock}\n\n` : '';
+    return `## ${heading}\n\n${descriptionSection}\`\`\`mermaid\n\`\`\``;
+  });
   return `# ${title}\n\n${sections.join('\n\n')}\n`;
 };
 

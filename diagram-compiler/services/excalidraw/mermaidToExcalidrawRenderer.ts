@@ -1,4 +1,5 @@
 import mermaid from 'mermaid';
+import type { MermaidConfig } from 'mermaid';
 import { convertToExcalidrawElements } from '@excalidraw/excalidraw';
 import type { BinaryFiles } from '@excalidraw/excalidraw/types';
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
@@ -13,10 +14,10 @@ let mermaidInitializePatched = false;
 const ensureMermaidToExcalidrawReady = () => {
   if (mermaidInitializePatched) return;
   mermaidInitializePatched = true;
-  const original = mermaid.initialize.bind(mermaid);
-  mermaid.initialize = ((config: unknown) => {
+  const original: (config: MermaidConfig) => void = mermaid.initialize.bind(mermaid);
+  mermaid.initialize = ((config: MermaidConfig) => {
     try {
-      return original(config as any);
+      return original(config);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes('already registered')) return;

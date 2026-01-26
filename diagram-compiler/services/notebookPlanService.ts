@@ -106,6 +106,7 @@ const normalizeDiagram = (diagram: NotebookPlanDiagram, index: number): Notebook
     title: diagram.title?.trim() || `Diagram ${index + 1}`,
     diagramType,
     goal: diagram.goal?.trim(),
+    description: diagram.description?.trim() || '',
     buildPrompt: normalizeTypeMentions(buildPrompt, diagramType),
     acceptance: acceptance.map((item) => normalizeTypeMentions(item, diagramType)),
   };

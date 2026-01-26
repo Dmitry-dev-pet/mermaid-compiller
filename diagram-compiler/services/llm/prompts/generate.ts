@@ -18,7 +18,7 @@ Generate VALID Mermaid code based on the provided intent.
 - The input is an intent summary, not a full chat transcript.
 - General syntax and escaping:
   - Node/ID identifiers must not contain spaces or special characters; visible text should be in quotes or label syntax.
-  - Escape HTML symbols < > & #.
+  - Do NOT output arbitrary HTML tags. The only allowed HTML is \u003cbr/\u003e inside labels for line breaks; do not HTML-escape it.
   - Comments use %%.
 - {{typeRule}}
 - Use provided documentation context if relevant.{{languageInstruction}}
@@ -43,7 +43,7 @@ Generate VALID Mermaid code based on the provided intent.
 - Вход — это intent (намерение), а не полный диалог.
 - Синтаксис и экранирование:
   - ID/идентификаторы без пробелов и спецсимволов; отображаемый текст — в кавычках или через метки.
-  - HTML-символы < > & # должны быть экранированы.
+  - Не используй произвольные HTML-теги. Единственный допустимый HTML — \u003cbr/\u003e внутри подписей для переносов; не экранируй его.
   - Комментарии — через %%.
 - {{typeRule}}
 - Используй контекст документации, если он релевантен.{{languageInstruction}}

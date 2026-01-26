@@ -26,6 +26,8 @@ export type DiagramType =
   | 'xychart'
   | 'zenuml';
 
+export type ThinkingStyle = 'simple' | 'engineering' | 'strict_c4';
+
 export interface Model {
   id: string;
   name: string;
@@ -149,6 +151,7 @@ export type NotebookPlanDiagram = {
   title: string;
   diagramType: DiagramType | 'other';
   goal?: string;
+  description: string;
   buildPrompt: string;
   acceptance?: string[];
 };
@@ -228,6 +231,7 @@ export interface AppState {
   analyzeLanguage: string;
   notebookBuildCount: number | string | null;
   llmTimeoutMs: number;
+  thinkingStyle: ThinkingStyle;
 }
 
 export type ColorScheme = 'light' | 'dark';

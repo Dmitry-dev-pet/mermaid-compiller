@@ -43,6 +43,13 @@ type FixFlowDeps = {
   aiConfig: AIConfig;
   modelParams: ModelParams | null;
   appDiagramType: DiagramType | null;
+  thinkingStyle?: import("../../types").ThinkingStyle;
+  buildLLMRequestContext?: (args: {
+    diagramType?: DiagramType;
+    allowedDiagramTypes?: DiagramType[] | null;
+    docsContext: string;
+    language: string;
+  }) => import("../../services/llm/types").LLMRequestContext;
   connectionStatus: string;
   messages: Array<{ id: string; role: string; content: string }>;
   mermaidState: MermaidState;
@@ -218,8 +225,18 @@ export const useFixFlow = (deps: FixFlowDeps) => {
                 fixInput,
                 enrichedErrorMessage,
                 deps.aiConfig,
-                docs,
-                language,
+                deps.buildLLMRequestContext
+                  ? deps.buildLLMRequestContext({
+                      diagramType: (block.diagramType ?? deps.appDiagramType ?? "auto") as DiagramType,
+                      docsContext: docs,
+                      language,
+                    })
+                  : {
+                      diagramType: (block.diagramType ?? deps.appDiagramType ?? "auto") as DiagramType,
+                      docsContext: docs,
+                      language,
+                      thinkingStyle: deps.thinkingStyle,
+                    },
                 deps.modelParams,
                 signal,
               ),
@@ -269,7 +286,7 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         nextMermaid,
       };
     },
-    [deps.aiConfig, deps.appDiagramType, deps.llmTimeoutMs, deps.modelParams],
+    [deps],
   );
 
   const runBlockFix = useCallback(
@@ -374,11 +391,21 @@ export const useFixFlow = (deps: FixFlowDeps) => {
         ].join("\n"),
         timestamp: Date.now(),
       };
-      const systemPrompt = buildSystemPrompt("fix", {
-        diagramType: diagramTypeForContext,
-        docsContext: "Documentation context redacted.",
-        language,
-      });
+      const systemPrompt = buildSystemPrompt(
+        "fix",
+        deps.buildLLMRequestContext
+          ? deps.buildLLMRequestContext({
+              diagramType: diagramTypeForContext,
+              docsContext: "Documentation context redacted.",
+              language,
+            })
+          : {
+              diagramType: diagramTypeForContext,
+              docsContext: "Documentation context redacted.",
+              language,
+              thinkingStyle: deps.thinkingStyle,
+            },
+      );
       const fixContextEvent = buildContextEventForLog({
         phase: "fix",
         contextScope: "block",

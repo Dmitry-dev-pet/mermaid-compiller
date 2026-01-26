@@ -10,6 +10,7 @@ import {
 } from "../../services/mermaidService";
 import { sanitizeMermaidByType } from "../../utils/mermaidSanitizer";
 import { runLLMRequest } from "../../services/llmRequestRunner";
+import type { AIConfig } from "../../types";
 
 vi.mock("../../services/llmService", () => ({
   generateDiagram: vi.fn(),
@@ -45,8 +46,28 @@ vi.mock("../../services/llmRequestRunner", () => ({
   ),
 }));
 
+const testAiConfig: AIConfig = {
+  provider: "openrouter",
+  openRouterKey: "",
+  openRouterEndpoint: "",
+  proxyKey: "",
+  proxyEndpoint: "",
+  selectedModelId: "test",
+  selectedModelIdByProvider: { openrouter: "test", cliproxy: "test" },
+  filtersByProvider: {
+    openrouter: {
+      vendor: "",
+      freeOnly: false,
+      testedOnly: false,
+      experimental: false,
+      minContextWindow: 0,
+    },
+    cliproxy: { vendor: "" },
+  },
+};
+
 const baseOptions = {
-  aiConfig: { selectedModelId: "test" } as any,
+  aiConfig: testAiConfig,
   diagramType: "flowchart" as const,
   llmMessages: [],
   docs: "docs",

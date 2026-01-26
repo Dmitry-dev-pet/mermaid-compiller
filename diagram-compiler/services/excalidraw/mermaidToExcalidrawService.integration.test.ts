@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import mermaid from 'mermaid';
+import type { MermaidConfig } from 'mermaid';
 
 import { parseMermaidToExcalidrawSkeletons } from './mermaidToExcalidrawService';
 
@@ -247,10 +248,10 @@ const installSvgPathLengthPolyfill = () => {
 };
 
 const patchMermaidInitialize = () => {
-  const original = mermaid.initialize.bind(mermaid);
-  mermaid.initialize = ((config: unknown) => {
+  const original: (config: MermaidConfig) => void = mermaid.initialize.bind(mermaid);
+  mermaid.initialize = ((config: MermaidConfig) => {
     try {
-      return original(config as any);
+      return original(config);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes('already registered')) return;
@@ -353,8 +354,19 @@ describe('mermaidToExcalidrawService (integration)', () => {
       label?: unknown;
     }>;
     expect(arrows.length).toBeGreaterThanOrEqual(3);
-    expect(arrows.some((a) => typeof (a.start as any)?.id === 'string' && typeof (a.end as any)?.id === 'string')).toBe(true);
-    expect(arrows.some((a) => typeof (a.label as any)?.text === 'string' && ['Нет', 'Да'].includes(String((a.label as any).text)))).toBe(true);
+    expect(
+      arrows.some((a) => {
+        const start = (a as { start?: { id?: unknown } }).start;
+        const end = (a as { end?: { id?: unknown } }).end;
+        return typeof start?.id === 'string' && typeof end?.id === 'string';
+      })
+    ).toBe(true);
+    expect(
+      arrows.some((a) => {
+        const label = (a as { label?: { text?: unknown } }).label;
+        return typeof label?.text === 'string' && ['Нет', 'Да'].includes(String(label.text));
+      })
+    ).toBe(true);
   });
 
   it('converts sequence to non-image skeletons', async () => {

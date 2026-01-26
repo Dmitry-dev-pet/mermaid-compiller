@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef } from 'react';
 import type React from 'react';
 import { CaptureUpdateAction, getCommonBounds } from '@excalidraw/excalidraw';
 import type { AppState, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types';
-import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 
 import {
   centerScrollOnLikeExcalidraw,
@@ -60,6 +59,17 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
 
   const setDebugRuntime = args.setDebugRuntime;
 
+  const readAppStateNumber = useCallback((state: AppState, key: 'width' | 'height') => {
+    const value = (state as Record<string, unknown>)[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  }, []);
+
+  const resolveZoomValue = useCallback((zoom: AppState['zoom']): number | null => {
+    if (typeof zoom === 'number') return zoom;
+    const value = (zoom as { value?: unknown } | null)?.value;
+    return typeof value === 'number' ? value : null;
+  }, []);
+
   const updateDebugRuntime = useCallback((override?: {
     scrollX?: number | null;
     scrollY?: number | null;
@@ -70,7 +80,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
       const api = args.apiRef.current;
       if (!api) return;
       const state = api.getAppState() as AppState;
-      const z = (state.zoom as any)?.value ?? state.zoom;
+      const z = resolveZoomValue(state.zoom);
       const measured = args.containerRef.current
         ? { w: args.containerRef.current.clientWidth, h: args.containerRef.current.clientHeight }
         : null;
@@ -96,8 +106,8 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
         zoom: typeof (override?.zoom ?? z) === 'number' ? (override?.zoom ?? z) as number : null,
         scrollX: override?.scrollX ?? state.scrollX ?? null,
         scrollY: override?.scrollY ?? state.scrollY ?? null,
-        width: (state as any).width ?? null,
-        height: (state as any).height ?? null,
+        width: readAppStateNumber(state, 'width'),
+        height: readAppStateNumber(state, 'height'),
         measuredWidth: measured?.w ?? null,
         measuredHeight: measured?.h ?? null,
         lockedScrollX: lockedScrollXRef.current,
@@ -107,7 +117,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
     } catch {
       // ignore
     }
-  }, [args.apiRef, args.containerRef, args.debugEnabled, setDebugRuntime]);
+  }, [args.apiRef, args.containerRef, args.debugEnabled, readAppStateNumber, resolveZoomValue, setDebugRuntime]);
 
   const scheduleFitToContent = useCallback((
     api: ExcalidrawImperativeAPI,
@@ -135,10 +145,10 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
       if (elements?.length && !isLoading && viewportReady) {
         try {
           if (args.fitMode === 'width') {
-            const common = getCommonBounds(elements as unknown as readonly ExcalidrawElement[]);
+            const common = getCommonBounds(elements);
             const appState = api.getAppState() as AppState;
-            const stateWidth = (appState as any).width as number | undefined;
-            const stateHeight = (appState as any).height as number | undefined;
+            const stateWidth = readAppStateNumber(appState, 'width') ?? undefined;
+            const stateHeight = readAppStateNumber(appState, 'height') ?? undefined;
             const measured = args.containerRef.current
               ? { w: args.containerRef.current.clientWidth, h: args.containerRef.current.clientHeight }
               : null;
@@ -229,7 +239,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
     };
 
     requestAnimationFrame(tick);
-  }, [args, updateDebugRuntime]);
+  }, [args, readAppStateNumber, updateDebugRuntime]);
 
   const handleWheel = useCallback((event: React.WheelEvent) => {
     if (!args.apiRef.current) return;
@@ -242,8 +252,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
 
     const api = args.apiRef.current;
     const state = api.getAppState() as AppState;
-    const zoom = (state.zoom as { value?: number } | number | undefined);
-    const zoomValue = typeof zoom === 'number' ? zoom : zoom?.value;
+    const zoomValue = resolveZoomValue(state.zoom);
     const z = typeof zoomValue === 'number' && zoomValue > 0 ? zoomValue : 1;
 
     pendingWheelDeltaRef.current += event.deltaY;
@@ -261,10 +270,10 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
       const measured = args.containerRef.current
         ? { w: args.containerRef.current.clientWidth, h: args.containerRef.current.clientHeight }
         : null;
-      const vh = measured?.h ?? (current as any).height ?? 0;
+      const vh = measured?.h ?? readAppStateNumber(current, 'height') ?? 0;
       const safeTop = readCssVarInt('--sat');
       const safeBottom = readCssVarInt('--sab');
-      const zoomValue = (current.zoom as any)?.value ?? current.zoom;
+      const zoomValue = resolveZoomValue(current.zoom);
       const zVal = typeof zoomValue === 'number' && zoomValue > 0 ? zoomValue : 1;
       const padTopPx = VIEW_SCROLL_PAD_TOP_PX;
       const padBottomPx = VIEW_SCROLL_PAD_BOTTOM_PX;
@@ -276,7 +285,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
           return { minY: cached.minY, maxY };
         }
         try {
-          const [, minY, , maxY] = getCommonBounds(api.getSceneElements() as any);
+          const [, minY, , maxY] = getCommonBounds(api.getSceneElements());
           if (![minY, maxY].every((n) => Number.isFinite(n))) return null;
           return { minY, maxY };
         } catch {
@@ -314,7 +323,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
         updateDebugRuntime({ scrollX: baseScrollX, scrollY: nextScrollY });
       }
     });
-  }, [args, updateDebugRuntime]);
+  }, [args, readAppStateNumber, resolveZoomValue, updateDebugRuntime]);
 
   const scheduleClampScroll = useCallback((desiredScrollY?: number) => {
     if (!args.apiRef.current) return;
@@ -333,11 +342,11 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
       const measured = args.containerRef.current
         ? { w: args.containerRef.current.clientWidth, h: args.containerRef.current.clientHeight }
         : null;
-      const vh = measured?.h ?? (current as any).height ?? 0;
+      const vh = measured?.h ?? readAppStateNumber(current, 'height') ?? 0;
       const safeTop = readCssVarInt('--sat');
       const safeBottom = readCssVarInt('--sab');
 
-      const zoomValue = (current.zoom as any)?.value ?? current.zoom;
+      const zoomValue = resolveZoomValue(current.zoom);
       const zVal = typeof zoomValue === 'number' && zoomValue > 0 ? zoomValue : 1;
       const padTopPx = VIEW_SCROLL_PAD_TOP_PX;
       const padBottomPx = VIEW_SCROLL_PAD_BOTTOM_PX;
@@ -349,7 +358,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
           return { minY: cached.minY, maxY };
         }
         try {
-          const [, minY, , maxY] = getCommonBounds(api.getSceneElements() as any);
+          const [, minY, , maxY] = getCommonBounds(api.getSceneElements());
           if (![minY, maxY].every((n) => Number.isFinite(n))) return null;
           return { minY, maxY };
         } catch {
@@ -388,7 +397,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
       });
       api.refresh();
     });
-  }, [args]);
+  }, [args, readAppStateNumber, resolveZoomValue]);
 
   const handleScrollChange = useCallback((scrollX: number, scrollY: number, zoom: AppState['zoom']) => {
     if (!args.apiRef.current) return;
@@ -397,7 +406,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
     // Don't lock while we're still fitting the scene (we compute and set the lockX ourselves).
     if (pendingFitSceneKeyRef.current !== null) return;
     if (args.debugEnabled) {
-      const zv = (zoom as any)?.value ?? zoom;
+      const zv = resolveZoomValue(zoom);
       updateDebugRuntime({ scrollX, scrollY, zoom: typeof zv === 'number' ? zv : null });
     }
     const lockX = lockedScrollXRef.current;
@@ -407,7 +416,7 @@ export const useWhiteboardViewLock = (args: UseWhiteboardViewLockArgs) => {
     }
     if (Math.abs(scrollX - lockX) < 0.5) return;
     scheduleClampScroll(scrollY);
-  }, [args, scheduleClampScroll, updateDebugRuntime]);
+  }, [args, resolveZoomValue, scheduleClampScroll, updateDebugRuntime]);
 
   useEffect(() => {
     if (!args.isViewMode) return;

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Trash2, X } from 'lucide-react';
 import type { HistorySession } from '../../services/history/types';
 import { Button } from '../ui/Button';
@@ -23,6 +23,11 @@ type ProjectsMenuProps = {
   onCancelEditingProject: () => void;
   onOpenProject: (sessionId: string) => void | Promise<void>;
   onDeleteProject: (project: HistorySession) => void | Promise<void>;
+  onExportProject: (sessionId: string) => Promise<void>;
+  onImportProject: (file: File) => Promise<void>;
+  byoConfig: { url: string; anonKey: string };
+  onByoConfigChange: (updates: { url?: string; anonKey?: string }) => void;
+  onTestByoConfig: () => Promise<{ ok: boolean; error?: string }>;
 };
 
 const formatProjectTimestamp = (ts?: number) => {
@@ -52,6 +57,11 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
   onCancelEditingProject,
   onOpenProject,
   onDeleteProject,
+  onExportProject,
+  onImportProject,
+  byoConfig,
+  onByoConfigChange,
+  onTestByoConfig,
 }) => {
   const sortedProjects = useMemo(() => {
     const next = [...projects];
@@ -66,6 +76,42 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
     next.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
     return next;
   }, [projects, sortKey]);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [backupStatus, setBackupStatus] = useState<{ kind: 'idle' | 'error' | 'success'; message?: string }>({
+    kind: 'idle',
+  });
+  const [byoStatus, setByoStatus] = useState<{ kind: 'idle' | 'error' | 'success'; message?: string }>({
+    kind: 'idle',
+  });
+
+  const handleExport = async () => {
+    if (!activeProjectId) return;
+    try {
+      await onExportProject(activeProjectId);
+      setBackupStatus({ kind: 'success', message: 'Exported' });
+    } catch {
+      setBackupStatus({ kind: 'error', message: 'Export failed' });
+    }
+  };
+
+  const handleImport = async (file: File) => {
+    try {
+      await onImportProject(file);
+      setBackupStatus({ kind: 'success', message: 'Imported' });
+    } catch {
+      setBackupStatus({ kind: 'error', message: 'Import failed' });
+    }
+  };
+
+  const handleTestByo = async () => {
+    const result = await onTestByoConfig();
+    if (result.ok) {
+      setByoStatus({ kind: 'success', message: 'Schema OK' });
+    } else {
+      setByoStatus({ kind: 'error', message: result.error ?? 'Schema error' });
+    }
+  };
 
   return (
     <div
@@ -189,6 +235,94 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+      <div className="px-3 py-2 border-t border-[var(--panel-border)] flex items-center justify-between gap-2">
+        <span className="text-[10px] text-slate-400 dark:text-slate-500">Backup</span>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              void handleImport(file);
+              event.currentTarget.value = '';
+            }}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleExport}
+            disabled={!activeProjectId}
+            className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
+          >
+            Export
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => fileInputRef.current?.click()}
+            className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
+          >
+            Import
+          </Button>
+        </div>
+      </div>
+      {backupStatus.kind !== 'idle' && (
+        <div className="px-3 pb-2 text-[10px] text-slate-400 dark:text-slate-500">
+          <span
+            className={
+              backupStatus.kind === 'error'
+                ? 'text-rose-600 dark:text-rose-300'
+                : 'text-emerald-600 dark:text-emerald-300'
+            }
+          >
+            {backupStatus.message}
+          </span>
+        </div>
+      )}
+      <div className="px-3 py-2 border-t border-[var(--panel-border)]">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] text-slate-400 dark:text-slate-500">BYO Supabase</span>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleTestByo}
+            className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
+          >
+            Test
+          </Button>
+        </div>
+        <div className="mt-2 space-y-2">
+          <Input
+            value={byoConfig.url}
+            onChange={(e) => onByoConfigChange({ url: e.target.value })}
+            placeholder="Supabase URL"
+            size="sm"
+          />
+          <Input
+            type="password"
+            value={byoConfig.anonKey}
+            onChange={(e) => onByoConfigChange({ anonKey: e.target.value })}
+            placeholder="Anon key"
+            size="sm"
+          />
+        </div>
+        {byoStatus.kind !== 'idle' && (
+          <div className="mt-2 text-[10px] text-slate-400 dark:text-slate-500">
+            <span
+              className={
+                byoStatus.kind === 'error'
+                  ? 'text-rose-600 dark:text-rose-300'
+                  : 'text-emerald-600 dark:text-emerald-300'
+              }
+            >
+              {byoStatus.message}
+            </span>
           </div>
         )}
       </div>

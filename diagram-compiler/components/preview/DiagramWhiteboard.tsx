@@ -80,6 +80,17 @@ type Props = {
   onThemeChange?: (nextTheme: 'light' | 'dark') => void;
 };
 
+type PointerDownState = {
+  drag?: { hasOccurred?: boolean };
+  hit?: { element?: ExcalidrawElement | null };
+};
+
+const resolveZoomValue = (zoom: AppState['zoom']): number => {
+  if (typeof zoom === 'number') return zoom;
+  const value = (zoom as { value?: unknown } | null)?.value;
+  return typeof value === 'number' ? value : 1;
+};
+
 const computeFlowchartStructureSignature = (code: string): string => {
   // Best-effort signature: stable for changes in labels/edge texts.
   // IDs/edges still count as "structure", which matches flowchart converter IDs.
@@ -121,7 +132,7 @@ const computeDiagramStructureSignature = (diagramType: MermaidDiagramTypeHint, c
   return String(hashString(stripped.trim()));
 };
 
-const countElementTypes = (elements: unknown[] | undefined): Record<string, number> => {
+const countElementTypes = (elements: readonly unknown[] | undefined): Record<string, number> => {
   const list = Array.isArray(elements) ? elements : [];
   return list.reduce<Record<string, number>>((acc, el) => {
     if (!el || typeof el !== 'object') return acc;
@@ -1133,12 +1144,12 @@ const DiagramWhiteboard: React.FC<Props> = ({
       backgroundMode === 'excalidraw'
         ? (canvasBackgroundVisible ?? canvasBackgroundAutoVisible ?? CANVAS_BG_LIGHT)
         : (effectiveBackgroundColor ?? null);
-    const themedElements = applyMermaidThemeToExcalidrawElements((scene.elements ?? []) as unknown[], {
+    const themedElements = applyMermaidThemeToExcalidrawElements<ExcalidrawElement>(scene.elements ?? [], {
       backgroundColor: contrastBackground,
       themeVariables: themeVars,
       uiTheme: theme,
       forceTheme: false,
-    }) as unknown as ExcalidrawInitialDataState['elements'];
+    }) as ExcalidrawInitialDataState['elements'];
     const targetZoom = clampWhiteboardZoom(zoomPercent / 100);
     const nextBackground = (() => {
       if (backgroundMode === 'excalidraw') {
@@ -1166,7 +1177,6 @@ const DiagramWhiteboard: React.FC<Props> = ({
     VIEW_MODE_APPSTATE_PATCH,
     backgroundMode,
     canvasBackgroundAutoVisible,
-    canvasBackgroundForTheme,
     canvasBackgroundVisible,
     effectiveBackgroundColor,
     effectiveBackgroundStored,
@@ -1177,14 +1187,15 @@ const DiagramWhiteboard: React.FC<Props> = ({
     zoomPercent,
   ]);
 
-  const handlePointerUp = useCallback((_: AppState['activeTool'], pointerDownState: any) => {
+  const handlePointerUp = useCallback((_: AppState['activeTool'], pointerDownState: PointerDownState) => {
     if (!isViewMode) return;
     if (!onNotebookDiagramClick) return;
     if (!pointerDownState || pointerDownState.drag?.hasOccurred) return;
     const hit = pointerDownState.hit?.element as unknown as ExcalidrawElement | null;
     if (!hit) return;
-    const customData = (hit as any).customData as Record<string, unknown> | undefined;
-    const index = customData && typeof customData.__mlgNotebookIndex === 'number' ? customData.__mlgNotebookIndex : null;
+    const customData = (hit as { customData?: Record<string, unknown> }).customData;
+    const indexValue = customData?.__mlgNotebookIndex;
+    const index = typeof indexValue === 'number' ? indexValue : null;
     if (typeof index === 'number') onNotebookDiagramClick(index);
   }, [isViewMode, onNotebookDiagramClick]);
 
@@ -1268,8 +1279,8 @@ const DiagramWhiteboard: React.FC<Props> = ({
     if (isDirtyRef.current) return;
     if (lastAppliedSceneKeyRef.current === sceneKey) return;
 
-    const nextElements = (initialDataState.elements ?? []) as unknown[];
-    const nextAppState = (initialDataState.appState ?? null) as Partial<AppState> | null;
+    const nextElements = (initialDataState.elements ?? []) as readonly ExcalidrawElement[];
+    const nextAppState = initialDataState.appState ?? undefined;
     const nextFiles = (initialDataState.files ?? {}) as BinaryFiles;
 
     const contrastBackground = (() => {
@@ -1291,12 +1302,12 @@ const DiagramWhiteboard: React.FC<Props> = ({
       themeVariables: themeVars,
       uiTheme: theme,
       forceTheme: false,
-    }) as unknown as ExcalidrawInitialDataState['elements'];
+    }) as ExcalidrawInitialDataState['elements'];
 
     skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
     api.updateScene({
-      elements: themedElements as any,
-      appState: nextAppState as any,
+      elements: themedElements,
+      appState: nextAppState,
       captureUpdate: CaptureUpdateAction.NEVER,
     });
     try {
@@ -1305,13 +1316,24 @@ const DiagramWhiteboard: React.FC<Props> = ({
       // ignore
     }
     try {
-      const fileList = Object.values(nextFiles ?? {});
-      if (fileList.length) api.addFiles(fileList as any);
+      const fileList = Object.values(nextFiles ?? {}) as BinaryFileData[];
+      if (fileList.length) api.addFiles(fileList);
     } catch {
       // ignore
     }
     lastAppliedSceneKeyRef.current = sceneKey;
-  }, [api, backgroundMode, canvasBackgroundForTheme, effectiveBackgroundColor, initialDataState, mermaidBackgroundCandidate, mermaidCode, sceneKey, theme]);
+  }, [
+    api,
+    backgroundMode,
+    canvasBackgroundAutoVisible,
+    effectiveBackgroundColor,
+    initialDataState,
+    mermaidBackgroundCandidate,
+    mermaidCode,
+    resolveVisibleCanvasBackground,
+    sceneKey,
+    theme,
+  ]);
 
   useEffect(() => {
     if (!api) return;
@@ -1334,19 +1356,31 @@ const DiagramWhiteboard: React.FC<Props> = ({
       backgroundMode === 'excalidraw'
         ? ((canvasBackgroundVisibleRef.current ?? canvasBackgroundVisible ?? canvasBackgroundAutoVisible) ?? null)
         : null;
-    const themedElements = applyMermaidThemeToExcalidrawElements(elements as unknown[], {
+    const themedElements = applyMermaidThemeToExcalidrawElements(elements, {
       backgroundColor: contrastBackground,
       themeVariables: themeVars,
       uiTheme: nextTheme,
       forceTheme: false,
-    }) as unknown as ExcalidrawInitialDataState['elements'];
+    }) as ExcalidrawInitialDataState['elements'];
     skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
     api.updateScene({
       elements: themedElements,
       captureUpdate: CaptureUpdateAction.NEVER,
     });
     lastRethemeSignatureRef.current = signature;
-  }, [api, backgroundMode, canvasBackground, canvasBackgroundForTheme, effectiveBackgroundColor, isViewMode, mermaidBackgroundCandidate, mermaidCode, sceneKey, theme]);
+  }, [
+    api,
+    backgroundMode,
+    canvasBackground,
+    canvasBackgroundAutoVisible,
+    canvasBackgroundVisible,
+    effectiveBackgroundColor,
+    isViewMode,
+    mermaidBackgroundCandidate,
+    mermaidCode,
+    sceneKey,
+    theme,
+  ]);
 
   useEffect(() => {
     if (!initialDataOverride) return;
@@ -1362,7 +1396,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         return next;
       });
     });
-  }, [initialDataOverride, prepareInitialData]);
+  }, [initialDataOverride, lockedScrollXRef, pendingFitSceneKeyRef, prepareInitialData]);
 
   useEffect(() => {
     return () => {
@@ -1482,6 +1516,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     };
   }, [
     backgroundMode,
+    debugEnabled,
     diagramTypeHint,
     effectiveBackgroundColor,
     initialDataOverride,
@@ -1489,6 +1524,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     initialSceneJson,
     mermaidCode,
     mermaidBackgroundCandidate,
+    pendingFitSceneKeyRef,
     prepareInitialData,
     sceneMeta,
     svgMarkup,
@@ -1499,7 +1535,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     if (!debugEnabled) return null;
     const status: 'idle' | 'building' | 'ready' | 'failed' =
       isSceneBuilding ? 'building' : buildError ? 'failed' : initialDataState ? 'ready' : 'idle';
-    const counts = initialDataState?.elements ? countElementTypes(initialDataState.elements as unknown[]) : null;
+    const counts = initialDataState?.elements ? countElementTypes(initialDataState.elements) : null;
     const bounds = (() => {
       const list = (initialDataState?.elements ?? []) as unknown[];
       let minX = Number.POSITIVE_INFINITY;
@@ -1633,7 +1669,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
           uiTheme: nextTheme,
           viewMode: expectedViewModeEnabled,
           backgroundColor: nextBackground ?? undefined,
-          zoomPercent: Math.round(((current.zoom as any)?.value ?? current.zoom ?? 1) * 100),
+          zoomPercent: Math.round(resolveZoomValue(current.zoom) * 100),
         }),
         captureUpdate: CaptureUpdateAction.NEVER,
       });
@@ -1769,7 +1805,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
         const { elements: patched, changed } = applyContainerTextMap(currentElements, map);
         if (!changed) return;
         apiRef.current?.updateScene({
-          elements: patched as any,
+          elements: patched,
           captureUpdate: CaptureUpdateAction.NEVER,
         });
       } catch {
@@ -1787,7 +1823,7 @@ const DiagramWhiteboard: React.FC<Props> = ({
     if (pendingFitSceneKeyRef.current !== sceneKey) return;
     if (!initialDataState?.elements?.length) return;
     scheduleFitToContent(apiRef.current, sceneKey);
-  }, [initialDataState, sceneKey, scheduleFitToContent]);
+  }, [initialDataState, pendingFitSceneKeyRef, sceneKey, scheduleFitToContent]);
 
   const handleChange = useCallback((
     elements: readonly OrderedExcalidrawElement[],
@@ -1843,21 +1879,21 @@ const DiagramWhiteboard: React.FC<Props> = ({
 
       const needsNormalize = elements.some((el) => {
         if (!el) return false;
-        if ((el as any).isDeleted) return false;
-        const type = (el as any).type as string | undefined;
+        if (el.isDeleted) return false;
+        const type = el.type;
         if (!type) return false;
         if (type === 'image') return false;
         if (type === 'text') {
-          const stroke = (el as any).strokeColor as string | undefined;
+          const stroke = el.strokeColor;
           return stroke ? (isDarkColor(stroke) === bgDark) : true;
         }
         if (type === 'line' || type === 'arrow') {
-          const stroke = (el as any).strokeColor as string | undefined;
+          const stroke = el.strokeColor;
           return stroke ? (isDarkColor(stroke) === bgDark) : true;
         }
         if (type === 'rectangle' || type === 'diamond' || type === 'ellipse') {
-          const stroke = (el as any).strokeColor as string | undefined;
-          const fill = (el as any).backgroundColor as string | undefined;
+          const stroke = el.strokeColor;
+          const fill = el.backgroundColor;
           const badStroke = stroke ? (isDarkColor(stroke) === bgDark) : true;
           const badFill = typeof fill === 'string' && fill !== 'transparent';
           return badStroke || badFill;
@@ -1866,16 +1902,16 @@ const DiagramWhiteboard: React.FC<Props> = ({
       });
 
       if (needsNormalize) {
-        const themed = applyMermaidThemeToExcalidrawElements(elements as unknown[], {
+        const themed = applyMermaidThemeToExcalidrawElements(elements, {
           backgroundColor: bgVisible,
           themeVariables: null,
           uiTheme: effectiveTheme,
           forceTheme: true,
-        }) as unknown as OrderedExcalidrawElement[];
+        }) as OrderedExcalidrawElement[];
         // Only apply if the first pass is likely the raw converter colors.
         skipNextChangeRef.current = Math.max(skipNextChangeRef.current, 2);
         apiRef.current?.updateScene({
-          elements: themed as any,
+          elements: themed,
           captureUpdate: CaptureUpdateAction.NEVER,
         });
         normalizedColorsSceneKeyRef.current = sceneKey;
@@ -1960,8 +1996,10 @@ const DiagramWhiteboard: React.FC<Props> = ({
     canvasBackgroundAutoVisible,
     effectiveBackgroundColor,
     isViewMode,
+    lockedScrollXRef,
     onCanvasBackgroundByThemeChange,
     onZoomPercentChange,
+    pendingFitSceneKeyRef,
     resolveStoredCanvasBackground,
     resolveVisibleCanvasBackground,
     sceneKey,
@@ -2003,7 +2041,6 @@ const DiagramWhiteboard: React.FC<Props> = ({
   }, [
     backgroundMode,
     canvasBackgroundForTheme,
-    effectiveBackgroundColor,
     effectiveBackgroundStored,
     initialDataState,
     isViewMode,
