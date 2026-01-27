@@ -1665,6 +1665,22 @@ fn which_command(command: &str) -> bool {
     .any(|segment| FsPath::new(segment).join(command).exists())
 }
 
+fn resolve_command_path(command: &str) -> Option<PathBuf> {
+  if FsPath::new(command).is_absolute() {
+    return FsPath::new(command).exists().then(|| PathBuf::from(command));
+  }
+  for segment in std::env::var_os("PATH").unwrap_or_default().to_string_lossy().split(':') {
+    if segment.trim().is_empty() {
+      continue;
+    }
+    let candidate = FsPath::new(segment).join(command);
+    if candidate.exists() {
+      return Some(candidate);
+    }
+  }
+  None
+}
+
 fn which_codex(command: &str) -> bool {
   which_command(command)
 }
@@ -1695,7 +1711,11 @@ impl Config {
     let gemini_cmd = std::env::var("GEMINI_CMD").unwrap_or_else(|_| "gemini".to_string());
     let gemini_args = std::env::var("GEMINI_ARGS").map(split_args).unwrap_or_default();
     let gemini_model = std::env::var("GEMINI_MODEL").ok().filter(|value| !value.is_empty());
-    let gemini_models = std::env::var("GEMINI_MODELS").ok().map(split_list).unwrap_or_default();
+    let gemini_include_preview_models = parse_bool(std::env::var("GEMINI_INCLUDE_PREVIEW_MODELS").ok(), false);
+    let mut gemini_models = std::env::var("GEMINI_MODELS").ok().map(split_list).unwrap_or_default();
+    if gemini_models.is_empty() && which_gemini(&gemini_cmd) {
+      gemini_models = discover_gemini_models_from_cli(&gemini_cmd, gemini_include_preview_models).unwrap_or_default();
+    }
     let gemini_approval_mode = std::env::var("GEMINI_APPROVAL_MODE").unwrap_or_else(|_| "yolo".to_string());
     let gemini_sandbox = parse_bool(std::env::var("GEMINI_SANDBOX").ok(), true);
     let gemini_login_prompt = std::env::var("GEMINI_LOGIN_PROMPT").ok().filter(|value| !value.is_empty());
@@ -1773,6 +1793,54 @@ fn split_list(raw: String) -> Vec<String> {
     .filter(|value| !value.is_empty())
     .map(|value| value.to_string())
     .collect()
+}
+
+fn discover_gemini_models_from_cli(gemini_cmd: &str, include_preview: bool) -> Option<Vec<String>> {
+  let node = resolve_command_path("node")?;
+  let gemini_path = resolve_command_path(gemini_cmd).or_else(|| FsPath::new(gemini_cmd).exists().then(|| PathBuf::from(gemini_cmd)))?;
+  let gemini_real = std::fs::canonicalize(gemini_path).ok()?;
+
+  // Homebrew/npm install layout: .../@google/gemini-cli/dist/index.js
+  // CLI package root is the parent of `dist/`.
+  let cli_root = gemini_real.parent()?.parent()?;
+  let core_entry = cli_root.join("node_modules/@google/gemini-cli-core/dist/index.js");
+  if !core_entry.exists() {
+    return None;
+  }
+
+  let script = r#"
+    const core = require(process.env.CORE_PATH);
+    const models = Array.from(core.VALID_GEMINI_MODELS || []);
+    console.log(JSON.stringify(models));
+  "#;
+
+  let output = std::process::Command::new(node)
+    .arg("-e")
+    .arg(script)
+    .env("CORE_PATH", core_entry)
+    .output()
+    .ok()?;
+
+  if !output.status.success() {
+    return None;
+  }
+
+  let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+  if stdout.is_empty() {
+    return None;
+  }
+
+  let parsed: Vec<String> = serde_json::from_str(&stdout).ok()?;
+  let mut result = parsed
+    .into_iter()
+    .map(|m| m.trim().to_string())
+    .filter(|m| !m.is_empty())
+    .filter(|m| include_preview || (!m.contains("preview") && !m.starts_with("gemini-3-")))
+    .collect::<Vec<_>>();
+
+  result.sort();
+  result.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+  Some(result)
 }
 
 fn gemini_model_ids(config: &Config) -> Vec<String> {
