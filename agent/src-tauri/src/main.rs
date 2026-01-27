@@ -1711,7 +1711,7 @@ impl Config {
     let gemini_cmd = std::env::var("GEMINI_CMD").unwrap_or_else(|_| "gemini".to_string());
     let gemini_args = std::env::var("GEMINI_ARGS").map(split_args).unwrap_or_default();
     let gemini_model = std::env::var("GEMINI_MODEL").ok().filter(|value| !value.is_empty());
-    let gemini_include_preview_models = parse_bool(std::env::var("GEMINI_INCLUDE_PREVIEW_MODELS").ok(), false);
+    let gemini_include_preview_models = parse_bool(std::env::var("GEMINI_INCLUDE_PREVIEW_MODELS").ok(), true);
     let mut gemini_models = std::env::var("GEMINI_MODELS").ok().map(split_list).unwrap_or_default();
     if gemini_models.is_empty() && which_gemini(&gemini_cmd) {
       gemini_models = discover_gemini_models_from_cli(&gemini_cmd, gemini_include_preview_models).unwrap_or_default();
