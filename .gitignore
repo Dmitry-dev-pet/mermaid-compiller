@@ -1,7 +1,6 @@
 .AGENTS.md.swp
 .DS_Store
 12.png
-
 # Local-only files
 node_modules/
 diagram-compiler/node_modules/
@@ -12,8 +11,10 @@ diagram-compiler/coverage/
 *.code-workspace
 opencode.json
 
+# Agent build artifacts
+agent/src-tauri/target/
+
 # Local experiments
-agent/
 prompts-improvements.md
 PROMPTS.md
 mermaid_prompt_ru.md

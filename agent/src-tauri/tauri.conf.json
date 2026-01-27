@@ -1,0 +1,23 @@
+{
+  "productName": "Mermaid Agent",
+  "version": "0.1.0",
+  "identifier": "com.mermaid.agent",
+  "build": {
+    "frontendDist": "../ui",
+    "devUrl": "http://localhost:8787"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Mermaid Agent",
+        "width": 400,
+        "height": 300,
+        "visible": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": false
+  }
+}

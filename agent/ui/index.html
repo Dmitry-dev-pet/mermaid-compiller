@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mermaid Agent</title>
+  </head>
+  <body>
+    <main>
+      <h1>Mermaid Agent</h1>
+      <p id="status">Checking status…</p>
+      <dl>
+        <dt>Provider</dt>
+        <dd id="provider">—</dd>
+        <dt>Codex</dt>
+        <dd id="codex">—</dd>
+        <dt>Gemini</dt>
+        <dd id="gemini">—</dd>
+        <dt>Port</dt>
+        <dd id="port">—</dd>
+        <dt>Version</dt>
+        <dd id="version">—</dd>
+        <dt>Token</dt>
+        <dd>
+          <input id="token" type="text" placeholder="Enter token" />
+          <button id="save-token" type="button">Save</button>
+          <span id="token-status"></span>
+        </dd>
+      </dl>
+    </main>
+    <script>
+      const elStatus = document.getElementById("status");
+      const elProvider = document.getElementById("provider");
+      const elCodex = document.getElementById("codex");
+      const elGemini = document.getElementById("gemini");
+      const elPort = document.getElementById("port");
+      const elVersion = document.getElementById("version");
+      const elToken = document.getElementById("token");
+      const elSaveToken = document.getElementById("save-token");
+      const elTokenStatus = document.getElementById("token-status");
+
+      async function refresh() {
+        try {
+          const res = await fetch("/api/health", { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          elStatus.textContent = data.ok ? "Agent running" : "Agent error";
+          elProvider.textContent = data.provider ?? "unknown";
+          elCodex.textContent = data.codex_detected ? "available" : "missing";
+          elGemini.textContent = data.gemini_detected ? "available" : "missing";
+          elPort.textContent = data.port ?? "—";
+          elVersion.textContent = data.agent_version ?? "—";
+        } catch (err) {
+          elStatus.textContent = "Status unavailable";
+          elProvider.textContent = "—";
+          elCodex.textContent = "—";
+          elGemini.textContent = "—";
+          elPort.textContent = "—";
+          elVersion.textContent = "—";
+        }
+      }
+
+      async function loadToken() {
+        try {
+          const res = await fetch("/api/token", { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          elToken.value = data.token ?? "";
+          elTokenStatus.textContent = "";
+        } catch (err) {
+          elTokenStatus.textContent = "Token unavailable";
+        }
+      }
+
+      async function saveToken() {
+        try {
+          const res = await fetch("/api/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: elToken.value || "" }),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          elToken.value = data.token ?? "";
+          elTokenStatus.textContent = "Saved";
+          setTimeout(() => (elTokenStatus.textContent = ""), 1500);
+        } catch (err) {
+          elTokenStatus.textContent = "Save failed";
+        }
+      }
+
+      elSaveToken.addEventListener("click", saveToken);
+
+      refresh();
+      loadToken();
+      setInterval(refresh, 2000);
+    </script>
+  </body>
+</html>
