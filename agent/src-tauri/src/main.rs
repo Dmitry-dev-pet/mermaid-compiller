@@ -998,9 +998,8 @@ async fn responses_start(
 
 async fn models(
   State(state): State<AppState>,
-  headers: HeaderMap,
+  _headers: HeaderMap,
 ) -> Result<Json<ModelsResponse>, (StatusCode, Json<ErrorBody>)> {
-  authorize(&state, &headers).await?;
   let mut data = match state.codex.as_ref().map(|codex| codex.list_models()) {
     Some(fut) => match fut.await {
       Ok(list) if !list.is_empty() => list,
