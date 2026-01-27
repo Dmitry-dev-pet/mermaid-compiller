@@ -1,11 +1,13 @@
 import React, { useRef, useEffect } from 'react';
-import { AIConfig, ConnectionState, ThemePresetId } from '../types';
+import { AIConfig, ConnectionState, ModelParams, ThemePresetId } from '../types';
 import PanelHeader from './ui/PanelHeader';
 import AiControlPlaneMenu from './header/AiControlPlaneMenu';
 import ThemeMenu from './header/ThemeMenu';
 
 interface HeaderProps {
   aiConfig: AIConfig;
+  modelParams: ModelParams | null;
+  onModelParamsChange: React.Dispatch<React.SetStateAction<ModelParams | null>>;
   connectionState: ConnectionState;
   onConfigChange: React.Dispatch<React.SetStateAction<AIConfig>>;
   onConnect: () => Promise<void>;
@@ -26,6 +28,8 @@ const HeaderNotebookSlot: React.FC<{ children?: React.ReactNode }> = ({ children
 
 const Header: React.FC<HeaderProps> = ({ 
   aiConfig, 
+  modelParams,
+  onModelParamsChange,
   connectionState, 
   onConfigChange, 
   onConnect, 
@@ -80,6 +84,8 @@ const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center gap-4 text-[10px] text-slate-500 dark:text-slate-400 font-medium pl-3">
         <AiControlPlaneMenu
           aiConfig={aiConfig}
+          modelParams={modelParams}
+          onModelParamsChange={onModelParamsChange}
           connectionState={connectionState}
           onConfigChange={onConfigChange}
           onConnect={onConnect}

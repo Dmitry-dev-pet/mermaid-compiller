@@ -1115,6 +1115,8 @@ export const useDiagramStudio = () => {
   return {
     aiConfig,
     setAiConfig,
+    modelParams,
+    setModelParams,
     connectionState,
     mermaidState,
     messages: chatMessagesForView,

@@ -49,6 +49,8 @@ function App() {
   const {
     aiConfig,
     setAiConfig,
+    modelParams,
+    setModelParams,
     connectionState,
     mermaidState,
     messages,
@@ -458,6 +460,8 @@ function App() {
     >
       <Header
         aiConfig={aiConfig}
+        modelParams={modelParams}
+        onModelParamsChange={setModelParams}
         connectionState={connectionState}
         onConfigChange={setAiConfig}
         onConnect={connectAI}

@@ -12,7 +12,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { AIConfig, CliproxyFilters, ConnectionState, OpenRouterFilters } from '../../types';
+import { AIConfig, CliproxyFilters, ConnectionState, ModelParams, OpenRouterFilters } from '../../types';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { RadioGroup, RadioOption } from '../ui/Radio';
@@ -20,6 +20,8 @@ import { Select } from '../ui/Select';
 
 type AiControlPlaneMenuProps = {
   aiConfig: AIConfig;
+  modelParams: ModelParams | null;
+  onModelParamsChange: React.Dispatch<React.SetStateAction<ModelParams | null>>;
   connectionState: ConnectionState;
   onConfigChange: React.Dispatch<React.SetStateAction<AIConfig>>;
   onConnect: () => Promise<void>;
@@ -30,6 +32,8 @@ type AiControlPlaneMenuProps = {
 
 const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   aiConfig,
+  modelParams,
+  onModelParamsChange,
   connectionState,
   onConfigChange,
   onConnect,
@@ -42,6 +46,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showFilters, setShowFilters] = useState(false);
   const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
   const [showProxyKey, setShowProxyKey] = useState(false);
+  const [loginStatus, setLoginStatus] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -105,6 +112,10 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     : aiConfig.filtersByProvider.cliproxy;
   const timeoutSeconds = Math.max(5, Math.min(300, Math.round(llmTimeoutMs / 1000)));
   const statusToneClass = getStatusTone();
+  const reasoningEffort =
+    typeof modelParams?.['reasoning_effort'] === 'string'
+      ? (modelParams['reasoning_effort'] as string)
+      : 'auto';
 
   const updateFilters = (updates: Partial<OpenRouterFilters & CliproxyFilters>) => {
     onConfigChange((prev) => {
@@ -127,6 +138,19 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     onDisconnect();
     const storedModelId = aiConfig.selectedModelIdByProvider?.[provider] ?? '';
     updateConfig({ provider, selectedModelId: storedModelId });
+    setLoginStatus(null);
+  };
+
+  const updateReasoningEffort = (value: string) => {
+    onModelParamsChange((prev) => {
+      const next: ModelParams = { ...(prev ?? {}) };
+      if (value === 'auto') {
+        delete next['reasoning_effort'];
+      } else {
+        next['reasoning_effort'] = value;
+      }
+      return Object.keys(next).length === 0 ? null : next;
+    });
   };
 
   const baseFilteredModels = connectionState.availableModels.filter((m) => {
@@ -160,6 +184,48 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     return true;
   });
 
+  const handleLocalLogin = useCallback(async () => {
+    setLoginStatus(null);
+    const endpoint = aiConfig.proxyEndpoint?.trim();
+    if (!endpoint) {
+      setLoginStatus({ tone: 'error', message: 'Proxy endpoint is required.' });
+      return;
+    }
+    if (!aiConfig.proxyKey) {
+      setLoginStatus({ tone: 'error', message: 'Agent token is required.' });
+      return;
+    }
+    const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
+    setLoginLoading(true);
+    try {
+      const response = await fetch(`${base}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${aiConfig.proxyKey}`,
+        },
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = body?.error || `Login failed (${response.status})`;
+        setLoginStatus({ tone: 'error', message });
+        return;
+      }
+      const authUrl = body?.auth_url;
+      if (authUrl && typeof authUrl === 'string') {
+        window.open(authUrl, '_blank', 'noopener');
+      }
+      const userCode = body?.user_code;
+      const baseMessage = body?.message || 'Login started. Complete it in the opened browser.';
+      const message = userCode ? `${baseMessage} Code: ${userCode}` : baseMessage;
+      setLoginStatus({ tone: 'success', message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Login failed';
+      setLoginStatus({ tone: 'error', message });
+    } finally {
+      setLoginLoading(false);
+    }
+  }, [aiConfig.proxyEndpoint, aiConfig.proxyKey]);
+
   useEffect(() => {
     if (connectionState.status !== 'connected') return;
     if (filteredModels.length !== 1) return;
@@ -168,6 +234,43 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     if (aiConfig.selectedModelId === onlyModelId) return;
     updateSelectedModel(onlyModelId);
   }, [aiConfig.selectedModelId, connectionState.status, filteredModels, updateSelectedModel]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const endpoint = aiConfig.proxyEndpoint?.trim();
+    const token = aiConfig.proxyKey;
+    if (!endpoint || !token) {
+      setAgentStatus({ state: 'unknown' });
+      return;
+    }
+    const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
+    let cancelled = false;
+
+    const checkHealth = async () => {
+      try {
+        const response = await fetch(`${base}/api/health`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (cancelled) return;
+        if (!response.ok) {
+          setAgentStatus({ state: 'offline', message: `HTTP ${response.status}` });
+          return;
+        }
+        setAgentStatus({ state: 'online' });
+      } catch (error: unknown) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : 'Unavailable';
+        setAgentStatus({ state: 'offline', message });
+      }
+    };
+
+    checkHealth();
+    const interval = window.setInterval(checkHealth, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [aiConfig.proxyEndpoint, aiConfig.proxyKey, isOpen]);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -282,6 +385,41 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                       {showProxyKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </Button>
                   </div>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleLocalLogin}
+                    disabled={loginLoading || !aiConfig.proxyEndpoint || !aiConfig.proxyKey}
+                    className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600"
+                  >
+                    {loginLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                    Sign in via local agent
+                  </Button>
+                  <span
+                    className={`text-[11px] flex items-center gap-1 ${
+                      agentStatus.state === 'online'
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : agentStatus.state === 'offline'
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    <span className="inline-block h-2 w-2 rounded-full border border-current" />
+                    Agent {agentStatus.state === 'unknown' ? 'unknown' : agentStatus.state}
+                    {agentStatus.message ? ` · ${agentStatus.message}` : ''}
+                  </span>
+                  {loginStatus && (
+                    <span
+                      className={`text-[11px] ${
+                        loginStatus.tone === 'success'
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-rose-600 dark:text-rose-400'
+                      }`}
+                    >
+                      {loginStatus.message}
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -409,6 +547,22 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
               </Select>
             </div>
           )}
+
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <label className="text-xs text-slate-500 dark:text-slate-400">Reasoning</label>
+            <Select
+              value={reasoningEffort}
+              onChange={(e) => updateReasoningEffort(e.target.value)}
+              size="sm"
+              className="w-[160px]"
+            >
+              <option value="auto">Auto</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="xhigh">XHigh</option>
+            </Select>
+          </div>
 
           <div className="mt-3 flex items-center justify-between gap-3">
             <label className="text-xs text-slate-500 dark:text-slate-400">Timeout (s)</label>
