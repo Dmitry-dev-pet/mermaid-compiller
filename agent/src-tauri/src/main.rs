@@ -934,10 +934,11 @@ fn build_gemini_command(
     .filter(|value| !value.is_empty())
     .map(|value| value.to_string())
     .or_else(|| config.gemini_model.clone())
-    .or_else(|| gemini_model_ids(config).first().cloned());
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"));
   if let Some(model) = model {
     command.arg("--model").arg(model);
-  }
+  } // else: let Gemini CLI pick its default / auto model
   if !config.gemini_approval_mode.trim().is_empty() {
     command.arg("--approval-mode").arg(config.gemini_approval_mode.trim());
   }
@@ -1039,7 +1040,11 @@ fn fallback_gemini_models(config: &Config) -> Vec<ModelInfo> {
         object: "model".to_string(),
         created: now,
         owned_by: "google".to_string(),
-        name: format!("Gemini: {id}"),
+        name: if id.eq_ignore_ascii_case("auto") {
+          "Gemini (auto)".to_string()
+        } else {
+          format!("Gemini: {id}")
+        },
         context_length: 0,
       })
       .collect()
@@ -1430,8 +1435,8 @@ async fn spawn_gemini_task(
         let fallback = model_override
           .clone()
           .or_else(|| config.gemini_model.clone())
-          .or_else(|| gemini_model_ids(&config).first().cloned())
-          .unwrap_or_else(|| "gemini-cli".to_string());
+          .filter(|value| !value.trim().is_empty())
+          .unwrap_or_else(|| "auto".to_string());
         model_id = Some(format!("gemini:{fallback}"));
       }
       *model_slot = model_id;
@@ -1771,13 +1776,18 @@ fn split_list(raw: String) -> Vec<String> {
 }
 
 fn gemini_model_ids(config: &Config) -> Vec<String> {
-  if !config.gemini_models.is_empty() {
-    return config.gemini_models.clone();
+  let mut result = vec!["auto".to_string()];
+  for model in config.gemini_models.iter().cloned() {
+    if !result.iter().any(|existing| existing.eq_ignore_ascii_case(&model)) {
+      result.push(model);
+    }
   }
   if let Some(model) = config.gemini_model.as_ref().map(|m| m.trim()).filter(|m| !m.is_empty()) {
-    return vec![model.to_string()];
+    if !result.iter().any(|existing| existing.eq_ignore_ascii_case(model)) {
+      result.push(model.to_string());
+    }
   }
-  vec!["gemini-cli".to_string()]
+  result
 }
 
 fn resolve_provider_and_model(default_provider: ProviderKind, model: Option<&str>) -> (ProviderKind, Option<String>) {
