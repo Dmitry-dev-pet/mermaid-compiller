@@ -21,6 +21,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
+use tokio::fs::OpenOptions as TokioOpenOptions;
 use tokio::sync::oneshot;
 use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
@@ -127,9 +128,13 @@ enum TaskEvent {
 struct Task {
   id: String,
   created_at: u64,
+  provider: String,
+  requested_model: Option<String>,
+  prompt: String,
   status: RwLock<TaskStatus>,
   output: RwLock<String>,
   stderr: RwLock<String>,
+  raw: RwLock<String>,
   model: RwLock<Option<String>>,
   tx: broadcast::Sender<TaskEvent>,
   notify: Notify,
@@ -229,8 +234,13 @@ struct TaskDetailsResponse {
   id: String,
   status: String,
   created_at: u64,
+  provider: String,
+  requested_model: Option<String>,
+  model: Option<String>,
+  prompt: String,
   stdout: String,
   stderr: String,
+  raw: String,
 }
 
 #[derive(Serialize)]
@@ -735,12 +745,19 @@ async fn task_details(
   let status = *task.status.read().await;
   let stdout = task.output.read().await.clone();
   let stderr = task.stderr.read().await.clone();
+  let raw = task.raw.read().await.clone();
+  let model = task.model.read().await.clone();
   Ok(Json(TaskDetailsResponse {
     id: task.id.clone(),
     status: status_to_string(status).to_string(),
     created_at: task.created_at,
+    provider: task.provider.clone(),
+    requested_model: task.requested_model.clone(),
+    model,
+    prompt: task.prompt.clone(),
     stdout,
     stderr,
+    raw,
   }))
 }
 
@@ -989,6 +1006,7 @@ async fn responses_start(
     let status = *task.status.read().await;
     Ok(Json(json!({
       "id": task.id,
+      "task_id": task.id,
       "object": "response",
       "created": now_unix(),
       "status": status_to_string(status),
@@ -1102,6 +1120,7 @@ async fn chat_start_with_defaults(
     let model_id = task.model.read().await.clone();
     Ok(Json(json!({
       "id": format!("turn_{}", now_unix()),
+      "task_id": task.id,
       "object": "chat.completion",
       "created": now_unix(),
       "model": model_id.unwrap_or_else(|| state.provider.as_str().to_string()),
@@ -1226,10 +1245,11 @@ async fn spawn_task(
   cwd: PathBuf,
   requested_model: Option<String>,
 ) -> Result<Arc<Task>, (StatusCode, Json<ErrorBody>)> {
+  let requested_model_full = requested_model.clone();
   let (provider, model_override) = resolve_provider_and_model(state.provider, requested_model.as_deref());
   match provider {
-    ProviderKind::Codex => spawn_codex_task(state, prompt, model_override).await,
-    ProviderKind::Gemini => spawn_gemini_task(state, prompt, cwd, model_override).await,
+    ProviderKind::Codex => spawn_codex_task(state, prompt, requested_model_full, model_override).await,
+    ProviderKind::Gemini => spawn_gemini_task(state, prompt, cwd, requested_model_full, model_override).await,
   }
 }
 
@@ -1237,6 +1257,7 @@ async fn spawn_codex_task(
   state: AppState,
   prompt: String,
   requested_model: Option<String>,
+  model_override: Option<String>,
 ) -> Result<Arc<Task>, (StatusCode, Json<ErrorBody>)> {
   let codex = state.codex.clone().ok_or_else(|| {
     (StatusCode::BAD_REQUEST, Json(ErrorBody { error: "codex provider unavailable".to_string() }))
@@ -1246,9 +1267,13 @@ async fn spawn_codex_task(
   let task = Arc::new(Task {
     id: id.clone(),
     created_at: now_unix(),
+    provider: ProviderKind::Codex.as_str().to_string(),
+    requested_model,
+    prompt: prompt.clone(),
     status: RwLock::new(TaskStatus::InProgress),
     output: RwLock::new(String::new()),
     stderr: RwLock::new(String::new()),
+    raw: RwLock::new(String::new()),
     model: RwLock::new(None),
     tx,
     notify: Notify::new(),
@@ -1259,8 +1284,12 @@ async fn spawn_codex_task(
   let tasks_clone = state.tasks.clone();
   let ttl = state.config.task_ttl_ms;
   let id_for_cleanup = id.clone();
-  let model_override = requested_model.clone();
+  let model_override = model_override.clone();
+  let config_for_logs = state.config.clone();
   tokio::spawn(async move {
+    append_agent_log(&config_for_logs, &format!("[task_start] id={} provider=codex requested_model={}", task_clone.id, task_clone.requested_model.clone().unwrap_or_else(|| "(none)".to_string()))).await;
+    append_agent_log(&config_for_logs, "[prompt]").await;
+    append_agent_log(&config_for_logs, &task_clone.prompt).await;
     let result = codex
       .run_chat_stream(prompt, Some(task_clone.tx.clone()), model_override)
       .await;
@@ -1280,12 +1309,14 @@ async fn spawn_codex_task(
         }
         let final_status = if status == "completed" { TaskStatus::Completed } else { TaskStatus::Error };
         finalize_task(task_clone.clone(), final_status, None).await;
+        append_agent_log(&config_for_logs, &format!("[task_done] id={} status={}", task_clone.id, status_to_string(final_status))).await;
       }
       Err(message) => {
         {
           let mut err = task_clone.stderr.write().await;
           err.push_str(&message);
         }
+        append_agent_log(&config_for_logs, &format!("[task_error] id={} err={}", task_clone.id, message)).await;
         finalize_task(task_clone.clone(), TaskStatus::Error, None).await;
       }
     }
@@ -1301,15 +1332,20 @@ async fn spawn_gemini_task(
   prompt: String,
   cwd: PathBuf,
   requested_model: Option<String>,
+  model_override: Option<String>,
 ) -> Result<Arc<Task>, (StatusCode, Json<ErrorBody>)> {
   let id = format!("task_{}", Uuid::new_v4().simple());
   let (tx, _) = broadcast::channel(32);
   let task = Arc::new(Task {
     id: id.clone(),
     created_at: now_unix(),
+    provider: ProviderKind::Gemini.as_str().to_string(),
+    requested_model,
+    prompt: prompt.clone(),
     status: RwLock::new(TaskStatus::InProgress),
     output: RwLock::new(String::new()),
     stderr: RwLock::new(String::new()),
+    raw: RwLock::new(String::new()),
     model: RwLock::new(None),
     tx,
     notify: Notify::new(),
@@ -1321,14 +1357,19 @@ async fn spawn_gemini_task(
   let ttl = state.config.task_ttl_ms;
   let id_for_cleanup = id.clone();
   let config = state.config.clone();
-  let model_override = requested_model.clone();
+  let model_override = model_override.clone();
+  let config_for_logs = config.clone();
   tokio::spawn(async move {
+    append_agent_log(&config_for_logs, &format!("[task_start] id={} provider=gemini requested_model={}", task_clone.id, task_clone.requested_model.clone().unwrap_or_else(|| "(none)".to_string()))).await;
+    append_agent_log(&config_for_logs, "[prompt]").await;
+    append_agent_log(&config_for_logs, &task_clone.prompt).await;
     let mut command = build_gemini_command(&config, &prompt, "stream-json", &cwd, model_override.as_deref());
     let mut child = match command.spawn() {
       Ok(child) => child,
       Err(err) => {
         let mut err_slot = task_clone.stderr.write().await;
         err_slot.push_str(&format!("failed to spawn gemini cli: {err}"));
+        append_task_raw(task_clone.as_ref(), &format!("[spawn_error] {err}")).await;
         finalize_task(task_clone.clone(), TaskStatus::Error, None).await;
         schedule_cleanup(tasks_clone, id_for_cleanup, ttl).await;
         return;
@@ -1382,6 +1423,10 @@ async fn spawn_gemini_task(
       if trimmed.is_empty() {
         continue;
       }
+      append_task_raw(task_clone.as_ref(), trimmed).await;
+      if log_gemini_raw_enabled() {
+        append_agent_log(&config_for_logs, trimmed).await;
+      }
       let parsed: Result<Value, _> = serde_json::from_str(trimmed);
       if let Ok(value) = parsed {
         if let Some(kind) = value.get("type").and_then(|v| v.as_str()) {
@@ -1423,6 +1468,7 @@ async fn spawn_gemini_task(
       let mut err_slot = task_clone.stderr.write().await;
       err_slot.push_str(trimmed);
       let _ = task_clone.tx.send(TaskEvent::Stderr(trimmed.to_string()));
+      append_task_raw(task_clone.as_ref(), &format!("[stderr] {trimmed}")).await;
     }
 
     {
@@ -1445,6 +1491,7 @@ async fn spawn_gemini_task(
     let success = exit_status.map(|status| status.success()).unwrap_or(false);
     let final_status = if success { TaskStatus::Completed } else { TaskStatus::Error };
     finalize_task(task_clone.clone(), final_status, exit_status.and_then(|status| status.code())).await;
+    append_agent_log(&config_for_logs, &format!("[task_done] id={} status={}", task_clone.id, status_to_string(final_status))).await;
     schedule_cleanup(tasks_clone, id_for_cleanup, ttl).await;
   });
 
@@ -1793,6 +1840,48 @@ fn split_list(raw: String) -> Vec<String> {
     .filter(|value| !value.is_empty())
     .map(|value| value.to_string())
     .collect()
+}
+
+fn raw_log_limit_bytes() -> usize {
+  std::env::var("AGENT_TASK_RAW_MAX_BYTES")
+    .ok()
+    .and_then(|value| value.parse().ok())
+    .filter(|value: &usize| *value > 0)
+    .unwrap_or(512 * 1024)
+}
+
+fn truncate_front_to_limit(value: &mut String, limit: usize) {
+  if value.len() <= limit {
+    return;
+  }
+  let drop_from = value.len().saturating_sub(limit);
+  let start = value
+    .char_indices()
+    .map(|(idx, _)| idx)
+    .find(|idx| *idx >= drop_from)
+    .unwrap_or(0);
+  value.drain(0..start);
+}
+
+async fn append_task_raw(task: &Task, line: &str) {
+  let mut raw = task.raw.write().await;
+  raw.push_str(line);
+  raw.push('\n');
+  truncate_front_to_limit(&mut raw, raw_log_limit_bytes());
+}
+
+fn log_gemini_raw_enabled() -> bool {
+  parse_bool(std::env::var("AGENT_LOG_GEMINI_RAW").ok(), false)
+}
+
+async fn append_agent_log(config: &Config, line: &str) {
+  let Some(path) = config.log_path.as_ref() else {
+    return;
+  };
+  if let Ok(mut file) = TokioOpenOptions::new().create(true).append(true).open(path).await {
+    let _ = file.write_all(line.as_bytes()).await;
+    let _ = file.write_all(b"\n").await;
+  }
 }
 
 fn discover_gemini_models_from_cli(gemini_cmd: &str, include_preview: bool) -> Option<Vec<String>> {
