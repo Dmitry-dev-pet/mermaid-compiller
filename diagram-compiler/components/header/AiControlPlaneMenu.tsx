@@ -283,7 +283,10 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     let cancelled = false;
 
     const headers: Record<string, string> = {};
-    if (aiConfig.proxyKey) headers.Authorization = `Bearer ${aiConfig.proxyKey}`;
+    if (aiConfig.proxyKey) {
+      headers.Authorization = `Bearer ${aiConfig.proxyKey}`;
+      headers['X-Management-Key'] = aiConfig.proxyKey;
+    }
 
     const parseVersionFromJson = (value: unknown): string | undefined => {
       if (!value || typeof value !== 'object') return undefined;
@@ -302,10 +305,20 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         headers.get('x-app-version'),
         headers.get('x-server-version'),
         headers.get('x-version'),
+        headers.get('server'),
+        headers.get('x-powered-by'),
       ]
         .map((value) => (typeof value === 'string' ? value.trim() : ''))
         .filter(Boolean);
-      return candidates[0];
+      for (const candidate of candidates) {
+        const direct = candidate.trim();
+        if (!direct) continue;
+        const match = direct.match(/(?:CLIProxyAPI|cli-proxy-api|cliproxyapi)[^0-9v]*v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z_.-]+)?)/i);
+        if (match?.[1]) return `v${match[1]}`;
+        const semver = direct.match(/\bv?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z_.-]+)?\b/);
+        if (semver?.[0]) return semver[0];
+      }
+      return undefined;
     };
 
     const fetchVersion = async () => {
