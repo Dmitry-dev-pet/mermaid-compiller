@@ -56,6 +56,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     geminiDetected?: boolean;
     geminiVersion?: string;
     cliproxyapiVersion?: string;
+    cliproxyapiLatestVersion?: string;
   }>({});
 
   useEffect(() => {
@@ -75,7 +76,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     if (connectionState.status === 'failed') return 'AI: Connection Failed';
     if (!aiConfig.selectedModelId) return 'AI: Connected · Select model';
 
-    const model = connectionState.availableModels.find((m) => m.id === aiConfig.selectedModelId);
+    const model = connectionState.availableModels.find((m) => m?.id === aiConfig.selectedModelId);
     const modelName = model ? model.name : aiConfig.selectedModelId;
     const contextLabel = model?.contextLength ? ` (${formatContextLength(model.contextLength)})` : '';
     const providerName =
@@ -135,7 +136,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       ? (modelParams['reasoning_effort'] as string)
       : 'auto';
   const selectedModel = aiConfig.selectedModelId
-    ? connectionState.availableModels.find((m) => m.id === aiConfig.selectedModelId)
+    ? connectionState.availableModels.find((m) => m?.id === aiConfig.selectedModelId)
     : undefined;
   const isGeminiModel =
     selectedModel?.vendor === 'google' ||
@@ -188,6 +189,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   }, [modelParams, showReasoningControl, updateReasoningEffort]);
 
   const baseFilteredModels = connectionState.availableModels.filter((m) => {
+    if (!m) return false;
     if (isOpenRouter) {
       const openRouterFilters = aiConfig.filtersByProvider.openrouter;
       if (openRouterFilters.freeOnly && !m.isFree) return false;
@@ -198,7 +200,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
   const vendorCounts = new Map<string, number>();
   baseFilteredModels.forEach((model) => {
-    if (!model.vendor) return;
+    if (!model || !model.vendor) return;
     vendorCounts.set(model.vendor, (vendorCounts.get(model.vendor) ?? 0) + 1);
   });
 
@@ -288,14 +290,22 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       headers['X-Management-Key'] = aiConfig.proxyKey;
     }
 
+    const normalizeVersionString = (value: string): string => {
+      const trimmed = value.trim();
+      if (!trimmed) return trimmed;
+      if (/^v\d+\.\d+\.\d+/.test(trimmed)) return trimmed;
+      if (/^\d+\.\d+\.\d+/.test(trimmed)) return `v${trimmed}`;
+      return trimmed;
+    };
+
     const parseVersionFromJson = (value: unknown): string | undefined => {
       if (!value || typeof value !== 'object') return undefined;
       const data = value as Record<string, unknown>;
-      if (typeof data.version === 'string') return data.version;
-      if (typeof data.app_version === 'string') return data.app_version;
-      if (typeof data.cliproxyapi_version === 'string') return data.cliproxyapi_version;
-      if (typeof data.build_version === 'string') return data.build_version;
-      if (typeof data.server_version === 'string') return data.server_version;
+      if (typeof data.version === 'string') return normalizeVersionString(data.version);
+      if (typeof data.app_version === 'string') return normalizeVersionString(data.app_version);
+      if (typeof data.cliproxyapi_version === 'string') return normalizeVersionString(data.cliproxyapi_version);
+      if (typeof data.build_version === 'string') return normalizeVersionString(data.build_version);
+      if (typeof data.server_version === 'string') return normalizeVersionString(data.server_version);
       return undefined;
     };
 
@@ -314,9 +324,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         const direct = candidate.trim();
         if (!direct) continue;
         const match = direct.match(/(?:CLIProxyAPI|cli-proxy-api|cliproxyapi)[^0-9v]*v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z_.-]+)?)/i);
-        if (match?.[1]) return `v${match[1]}`;
+        if (match?.[1]) return normalizeVersionString(match[1]);
         const semver = direct.match(/\bv?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z_.-]+)?\b/);
-        if (semver?.[0]) return semver[0];
+        if (semver?.[0]) return normalizeVersionString(semver[0]);
       }
       return undefined;
     };
@@ -324,11 +334,11 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     const fetchVersion = async () => {
       const endpoint = aiConfig.proxyEndpoint?.trim();
       if (!endpoint) {
-        setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: undefined }));
+        setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: undefined, cliproxyapiLatestVersion: undefined }));
         return;
       }
       const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
-      const paths = [
+      const detectPaths = [
         '/api/health',
         '/health',
         '/api/version',
@@ -343,65 +353,66 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         '/models',
         '/api/models',
       ];
-      for (const path of paths) {
+      let detectedVersion: string | undefined;
+      for (const path of detectPaths) {
         try {
           const response = await fetch(`${base}${path}`, { headers });
           if (cancelled) return;
           if (!response.ok) continue;
           const headerVersion = parseVersionFromHeaders(response.headers);
           if (headerVersion) {
-            setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: headerVersion }));
-            return;
+            detectedVersion = headerVersion;
+            break;
           }
           const contentType = response.headers.get('content-type') || '';
           if (contentType.includes('application/json')) {
             const json = await response.json().catch(() => null);
             const version = parseVersionFromJson(json);
             if (version) {
-              setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: version }));
-              return;
+              detectedVersion = version;
+              break;
             }
             continue;
           }
           const text = (await response.text().catch(() => '')).trim();
           if (text) {
-            setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: text.split('\n')[0] }));
-            return;
+            const line = normalizeVersionString(text.split('\n')[0] ?? '');
+            if (line) {
+              detectedVersion = line;
+              break;
+            }
           }
         } catch {
           // ignore and try next
         }
       }
-      // Fallback: if Mermaid Agent is running locally, ask it for cliproxyapi version.
-      try {
-        const agentEndpoint = aiConfig.agentEndpoint?.trim();
-        if (agentEndpoint) {
-          const agentBase = agentEndpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
-          const response = await fetch(`${agentBase}/api/health`);
-          if (response.ok) {
+
+      let latestVersion: string | undefined;
+      if (aiConfig.proxyKey) {
+        try {
+          const response = await fetch(`${base}/v0/management/latest-version`, { headers });
+          if (!cancelled && response.ok) {
             const json = await response.json().catch(() => null);
-            if (json && typeof json === 'object') {
-              const data = json as Record<string, unknown>;
-              const version = typeof data.cliproxyapi_version === 'string' ? data.cliproxyapi_version : undefined;
-              if (version) {
-                setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: version }));
-                return;
-              }
-            }
+            latestVersion = parseVersionFromJson(json);
           }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
       }
 
-      setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: undefined }));
+      if (cancelled) return;
+      setVersionInfo((prev) => ({
+        ...prev,
+        cliproxyapiVersion: detectedVersion,
+        cliproxyapiLatestVersion: latestVersion,
+      }));
     };
 
     fetchVersion();
     return () => {
       cancelled = true;
     };
-  }, [aiConfig.agentEndpoint, aiConfig.proxyEndpoint, aiConfig.proxyKey, isCliproxy, isOpen]);
+  }, [aiConfig.proxyEndpoint, aiConfig.proxyKey, isCliproxy, isOpen]);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -629,6 +640,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                 {isCliproxy && (
                   <div>
                     cliproxyapi: {versionInfo.cliproxyapiVersion ?? '(unknown)'}
+                    {versionInfo.cliproxyapiLatestVersion ? ` · latest ${versionInfo.cliproxyapiLatestVersion}` : ''}
                   </div>
                 )}
               </div>
