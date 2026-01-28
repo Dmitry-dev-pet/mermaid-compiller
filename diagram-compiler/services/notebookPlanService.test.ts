@@ -63,6 +63,15 @@ describe('notebookPlanService', () => {
 });
 
 describe('validateNotebookPlan', () => {
+  it('accepts schemaVersion with whitespace', () => {
+    const result = validateNotebookPlan({
+      schemaVersion: 'notebook-plan @1',
+      diagrams: [{ title: 'A', diagramType: 'flowchart', description: 'A desc', buildPrompt: 'a' }],
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
   it('reports missing diagrams', () => {
     const result = validateNotebookPlan({
       schemaVersion: NOTEBOOK_PLAN_SCHEMA_VERSION,

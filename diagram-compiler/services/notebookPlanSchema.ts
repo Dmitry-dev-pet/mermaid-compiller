@@ -13,6 +13,10 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0;
 
+const normalizeSchemaVersion = (value: string): string => {
+  return value.replace(/\s+/g, '').trim();
+};
+
 const validateDiagram = (diagram: unknown, index: number, errors: string[]) => {
   if (!isObject(diagram)) {
     errors.push(`diagram[${index}] is not an object`);
@@ -40,7 +44,7 @@ export const validateNotebookPlan = (plan: unknown): NotebookPlanValidationResul
 
   if (!isNonEmptyString(plan.schemaVersion)) {
     errors.push('schemaVersion is missing');
-  } else if (plan.schemaVersion !== NOTEBOOK_PLAN_SCHEMA_VERSION) {
+  } else if (normalizeSchemaVersion(plan.schemaVersion) !== NOTEBOOK_PLAN_SCHEMA_VERSION) {
     errors.push(`schemaVersion must be ${NOTEBOOK_PLAN_SCHEMA_VERSION}`);
   }
 
@@ -60,8 +64,12 @@ export const validateNotebookPlan = (plan: unknown): NotebookPlanValidationResul
 export const coerceNotebookPlan = (plan: NotebookPlan): NotebookPlan => {
   const resolvedN = Number.isFinite(plan.resolvedN) ? plan.resolvedN : plan.diagrams.length;
   const diagrams = Array.isArray(plan.diagrams) ? (plan.diagrams as NotebookPlanDiagram[]) : [];
+  const schemaVersion = normalizeSchemaVersion(plan.schemaVersion) === NOTEBOOK_PLAN_SCHEMA_VERSION
+    ? NOTEBOOK_PLAN_SCHEMA_VERSION
+    : plan.schemaVersion;
   return {
     ...plan,
+    schemaVersion,
     resolvedN,
     diagrams,
   };
