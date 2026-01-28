@@ -59,6 +59,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     cliproxyapiVersion?: string;
     cliproxyapiLatestVersion?: string;
     cliproxyUsageSummary?: string;
+    cliproxyManagementStatus?: string;
   }>({});
 
   useEffect(() => {
@@ -293,8 +294,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     const managementHeaders: Record<string, string> = {};
     if (aiConfig.proxyManagementKey) {
       managementHeaders['X-Management-Key'] = aiConfig.proxyManagementKey;
-      // Some deployments may accept the management key as a bearer token too.
-      managementHeaders.Authorization = `Bearer ${aiConfig.proxyManagementKey}`;
     }
 
     const normalizeVersionString = (value: string): string => {
@@ -402,9 +401,13 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       }
 
       let latestVersion: string | undefined;
+      let managementStatus: string | undefined;
       try {
         const response = await fetch(`${base}/v0/management/latest-version`, { headers: managementHeaders });
-        if (!cancelled && response.ok) {
+        if (!cancelled && (response.status === 401 || response.status === 403)) {
+          const errText = await response.text().catch(() => '');
+          managementStatus = errText.trim() || `unauthorized (${response.status})`;
+        } else if (!cancelled && response.ok) {
           const json = await response.json().catch(() => null);
           latestVersion = parseVersionFromJson(json);
         }
@@ -415,7 +418,10 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       let usageSummary: string | undefined;
       try {
         const response = await fetch(`${base}/v0/management/usage`, { headers: managementHeaders });
-        if (!cancelled && response.ok) {
+        if (!cancelled && (response.status === 401 || response.status === 403)) {
+          const errText = await response.text().catch(() => '');
+          managementStatus = managementStatus ?? errText.trim() || `unauthorized (${response.status})`;
+        } else if (!cancelled && response.ok) {
           const json = (await response.json().catch(() => null)) as unknown;
           if (json && typeof json === 'object') {
             const data = json as Record<string, unknown>;
@@ -444,6 +450,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         cliproxyapiVersion: detectedVersion,
         cliproxyapiLatestVersion: latestVersion,
         cliproxyUsageSummary: usageSummary,
+        cliproxyManagementStatus: managementStatus,
       }));
     };
 
@@ -709,6 +716,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                     cliproxyapi: {versionInfo.cliproxyapiVersion ?? '(unknown)'}
                     {versionInfo.cliproxyapiLatestVersion ? ` · latest ${versionInfo.cliproxyapiLatestVersion}` : ''}
                     {versionInfo.cliproxyUsageSummary ? ` · usage ${versionInfo.cliproxyUsageSummary}` : ''}
+                    {versionInfo.cliproxyManagementStatus ? ` · mgmt ${versionInfo.cliproxyManagementStatus}` : ''}
                   </div>
                 )}
               </div>
