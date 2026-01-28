@@ -143,6 +143,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     selectedModel?.vendor === 'google' ||
     /^gemini[:/]/i.test(aiConfig.selectedModelId) ||
     /\bgoogle\/gemini\b/i.test(aiConfig.selectedModelId);
+  const showReasoningControl = isAgent && !isGeminiModel;
 
   const updateFilters = (updates: Partial<OpenRouterFilters & CliproxyFilters>) => {
     onConfigChange((prev) => {
@@ -181,13 +182,13 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   }, [onModelParamsChange]);
 
   useEffect(() => {
-    if (!isGeminiModel) return;
     const current = typeof modelParams?.['reasoning_effort'] === 'string'
       ? (modelParams['reasoning_effort'] as string)
       : null;
     if (!current) return;
+    if (showReasoningControl) return;
     updateReasoningEffort('auto');
-  }, [isGeminiModel, modelParams, updateReasoningEffort]);
+  }, [modelParams, showReasoningControl, updateReasoningEffort]);
 
   const baseFilteredModels = connectionState.availableModels.filter((m) => {
     if (isOpenRouter) {
@@ -714,7 +715,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
             </div>
           )}
 
-          {!isGeminiModel && (
+          {showReasoningControl && (
             <div className="mt-3 flex items-center justify-between gap-3">
               <label className="text-xs text-slate-500 dark:text-slate-400">Reasoning</label>
               <Select
