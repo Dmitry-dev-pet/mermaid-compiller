@@ -19,7 +19,7 @@ describe('sessionSettings', () => {
     applySessionSettings(
       { appState: DEFAULT_APP_STATE, aiConfig: DEFAULT_AI_CONFIG, modelParams },
       (value) => { appliedAppState = value; },
-      (value) => { appliedAiConfig = value; },
+      (value) => { appliedAiConfig = typeof value === 'function' ? value(appliedAiConfig) : value; },
       (value) => { appliedModelParams = value; }
     );
 
@@ -67,7 +67,7 @@ describe('sessionSettings', () => {
     applySessionSettings(
       { appState: DEFAULT_APP_STATE, aiConfig: legacyAiConfig },
       () => {},
-      (value) => { appliedAiConfig = value; },
+      (value) => { appliedAiConfig = typeof value === 'function' ? value(appliedAiConfig) : value; },
     );
 
     expect(appliedAiConfig.selectedModelIdByProvider.agent).toBe('');
