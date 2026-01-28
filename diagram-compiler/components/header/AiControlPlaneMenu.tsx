@@ -746,24 +746,28 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                 if (files.length === 0) return (
                                   <div className="text-slate-400">Codex Quota: no auth files</div>
                                 );
-                                const bestByWindowId = new Map<string, { label: string; remainingPercent: number | null; resetLabel: string }>();
-                                files.forEach((file) => {
-                                  const quota = cliproxyQuotas.codex?.[file.id];
-                                  const windows = quota?.windows ?? [];
-                                  const weeklyWindow = windows.find((w) => w?.id === 'secondary') ?? null;
-                                  const weeklyUsedPercent = weeklyWindow?.usedPercent ?? null;
-                                  const weeklyRemainingPercent = weeklyUsedPercent === null ? null : Math.max(0, Math.min(100, 100 - weeklyUsedPercent));
-                                  const weeklyExhausted = weeklyRemainingPercent === 0;
-                                  windows.forEach((w) => {
-                                    if (!w?.id) return;
-                                    if (w.id === 'primary' && weeklyExhausted) return;
-                                    const usedPercent = w.usedPercent;
-                                    const remainingPercent = usedPercent === null ? null : Math.max(0, Math.min(100, 100 - usedPercent));
-                                    const prev = bestByWindowId.get(w.id);
-                                    if (!prev) {
-                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel });
-                                      return;
-                                    }
+	                                const bestByWindowId = new Map<string, { label: string; remainingPercent: number | null; resetLabel: string }>();
+	                                files.forEach((file) => {
+	                                  const quota = cliproxyQuotas.codex?.[file.id];
+	                                  const windows = quota?.windows ?? [];
+	                                  const weeklyWindow = windows.find((w) => w?.id === 'secondary') ?? null;
+	                                  const weeklyRemainingPercent =
+	                                    typeof weeklyWindow?.usedPercent === 'number'
+	                                      ? Math.max(0, Math.min(100, weeklyWindow.usedPercent))
+	                                      : null;
+	                                  const weeklyExhausted = weeklyRemainingPercent === 0;
+	                                  windows.forEach((w) => {
+	                                    if (!w?.id) return;
+	                                    if (w.id === 'primary' && weeklyExhausted) return;
+	                                    const remainingPercent =
+	                                      typeof w.usedPercent === 'number'
+	                                        ? Math.max(0, Math.min(100, w.usedPercent))
+	                                        : null;
+	                                    const prev = bestByWindowId.get(w.id);
+	                                    if (!prev) {
+	                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel });
+	                                      return;
+	                                    }
                                     if (remainingPercent === null) return;
                                     if (prev.remainingPercent === null || remainingPercent > prev.remainingPercent) {
                                       bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel });
