@@ -11,6 +11,7 @@ const baseAIConfig: AIConfig = {
   agentToken: '',
   agentEndpoint: '',
   proxyKey: '',
+  proxyManagementKey: '',
   proxyEndpoint: '',
   selectedModelId: 'test-model',
   selectedModelIdByProvider: { openrouter: 'test-model', agent: '', cliproxy: 'proxy-model' },

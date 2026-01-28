@@ -17,6 +17,7 @@ describe('modelFilter', () => {
     agentToken: '',
     agentEndpoint: '',
     proxyKey: '',
+    proxyManagementKey: '',
     proxyEndpoint: '',
     selectedModelId: '',
     selectedModelIdByProvider: {

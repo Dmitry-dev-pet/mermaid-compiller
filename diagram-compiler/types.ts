@@ -61,6 +61,7 @@ export interface AIConfig {
   agentToken: string;
   agentEndpoint: string;
   proxyKey: string;
+  proxyManagementKey: string;
   proxyEndpoint: string;
   selectedModelId: string;
   selectedModelIdByProvider: Record<Provider, string>;

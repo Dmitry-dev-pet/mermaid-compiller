@@ -16,6 +16,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   agentToken: 'test',
   agentEndpoint: import.meta.env.VITE_AGENT_ENDPOINT ?? 'http://127.0.0.1:8787',
   proxyKey: '',
+  proxyManagementKey: '',
   proxyEndpoint: import.meta.env.VITE_PROXY_ENDPOINT ?? 'http://localhost:8317',
   selectedModelId: '',
   selectedModelIdByProvider: {

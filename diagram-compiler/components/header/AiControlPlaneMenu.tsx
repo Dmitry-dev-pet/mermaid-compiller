@@ -48,6 +48,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
   const [showAgentToken, setShowAgentToken] = useState(false);
   const [showProxyKey, setShowProxyKey] = useState(false);
+  const [showProxyManagementKey, setShowProxyManagementKey] = useState(false);
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
   const [versionInfo, setVersionInfo] = useState<{
     agentVersion?: string;
@@ -57,6 +58,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     geminiVersion?: string;
     cliproxyapiVersion?: string;
     cliproxyapiLatestVersion?: string;
+    cliproxyUsageSummary?: string;
   }>({});
 
   useEffect(() => {
@@ -284,10 +286,15 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     if (!isOpen) return;
     let cancelled = false;
 
-    const headers: Record<string, string> = {};
+    const inferenceHeaders: Record<string, string> = {};
     if (aiConfig.proxyKey) {
-      headers.Authorization = `Bearer ${aiConfig.proxyKey}`;
-      headers['X-Management-Key'] = aiConfig.proxyKey;
+      inferenceHeaders.Authorization = `Bearer ${aiConfig.proxyKey}`;
+    }
+    const managementHeaders: Record<string, string> = {};
+    if (aiConfig.proxyManagementKey) {
+      managementHeaders['X-Management-Key'] = aiConfig.proxyManagementKey;
+      // Some deployments may accept the management key as a bearer token too.
+      managementHeaders.Authorization = `Bearer ${aiConfig.proxyManagementKey}`;
     }
 
     const normalizeVersionString = (value: string): string => {
@@ -334,7 +341,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     const fetchVersion = async () => {
       const endpoint = aiConfig.proxyEndpoint?.trim();
       if (!endpoint) {
-        setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: undefined, cliproxyapiLatestVersion: undefined }));
+        setVersionInfo((prev) => ({
+          ...prev,
+          cliproxyapiVersion: undefined,
+          cliproxyapiLatestVersion: undefined,
+          cliproxyUsageSummary: undefined,
+        }));
         return;
       }
       const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
@@ -356,7 +368,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       let detectedVersion: string | undefined;
       for (const path of detectPaths) {
         try {
-          const response = await fetch(`${base}${path}`, { headers });
+          const response = await fetch(`${base}${path}`, { headers: inferenceHeaders });
           if (cancelled) return;
           if (!response.ok) continue;
           const headerVersion = parseVersionFromHeaders(response.headers);
@@ -389,10 +401,31 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
       let latestVersion: string | undefined;
       try {
-        const response = await fetch(`${base}/v0/management/latest-version`, { headers });
+        const response = await fetch(`${base}/v0/management/latest-version`, { headers: managementHeaders });
         if (!cancelled && response.ok) {
           const json = await response.json().catch(() => null);
           latestVersion = parseVersionFromJson(json);
+        }
+      } catch {
+        // ignore
+      }
+
+      let usageSummary: string | undefined;
+      try {
+        const response = await fetch(`${base}/v0/management/usage`, { headers: managementHeaders });
+        if (!cancelled && response.ok) {
+          const json = (await response.json().catch(() => null)) as unknown;
+          if (json && typeof json === 'object') {
+            const data = json as Record<string, unknown>;
+            const totalRequests = typeof data.total_requests === 'number' ? data.total_requests : null;
+            const totalTokens = typeof data.total_tokens === 'number' ? data.total_tokens : null;
+            const totalFailed = typeof data.failed_requests === 'number' ? data.failed_requests : null;
+            const parts: string[] = [];
+            if (typeof totalRequests === 'number') parts.push(`${totalRequests} req`);
+            if (typeof totalTokens === 'number') parts.push(`${totalTokens} tok`);
+            if (typeof totalFailed === 'number') parts.push(`${totalFailed} fail`);
+            if (parts.length > 0) usageSummary = parts.join(' · ');
+          }
         }
       } catch {
         // ignore
@@ -403,6 +436,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         ...prev,
         cliproxyapiVersion: detectedVersion,
         cliproxyapiLatestVersion: latestVersion,
+        cliproxyUsageSummary: usageSummary,
       }));
     };
 
@@ -410,7 +444,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [aiConfig.proxyEndpoint, aiConfig.proxyKey, isCliproxy, isOpen]);
+  }, [aiConfig.proxyEndpoint, aiConfig.proxyKey, aiConfig.proxyManagementKey, isCliproxy, isOpen]);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -588,6 +622,34 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                     </Button>
                   </div>
                 </div>
+                <div>
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Management Key</label>
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      autoComplete="new-password"
+                      name="proxy-management-secret"
+                      data-1p-ignore="true"
+                      data-lpignore="true"
+                      style={{ WebkitTextSecurity: showProxyManagementKey ? 'none' : 'disc' }}
+                      value={aiConfig.proxyManagementKey || ''}
+                      onChange={(e) => updateConfig({ proxyManagementKey: e.target.value })}
+                      placeholder="X-Management-Key"
+                      size="md"
+                      className="pr-8"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowProxyManagementKey((prev) => !prev)}
+                      className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      aria-label={showProxyManagementKey ? 'Hide management key' : 'Show management key'}
+                    >
+                      {showProxyManagementKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -639,6 +701,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                   <div>
                     cliproxyapi: {versionInfo.cliproxyapiVersion ?? '(unknown)'}
                     {versionInfo.cliproxyapiLatestVersion ? ` · latest ${versionInfo.cliproxyapiLatestVersion}` : ''}
+                    {versionInfo.cliproxyUsageSummary ? ` · usage ${versionInfo.cliproxyUsageSummary}` : ''}
                   </div>
                 )}
               </div>

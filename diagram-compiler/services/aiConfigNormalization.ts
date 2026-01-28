@@ -54,11 +54,15 @@ export const normalizeAiConfig = (config: LegacyAIConfig | null | undefined): AI
       ? raw.agentToken
       : DEFAULT_AI_CONFIG.agentToken;
 
+  const proxyManagementKey =
+    typeof raw.proxyManagementKey === 'string' ? raw.proxyManagementKey : DEFAULT_AI_CONFIG.proxyManagementKey;
+
   return {
     ...DEFAULT_AI_CONFIG,
     ...rest,
     provider,
     agentToken,
+    proxyManagementKey,
     selectedModelIdByProvider,
     filtersByProvider: {
       openrouter: openrouterFilters,

@@ -38,6 +38,7 @@ export const applySessionSettings = (
     const rawOpenRouterKey = typeof raw?.openRouterKey === 'string' ? raw.openRouterKey : '';
     const rawAgentToken = typeof raw?.agentToken === 'string' ? raw.agentToken : '';
     const rawProxyKey = typeof raw?.proxyKey === 'string' ? raw.proxyKey : '';
+    const rawProxyManagementKey = typeof raw?.proxyManagementKey === 'string' ? raw.proxyManagementKey : '';
 
     const rawOpenRouterEndpoint = typeof raw?.openRouterEndpoint === 'string' ? raw.openRouterEndpoint : '';
     const rawAgentEndpoint = typeof raw?.agentEndpoint === 'string' ? raw.agentEndpoint : '';
@@ -48,6 +49,7 @@ export const applySessionSettings = (
       openRouterKey: rawOpenRouterKey || prev.openRouterKey,
       agentToken: rawAgentToken || prev.agentToken,
       proxyKey: rawProxyKey || prev.proxyKey,
+      proxyManagementKey: rawProxyManagementKey || prev.proxyManagementKey,
       openRouterEndpoint: rawOpenRouterEndpoint || prev.openRouterEndpoint,
       agentEndpoint: rawAgentEndpoint || prev.agentEndpoint,
       proxyEndpoint: rawProxyEndpoint || prev.proxyEndpoint,
