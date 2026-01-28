@@ -148,6 +148,21 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     return `${rounded}k`;
   };
 
+  const normalizeCliVersion = (value: string | undefined): string | null => {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (!trimmed) return null;
+    const match = trimmed.match(/\bv?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z_.-]+)?\b/);
+    if (!match?.[0]) return trimmed;
+    const v = match[0];
+    return v.startsWith('v') ? v : `v${v}`;
+  };
+
+  const formatCliStatus = (label: string, detected: boolean | undefined, version: string | undefined): string => {
+    if (detected === false) return `${label} (missing)`;
+    const v = normalizeCliVersion(version);
+    return `${label} ${v ?? '(unknown)'}`;
+  };
+
   const isOpenRouter = aiConfig.provider === 'openrouter';
   const isAgent = aiConfig.provider === 'agent';
   const isCliproxy = aiConfig.provider === 'cliproxy';
@@ -613,9 +628,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
               <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 flex flex-col gap-1">
                 {isAgent && (
                   <div>
-                    Agent: {versionInfo.agentVersion ?? '(unknown)'} · CLI: codex{' '}
-                    {versionInfo.codexDetected === false ? '(missing)' : (versionInfo.codexVersion ?? '(unknown)')} · gemini{' '}
-                    {versionInfo.geminiDetected === false ? '(missing)' : (versionInfo.geminiVersion ?? '(unknown)')}
+                    Agent {normalizeCliVersion(versionInfo.agentVersion) ?? '(unknown)'} ·{' '}
+                    {formatCliStatus('Codex CLI', versionInfo.codexDetected, versionInfo.codexVersion)} ·{' '}
+                    {formatCliStatus('Gemini CLI', versionInfo.geminiDetected, versionInfo.geminiVersion)}
                   </div>
                 )}
                 {isCliproxy && (
