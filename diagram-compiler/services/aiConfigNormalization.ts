@@ -13,16 +13,26 @@ export type LegacyAIConfig = Partial<AIConfig> & {
   selectedModelIdByProvider?: Partial<Record<AIConfig['provider'], string>> | null;
 };
 
-const normalizeProxyFilters = (value: unknown): { provider: string } => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return { provider: '' };
+const normalizeProxyFilters = (value: unknown): { family: string; provider: string } => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { family: '', provider: '' };
   const obj = value as Record<string, unknown>;
+  const family = typeof obj.family === 'string' ? obj.family : '';
   const provider =
     typeof obj.provider === 'string'
       ? obj.provider
       : typeof obj.ownedBy === 'string'
         ? obj.ownedBy
         : '';
-  return { provider };
+  const normalizedFamily = family.trim().toLowerCase();
+  const normalizedProvider = provider.trim().toLowerCase();
+
+  // Back-compat: old "provider=google" meant "Gemini models" (vendor google),
+  // not strictly owned_by=google.
+  if (!normalizedFamily && normalizedProvider === 'google') {
+    return { family: 'gemini', provider: '' };
+  }
+
+  return { family, provider };
 };
 
 export const normalizeAiConfig = (config: LegacyAIConfig | null | undefined): AIConfig => {

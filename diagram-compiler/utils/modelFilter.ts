@@ -1,5 +1,18 @@
 import { AIConfig, Model } from '../types';
 
+const getProxyFamilyKey = (m: Model): 'gpt' | 'claude' | 'gemini' | 'other' => {
+  const vendor = (m.vendor ?? '').trim().toLowerCase();
+  if (vendor === 'openai') return 'gpt';
+  if (vendor === 'anthropic') return 'claude';
+  if (vendor === 'google') return 'gemini';
+
+  const id = (m.id ?? '').trim().toLowerCase();
+  if (id.startsWith('gpt') || id.includes('/gpt') || id.includes('gpt-')) return 'gpt';
+  if (id.includes('claude')) return 'claude';
+  if (id.includes('gemini')) return 'gemini';
+  return 'other';
+};
+
 export const filterModels = (models: Model[], config: AIConfig): Model[] => {
   const isOpenRouter = config.provider === 'openrouter';
 
@@ -15,16 +28,15 @@ export const filterModels = (models: Model[], config: AIConfig): Model[] => {
       const proxyFilters = config.provider === 'agent'
         ? config.filtersByProvider.agent
         : config.filtersByProvider.cliproxy;
-      const provider = proxyFilters.provider ?? '';
-      if (provider) {
+      const family = (proxyFilters.family ?? '').trim().toLowerCase();
+      if (family) {
+        if (getProxyFamilyKey(m) !== family) return false;
+      }
+
+      const backend = (proxyFilters.provider ?? '').trim().toLowerCase();
+      if (backend) {
         const ownedBy = (m.ownedBy ?? '').trim().toLowerCase();
-        const filter = provider.trim().toLowerCase();
-        if (filter === 'google') {
-          const vendor = (m.vendor ?? '').trim().toLowerCase();
-          if (ownedBy !== 'google' && vendor !== 'google') return false;
-        } else if (ownedBy !== filter) {
-          return false;
-        }
+        if (ownedBy !== backend) return false;
       }
     }
     return true;

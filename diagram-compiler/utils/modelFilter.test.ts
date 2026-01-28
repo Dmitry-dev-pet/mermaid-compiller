@@ -34,9 +34,11 @@ describe('modelFilter', () => {
         minContextWindow: 0,
       },
       agent: {
+        family: '',
         provider: '',
       },
       cliproxy: {
+        family: '',
         provider: '',
       },
     },
@@ -103,6 +105,7 @@ describe('modelFilter', () => {
       filtersByProvider: {
         ...baseConfig.filtersByProvider,
         cliproxy: {
+          family: '',
           provider: '',
         },
       },

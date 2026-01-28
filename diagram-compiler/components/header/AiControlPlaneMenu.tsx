@@ -261,14 +261,26 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     });
   }
 
-  const ownedByCandidates = new Set<string>();
+  const getProxyFamilyKey = (model: { id: string; vendor?: string | null }): 'gpt' | 'claude' | 'gemini' | 'other' => {
+    const vendor = typeof model.vendor === 'string' ? model.vendor.trim().toLowerCase() : '';
+    if (vendor === 'openai') return 'gpt';
+    if (vendor === 'anthropic') return 'claude';
+    if (vendor === 'google') return 'gemini';
+    const id = model.id.trim().toLowerCase();
+    if (id.startsWith('gpt') || id.includes('/gpt') || id.includes('gpt-')) return 'gpt';
+    if (id.includes('claude')) return 'claude';
+    if (id.includes('gemini')) return 'gemini';
+    return 'other';
+  };
+
+  const familyCandidates = new Set<'gpt' | 'claude' | 'gemini' | 'other'>();
+  const backendCandidates = new Set<string>();
   if (!isOpenRouter) {
     baseFilteredModels.forEach((model) => {
       if (!model) return;
       const ownedBy = typeof model.ownedBy === 'string' ? model.ownedBy.trim().toLowerCase() : '';
-      if (ownedBy) ownedByCandidates.add(ownedBy);
-      const vendor = typeof model.vendor === 'string' ? model.vendor.trim().toLowerCase() : '';
-      if (vendor === 'google') ownedByCandidates.add('google');
+      if (ownedBy) backendCandidates.add(ownedBy);
+      familyCandidates.add(getProxyFamilyKey(model));
     });
   }
 
@@ -280,29 +292,47 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     vendorOptions.unshift({ vendor: openRouterFilters.vendor, count: 0 });
   }
 
-  const ownedByOptions = Array.from(ownedByCandidates.values())
+  const familyLabel = (key: 'gpt' | 'claude' | 'gemini' | 'other'): string => {
+    if (key === 'gpt') return 'GPT';
+    if (key === 'claude') return 'Claude';
+    if (key === 'gemini') return 'Gemini';
+    return 'Other';
+  };
+
+  const familyOptions = Array.from(familyCandidates.values())
+    .sort((a, b) => familyLabel(a).localeCompare(familyLabel(b)))
+    .map((family) => {
+      const count = baseFilteredModels.filter((model) => model && getProxyFamilyKey(model) === family).length;
+      return { family, label: familyLabel(family), count };
+    });
+
+  const backendOptions = Array.from(backendCandidates.values())
     .sort((a, b) => a.localeCompare(b))
-    .map((ownedBy) => {
+    .map((backend) => {
       const count = baseFilteredModels.filter((model) => {
         if (!model) return false;
         const ob = typeof model.ownedBy === 'string' ? model.ownedBy.trim().toLowerCase() : '';
-        if (ownedBy === 'google') {
-          const vendor = typeof model.vendor === 'string' ? model.vendor.trim().toLowerCase() : '';
-          return ob === 'google' || vendor === 'google';
-        }
-        return ob === ownedBy;
+        return ob === backend;
       }).length;
-      return { ownedBy, count };
+      return { backend, count };
     });
 
-  if (!isOpenRouter && proxyFilters?.provider) {
-    const active = proxyFilters.provider.trim().toLowerCase();
-    if (active && !ownedByCandidates.has(active)) {
-      ownedByOptions.unshift({ ownedBy: active, count: 0 });
+  if (!isOpenRouter && proxyFilters?.family) {
+    const active = proxyFilters.family.trim().toLowerCase() as 'gpt' | 'claude' | 'gemini' | 'other';
+    if (active && !familyCandidates.has(active)) {
+      familyOptions.unshift({ family: active, label: familyLabel(active), count: 0 });
     }
   }
 
-  const ownedByPills = [...ownedByOptions].sort((a, b) => (b.count - a.count) || a.ownedBy.localeCompare(b.ownedBy));
+  if (!isOpenRouter && proxyFilters?.provider) {
+    const active = proxyFilters.provider.trim().toLowerCase();
+    if (active && !backendCandidates.has(active)) {
+      backendOptions.unshift({ backend: active, count: 0 });
+    }
+  }
+
+  const familyPills = [...familyOptions].sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label));
+  const backendPills = [...backendOptions].sort((a, b) => (b.count - a.count) || a.backend.localeCompare(b.backend));
 
   const filteredModels = baseFilteredModels.filter((m) => {
     if (!m) return false;
@@ -311,14 +341,16 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       return true;
     }
 
-    const filterProvider = (proxyFilters?.provider ?? '').trim().toLowerCase();
-    if (!filterProvider) return true;
-    const ownedBy = (m.ownedBy ?? '').trim().toLowerCase();
-    if (filterProvider === 'google') {
-      const vendor = (m.vendor ?? '').trim().toLowerCase();
-      return ownedBy === 'google' || vendor === 'google';
+    const filterFamily = (proxyFilters?.family ?? '').trim().toLowerCase();
+    if (filterFamily && getProxyFamilyKey(m) !== filterFamily) return false;
+
+    const filterBackend = (proxyFilters?.provider ?? '').trim().toLowerCase();
+    if (filterBackend) {
+      const ownedBy = (m.ownedBy ?? '').trim().toLowerCase();
+      if (ownedBy !== filterBackend) return false;
     }
-    return ownedBy === filterProvider;
+
+    return true;
   });
 
   useEffect(() => {
@@ -1046,9 +1078,44 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
               {showFilters && (
                 <div className="mb-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded text-xs grid grid-cols-2 gap-2 border border-slate-100 dark:border-slate-700 dark:text-slate-300">
-                  {!isOpenRouter && ownedByOptions.length > 0 && (
+                  {!isOpenRouter && familyOptions.length > 0 && (
                     <div className="col-span-2">
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Provider</label>
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Family</label>
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={() => updateProxyFilters({ family: '' })}
+                          className={`px-2 py-1 rounded border text-[11px] ${
+                            !(proxyFilters?.family ?? '')
+                              ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          All ({baseFilteredModels.length})
+                        </button>
+                        {familyPills.map(({ family, label, count }) => {
+                          const selected = (proxyFilters?.family ?? '') === family;
+                          return (
+                            <button
+                              key={family}
+                              type="button"
+                              onClick={() => updateProxyFilters({ family })}
+                              className={`px-2 py-1 rounded border text-[11px] ${
+                                selected
+                                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              {label} ({count})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {!isOpenRouter && backendOptions.length > 0 && (
+                    <div className="col-span-2">
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Backend</label>
                       <div className="flex flex-wrap gap-1">
                         <button
                           type="button"
@@ -1061,20 +1128,20 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                         >
                           All ({baseFilteredModels.length})
                         </button>
-                        {ownedByPills.map(({ ownedBy, count }) => {
-                          const selected = (proxyFilters?.provider ?? '') === ownedBy;
+                        {backendPills.map(({ backend, count }) => {
+                          const selected = (proxyFilters?.provider ?? '') === backend;
                           return (
                             <button
-                              key={ownedBy}
+                              key={backend}
                               type="button"
-                              onClick={() => updateProxyFilters({ provider: ownedBy })}
+                              onClick={() => updateProxyFilters({ provider: backend })}
                               className={`px-2 py-1 rounded border text-[11px] ${
                                 selected
                                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
                                   : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                               }`}
                             >
-                              {ownedBy} ({count})
+                              {backend} ({count})
                             </button>
                           );
                         })}

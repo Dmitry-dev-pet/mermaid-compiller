@@ -65,8 +65,8 @@ const testAiConfig: AIConfig = {
       experimental: false,
       minContextWindow: 0,
     },
-    agent: { provider: "" },
-    cliproxy: { provider: "" },
+    agent: { family: "", provider: "" },
+    cliproxy: { family: "", provider: "" },
   },
 };
 
