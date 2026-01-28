@@ -778,18 +778,24 @@ async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
   Json(StatusResponse { tasks: items })
 }
 
-async fn get_token(State(state): State<AppState>) -> Json<TokenResponse> {
+async fn get_token(
+  State(state): State<AppState>,
+  headers: HeaderMap,
+) -> Result<Json<TokenResponse>, (StatusCode, Json<ErrorBody>)> {
+  authorize(&state, &headers).await?;
   let token = state.token.read().await.clone();
-  Json(TokenResponse { token })
+  Ok(Json(TokenResponse { token }))
 }
 
 async fn set_token(
   State(state): State<AppState>,
+  headers: HeaderMap,
   Json(payload): Json<TokenRequest>,
-) -> Json<TokenResponse> {
+) -> Result<Json<TokenResponse>, (StatusCode, Json<ErrorBody>)> {
+  authorize(&state, &headers).await?;
   update_token(&state, payload.token).await;
   let token = state.token.read().await.clone();
-  Json(TokenResponse { token })
+  Ok(Json(TokenResponse { token }))
 }
 
 async fn update_token(state: &AppState, token: String) {
@@ -1085,8 +1091,9 @@ async fn responses_start(
 
 async fn models(
   State(state): State<AppState>,
-  _headers: HeaderMap,
+  headers: HeaderMap,
 ) -> Result<Json<ModelsResponse>, (StatusCode, Json<ErrorBody>)> {
+  authorize(&state, &headers).await?;
   let mut data = match state.codex.as_ref().map(|codex| codex.list_models()) {
     Some(fut) => match fut.await {
       Ok(list) if !list.is_empty() => list,
