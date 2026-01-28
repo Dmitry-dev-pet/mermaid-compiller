@@ -388,16 +388,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       }
 
       let latestVersion: string | undefined;
-      if (aiConfig.proxyKey) {
-        try {
-          const response = await fetch(`${base}/v0/management/latest-version`, { headers });
-          if (!cancelled && response.ok) {
-            const json = await response.json().catch(() => null);
-            latestVersion = parseVersionFromJson(json);
-          }
-        } catch {
-          // ignore
+      try {
+        const response = await fetch(`${base}/v0/management/latest-version`, { headers });
+        if (!cancelled && response.ok) {
+          const json = await response.json().catch(() => null);
+          latestVersion = parseVersionFromJson(json);
         }
+      } catch {
+        // ignore
       }
 
       if (cancelled) return;
