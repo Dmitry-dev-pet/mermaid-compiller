@@ -13,13 +13,23 @@ export type LegacyAIConfig = Partial<AIConfig> & {
   selectedModelIdByProvider?: Partial<Record<AIConfig['provider'], string>> | null;
 };
 
+const normalizeProxyFilters = (value: unknown): { provider: string } => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { provider: '' };
+  const obj = value as Record<string, unknown>;
+  const provider =
+    typeof obj.provider === 'string'
+      ? obj.provider
+      : typeof obj.ownedBy === 'string'
+        ? obj.ownedBy
+        : '';
+  return { provider };
+};
+
 export const normalizeAiConfig = (config: LegacyAIConfig | null | undefined): AIConfig => {
   const raw = config ?? {};
   const { filters: legacyFilters, filtersByProvider: legacyByProvider, selectedModelIdByProvider: legacyModels, ...rest } = raw;
 
   const openRouterDefaults = DEFAULT_AI_CONFIG.filtersByProvider.openrouter;
-  const agentDefaults = DEFAULT_AI_CONFIG.filtersByProvider.agent;
-  const cliproxyDefaults = DEFAULT_AI_CONFIG.filtersByProvider.cliproxy;
 
   const openrouterFilters = {
     ...openRouterDefaults,
@@ -27,15 +37,8 @@ export const normalizeAiConfig = (config: LegacyAIConfig | null | undefined): AI
     ...(legacyFilters ?? {}),
   };
 
-  const agentFilters = {
-    ...agentDefaults,
-    ...(legacyByProvider?.agent ?? {}),
-  };
-
-  const cliproxyFilters = {
-    ...cliproxyDefaults,
-    ...(legacyByProvider?.cliproxy ?? {}),
-  };
+  const agentFilters = normalizeProxyFilters(legacyByProvider?.agent ?? null);
+  const cliproxyFilters = normalizeProxyFilters(legacyByProvider?.cliproxy ?? null);
 
   const selectedModelIdByProvider: Record<AIConfig['provider'], string> = {
     openrouter: '',

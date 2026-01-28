@@ -34,10 +34,10 @@ describe('modelFilter', () => {
         minContextWindow: 0,
       },
       agent: {
-        ownedBy: '',
+        provider: '',
       },
       cliproxy: {
-        ownedBy: '',
+        provider: '',
       },
     },
   };
@@ -103,7 +103,7 @@ describe('modelFilter', () => {
       filtersByProvider: {
         ...baseConfig.filtersByProvider,
         cliproxy: {
-          ownedBy: '',
+          provider: '',
         },
       },
     };

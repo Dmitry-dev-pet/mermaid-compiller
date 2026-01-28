@@ -46,7 +46,7 @@ export interface OpenRouterFilters {
 }
 
 export interface CliproxyFilters {
-  ownedBy: string;
+  provider: string;
 }
 
 export type ProviderFilters = {

@@ -33,10 +33,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
       minContextWindow: 0,
     },
     agent: {
-      ownedBy: '',
+      provider: '',
     },
     cliproxy: {
-      ownedBy: '',
+      provider: '',
     },
   },
 };

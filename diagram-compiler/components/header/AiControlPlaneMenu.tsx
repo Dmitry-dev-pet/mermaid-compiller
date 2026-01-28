@@ -12,7 +12,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { AIConfig, CliproxyFilters, ConnectionState, ModelParams, OpenRouterFilters } from '../../types';
+import { AIConfig, CliproxyFilters, ConnectionState, Model, ModelParams, OpenRouterFilters } from '../../types';
 import { DEFAULT_AI_CONFIG } from '../../constants';
 import { useCliproxyQuotas } from '../../hooks/core/useCliproxyQuotas';
 import { useCliproxyManagementInfo } from '../../hooks/core/useCliproxyManagementInfo';
@@ -54,6 +54,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   llmTimeoutMs,
   onLLMTimeoutMsChange,
 }) => {
+  const getProxyProviderKey = (model: Model): string => {
+    const ownedBy = (model.ownedBy ?? '').trim().toLowerCase();
+    const vendor = (model.vendor ?? '').trim().toLowerCase();
+    return ownedBy && ownedBy !== 'antigravity' ? ownedBy : (vendor || ownedBy);
+  };
+
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -248,9 +254,10 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const ownedByCounts = new Map<string, number>();
   if (!isOpenRouter) {
     baseFilteredModels.forEach((model) => {
-      const ownedBy = typeof model?.ownedBy === 'string' ? model.ownedBy.trim() : '';
-      if (!ownedBy) return;
-      ownedByCounts.set(ownedBy, (ownedByCounts.get(ownedBy) ?? 0) + 1);
+      if (!model) return;
+      const providerKey = getProxyProviderKey(model);
+      if (!providerKey) return;
+      ownedByCounts.set(providerKey, (ownedByCounts.get(providerKey) ?? 0) + 1);
     });
   }
 
@@ -266,8 +273,8 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([ownedBy, count]) => ({ ownedBy, count }));
 
-  if (!isOpenRouter && proxyFilters?.ownedBy && !ownedByCounts.has(proxyFilters.ownedBy)) {
-    ownedByOptions.unshift({ ownedBy: proxyFilters.ownedBy, count: 0 });
+  if (!isOpenRouter && proxyFilters?.provider && !ownedByCounts.has(proxyFilters.provider.trim().toLowerCase())) {
+    ownedByOptions.unshift({ ownedBy: proxyFilters.provider.trim().toLowerCase(), count: 0 });
   }
 
   const ownedByPills = [...ownedByOptions].sort((a, b) => (b.count - a.count) || a.ownedBy.localeCompare(b.ownedBy));
@@ -279,8 +286,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       return true;
     }
 
-    const filterOwnedBy = proxyFilters?.ownedBy ?? '';
-    if (filterOwnedBy && (m.ownedBy ?? '') !== filterOwnedBy) return false;
+    const filterProvider = (proxyFilters?.provider ?? '').trim().toLowerCase();
+    if (!filterProvider) return true;
+    return getProxyProviderKey(m) === filterProvider;
     return true;
   });
 
@@ -939,9 +947,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                       <div className="flex flex-wrap gap-1">
                         <button
                           type="button"
-                          onClick={() => updateProxyFilters({ ownedBy: '' })}
+                          onClick={() => updateProxyFilters({ provider: '' })}
                           className={`px-2 py-1 rounded border text-[11px] ${
-                            !proxyFilters?.ownedBy
+                            !(proxyFilters?.provider ?? '')
                               ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
                               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                           }`}
@@ -949,12 +957,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                           All ({baseFilteredModels.length})
                         </button>
                         {ownedByPills.map(({ ownedBy, count }) => {
-                          const selected = (proxyFilters?.ownedBy ?? '') === ownedBy;
+                          const selected = (proxyFilters?.provider ?? '') === ownedBy;
                           return (
                             <button
                               key={ownedBy}
                               type="button"
-                              onClick={() => updateProxyFilters({ ownedBy })}
+                              onClick={() => updateProxyFilters({ provider: ownedBy })}
                               className={`px-2 py-1 rounded border text-[11px] ${
                                 selected
                                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'

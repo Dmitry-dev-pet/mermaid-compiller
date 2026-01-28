@@ -15,7 +15,13 @@ export const filterModels = (models: Model[], config: AIConfig): Model[] => {
       const proxyFilters = config.provider === 'agent'
         ? config.filtersByProvider.agent
         : config.filtersByProvider.cliproxy;
-      if (proxyFilters.ownedBy && (m.ownedBy ?? '') !== proxyFilters.ownedBy) return false;
+      const provider = proxyFilters.provider ?? '';
+      if (provider) {
+        const ownedBy = (m.ownedBy ?? '').trim().toLowerCase();
+        const vendor = (m.vendor ?? '').trim().toLowerCase();
+        const providerKey = ownedBy && ownedBy !== 'antigravity' ? ownedBy : (vendor || ownedBy);
+        if (providerKey !== provider.trim().toLowerCase()) return false;
+      }
     }
     return true;
   });
