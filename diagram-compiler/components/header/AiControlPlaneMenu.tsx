@@ -420,7 +420,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         const response = await fetch(`${base}/v0/management/usage`, { headers: managementHeaders });
         if (!cancelled && (response.status === 401 || response.status === 403)) {
           const errText = await response.text().catch(() => '');
-          managementStatus = managementStatus ?? errText.trim() || `unauthorized (${response.status})`;
+          managementStatus =
+            managementStatus ??
+            (errText.trim() || `unauthorized (${response.status})`);
         } else if (!cancelled && response.ok) {
           const json = (await response.json().catch(() => null)) as unknown;
           if (json && typeof json === 'object') {
