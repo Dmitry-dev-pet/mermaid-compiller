@@ -288,12 +288,15 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     let cancelled = false;
 
     const inferenceHeaders: Record<string, string> = {};
-    if (aiConfig.proxyKey) {
-      inferenceHeaders.Authorization = `Bearer ${aiConfig.proxyKey}`;
+    const proxyKey = aiConfig.proxyKey?.trim();
+    if (proxyKey) {
+      inferenceHeaders.Authorization = `Bearer ${proxyKey}`;
     }
     const managementHeaders: Record<string, string> = {};
-    if (aiConfig.proxyManagementKey) {
-      managementHeaders['X-Management-Key'] = aiConfig.proxyManagementKey;
+    const proxyManagementKey = aiConfig.proxyManagementKey?.trim();
+    if (proxyManagementKey) {
+      managementHeaders['X-Management-Key'] = proxyManagementKey;
+      managementHeaders.Authorization = `Bearer ${proxyManagementKey}`;
     }
 
     const normalizeVersionString = (value: string): string => {
