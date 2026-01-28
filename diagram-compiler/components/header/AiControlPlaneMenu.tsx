@@ -232,6 +232,13 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     vendorCounts.set(model.vendor, (vendorCounts.get(model.vendor) ?? 0) + 1);
   });
 
+  const ownedByCounts = new Map<string, number>();
+  baseFilteredModels.forEach((model) => {
+    const ownedBy = typeof model?.ownedBy === 'string' ? model.ownedBy.trim() : '';
+    if (!ownedBy) return;
+    ownedByCounts.set(ownedBy, (ownedByCounts.get(ownedBy) ?? 0) + 1);
+  });
+
   const vendorOptions = Array.from(vendorCounts.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([vendor, count]) => ({ vendor, count }));
@@ -240,9 +247,19 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     vendorOptions.unshift({ vendor: activeFilters.vendor, count: 0 });
   }
 
+  const ownedByOptions = Array.from(ownedByCounts.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([ownedBy, count]) => ({ ownedBy, count }));
+
+  if ('ownedBy' in activeFilters && activeFilters.ownedBy && !ownedByCounts.has(activeFilters.ownedBy)) {
+    ownedByOptions.unshift({ ownedBy: activeFilters.ownedBy, count: 0 });
+  }
+
   const vendorPills = [...vendorOptions].sort((a, b) => (b.count - a.count) || a.vendor.localeCompare(b.vendor));
+  const ownedByPills = [...ownedByOptions].sort((a, b) => (b.count - a.count) || a.ownedBy.localeCompare(b.ownedBy));
 
   const filteredModels = baseFilteredModels.filter((m) => {
+    if ('ownedBy' in activeFilters && activeFilters.ownedBy && (m.ownedBy ?? '') !== activeFilters.ownedBy) return false;
     if (activeFilters.vendor && m.vendor !== activeFilters.vendor) return false;
     return true;
   });
@@ -896,6 +913,41 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
               {showFilters && (
                 <div className="mb-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded text-xs grid grid-cols-2 gap-2 border border-slate-100 dark:border-slate-700 dark:text-slate-300">
+                  {'ownedBy' in activeFilters && ownedByOptions.length > 0 && (
+                    <div className="col-span-2">
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Provider</label>
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={() => updateFilters({ ownedBy: '' })}
+                          className={`px-2 py-1 rounded border text-[11px] ${
+                            !activeFilters.ownedBy
+                              ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          All ({baseFilteredModels.length})
+                        </button>
+                        {ownedByPills.map(({ ownedBy, count }) => {
+                          const selected = activeFilters.ownedBy === ownedBy;
+                          return (
+                            <button
+                              key={ownedBy}
+                              type="button"
+                              onClick={() => updateFilters({ ownedBy })}
+                              className={`px-2 py-1 rounded border text-[11px] ${
+                                selected
+                                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              {ownedBy} ({count})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div className="col-span-2">
                     <label className="block text-[10px] uppercase text-slate-400 mb-1">Vendor</label>
                     {isOpenRouter ? (

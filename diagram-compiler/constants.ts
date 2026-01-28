@@ -34,9 +34,11 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     },
     agent: {
       vendor: '',
+      ownedBy: '',
     },
     cliproxy: {
       vendor: '',
+      ownedBy: '',
     },
   },
 };

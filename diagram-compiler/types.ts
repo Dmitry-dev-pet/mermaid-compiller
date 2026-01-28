@@ -34,6 +34,7 @@ export interface Model {
   contextLength?: number;
   isFree?: boolean;
   vendor?: string;
+  ownedBy?: string;
 }
 
 export interface OpenRouterFilters {
@@ -46,6 +47,7 @@ export interface OpenRouterFilters {
 
 export interface CliproxyFilters {
   vendor: string;
+  ownedBy: string;
 }
 
 export type ProviderFilters = {

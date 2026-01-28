@@ -45,9 +45,11 @@ describe('requestNotebookPlan', () => {
           },
           agent: {
             vendor: '',
+            ownedBy: '',
           },
           cliproxy: {
             vendor: '',
+            ownedBy: '',
           },
         },
       },
@@ -95,9 +97,11 @@ describe('requestNotebookPlan', () => {
           },
           agent: {
             vendor: '',
+            ownedBy: '',
           },
           cliproxy: {
             vendor: '',
+            ownedBy: '',
           },
         },
       },
@@ -145,9 +149,11 @@ describe('requestNotebookPlan', () => {
           },
           agent: {
             vendor: '',
+            ownedBy: '',
           },
           cliproxy: {
             vendor: '',
+            ownedBy: '',
           },
         },
       },

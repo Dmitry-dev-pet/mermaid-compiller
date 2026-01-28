@@ -71,7 +71,7 @@ describe('sessionSettings', () => {
     );
 
     expect(appliedAiConfig.selectedModelIdByProvider.agent).toBe('');
-    expect(appliedAiConfig.filtersByProvider.agent).toEqual({ vendor: '' });
+    expect(appliedAiConfig.filtersByProvider.agent).toEqual({ vendor: '', ownedBy: '' });
     expect(typeof appliedAiConfig.agentEndpoint).toBe('string');
     expect(typeof appliedAiConfig.agentToken).toBe('string');
   });

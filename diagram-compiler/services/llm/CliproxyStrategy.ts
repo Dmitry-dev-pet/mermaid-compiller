@@ -173,7 +173,8 @@ export class CliproxyStrategy implements LLMProviderStrategy {
         name,
         contextLength: typeof m === "string" ? 0 : m.context_length || 0,
         isFree: false, // Cliproxy typically proxies paid models or local ones
-        vendor: ownedBy || deriveModelVendor(id, name),
+        vendor: deriveModelVendor(id, name),
+        ownedBy: ownedBy || undefined,
       };
     });
   }

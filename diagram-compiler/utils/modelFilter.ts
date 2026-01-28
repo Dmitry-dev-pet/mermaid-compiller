@@ -15,6 +15,7 @@ export const filterModels = (models: Model[], config: AIConfig): Model[] => {
       const proxyFilters = config.provider === 'agent'
         ? config.filtersByProvider.agent
         : config.filtersByProvider.cliproxy;
+      if (proxyFilters.ownedBy && (m.ownedBy ?? '') !== proxyFilters.ownedBy) return false;
       if (proxyFilters.vendor && m.vendor !== proxyFilters.vendor) return false;
     }
     return true;

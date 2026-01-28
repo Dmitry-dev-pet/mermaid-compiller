@@ -35,9 +35,11 @@ describe('modelFilter', () => {
       },
       agent: {
         vendor: '',
+        ownedBy: '',
       },
       cliproxy: {
         vendor: '',
+        ownedBy: '',
       },
     },
   };
@@ -104,6 +106,7 @@ describe('modelFilter', () => {
         ...baseConfig.filtersByProvider,
         cliproxy: {
           vendor: '',
+          ownedBy: '',
         },
       },
     };

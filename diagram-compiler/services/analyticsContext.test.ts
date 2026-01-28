@@ -23,8 +23,8 @@ const baseAIConfig: AIConfig = {
       experimental: false,
       minContextWindow: 0,
     },
-    agent: { vendor: 'any' },
-    cliproxy: { vendor: 'any' },
+    agent: { vendor: 'any', ownedBy: '' },
+    cliproxy: { vendor: 'any', ownedBy: '' },
   },
 };
 
