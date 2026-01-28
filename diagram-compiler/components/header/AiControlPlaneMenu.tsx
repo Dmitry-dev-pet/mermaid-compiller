@@ -12,7 +12,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { AIConfig, CliproxyFilters, ConnectionState, Model, ModelParams, OpenRouterFilters } from '../../types';
+import { AIConfig, CliproxyFilters, ConnectionState, ModelParams, OpenRouterFilters } from '../../types';
 import { DEFAULT_AI_CONFIG } from '../../constants';
 import { useCliproxyQuotas } from '../../hooks/core/useCliproxyQuotas';
 import { useCliproxyManagementInfo } from '../../hooks/core/useCliproxyManagementInfo';
@@ -54,12 +54,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   llmTimeoutMs,
   onLLMTimeoutMsChange,
 }) => {
-  const getProxyProviderKey = (model: Model): string => {
-    const ownedBy = (model.ownedBy ?? '').trim().toLowerCase();
-    const vendor = (model.vendor ?? '').trim().toLowerCase();
-    return ownedBy && ownedBy !== 'antigravity' ? ownedBy : (vendor || ownedBy);
-  };
-
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -255,9 +249,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   if (!isOpenRouter) {
     baseFilteredModels.forEach((model) => {
       if (!model) return;
-      const providerKey = getProxyProviderKey(model);
-      if (!providerKey) return;
-      ownedByCounts.set(providerKey, (ownedByCounts.get(providerKey) ?? 0) + 1);
+      const ownedBy = typeof model.ownedBy === 'string' ? model.ownedBy.trim().toLowerCase() : '';
+      if (!ownedBy) return;
+      ownedByCounts.set(ownedBy, (ownedByCounts.get(ownedBy) ?? 0) + 1);
     });
   }
 
@@ -288,8 +282,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
     const filterProvider = (proxyFilters?.provider ?? '').trim().toLowerCase();
     if (!filterProvider) return true;
-    return getProxyProviderKey(m) === filterProvider;
-    return true;
+    const ownedBy = (m.ownedBy ?? '').trim().toLowerCase();
+    if (filterProvider === 'google') {
+      const vendor = (m.vendor ?? '').trim().toLowerCase();
+      return ownedBy === 'google' || vendor === 'google';
+    }
+    return ownedBy === filterProvider;
   });
 
   useEffect(() => {

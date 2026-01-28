@@ -18,9 +18,13 @@ export const filterModels = (models: Model[], config: AIConfig): Model[] => {
       const provider = proxyFilters.provider ?? '';
       if (provider) {
         const ownedBy = (m.ownedBy ?? '').trim().toLowerCase();
-        const vendor = (m.vendor ?? '').trim().toLowerCase();
-        const providerKey = ownedBy && ownedBy !== 'antigravity' ? ownedBy : (vendor || ownedBy);
-        if (providerKey !== provider.trim().toLowerCase()) return false;
+        const filter = provider.trim().toLowerCase();
+        if (filter === 'google') {
+          const vendor = (m.vendor ?? '').trim().toLowerCase();
+          if (ownedBy !== 'google' && vendor !== 'google') return false;
+        } else if (ownedBy !== filter) {
+          return false;
+        }
       }
     }
     return true;
