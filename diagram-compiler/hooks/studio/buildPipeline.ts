@@ -20,6 +20,25 @@ import type { AIConfig, DiagramType, Message, ModelParams, ThinkingStyle } from 
 import type { LLMRequestContext } from "../../services/llm/types";
 import type { StudioOperationRunner } from "./operationRunner";
 
+const parseHttpStatusFromErrorMessage = (message: string): number | null => {
+  const apiMatch = message.match(/API Error\s*\((\d{3})\b/);
+  if (apiMatch) return Number(apiMatch[1]);
+  const codeMatch = message.match(/\bcode=(\d{3})\b/);
+  if (codeMatch) return Number(codeMatch[1]);
+  const jsonCodeMatch = message.match(/"code"\s*:\s*(\d{3})\b/);
+  if (jsonCodeMatch) return Number(jsonCodeMatch[1]);
+  return null;
+};
+
+const shouldRetryBuildAttemptOnError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = parseHttpStatusFromErrorMessage(message);
+  if (status && status >= 400 && status < 500) {
+    return false;
+  }
+  return true;
+};
+
 type BuildAttemptCallbacks = {
   onAttempt?: (attempt: number, maxAttempts: number) => void;
   onEmpty?: (attempt: number, maxAttempts: number) => void;
@@ -174,6 +193,7 @@ export const runBuildPipeline = async (
       const message = error instanceof Error ? error.message : String(error);
       callbacks?.onError?.(attempt, maxAttempts, message);
     },
+    shouldRetryOnError: (_attempt, error) => shouldRetryBuildAttemptOnError(error),
     execute: async () => {
       const requestContext: LLMRequestContext = {
         diagramType,

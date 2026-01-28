@@ -4,6 +4,7 @@ export const runAttemptLoop = async <T>(args: {
   onAttempt?: (attempt: number) => void;
   onEmpty?: (attempt: number) => void;
   onError?: (attempt: number, error: unknown) => void;
+  shouldRetryOnError?: (attempt: number, error: unknown) => boolean;
 }) => {
   let attempts = 0;
   let emptyResponses = 0;
@@ -23,6 +24,8 @@ export const runAttemptLoop = async <T>(args: {
     } catch (error: unknown) {
       lastError = error instanceof Error ? error.message : String(error);
       args.onError?.(attempts, error);
+      const shouldRetry = args.shouldRetryOnError?.(attempts, error) ?? true;
+      if (!shouldRetry) break;
     }
   }
 

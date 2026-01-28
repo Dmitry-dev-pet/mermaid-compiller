@@ -43,4 +43,27 @@ describe('runAttemptLoop', () => {
     expect(result.lastError).toBe('boom');
     expect(onError).toHaveBeenCalledTimes(1);
   });
+
+  it('stops retrying when shouldRetryOnError returns false', async () => {
+    const execute = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('rate limit'))
+      .mockResolvedValueOnce('ok');
+    const onError = vi.fn();
+    const shouldRetryOnError = vi.fn().mockReturnValue(false);
+
+    const result = await runAttemptLoop({
+      maxAttempts: 3,
+      execute,
+      onError,
+      shouldRetryOnError,
+    });
+
+    expect(result.value).toBeNull();
+    expect(result.attempts).toBe(1);
+    expect(result.lastError).toBe('rate limit');
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(shouldRetryOnError).toHaveBeenCalledWith(1, expect.any(Error));
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
 });
