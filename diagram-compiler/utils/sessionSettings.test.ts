@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_AI_CONFIG, DEFAULT_APP_STATE } from '../constants';
-import type { ModelParams } from '../types';
+import type { AIConfig, ModelParams } from '../types';
 import { applySessionSettings, buildSessionSettings } from './sessionSettings';
 
 describe('sessionSettings', () => {
@@ -40,5 +40,39 @@ describe('sessionSettings', () => {
 
     expect(appliedModelParams).toBeNull();
   });
-});
 
+  it('applySessionSettings normalizes legacy aiConfig', () => {
+    let appliedAiConfig = DEFAULT_AI_CONFIG;
+
+    const legacyAiConfig = {
+      provider: 'cliproxy',
+      openRouterKey: '',
+      openRouterEndpoint: '',
+      proxyKey: 'test',
+      proxyEndpoint: 'http://localhost:8317',
+      selectedModelId: 'openai/gpt-4o',
+      selectedModelIdByProvider: { openrouter: '', cliproxy: 'openai/gpt-4o' },
+      filtersByProvider: {
+        openrouter: {
+          vendor: '',
+          freeOnly: true,
+          testedOnly: true,
+          experimental: false,
+          minContextWindow: 0,
+        },
+        cliproxy: { vendor: '' },
+      },
+    } as unknown as AIConfig;
+
+    applySessionSettings(
+      { appState: DEFAULT_APP_STATE, aiConfig: legacyAiConfig },
+      () => {},
+      (value) => { appliedAiConfig = value; },
+    );
+
+    expect(appliedAiConfig.selectedModelIdByProvider.agent).toBe('');
+    expect(appliedAiConfig.filtersByProvider.agent).toEqual({ vendor: '' });
+    expect(typeof appliedAiConfig.agentEndpoint).toBe('string');
+    expect(typeof appliedAiConfig.agentToken).toBe('string');
+  });
+});

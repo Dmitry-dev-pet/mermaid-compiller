@@ -13,6 +13,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { AIConfig, CliproxyFilters, ConnectionState, ModelParams, OpenRouterFilters } from '../../types';
+import { DEFAULT_AI_CONFIG } from '../../constants';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { RadioGroup, RadioOption } from '../ui/Radio';
@@ -114,11 +115,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
   const isOpenRouter = aiConfig.provider === 'openrouter';
   const isAgent = aiConfig.provider === 'agent';
+  const filtersByProvider = aiConfig.filtersByProvider ?? DEFAULT_AI_CONFIG.filtersByProvider;
   const activeFilters = isOpenRouter
-    ? aiConfig.filtersByProvider.openrouter
+    ? filtersByProvider.openrouter
     : isAgent
-      ? aiConfig.filtersByProvider.agent
-      : aiConfig.filtersByProvider.cliproxy;
+      ? filtersByProvider.agent
+      : filtersByProvider.cliproxy;
   const timeoutSeconds = Math.max(5, Math.min(300, Math.round(llmTimeoutMs / 1000)));
   const statusToneClass = getStatusTone();
   const reasoningEffort =
@@ -141,7 +143,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         filtersByProvider: {
           ...prev.filtersByProvider,
           [provider]: {
-            ...prev.filtersByProvider[provider],
+            ...(prev.filtersByProvider?.[provider] ?? {}),
             ...updates,
           },
         },

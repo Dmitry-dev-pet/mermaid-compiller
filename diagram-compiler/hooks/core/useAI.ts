@@ -2,60 +2,17 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { AIConfig, ConnectionState, ProviderFilters } from '../../types';
 import { DEFAULT_AI_CONFIG } from '../../constants';
 import { fetchModels } from '../../services/llmService';
+import { normalizeAiConfig } from '../../services/aiConfigNormalization';
 import { safeParse } from '../../utils';
 
-type LegacyFilters = {
-  freeOnly?: boolean;
-  testedOnly?: boolean;
-  experimental?: boolean;
-};
-
 type LegacyAIConfig = Omit<AIConfig, 'filtersByProvider'> & {
-  filters?: LegacyFilters;
+  filters?: {
+    freeOnly?: boolean;
+    testedOnly?: boolean;
+    experimental?: boolean;
+  };
   filtersByProvider?: Partial<ProviderFilters>;
   selectedModelIdByProvider?: Partial<Record<AIConfig['provider'], string>>;
-};
-
-const normalizeAiConfig = (config: LegacyAIConfig): AIConfig => {
-  const { filters: legacyFilters, filtersByProvider: legacyByProvider, ...rest } = config;
-  const openRouterDefaults = DEFAULT_AI_CONFIG.filtersByProvider.openrouter;
-  const agentDefaults = DEFAULT_AI_CONFIG.filtersByProvider.agent;
-  const cliproxyDefaults = DEFAULT_AI_CONFIG.filtersByProvider.cliproxy;
-  const openrouterFilters = {
-    ...openRouterDefaults,
-    ...(legacyByProvider?.openrouter ?? {}),
-    ...(legacyFilters ?? {}),
-  };
-  const agentFilters = {
-    ...agentDefaults,
-    ...(legacyByProvider?.agent ?? {}),
-  };
-  const cliproxyFilters = {
-    ...cliproxyDefaults,
-    ...(legacyByProvider?.cliproxy ?? {}),
-  };
-
-  const selectedModelIdByProvider = {
-    openrouter: '',
-    agent: '',
-    cliproxy: '',
-    ...(config.selectedModelIdByProvider ?? {}),
-  };
-
-  if (config.selectedModelId && !selectedModelIdByProvider[config.provider]) {
-    selectedModelIdByProvider[config.provider] = config.selectedModelId;
-  }
-
-  return {
-    ...DEFAULT_AI_CONFIG,
-    ...rest,
-    selectedModelIdByProvider,
-    filtersByProvider: {
-      openrouter: openrouterFilters,
-      agent: agentFilters,
-      cliproxy: cliproxyFilters,
-    },
-  };
 };
 
 export const useAI = () => {
