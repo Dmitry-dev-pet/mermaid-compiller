@@ -758,6 +758,59 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                   </div>
                                 );
                               })()}
+
+                              {(() => {
+                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => f.provider === 'antigravity' && !f.runtimeOnly);
+                                if (files.length === 0) return (
+                                  <div className="text-slate-400">Antigravity Quota: no auth files</div>
+                                );
+                                const shown = cliproxyQuotasShowAll ? files : files.slice(0, 3);
+                                return (
+                                  <div className="flex flex-col gap-2">
+                                    <div className="text-slate-500 dark:text-slate-400">Antigravity Quota {files.length}</div>
+                                    {shown.map((file) => {
+                                      const label = file.email || file.label || file.name || file.id;
+                                      const quota = cliproxyQuotas.antigravity?.[file.id];
+                                      const items = quota?.items ?? [];
+                                      return (
+                                        <div key={file.id} className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                                          <div className="font-mono truncate">{label}</div>
+                                          {items.length ? (
+                                            <div className="mt-1 flex flex-col gap-1">
+                                              {items.map((it) => {
+                                                const percent = it.remainingPercent;
+                                                const tone = percent === null
+                                                  ? 'bg-slate-200 dark:bg-slate-700'
+                                                  : percent >= 60
+                                                    ? 'bg-emerald-500'
+                                                    : percent >= 20
+                                                      ? 'bg-amber-500'
+                                                      : 'bg-rose-500';
+                                                return (
+                                                  <div key={it.id} className="flex flex-col gap-0.5">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                      <span className="truncate">{it.label}</span>
+                                                      <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
+                                                    </div>
+                                                    <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                                      <div
+                                                        className={`h-full ${tone}`}
+                                                        style={{ width: `${percent === null ? 0 : Math.max(0, Math.min(100, percent))}%` }}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          ) : (
+                                            <div className="text-slate-400">No quota data</div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
                             </div>
 
                             {cliproxyQuotas.updatedAt ? (

@@ -11,6 +11,7 @@ export type CliproxyQuotasState = {
   error?: string;
   codex?: Record<string, CliproxyCodexQuota>;
   geminiCli?: Record<string, CliproxyGeminiCliQuota>;
+  antigravity?: Record<string, CliproxyGeminiCliQuota>;
 };
 
 const normalizeCliproxyBase = (endpoint: string) => endpoint.trim().replace(/\/v1\/?$/, '').replace(/\/$/, '');
@@ -450,13 +451,62 @@ export const useCliproxyQuotas = (args: {
       return { items };
     };
 
+    const parseAntigravityQuota = async (file: CliproxyAuthFile): Promise<CliproxyGeminiCliQuota> => {
+      const authIndex = toTrimmedString(file.authIndex) ?? null;
+      if (!authIndex) throw new Error('missing auth_index');
+
+      const { statusCode, body } = await apiCall({
+        authIndex,
+        method: 'POST',
+        url: cliproxyQuotaEndpoints.geminiCliQuota,
+        header: { ...cliproxyQuotaHeaders.geminiCli },
+      });
+      if (statusCode < 200 || statusCode >= 300) {
+        throw new Error(`HTTP ${statusCode}`);
+      }
+
+      const obj = parseJsonObject(body) ?? parseJsonObject(typeof body === 'string' ? body : null);
+      const bucketsRaw = obj && Array.isArray((obj as Record<string, unknown>).buckets) ? ((obj as Record<string, unknown>).buckets as unknown[]) : [];
+      const buckets = bucketsRaw
+        .filter((b) => b && typeof b === 'object')
+        .map((b) => {
+          const entry = b as Record<string, unknown>;
+          const modelId = toTrimmedString(entry.modelId ?? entry.model_id);
+          if (!modelId) return null;
+          const tokenType = toTrimmedString(entry.tokenType ?? entry.token_type);
+          const remainingFractionRaw = entry.remainingFraction ?? entry.remaining_fraction;
+          let remainingFraction = toNumberOrNull(remainingFractionRaw);
+          if (typeof remainingFractionRaw === 'string' && remainingFractionRaw.trim().endsWith('%')) {
+            const parsed = Number(remainingFractionRaw.trim().slice(0, -1));
+            remainingFraction = Number.isFinite(parsed) ? parsed / 100 : null;
+          }
+          if (remainingFraction !== null) {
+            remainingFraction = Math.max(0, Math.min(1, remainingFraction));
+          }
+          const remainingAmount = toNumberOrNull(entry.remainingAmount ?? entry.remaining_amount);
+          const resetTime = toTrimmedString(entry.resetTime ?? entry.reset_time) ?? undefined;
+          return { modelId, tokenType, remainingFraction, remainingAmount, resetTime };
+        })
+        .filter((b) => b !== null) as Array<{ modelId: string; tokenType?: string | null; remainingFraction: number | null; remainingAmount: number | null; resetTime?: string }>;
+
+      const items = groupGeminiBuckets(buckets).map((group) => ({
+        id: group.id,
+        label: group.label,
+        remainingPercent: group.remainingPercent,
+        resetLabel: group.resetLabel,
+      }));
+      return { items };
+    };
+
     const run = async () => {
       void Promise.resolve().then(() => setState((prev) => ({ ...prev, status: 'loading', error: undefined })));
 
       const codexFilesAll = cleanAuthFiles.filter((f) => f.provider === 'codex' && !f.runtimeOnly);
       const geminiFilesAll = cleanAuthFiles.filter((f) => f.provider === 'gemini-cli' && !f.runtimeOnly);
+      const antigravityFilesAll = cleanAuthFiles.filter((f) => f.provider === 'antigravity' && !f.runtimeOnly);
       const codexFiles = showAll ? codexFilesAll : codexFilesAll.slice(0, pageSize);
       const geminiFiles = showAll ? geminiFilesAll : geminiFilesAll.slice(0, pageSize);
+      const antigravityFiles = showAll ? antigravityFilesAll : antigravityFilesAll.slice(0, pageSize);
 
       const codexEntries = await mapWithConcurrency(codexFiles, 3, async (file) => {
         try {
@@ -474,12 +524,22 @@ export const useCliproxyQuotas = (args: {
           return { id: file.id, quota: { items: [{ id: 'error', label: 'Error', remainingPercent: null, resetLabel: message }] } as CliproxyGeminiCliQuota };
         }
       });
+      const antigravityEntries = await mapWithConcurrency(antigravityFiles, 3, async (file) => {
+        try {
+          return { id: file.id, quota: await parseAntigravityQuota(file) };
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'failed';
+          return { id: file.id, quota: { items: [{ id: 'error', label: 'Error', remainingPercent: null, resetLabel: message }] } as CliproxyGeminiCliQuota };
+        }
+      });
 
       if (cancelled) return;
       const codexMap: Record<string, CliproxyCodexQuota> = {};
       codexEntries.forEach((e) => { codexMap[e.id] = e.quota; });
       const geminiMap: Record<string, CliproxyGeminiCliQuota> = {};
       geminiEntries.forEach((e) => { geminiMap[e.id] = e.quota; });
+      const antigravityMap: Record<string, CliproxyGeminiCliQuota> = {};
+      antigravityEntries.forEach((e) => { antigravityMap[e.id] = e.quota; });
 
       void Promise.resolve().then(() => {
         if (cancelled) return;
@@ -488,6 +548,7 @@ export const useCliproxyQuotas = (args: {
           updatedAt: new Date().toISOString(),
           codex: codexMap,
           geminiCli: geminiMap,
+          antigravity: antigravityMap,
         });
       });
     };
