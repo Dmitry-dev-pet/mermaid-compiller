@@ -49,6 +49,19 @@ const toNumberOrNull = (value: unknown): number | null => {
   return null;
 };
 
+const toPercentOrNull = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.endsWith('%')) {
+    const parsed = Number(trimmed.slice(0, -1));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const parseJsonObject = (value: unknown): Record<string, unknown> | null => {
   if (!value) return null;
   if (typeof value === 'object') return Array.isArray(value) ? null : (value as Record<string, unknown>);
@@ -364,7 +377,7 @@ export const useCliproxyQuotas = (args: {
       const windows: CliproxyCodexWindow[] = [];
       const addWindow = (id: string, label: string, wObj: Record<string, unknown> | null, limitReached: unknown, allowed: unknown) => {
         if (!wObj) return;
-        const usedPercent = toNumberOrNull(wObj.used_percent ?? wObj.usedPercent);
+        const usedPercent = toPercentOrNull(wObj.used_percent ?? wObj.usedPercent);
         const resetLabel = formatResetFromWindow(wObj);
         const reached = !!limitReached || allowed === false;
         const percent = usedPercent !== null ? usedPercent : (reached && resetLabel !== '-' ? 100 : null);
