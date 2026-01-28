@@ -245,13 +245,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     });
   }
 
-  const ownedByCounts = new Map<string, number>();
+  const ownedByCandidates = new Set<string>();
   if (!isOpenRouter) {
     baseFilteredModels.forEach((model) => {
       if (!model) return;
       const ownedBy = typeof model.ownedBy === 'string' ? model.ownedBy.trim().toLowerCase() : '';
-      if (!ownedBy) return;
-      ownedByCounts.set(ownedBy, (ownedByCounts.get(ownedBy) ?? 0) + 1);
+      if (ownedBy) ownedByCandidates.add(ownedBy);
+      const vendor = typeof model.vendor === 'string' ? model.vendor.trim().toLowerCase() : '';
+      if (vendor === 'google') ownedByCandidates.add('google');
     });
   }
 
@@ -263,12 +264,26 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     vendorOptions.unshift({ vendor: openRouterFilters.vendor, count: 0 });
   }
 
-  const ownedByOptions = Array.from(ownedByCounts.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([ownedBy, count]) => ({ ownedBy, count }));
+  const ownedByOptions = Array.from(ownedByCandidates.values())
+    .sort((a, b) => a.localeCompare(b))
+    .map((ownedBy) => {
+      const count = baseFilteredModels.filter((model) => {
+        if (!model) return false;
+        const ob = typeof model.ownedBy === 'string' ? model.ownedBy.trim().toLowerCase() : '';
+        if (ownedBy === 'google') {
+          const vendor = typeof model.vendor === 'string' ? model.vendor.trim().toLowerCase() : '';
+          return ob === 'google' || vendor === 'google';
+        }
+        return ob === ownedBy;
+      }).length;
+      return { ownedBy, count };
+    });
 
-  if (!isOpenRouter && proxyFilters?.provider && !ownedByCounts.has(proxyFilters.provider.trim().toLowerCase())) {
-    ownedByOptions.unshift({ ownedBy: proxyFilters.provider.trim().toLowerCase(), count: 0 });
+  if (!isOpenRouter && proxyFilters?.provider) {
+    const active = proxyFilters.provider.trim().toLowerCase();
+    if (active && !ownedByCandidates.has(active)) {
+      ownedByOptions.unshift({ ownedBy: active, count: 0 });
+    }
   }
 
   const ownedByPills = [...ownedByOptions].sort((a, b) => (b.count - a.count) || a.ownedBy.localeCompare(b.ownedBy));
