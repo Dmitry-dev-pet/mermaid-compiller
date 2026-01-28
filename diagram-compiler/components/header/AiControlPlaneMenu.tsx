@@ -116,6 +116,13 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     typeof modelParams?.['reasoning_effort'] === 'string'
       ? (modelParams['reasoning_effort'] as string)
       : 'auto';
+  const selectedModel = aiConfig.selectedModelId
+    ? connectionState.availableModels.find((m) => m.id === aiConfig.selectedModelId)
+    : undefined;
+  const isGeminiModel =
+    selectedModel?.vendor === 'google' ||
+    /^gemini[:/]/i.test(aiConfig.selectedModelId) ||
+    /\bgoogle\/gemini\b/i.test(aiConfig.selectedModelId);
 
   const updateFilters = (updates: Partial<OpenRouterFilters & CliproxyFilters>) => {
     onConfigChange((prev) => {
@@ -152,6 +159,15 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       return Object.keys(next).length === 0 ? null : next;
     });
   };
+
+  useEffect(() => {
+    if (!isGeminiModel) return;
+    const current = typeof modelParams?.['reasoning_effort'] === 'string'
+      ? (modelParams['reasoning_effort'] as string)
+      : null;
+    if (!current) return;
+    updateReasoningEffort('auto');
+  }, [isGeminiModel, modelParams, updateReasoningEffort]);
 
   const baseFilteredModels = connectionState.availableModels.filter((m) => {
     if (isOpenRouter) {
@@ -548,21 +564,23 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
             </div>
           )}
 
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <label className="text-xs text-slate-500 dark:text-slate-400">Reasoning</label>
-            <Select
-              value={reasoningEffort}
-              onChange={(e) => updateReasoningEffort(e.target.value)}
-              size="sm"
-              className="w-[160px]"
-            >
-              <option value="auto">Auto</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="xhigh">XHigh</option>
-            </Select>
-          </div>
+          {!isGeminiModel && (
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <label className="text-xs text-slate-500 dark:text-slate-400">Reasoning</label>
+              <Select
+                value={reasoningEffort}
+                onChange={(e) => updateReasoningEffort(e.target.value)}
+                size="sm"
+                className="w-[160px]"
+              >
+                <option value="auto">Auto</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">XHigh</option>
+              </Select>
+            </div>
+          )}
 
           <div className="mt-3 flex items-center justify-between gap-3">
             <label className="text-xs text-slate-500 dark:text-slate-400">Timeout (s)</label>
