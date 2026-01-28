@@ -1816,7 +1816,10 @@ impl Config {
       .ok()
       .and_then(|value| value.parse().ok())
       .unwrap_or(8787);
-    let token = std::env::var("AGENT_TOKEN").unwrap_or_default();
+    let token = std::env::var("AGENT_TOKEN")
+      .ok()
+      .filter(|value| !value.trim().is_empty())
+      .unwrap_or_else(|| "test".to_string());
     let allowed_roots = parse_roots(std::env::var("AGENT_ALLOWED_ROOTS").ok());
     let provider = ProviderKind::from_env(std::env::var("AGENT_PROVIDER").ok());
     let codex_cmd = std::env::var("CODEX_CMD").unwrap_or_else(|_| "codex".to_string());

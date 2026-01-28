@@ -49,10 +49,16 @@ export const normalizeAiConfig = (config: LegacyAIConfig | null | undefined): AI
     selectedModelIdByProvider[provider] = raw.selectedModelId;
   }
 
+  const agentToken =
+    typeof raw.agentToken === 'string' && raw.agentToken.trim().length > 0
+      ? raw.agentToken
+      : DEFAULT_AI_CONFIG.agentToken;
+
   return {
     ...DEFAULT_AI_CONFIG,
     ...rest,
     provider,
+    agentToken,
     selectedModelIdByProvider,
     filtersByProvider: {
       openrouter: openrouterFilters,
@@ -61,4 +67,3 @@ export const normalizeAiConfig = (config: LegacyAIConfig | null | undefined): AI
     },
   };
 };
-
