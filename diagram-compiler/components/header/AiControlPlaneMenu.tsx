@@ -777,7 +777,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
                                 return (
                                   <div className="flex flex-col gap-2">
-                                    <div className="text-slate-500 dark:text-slate-400">Codex Quota (best remaining)</div>
+                                    <div className="text-slate-500 dark:text-slate-400">Codex Quota</div>
                                     <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
                                       {ordered.length ? (
                                         <div className="flex flex-col gap-1">
@@ -841,7 +841,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                 const bestItems = Array.from(bestByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
                                 return (
                                   <div className="flex flex-col gap-2">
-                                    <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota (best remaining)</div>
+                                    <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
                                     <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
                                       {bestItems.length ? (
                                         <div className="flex flex-col gap-1">
@@ -905,7 +905,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                 const bestItems = Array.from(bestByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
                                 return (
                                   <div className="flex flex-col gap-2">
-                                    <div className="text-slate-500 dark:text-slate-400">Antigravity Quota (best remaining)</div>
+                                    <div className="text-slate-500 dark:text-slate-400">Antigravity Quota</div>
                                     <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
                                       {bestItems.length ? (
                                         <div className="flex flex-col gap-1">
