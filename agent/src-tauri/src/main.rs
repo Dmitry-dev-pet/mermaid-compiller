@@ -280,7 +280,27 @@ struct ModelInfo {
   context_length: u32,
 }
 
+fn ensure_default_path() {
+  #[cfg(target_os = "macos")]
+  {
+    const FALLBACKS: [&str; 4] = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
+    let current = std::env::var_os("PATH").unwrap_or_default().to_string_lossy().to_string();
+    let mut segments: Vec<&str> = current.split(':').filter(|s| !s.trim().is_empty()).collect();
+    let mut changed = false;
+    for fallback in FALLBACKS {
+      if !segments.iter().any(|s| *s == fallback) {
+        segments.insert(0, fallback);
+        changed = true;
+      }
+    }
+    if changed {
+      std::env::set_var("PATH", segments.join(":"));
+    }
+  }
+}
+
 fn main() {
+  ensure_default_path();
   let config = Arc::new(Config::from_env());
   let app_state_slot: Arc<RwLock<Option<AppState>>> = Arc::new(RwLock::new(None));
   let tray_state = Arc::new(TrayState {

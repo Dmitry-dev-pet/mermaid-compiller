@@ -53,7 +53,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
   const [versionInfo, setVersionInfo] = useState<{
     agentVersion?: string;
+    codexDetected?: boolean;
     codexVersion?: string;
+    geminiDetected?: boolean;
     geminiVersion?: string;
     cliproxyapiVersion?: string;
   }>({});
@@ -290,9 +292,11 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         if (json && typeof json === 'object') {
           const data = json as Record<string, unknown>;
           const agentVersion = typeof data.agent_version === 'string' ? data.agent_version : undefined;
+          const codexDetected = typeof data.codex_detected === 'boolean' ? data.codex_detected : undefined;
           const codexVersion = typeof data.codex_version === 'string' ? data.codex_version : undefined;
+          const geminiDetected = typeof data.gemini_detected === 'boolean' ? data.gemini_detected : undefined;
           const geminiVersion = typeof data.gemini_version === 'string' ? data.gemini_version : undefined;
-          setVersionInfo((prev) => ({ ...prev, agentVersion, codexVersion, geminiVersion }));
+          setVersionInfo((prev) => ({ ...prev, agentVersion, codexDetected, codexVersion, geminiDetected, geminiVersion }));
         }
         setAgentStatus({ state: 'online' });
       } catch (error: unknown) {
@@ -608,7 +612,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
               <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 flex flex-col gap-1">
                 {isAgent && (
                   <div>
-                    Agent: {versionInfo.agentVersion ?? '(unknown)'} · CLI: codex {versionInfo.codexVersion ?? '(unknown)'} · gemini {versionInfo.geminiVersion ?? '(unknown)'}
+                    Agent: {versionInfo.agentVersion ?? '(unknown)'} · CLI: codex{' '}
+                    {versionInfo.codexDetected === false ? '(missing)' : (versionInfo.codexVersion ?? '(unknown)')} · gemini{' '}
+                    {versionInfo.geminiDetected === false ? '(missing)' : (versionInfo.geminiVersion ?? '(unknown)')}
                   </div>
                 )}
                 {isCliproxy && (
