@@ -13,6 +13,8 @@ interface CliproxyModel {
   id: string;
   name?: string;
   context_length?: number;
+  owned_by?: string;
+  ownedBy?: string;
 }
 
 type CliproxyModelEntry = CliproxyModel | string;
@@ -163,13 +165,15 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     return rawList.map((m) => {
       const id = typeof m === "string" ? m : m.id;
       const name = typeof m === "string" ? m : m.name || m.id;
+      const ownedByRaw = typeof m === "string" ? null : (m.owned_by ?? m.ownedBy ?? null);
+      const ownedBy = typeof ownedByRaw === "string" ? ownedByRaw.trim().toLowerCase() : "";
 
       return {
         id,
         name,
         contextLength: typeof m === "string" ? 0 : m.context_length || 0,
         isFree: false, // Cliproxy typically proxies paid models or local ones
-        vendor: deriveModelVendor(id, name),
+        vendor: ownedBy || deriveModelVendor(id, name),
       };
     });
   }
