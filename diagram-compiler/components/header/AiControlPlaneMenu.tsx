@@ -669,14 +669,15 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                           {windows.length ? (
                                             <div className="mt-1 flex flex-col gap-1">
                                               {windows.map((w) => {
-                                                const percent = w.usedPercent;
+                                                const usedPercent = w.usedPercent;
+                                                const percent = usedPercent === null ? null : Math.max(0, Math.min(100, 100 - usedPercent));
                                                 const tone = percent === null
                                                   ? 'bg-slate-200 dark:bg-slate-700'
                                                   : percent >= 60
-                                                    ? 'bg-rose-500'
+                                                    ? 'bg-emerald-500'
                                                     : percent >= 20
                                                       ? 'bg-amber-500'
-                                                      : 'bg-emerald-500';
+                                                      : 'bg-rose-500';
                                                 return (
                                                   <div key={w.id} className="flex flex-col gap-0.5">
                                                     <div className="flex items-center justify-between gap-2">
