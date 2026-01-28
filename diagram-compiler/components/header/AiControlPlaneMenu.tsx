@@ -372,6 +372,28 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
           // ignore and try next
         }
       }
+      // Fallback: if Mermaid Agent is running locally, ask it for cliproxyapi version.
+      try {
+        const agentEndpoint = aiConfig.agentEndpoint?.trim();
+        if (agentEndpoint) {
+          const agentBase = agentEndpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
+          const response = await fetch(`${agentBase}/api/health`);
+          if (response.ok) {
+            const json = await response.json().catch(() => null);
+            if (json && typeof json === 'object') {
+              const data = json as Record<string, unknown>;
+              const version = typeof data.cliproxyapi_version === 'string' ? data.cliproxyapi_version : undefined;
+              if (version) {
+                setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: version }));
+                return;
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
       setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: undefined }));
     };
 
@@ -379,7 +401,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [aiConfig.proxyEndpoint, aiConfig.proxyKey, isCliproxy, isOpen]);
+  }, [aiConfig.agentEndpoint, aiConfig.proxyEndpoint, aiConfig.proxyKey, isCliproxy, isOpen]);
 
   return (
     <div className="relative" ref={dropdownRef}>

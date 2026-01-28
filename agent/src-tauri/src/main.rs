@@ -102,6 +102,7 @@ struct Config {
   gemini_approval_mode: String,
   gemini_sandbox: bool,
   gemini_login_prompt: Option<String>,
+  cliproxyapi_cmd: String,
   auto_login: bool,
   ui_dir: Option<PathBuf>,
   cancel_grace_ms: u64,
@@ -197,6 +198,8 @@ struct HealthResponse {
   codex_version: Option<String>,
   gemini_detected: bool,
   gemini_version: Option<String>,
+  cliproxyapi_detected: bool,
+  cliproxyapi_version: Option<String>,
   provider: String,
   port: u16,
 }
@@ -565,6 +568,7 @@ async fn build_tray_status_snapshot(tray_state: &TrayState) -> TrayStatusSnapsho
 
   let codex_detected = which_codex(&config.codex_cmd);
   let gemini_detected = which_gemini(&config.gemini_cmd);
+  let cliproxyapi_detected = which_cliproxyapi(&config.cliproxyapi_cmd);
   let token_value = if let Some(state) = app_state.as_ref() {
     state.token.read().await.clone()
   } else {
@@ -583,6 +587,13 @@ async fn build_tray_status_snapshot(tray_state: &TrayState) -> TrayStatusSnapsho
     details.push_str(" · gemini ok");
   } else {
     details.push_str(" · gemini missing");
+  }
+  if cliproxyapi_detected {
+    let version = cached_cli_version(&CLIPROXYAPI_VERSION_CACHE, &config.cliproxyapi_cmd)
+      .unwrap_or_else(|| "cliproxyapi ok".to_string());
+    details.push_str(&format!(" · {}", version));
+  } else {
+    details.push_str(" · cliproxyapi missing");
   }
   if task_count > 0 {
     details.push_str(&format!(" · tasks: {}", task_count));
@@ -695,6 +706,7 @@ fn normalize_host_for_check(host: &str) -> &str {
 
 static CODEX_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
 static GEMINI_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
+static CLIPROXYAPI_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
 
 fn detect_cli_version(command: &str) -> Option<String> {
   let output = std::process::Command::new(command)
@@ -721,6 +733,7 @@ fn cached_cli_version(cache: &'static OnceLock<Option<String>>, command: &str) -
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
   let codex_detected = which_codex(&state.config.codex_cmd);
   let gemini_detected = which_gemini(&state.config.gemini_cmd);
+  let cliproxyapi_detected = which_cliproxyapi(&state.config.cliproxyapi_cmd);
   Json(HealthResponse {
     ok: true,
     agent_version: format!("v{}", env!("CARGO_PKG_VERSION")),
@@ -728,6 +741,10 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     codex_version: codex_detected.then(|| cached_cli_version(&CODEX_VERSION_CACHE, &state.config.codex_cmd)).flatten(),
     gemini_detected,
     gemini_version: gemini_detected.then(|| cached_cli_version(&GEMINI_VERSION_CACHE, &state.config.gemini_cmd)).flatten(),
+    cliproxyapi_detected,
+    cliproxyapi_version: cliproxyapi_detected
+      .then(|| cached_cli_version(&CLIPROXYAPI_VERSION_CACHE, &state.config.cliproxyapi_cmd))
+      .flatten(),
     provider: state.provider.as_str().to_string(),
     port: state.config.port,
   })
@@ -1787,6 +1804,10 @@ fn which_gemini(command: &str) -> bool {
   which_command(command)
 }
 
+fn which_cliproxyapi(command: &str) -> bool {
+  which_command(command)
+}
+
 impl Config {
   fn from_env() -> Self {
     let host = std::env::var("AGENT_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -1817,6 +1838,7 @@ impl Config {
     let gemini_approval_mode = std::env::var("GEMINI_APPROVAL_MODE").unwrap_or_else(|_| "yolo".to_string());
     let gemini_sandbox = parse_bool(std::env::var("GEMINI_SANDBOX").ok(), true);
     let gemini_login_prompt = std::env::var("GEMINI_LOGIN_PROMPT").ok().filter(|value| !value.is_empty());
+    let cliproxyapi_cmd = std::env::var("CLIPROXYAPI_CMD").unwrap_or_else(|_| "cliproxyapi".to_string());
     let auto_login = parse_bool(std::env::var("AGENT_AUTO_LOGIN").ok(), false);
     let default_ui = PathBuf::from("../ui");
     let ui_dir = std::env::var("AGENT_UI_DIR")
@@ -1846,6 +1868,7 @@ impl Config {
       gemini_approval_mode,
       gemini_sandbox,
       gemini_login_prompt,
+      cliproxyapi_cmd,
       auto_login,
       ui_dir: Some(ui_dir),
       cancel_grace_ms,
