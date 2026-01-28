@@ -49,6 +49,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showAgentToken, setShowAgentToken] = useState(false);
   const [showProxyKey, setShowProxyKey] = useState(false);
   const [showProxyManagementKey, setShowProxyManagementKey] = useState(false);
+  const [showCliproxyUsageDetails, setShowCliproxyUsageDetails] = useState(false);
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
   const [versionInfo, setVersionInfo] = useState<{
     agentVersion?: string;
@@ -60,6 +61,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     cliproxyapiLatestVersion?: string;
     cliproxyUsageSummary?: string;
     cliproxyManagementStatus?: string;
+    cliproxyUsage?: {
+      totalRequests: number;
+      successCount: number;
+      failureCount: number;
+      totalTokens: number;
+      requestsByDay: Array<{ day: string; requests: number }>;
+      tokensByDay: Array<{ day: string; tokens: number }>;
+    };
   }>({});
 
   useEffect(() => {
@@ -419,6 +428,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       }
 
       let usageSummary: string | undefined;
+      let usageDetails: {
+        totalRequests: number;
+        successCount: number;
+        failureCount: number;
+        totalTokens: number;
+        requestsByDay: Array<{ day: string; requests: number }>;
+        tokensByDay: Array<{ day: string; tokens: number }>;
+      } | undefined;
       try {
         const response = await fetch(`${base}/v0/management/usage`, { headers: managementHeaders });
         if (!cancelled && (response.status === 401 || response.status === 403)) {
@@ -433,16 +450,57 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
             const usage = (data.usage && typeof data.usage === 'object') ? (data.usage as Record<string, unknown>) : null;
             const totalRequests = usage && typeof usage.total_requests === 'number' ? usage.total_requests : null;
             const totalTokens = usage && typeof usage.total_tokens === 'number' ? usage.total_tokens : null;
+            const successCount = usage && typeof usage.success_count === 'number' ? usage.success_count : null;
+            const failureCount = usage && typeof usage.failure_count === 'number' ? usage.failure_count : null;
             const totalFailed = typeof data.failed_requests === 'number'
               ? data.failed_requests
-              : usage && typeof usage.failure_count === 'number'
-                ? usage.failure_count
+              : typeof failureCount === 'number'
+                ? failureCount
                 : null;
             const parts: string[] = [];
             if (typeof totalRequests === 'number') parts.push(`${totalRequests} req`);
             if (typeof totalTokens === 'number') parts.push(`${totalTokens} tok`);
             if (typeof totalFailed === 'number') parts.push(`${totalFailed} fail`);
             if (parts.length > 0) usageSummary = parts.join(' · ');
+
+            const requestsByDayRaw =
+              usage && usage.requests_by_day && typeof usage.requests_by_day === 'object'
+                ? (usage.requests_by_day as Record<string, unknown>)
+                : null;
+            const tokensByDayRaw =
+              usage && usage.tokens_by_day && typeof usage.tokens_by_day === 'object'
+                ? (usage.tokens_by_day as Record<string, unknown>)
+                : null;
+            const requestsByDay = requestsByDayRaw
+              ? Object.entries(requestsByDayRaw)
+                .filter(([, value]) => typeof value === 'number')
+                .map(([day, value]) => ({ day, requests: value as number }))
+                .sort((a, b) => a.day.localeCompare(b.day))
+                .slice(-7)
+              : [];
+            const tokensByDay = tokensByDayRaw
+              ? Object.entries(tokensByDayRaw)
+                .filter(([, value]) => typeof value === 'number')
+                .map(([day, value]) => ({ day, tokens: value as number }))
+                .sort((a, b) => a.day.localeCompare(b.day))
+                .slice(-7)
+              : [];
+
+            if (
+              typeof totalRequests === 'number' &&
+              typeof totalTokens === 'number' &&
+              typeof (successCount ?? null) === 'number' &&
+              typeof (failureCount ?? null) === 'number'
+            ) {
+              usageDetails = {
+                totalRequests,
+                totalTokens,
+                successCount: successCount as number,
+                failureCount: failureCount as number,
+                requestsByDay,
+                tokensByDay,
+              };
+            }
           }
         }
       } catch {
@@ -456,6 +514,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         cliproxyapiLatestVersion: latestVersion,
         cliproxyUsageSummary: usageSummary,
         cliproxyManagementStatus: managementStatus,
+        cliproxyUsage: usageDetails,
       }));
     };
 
@@ -717,11 +776,44 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                   </div>
                 )}
                 {isCliproxy && (
-                  <div>
-                    cliproxyapi: {versionInfo.cliproxyapiVersion ?? '(unknown)'}
-                    {versionInfo.cliproxyapiLatestVersion ? ` · latest ${versionInfo.cliproxyapiLatestVersion}` : ''}
-                    {versionInfo.cliproxyUsageSummary ? ` · usage ${versionInfo.cliproxyUsageSummary}` : ''}
-                    {versionInfo.cliproxyManagementStatus ? ` · mgmt ${versionInfo.cliproxyManagementStatus}` : ''}
+                  <div className="space-y-1">
+                    <div>
+                      cliproxyapi:{' '}
+                      {versionInfo.cliproxyapiLatestVersion
+                        ? `v${versionInfo.cliproxyapiLatestVersion.replace(/^v/i, '')}`
+                        : (versionInfo.cliproxyapiVersion ?? '(unknown)')}
+                      {versionInfo.cliproxyUsageSummary ? ` · usage ${versionInfo.cliproxyUsageSummary}` : ''}
+                      {versionInfo.cliproxyManagementStatus ? ` · mgmt ${versionInfo.cliproxyManagementStatus}` : ''}
+                    </div>
+                    {versionInfo.cliproxyUsage?.requestsByDay?.length ? (
+                      <div className="text-[10px] leading-tight">
+                        <button
+                          type="button"
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                          onClick={() => setShowCliproxyUsageDetails((prev) => !prev)}
+                        >
+                          {showCliproxyUsageDetails ? 'Hide usage details' : 'Show usage details'}
+                        </button>
+                        {showCliproxyUsageDetails && (
+                          <div className="mt-1 flex flex-col gap-1">
+                            <div className="font-mono tabular-nums">
+                              req/day:{' '}
+                              {versionInfo.cliproxyUsage.requestsByDay
+                                .map((item) => `${item.day.slice(5)}=${item.requests}`)
+                                .join(' ')}
+                            </div>
+                            {versionInfo.cliproxyUsage.tokensByDay?.length ? (
+                              <div className="font-mono tabular-nums">
+                                tok/day:{' '}
+                                {versionInfo.cliproxyUsage.tokensByDay
+                                  .map((item) => `${item.day.slice(5)}=${item.tokens}`)
+                                  .join(' ')}
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
