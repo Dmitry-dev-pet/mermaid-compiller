@@ -19,11 +19,16 @@ type LegacyAIConfig = Omit<AIConfig, 'filtersByProvider'> & {
 const normalizeAiConfig = (config: LegacyAIConfig): AIConfig => {
   const { filters: legacyFilters, filtersByProvider: legacyByProvider, ...rest } = config;
   const openRouterDefaults = DEFAULT_AI_CONFIG.filtersByProvider.openrouter;
+  const agentDefaults = DEFAULT_AI_CONFIG.filtersByProvider.agent;
   const cliproxyDefaults = DEFAULT_AI_CONFIG.filtersByProvider.cliproxy;
   const openrouterFilters = {
     ...openRouterDefaults,
     ...(legacyByProvider?.openrouter ?? {}),
     ...(legacyFilters ?? {}),
+  };
+  const agentFilters = {
+    ...agentDefaults,
+    ...(legacyByProvider?.agent ?? {}),
   };
   const cliproxyFilters = {
     ...cliproxyDefaults,
@@ -32,6 +37,7 @@ const normalizeAiConfig = (config: LegacyAIConfig): AIConfig => {
 
   const selectedModelIdByProvider = {
     openrouter: '',
+    agent: '',
     cliproxy: '',
     ...(config.selectedModelIdByProvider ?? {}),
   };
@@ -46,6 +52,7 @@ const normalizeAiConfig = (config: LegacyAIConfig): AIConfig => {
     selectedModelIdByProvider,
     filtersByProvider: {
       openrouter: openrouterFilters,
+      agent: agentFilters,
       cliproxy: cliproxyFilters,
     },
   };
@@ -110,7 +117,7 @@ export const useAI = () => {
 
   // Auto-connect on mount
   useEffect(() => {
-    if (aiConfig.openRouterKey || aiConfig.proxyEndpoint) {
+    if (aiConfig.openRouterKey || aiConfig.agentEndpoint || aiConfig.proxyEndpoint) {
         connectAI();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -124,12 +131,14 @@ export const useAI = () => {
     const shouldConnect =
       aiConfig.provider === 'openrouter'
         ? Boolean(aiConfig.openRouterKey)
-        : Boolean(aiConfig.proxyEndpoint);
+        : aiConfig.provider === 'agent'
+          ? Boolean(aiConfig.agentEndpoint)
+          : Boolean(aiConfig.proxyEndpoint);
 
     if (shouldConnect) {
       connectAI();
     }
-  }, [aiConfig.openRouterKey, aiConfig.provider, aiConfig.proxyEndpoint, connectAI]);
+  }, [aiConfig.openRouterKey, aiConfig.agentEndpoint, aiConfig.provider, aiConfig.proxyEndpoint, connectAI]);
 
   return {
     aiConfig,

@@ -45,6 +45,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
+  const [showAgentToken, setShowAgentToken] = useState(false);
   const [showProxyKey, setShowProxyKey] = useState(false);
   const [loginStatus, setLoginStatus] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -70,7 +71,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     const model = connectionState.availableModels.find((m) => m.id === aiConfig.selectedModelId);
     const modelName = model ? model.name : aiConfig.selectedModelId;
     const contextLabel = model?.contextLength ? ` (${formatContextLength(model.contextLength)})` : '';
-    const providerName = aiConfig.provider === 'openrouter' ? 'OpenRouter' : 'Proxy';
+    const providerName =
+      aiConfig.provider === 'openrouter'
+        ? 'OpenRouter'
+        : aiConfig.provider === 'agent'
+          ? 'Mermaid Agent'
+          : 'Proxy';
     return `AI: ${providerName} · ${modelName}${contextLabel}`;
   };
 
@@ -107,9 +113,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   };
 
   const isOpenRouter = aiConfig.provider === 'openrouter';
+  const isAgent = aiConfig.provider === 'agent';
   const activeFilters = isOpenRouter
     ? aiConfig.filtersByProvider.openrouter
-    : aiConfig.filtersByProvider.cliproxy;
+    : isAgent
+      ? aiConfig.filtersByProvider.agent
+      : aiConfig.filtersByProvider.cliproxy;
   const timeoutSeconds = Math.max(5, Math.min(300, Math.round(llmTimeoutMs / 1000)));
   const statusToneClass = getStatusTone();
   const reasoningEffort =
@@ -148,7 +157,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     setLoginStatus(null);
   };
 
-  const updateReasoningEffort = (value: string) => {
+  const updateReasoningEffort = useCallback((value: string) => {
     onModelParamsChange((prev) => {
       const next: ModelParams = { ...(prev ?? {}) };
       if (value === 'auto') {
@@ -158,7 +167,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       }
       return Object.keys(next).length === 0 ? null : next;
     });
-  };
+  }, [onModelParamsChange]);
 
   useEffect(() => {
     if (!isGeminiModel) return;
@@ -174,9 +183,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       const openRouterFilters = aiConfig.filtersByProvider.openrouter;
       if (openRouterFilters.freeOnly && !m.isFree) return false;
       if (openRouterFilters.minContextWindow > 0 && (m.contextLength ?? 0) < openRouterFilters.minContextWindow) return false;
-    } else {
-      const cliproxyFilters = aiConfig.filtersByProvider.cliproxy;
-      if (cliproxyFilters.vendor && m.vendor !== cliproxyFilters.vendor) return false;
     }
     return true;
   });
@@ -200,14 +206,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     return true;
   });
 
-  const handleLocalLogin = useCallback(async () => {
+  const handleAgentLogin = useCallback(async () => {
     setLoginStatus(null);
-    const endpoint = aiConfig.proxyEndpoint?.trim();
+    const endpoint = aiConfig.agentEndpoint?.trim();
     if (!endpoint) {
-      setLoginStatus({ tone: 'error', message: 'Proxy endpoint is required.' });
+      setLoginStatus({ tone: 'error', message: 'Agent endpoint is required.' });
       return;
     }
-    if (!aiConfig.proxyKey) {
+    if (!aiConfig.agentToken) {
       setLoginStatus({ tone: 'error', message: 'Agent token is required.' });
       return;
     }
@@ -217,7 +223,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       const response = await fetch(`${base}/api/auth/login`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${aiConfig.proxyKey}`,
+          Authorization: `Bearer ${aiConfig.agentToken}`,
         },
       });
       const body = await response.json().catch(() => null);
@@ -240,7 +246,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     } finally {
       setLoginLoading(false);
     }
-  }, [aiConfig.proxyEndpoint, aiConfig.proxyKey]);
+  }, [aiConfig.agentEndpoint, aiConfig.agentToken]);
 
   useEffect(() => {
     if (connectionState.status !== 'connected') return;
@@ -252,10 +258,10 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   }, [aiConfig.selectedModelId, connectionState.status, filteredModels, updateSelectedModel]);
 
   useEffect(() => {
+    if (!isAgent) return;
     if (!isOpen) return;
-    const endpoint = aiConfig.proxyEndpoint?.trim();
-    const token = aiConfig.proxyKey;
-    if (!endpoint || !token) {
+    const endpoint = aiConfig.agentEndpoint?.trim();
+    if (!endpoint) {
       setAgentStatus({ state: 'unknown' });
       return;
     }
@@ -264,9 +270,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
     const checkHealth = async () => {
       try {
-        const response = await fetch(`${base}/api/health`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await fetch(`${base}/api/health`);
         if (cancelled) return;
         if (!response.ok) {
           setAgentStatus({ state: 'offline', message: `HTTP ${response.status}` });
@@ -286,7 +290,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [aiConfig.proxyEndpoint, aiConfig.proxyKey, isOpen]);
+  }, [aiConfig.agentEndpoint, isAgent, isOpen]);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -317,6 +321,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
               />
               <RadioOption
                 name="provider"
+                checked={aiConfig.provider === 'agent'}
+                onChange={() => switchProvider('agent')}
+                label="Mermaid Agent"
+              />
+              <RadioOption
+                name="provider"
                 checked={aiConfig.provider === 'cliproxy'}
                 onChange={() => switchProvider('cliproxy')}
                 label="My Proxy"
@@ -329,7 +339,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
             onSubmit={(event) => event.preventDefault()}
             className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-md border border-slate-100 dark:border-slate-700"
           >
-            {aiConfig.provider === 'openrouter' ? (
+            {isOpenRouter ? (
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Key</label>
@@ -358,6 +368,84 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                       {showOpenRouterKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </Button>
                   </div>
+                </div>
+              </div>
+            ) : isAgent ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
+                  <Input
+                    type="text"
+                    autoComplete="off"
+                    name="agent-endpoint"
+                    value={aiConfig.agentEndpoint}
+                    onChange={(e) => updateConfig({ agentEndpoint: e.target.value })}
+                    placeholder="http://127.0.0.1:8787"
+                    size="md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Agent Token</label>
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      autoComplete="new-password"
+                      name="agent-token"
+                      data-1p-ignore="true"
+                      data-lpignore="true"
+                      style={{ WebkitTextSecurity: showAgentToken ? 'none' : 'disc' }}
+                      value={aiConfig.agentToken || ''}
+                      onChange={(e) => updateConfig({ agentToken: e.target.value })}
+                      placeholder="test"
+                      size="md"
+                      className="pr-8"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowAgentToken((prev) => !prev)}
+                      className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      aria-label={showAgentToken ? 'Hide agent token' : 'Show agent token'}
+                    >
+                      {showAgentToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleAgentLogin}
+                    disabled={loginLoading || !aiConfig.agentEndpoint || !aiConfig.agentToken}
+                    className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600"
+                  >
+                    {loginLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                    Sign in via local agent
+                  </Button>
+                  <span
+                    className={`text-[11px] flex items-center gap-1 ${
+                      agentStatus.state === 'online'
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : agentStatus.state === 'offline'
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    <span className="inline-block h-2 w-2 rounded-full border border-current" />
+                    Agent {agentStatus.state === 'unknown' ? 'unknown' : agentStatus.state}
+                    {agentStatus.message ? ` · ${agentStatus.message}` : ''}
+                  </span>
+                  {loginStatus && (
+                    <span
+                      className={`text-[11px] ${
+                        loginStatus.tone === 'success'
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-rose-600 dark:text-rose-400'
+                      }`}
+                    >
+                      {loginStatus.message}
+                    </span>
+                  )}
                 </div>
               </div>
             ) : (
@@ -401,41 +489,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                       {showProxyKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </Button>
                   </div>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleLocalLogin}
-                    disabled={loginLoading || !aiConfig.proxyEndpoint || !aiConfig.proxyKey}
-                    className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600"
-                  >
-                    {loginLoading ? <Loader2 size={12} className="animate-spin" /> : null}
-                    Sign in via local agent
-                  </Button>
-                  <span
-                    className={`text-[11px] flex items-center gap-1 ${
-                      agentStatus.state === 'online'
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : agentStatus.state === 'offline'
-                          ? 'text-rose-600 dark:text-rose-400'
-                          : 'text-slate-500 dark:text-slate-400'
-                    }`}
-                  >
-                    <span className="inline-block h-2 w-2 rounded-full border border-current" />
-                    Agent {agentStatus.state === 'unknown' ? 'unknown' : agentStatus.state}
-                    {agentStatus.message ? ` · ${agentStatus.message}` : ''}
-                  </span>
-                  {loginStatus && (
-                    <span
-                      className={`text-[11px] ${
-                        loginStatus.tone === 'success'
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
-                      {loginStatus.message}
-                    </span>
-                  )}
                 </div>
               </div>
             )}

@@ -8,10 +8,12 @@ const baseAIConfig: AIConfig = {
   provider: 'openrouter',
   openRouterKey: '',
   openRouterEndpoint: '',
+  agentToken: '',
+  agentEndpoint: '',
   proxyKey: '',
   proxyEndpoint: '',
   selectedModelId: 'test-model',
-  selectedModelIdByProvider: { openrouter: 'test-model', cliproxy: 'proxy-model' },
+  selectedModelIdByProvider: { openrouter: 'test-model', agent: '', cliproxy: 'proxy-model' },
   filtersByProvider: {
     openrouter: {
       vendor: 'any',
@@ -20,6 +22,7 @@ const baseAIConfig: AIConfig = {
       experimental: false,
       minContextWindow: 0,
     },
+    agent: { vendor: 'any' },
     cliproxy: { vendor: 'any' },
   },
 };

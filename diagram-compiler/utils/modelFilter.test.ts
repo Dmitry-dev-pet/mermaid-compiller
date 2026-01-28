@@ -14,11 +14,14 @@ describe('modelFilter', () => {
     provider: 'openrouter',
     openRouterKey: 'key',
     openRouterEndpoint: 'url',
+    agentToken: '',
+    agentEndpoint: '',
     proxyKey: '',
     proxyEndpoint: '',
     selectedModelId: '',
     selectedModelIdByProvider: {
       openrouter: '',
+      agent: '',
       cliproxy: '',
     },
     filtersByProvider: {
@@ -28,6 +31,9 @@ describe('modelFilter', () => {
         testedOnly: false,
         experimental: false,
         minContextWindow: 0,
+      },
+      agent: {
+        vendor: '',
       },
       cliproxy: {
         vendor: '',

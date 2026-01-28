@@ -23,6 +23,13 @@ type CliproxyModelEntry = CliproxyModel | string;
 export class CliproxyStrategy implements LLMProviderStrategy {
   // ... fetchCompletion and fetchModels remain the same ...
 
+  private getProxyConfig(config: AIConfig): { baseUrl: string; apiKey: string } {
+    if (config.provider === 'agent') {
+      return { baseUrl: config.agentEndpoint, apiKey: config.agentToken };
+    }
+    return { baseUrl: config.proxyEndpoint, apiKey: config.proxyKey };
+  }
+
   private async fetchCompletion(
     messages: Message[],
     config: AIConfig,
@@ -30,8 +37,9 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     modelParams?: ModelParams | null,
     signal?: AbortSignal | null,
   ): Promise<string> {
-    const baseUrl = config.proxyEndpoint.replace(/\/$/, "");
-    const apiKey = config.proxyKey;
+    const proxyConfig = this.getProxyConfig(config);
+    const baseUrl = proxyConfig.baseUrl.replace(/\/$/, "");
+    const apiKey = proxyConfig.apiKey;
     const model = config.selectedModelId;
 
     if (!baseUrl) throw new Error("Cliproxy API Endpoint not configured");
@@ -106,8 +114,9 @@ export class CliproxyStrategy implements LLMProviderStrategy {
   }
 
   async fetchModels(config: AIConfig): Promise<Model[]> {
-    const baseUrl = config.proxyEndpoint.replace(/\/$/, "");
-    const apiKey = config.proxyKey;
+    const proxyConfig = this.getProxyConfig(config);
+    const baseUrl = proxyConfig.baseUrl.replace(/\/$/, "");
+    const apiKey = proxyConfig.apiKey;
 
     if (!baseUrl) return [];
 

@@ -28,10 +28,12 @@ describe('requestNotebookPlan', () => {
         provider: 'openrouter',
         openRouterKey: '',
         openRouterEndpoint: '',
+        agentToken: '',
+        agentEndpoint: '',
         proxyKey: '',
         proxyEndpoint: '',
         selectedModelId: '',
-        selectedModelIdByProvider: { openrouter: '', cliproxy: '' },
+        selectedModelIdByProvider: { openrouter: '', agent: '', cliproxy: '' },
         filtersByProvider: {
           openrouter: {
             vendor: '',
@@ -39,6 +41,9 @@ describe('requestNotebookPlan', () => {
             testedOnly: true,
             experimental: false,
             minContextWindow: 0,
+          },
+          agent: {
+            vendor: '',
           },
           cliproxy: {
             vendor: '',
@@ -72,10 +77,12 @@ describe('requestNotebookPlan', () => {
         provider: 'openrouter',
         openRouterKey: '',
         openRouterEndpoint: '',
+        agentToken: '',
+        agentEndpoint: '',
         proxyKey: '',
         proxyEndpoint: '',
         selectedModelId: '',
-        selectedModelIdByProvider: { openrouter: '', cliproxy: '' },
+        selectedModelIdByProvider: { openrouter: '', agent: '', cliproxy: '' },
         filtersByProvider: {
           openrouter: {
             vendor: '',
@@ -83,6 +90,9 @@ describe('requestNotebookPlan', () => {
             testedOnly: true,
             experimental: false,
             minContextWindow: 0,
+          },
+          agent: {
+            vendor: '',
           },
           cliproxy: {
             vendor: '',
@@ -116,10 +126,12 @@ describe('requestNotebookPlan', () => {
         provider: 'openrouter',
         openRouterKey: '',
         openRouterEndpoint: '',
+        agentToken: '',
+        agentEndpoint: '',
         proxyKey: '',
         proxyEndpoint: '',
         selectedModelId: '',
-        selectedModelIdByProvider: { openrouter: '', cliproxy: '' },
+        selectedModelIdByProvider: { openrouter: '', agent: '', cliproxy: '' },
         filtersByProvider: {
           openrouter: {
             vendor: '',
@@ -127,6 +139,9 @@ describe('requestNotebookPlan', () => {
             testedOnly: true,
             experimental: false,
             minContextWindow: 0,
+          },
+          agent: {
+            vendor: '',
           },
           cliproxy: {
             vendor: '',

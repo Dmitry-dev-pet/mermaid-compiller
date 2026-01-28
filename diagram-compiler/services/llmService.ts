@@ -18,6 +18,7 @@ const getStrategy = (config: AIConfig): LLMProviderStrategy => {
   switch (config.provider) {
     case "openrouter":
       return openRouterStrategy;
+    case "agent":
     case "cliproxy":
       return cliproxyStrategy;
     default:

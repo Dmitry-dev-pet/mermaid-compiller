@@ -2,7 +2,7 @@ import { AIConfig, Model } from '../types';
 
 export const filterModels = (models: Model[], config: AIConfig): Model[] => {
   const isOpenRouter = config.provider === 'openrouter';
-  
+
   return models.filter((m) => {
     if (isOpenRouter) {
       const openRouterFilters = config.filtersByProvider.openrouter;
@@ -12,8 +12,10 @@ export const filterModels = (models: Model[], config: AIConfig): Model[] => {
       // Vendor filter is applied separately in UI usually, but we can include it here if we want a full filter
       if (openRouterFilters.vendor && m.vendor !== openRouterFilters.vendor) return false;
     } else {
-    const cliproxyFilters = config.filtersByProvider.cliproxy;
-    if (cliproxyFilters.vendor && m.vendor !== cliproxyFilters.vendor) return false;
+      const proxyFilters = config.provider === 'agent'
+        ? config.filtersByProvider.agent
+        : config.filtersByProvider.cliproxy;
+      if (proxyFilters.vendor && m.vendor !== proxyFilters.vendor) return false;
     }
     return true;
   });

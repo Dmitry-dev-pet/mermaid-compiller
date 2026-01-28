@@ -13,11 +13,14 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   provider: 'openrouter',
   openRouterKey: '',
   openRouterEndpoint: import.meta.env.VITE_OPEN_ROUTER_ENDPOINT ?? 'https://openrouter.ai/api/v1',
+  agentToken: '',
+  agentEndpoint: import.meta.env.VITE_AGENT_ENDPOINT ?? 'http://127.0.0.1:8787',
   proxyKey: '',
   proxyEndpoint: import.meta.env.VITE_PROXY_ENDPOINT ?? 'http://localhost:8317',
   selectedModelId: '',
   selectedModelIdByProvider: {
     openrouter: '',
+    agent: '',
     cliproxy: '',
   },
   filtersByProvider: {
@@ -27,6 +30,9 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
       testedOnly: true,
       experimental: false,
       minContextWindow: 0,
+    },
+    agent: {
+      vendor: '',
     },
     cliproxy: {
       vendor: '',

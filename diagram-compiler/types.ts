@@ -1,4 +1,4 @@
-export type Provider = 'openrouter' | 'cliproxy';
+export type Provider = 'openrouter' | 'agent' | 'cliproxy';
 
 export type DiagramType =
   'auto'
@@ -50,6 +50,7 @@ export interface CliproxyFilters {
 
 export type ProviderFilters = {
   openrouter: OpenRouterFilters;
+  agent: CliproxyFilters;
   cliproxy: CliproxyFilters;
 };
 
@@ -57,6 +58,8 @@ export interface AIConfig {
   provider: Provider;
   openRouterKey: string;
   openRouterEndpoint: string;
+  agentToken: string;
+  agentEndpoint: string;
   proxyKey: string;
   proxyEndpoint: string;
   selectedModelId: string;
