@@ -241,6 +241,8 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     vendorOptions.unshift({ vendor: activeFilters.vendor, count: 0 });
   }
 
+  const vendorPills = [...vendorOptions].sort((a, b) => (b.count - a.count) || a.vendor.localeCompare(b.vendor));
+
   const filteredModels = baseFilteredModels.filter((m) => {
     if (activeFilters.vendor && m.vendor !== activeFilters.vendor) return false;
     return true;
@@ -817,20 +819,53 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                 <div className="mb-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded text-xs grid grid-cols-2 gap-2 border border-slate-100 dark:border-slate-700 dark:text-slate-300">
                   <div className="col-span-2">
                     <label className="block text-[10px] uppercase text-slate-400 mb-1">Vendor</label>
-                    <Select
-                      value={activeFilters.vendor}
-                      onChange={(e) => updateFilters({ vendor: e.target.value })}
-                      size="sm"
-                    >
-                      <option value="">
-                        All vendors ({baseFilteredModels.length})
-                      </option>
-                      {vendorOptions.map(({ vendor, count }) => (
-                        <option key={vendor} value={vendor}>
-                          {vendor} ({count})
+                    {isOpenRouter ? (
+                      <Select
+                        value={activeFilters.vendor}
+                        onChange={(e) => updateFilters({ vendor: e.target.value })}
+                        size="sm"
+                      >
+                        <option value="">
+                          All vendors ({baseFilteredModels.length})
                         </option>
-                      ))}
-                    </Select>
+                        {vendorOptions.map(({ vendor, count }) => (
+                          <option key={vendor} value={vendor}>
+                            {vendor} ({count})
+                          </option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={() => updateFilters({ vendor: '' })}
+                          className={`px-2 py-1 rounded border text-[11px] ${
+                            !activeFilters.vendor
+                              ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          All ({baseFilteredModels.length})
+                        </button>
+                        {vendorPills.map(({ vendor, count }) => {
+                          const selected = activeFilters.vendor === vendor;
+                          return (
+                            <button
+                              key={vendor}
+                              type="button"
+                              onClick={() => updateFilters({ vendor })}
+                              className={`px-2 py-1 rounded border text-[11px] ${
+                                selected
+                                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              {vendor} ({count})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   {isOpenRouter && (
                     <div className="col-span-2">
