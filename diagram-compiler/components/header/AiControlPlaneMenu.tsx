@@ -61,6 +61,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showAgentToken, setShowAgentToken] = useState(false);
   const [showProxyKey, setShowProxyKey] = useState(false);
   const [showProxyManagementKey, setShowProxyManagementKey] = useState(false);
+  const [showProxySettings, setShowProxySettings] = useState(connectionState.status !== 'connected');
   const [showCliproxyUsageDetails, setShowCliproxyUsageDetails] = useState(false);
   const [showCliproxySubscriptions, setShowCliproxySubscriptions] = useState(false);
   const [showCliproxyQuotas, setShowCliproxyQuotas] = useState(false);
@@ -382,10 +383,18 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     };
   }, [aiConfig.agentEndpoint, isAgent, isOpen]);
 
+  const handleToggleMenu = () => {
+    const nextOpen = !isOpen;
+    if (nextOpen && aiConfig.provider === 'cliproxy' && connectionState.status !== 'connected') {
+      setShowProxySettings(true);
+    }
+    setIsOpen(nextOpen);
+  };
+
   return (
     <div className="relative" ref={dropdownRef}>
       <Button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggleMenu}
         variant="default"
         className="px-3"
       >
@@ -517,75 +526,93 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
-                  <Input
-                    type="text"
-                    autoComplete="off"
-                    name="proxy-endpoint"
-                    value={aiConfig.proxyEndpoint}
-                    onChange={(e) => updateConfig({ proxyEndpoint: e.target.value })}
-                    placeholder="http://localhost:8317"
-                    size="md"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Proxy Key</label>
-                  <div className="relative">
-                    <Input
-                      type="text"
-                      autoComplete="new-password"
-                      name="proxy-secret"
-                      data-1p-ignore="true"
-                      data-lpignore="true"
-                      style={{ WebkitTextSecurity: showProxyKey ? 'none' : 'disc' }}
-                      value={aiConfig.proxyKey || ''}
-                      onChange={(e) => updateConfig({ proxyKey: e.target.value })}
-                      placeholder="test"
-                      size="md"
-                      className="pr-8"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setShowProxyKey((prev) => !prev)}
-                      className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                      aria-label={showProxyKey ? 'Hide proxy key' : 'Show proxy key'}
-                    >
-                      {showProxyKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </Button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProxySettings((prev) => !prev)}
+                  className="w-full flex items-center justify-between text-left"
+                  aria-expanded={showProxySettings}
+                >
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Proxy settings</span>
+                  <ChevronDown size={14} className={`transition-transform ${showProxySettings ? 'rotate-180' : ''}`} />
+                </button>
+
+                {!showProxySettings ? (
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Endpoint: <span className="font-mono">{aiConfig.proxyEndpoint?.trim() ? aiConfig.proxyEndpoint.trim() : '(not set)'}</span>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Management Key</label>
-                  <div className="relative">
-                    <Input
-                      type="text"
-                      autoComplete="new-password"
-                      name="proxy-management-secret"
-                      data-1p-ignore="true"
-                      data-lpignore="true"
-                      style={{ WebkitTextSecurity: showProxyManagementKey ? 'none' : 'disc' }}
-                      value={aiConfig.proxyManagementKey || ''}
-                      onChange={(e) => updateConfig({ proxyManagementKey: e.target.value })}
-                      placeholder="X-Management-Key"
-                      size="md"
-                      className="pr-8"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setShowProxyManagementKey((prev) => !prev)}
-                      className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                      aria-label={showProxyManagementKey ? 'Hide management key' : 'Show management key'}
-                    >
-                      {showProxyManagementKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </Button>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
+                      <Input
+                        type="text"
+                        autoComplete="off"
+                        name="proxy-endpoint"
+                        value={aiConfig.proxyEndpoint}
+                        onChange={(e) => updateConfig({ proxyEndpoint: e.target.value })}
+                        placeholder="http://localhost:8317"
+                        size="md"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Proxy Key</label>
+                      <div className="relative">
+                        <Input
+                          type="text"
+                          autoComplete="new-password"
+                          name="proxy-secret"
+                          data-1p-ignore="true"
+                          data-lpignore="true"
+                          style={{ WebkitTextSecurity: showProxyKey ? 'none' : 'disc' }}
+                          value={aiConfig.proxyKey || ''}
+                          onChange={(e) => updateConfig({ proxyKey: e.target.value })}
+                          placeholder="test"
+                          size="md"
+                          className="pr-8"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setShowProxyKey((prev) => !prev)}
+                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          aria-label={showProxyKey ? 'Hide proxy key' : 'Show proxy key'}
+                        >
+                          {showProxyKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </Button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Management Key</label>
+                      <div className="relative">
+                        <Input
+                          type="text"
+                          autoComplete="new-password"
+                          name="proxy-management-secret"
+                          data-1p-ignore="true"
+                          data-lpignore="true"
+                          style={{ WebkitTextSecurity: showProxyManagementKey ? 'none' : 'disc' }}
+                          value={aiConfig.proxyManagementKey || ''}
+                          onChange={(e) => updateConfig({ proxyManagementKey: e.target.value })}
+                          placeholder="X-Management-Key"
+                          size="md"
+                          className="pr-8"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setShowProxyManagementKey((prev) => !prev)}
+                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          aria-label={showProxyManagementKey ? 'Hide management key' : 'Show management key'}
+                        >
+                          {showProxyManagementKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
 
