@@ -291,7 +291,21 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       if (typeof data.version === 'string') return data.version;
       if (typeof data.app_version === 'string') return data.app_version;
       if (typeof data.cliproxyapi_version === 'string') return data.cliproxyapi_version;
+      if (typeof data.build_version === 'string') return data.build_version;
+      if (typeof data.server_version === 'string') return data.server_version;
       return undefined;
+    };
+
+    const parseVersionFromHeaders = (headers: Headers): string | undefined => {
+      const candidates = [
+        headers.get('x-cliproxyapi-version'),
+        headers.get('x-app-version'),
+        headers.get('x-server-version'),
+        headers.get('x-version'),
+      ]
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean);
+      return candidates[0];
     };
 
     const fetchVersion = async () => {
@@ -301,12 +315,31 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         return;
       }
       const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
-      const paths = ['/api/health', '/health', '/api/version', '/version'];
+      const paths = [
+        '/api/health',
+        '/health',
+        '/api/version',
+        '/version',
+        '/api/status',
+        '/status',
+        '/api/info',
+        '/info',
+        '/api/meta',
+        '/meta',
+        '/v1/models',
+        '/models',
+        '/api/models',
+      ];
       for (const path of paths) {
         try {
           const response = await fetch(`${base}${path}`, { headers });
           if (cancelled) return;
           if (!response.ok) continue;
+          const headerVersion = parseVersionFromHeaders(response.headers);
+          if (headerVersion) {
+            setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: headerVersion }));
+            return;
+          }
           const contentType = response.headers.get('content-type') || '';
           if (contentType.includes('application/json')) {
             const json = await response.json().catch(() => null);
