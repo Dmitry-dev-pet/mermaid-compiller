@@ -313,6 +313,8 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       if (typeof data.cliproxyapi_version === 'string') return normalizeVersionString(data.cliproxyapi_version);
       if (typeof data.build_version === 'string') return normalizeVersionString(data.build_version);
       if (typeof data.server_version === 'string') return normalizeVersionString(data.server_version);
+      if (typeof data['latest-version'] === 'string') return normalizeVersionString(data['latest-version']);
+      if (typeof data.latest_version === 'string') return normalizeVersionString(data.latest_version);
       return undefined;
     };
 
@@ -417,9 +419,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
           const json = (await response.json().catch(() => null)) as unknown;
           if (json && typeof json === 'object') {
             const data = json as Record<string, unknown>;
-            const totalRequests = typeof data.total_requests === 'number' ? data.total_requests : null;
-            const totalTokens = typeof data.total_tokens === 'number' ? data.total_tokens : null;
-            const totalFailed = typeof data.failed_requests === 'number' ? data.failed_requests : null;
+            const usage = (data.usage && typeof data.usage === 'object') ? (data.usage as Record<string, unknown>) : null;
+            const totalRequests = usage && typeof usage.total_requests === 'number' ? usage.total_requests : null;
+            const totalTokens = usage && typeof usage.total_tokens === 'number' ? usage.total_tokens : null;
+            const totalFailed = typeof data.failed_requests === 'number'
+              ? data.failed_requests
+              : usage && typeof usage.failure_count === 'number'
+                ? usage.failure_count
+                : null;
             const parts: string[] = [];
             if (typeof totalRequests === 'number') parts.push(`${totalRequests} req`);
             if (typeof totalTokens === 'number') parts.push(`${totalTokens} tok`);
