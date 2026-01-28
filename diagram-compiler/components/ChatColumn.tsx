@@ -266,11 +266,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
     if (mode === "chat") {
       if (!input.trim()) return;
-      if (isSmartZeroState) {
-        onBuild(input);
-      } else {
-        onChat(input);
-      }
+      onChat(input);
       setInput("");
       return;
     }
@@ -535,9 +531,7 @@ const ChatColumn: React.FC<ChatColumnProps> = ({
 
             <div className="flex flex-wrap items-center justify-end gap-2">
               <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline whitespace-nowrap">
-                {isSmartZeroState
-                  ? "Enter: Build • Ctrl/Cmd+Enter: Build"
-                  : "Enter: Chat • Ctrl/Cmd+Enter: Build"}
+                {"Enter: Chat • Ctrl/Cmd+Enter: Build"}
               </span>
               {isProcessing && onStop && (
                 <Button
