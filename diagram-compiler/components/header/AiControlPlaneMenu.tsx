@@ -50,6 +50,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showProxyKey, setShowProxyKey] = useState(false);
   const [showProxyManagementKey, setShowProxyManagementKey] = useState(false);
   const [showCliproxyUsageDetails, setShowCliproxyUsageDetails] = useState(false);
+  const [showCliproxySubscriptions, setShowCliproxySubscriptions] = useState(false);
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
   const [versionInfo, setVersionInfo] = useState<{
     agentVersion?: string;
@@ -69,6 +70,17 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       requestsByDay: Array<{ day: string; requests: number }>;
       tokensByDay: Array<{ day: string; tokens: number }>;
     };
+    cliproxyAuthFiles?: Array<{
+      id: string;
+      provider: string;
+      name?: string;
+      label?: string;
+      status?: string;
+      email?: string;
+      disabled?: boolean;
+      unavailable?: boolean;
+    }>;
+    cliproxyAuthStatus?: string;
   }>({});
 
   useEffect(() => {
@@ -507,6 +519,51 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         // ignore
       }
 
+      let authFiles: Array<{
+        id: string;
+        provider: string;
+        name?: string;
+        label?: string;
+        status?: string;
+        email?: string;
+        disabled?: boolean;
+        unavailable?: boolean;
+      }> | undefined;
+      let authStatus: string | undefined;
+      try {
+        const response = await fetch(`${base}/v0/management/auth-files`, { headers: managementHeaders });
+        if (!cancelled && (response.status === 401 || response.status === 403)) {
+          const errText = await response.text().catch(() => '');
+          authStatus = errText.trim() || `unauthorized (${response.status})`;
+        } else if (!cancelled && response.ok) {
+          const json = (await response.json().catch(() => null)) as unknown;
+          const list =
+            Array.isArray(json)
+              ? json
+              : json && typeof json === 'object' && Array.isArray((json as Record<string, unknown>).files)
+                ? ((json as Record<string, unknown>).files as unknown[])
+                : null;
+          if (list) {
+            authFiles = list
+              .filter((item) => item && typeof item === 'object')
+              .map((item) => {
+                const data = item as Record<string, unknown>;
+                const provider = typeof data.provider === 'string' ? data.provider : 'unknown';
+                const id = typeof data.id === 'string' ? data.id : `${provider}:${typeof data.name === 'string' ? data.name : ''}`;
+                const name = typeof data.name === 'string' ? data.name : undefined;
+                const label = typeof data.label === 'string' ? data.label : undefined;
+                const status = typeof data.status === 'string' ? data.status : undefined;
+                const email = typeof data.email === 'string' ? data.email : undefined;
+                const disabled = typeof data.disabled === 'boolean' ? data.disabled : undefined;
+                const unavailable = typeof data.unavailable === 'boolean' ? data.unavailable : undefined;
+                return { id, provider, name, label, status, email, disabled, unavailable };
+              });
+          }
+        }
+      } catch {
+        // ignore
+      }
+
       if (cancelled) return;
       setVersionInfo((prev) => ({
         ...prev,
@@ -515,6 +572,8 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         cliproxyUsageSummary: usageSummary,
         cliproxyManagementStatus: managementStatus,
         cliproxyUsage: usageDetails,
+        cliproxyAuthFiles: authFiles,
+        cliproxyAuthStatus: authStatus,
       }));
     };
 
@@ -785,6 +844,49 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                       {versionInfo.cliproxyUsageSummary ? ` · usage ${versionInfo.cliproxyUsageSummary}` : ''}
                       {versionInfo.cliproxyManagementStatus ? ` · mgmt ${versionInfo.cliproxyManagementStatus}` : ''}
                     </div>
+                    {Array.isArray(versionInfo.cliproxyAuthFiles) ? (
+                      <div className="text-[10px] leading-tight">
+                        <button
+                          type="button"
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                          onClick={() => setShowCliproxySubscriptions((prev) => !prev)}
+                        >
+                          {showCliproxySubscriptions ? 'Hide subscriptions' : 'Show subscriptions'}
+                        </button>
+                        {showCliproxySubscriptions && (
+                          <div className="mt-1 flex flex-col gap-1">
+                            {versionInfo.cliproxyAuthFiles.length === 0 ? (
+                              <div className="text-slate-400">No auth files</div>
+                            ) : (
+                              versionInfo.cliproxyAuthFiles
+                                .slice(0, 8)
+                                .map((file) => {
+                                  const isOk = file.status === 'ready' && !file.disabled && !file.unavailable;
+                                  const tone = isOk
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : file.disabled
+                                      ? 'text-slate-500 dark:text-slate-400'
+                                      : 'text-amber-600 dark:text-amber-400';
+                                  const label = file.email || file.label || file.name || file.id;
+                                  const status = file.disabled ? 'disabled' : file.unavailable ? 'unavailable' : (file.status ?? 'unknown');
+                                  return (
+                                    <div key={file.id} className="flex items-center justify-between gap-2 font-mono tabular-nums">
+                                      <span className="truncate">{file.provider}: {label}</span>
+                                      <span className={tone}>{status}</span>
+                                    </div>
+                                  );
+                                })
+                            )}
+                            {versionInfo.cliproxyAuthFiles.length > 8 ? (
+                              <div className="text-slate-400">…and {versionInfo.cliproxyAuthFiles.length - 8} more</div>
+                            ) : null}
+                            {versionInfo.cliproxyAuthStatus ? (
+                              <div className="text-amber-600 dark:text-amber-400">auth {versionInfo.cliproxyAuthStatus}</div>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                     {versionInfo.cliproxyUsage?.requestsByDay?.length ? (
                       <div className="text-[10px] leading-tight">
                         <button
