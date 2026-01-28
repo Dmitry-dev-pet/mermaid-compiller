@@ -129,8 +129,14 @@ export class CliproxyStrategy implements LLMProviderStrategy {
       try {
         const response = await fetch(`${baseUrl}${path}`, { headers });
         if (response.ok) return await response.json();
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(`Unauthorized (${response.status}). Check endpoint/key.`);
+        }
         return null;
-      } catch {
+      } catch (error: unknown) {
+        if (error instanceof Error && /^Unauthorized\\b/.test(error.message)) {
+          throw error;
+        }
         return null;
       }
     };
