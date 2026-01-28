@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::net::SocketAddr;
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -194,7 +194,9 @@ struct HealthResponse {
   ok: bool,
   agent_version: String,
   codex_detected: bool,
+  codex_version: Option<String>,
   gemini_detected: bool,
+  gemini_version: Option<String>,
   provider: String,
   port: u16,
 }
@@ -671,12 +673,41 @@ fn normalize_host_for_check(host: &str) -> &str {
   }
 }
 
+static CODEX_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
+static GEMINI_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
+
+fn detect_cli_version(command: &str) -> Option<String> {
+  let output = std::process::Command::new(command)
+    .arg("--version")
+    .output()
+    .ok()?;
+  let raw = if output.stdout.is_empty() {
+    String::from_utf8_lossy(&output.stderr).to_string()
+  } else {
+    String::from_utf8_lossy(&output.stdout).to_string()
+  };
+  let first_line = raw.lines().next().unwrap_or("").trim().to_string();
+  if first_line.is_empty() {
+    None
+  } else {
+    Some(first_line)
+  }
+}
+
+fn cached_cli_version(cache: &'static OnceLock<Option<String>>, command: &str) -> Option<String> {
+  cache.get_or_init(|| detect_cli_version(command)).clone()
+}
+
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
+  let codex_detected = which_codex(&state.config.codex_cmd);
+  let gemini_detected = which_gemini(&state.config.gemini_cmd);
   Json(HealthResponse {
     ok: true,
-    agent_version: "0.1.0".to_string(),
-    codex_detected: which_codex(&state.config.codex_cmd),
-    gemini_detected: which_gemini(&state.config.gemini_cmd),
+    agent_version: format!("v{}", env!("CARGO_PKG_VERSION")),
+    codex_detected,
+    codex_version: codex_detected.then(|| cached_cli_version(&CODEX_VERSION_CACHE, &state.config.codex_cmd)).flatten(),
+    gemini_detected,
+    gemini_version: gemini_detected.then(|| cached_cli_version(&GEMINI_VERSION_CACHE, &state.config.gemini_cmd)).flatten(),
     provider: state.provider.as_str().to_string(),
     port: state.config.port,
   })

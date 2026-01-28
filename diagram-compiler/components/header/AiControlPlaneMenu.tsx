@@ -51,6 +51,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [loginStatus, setLoginStatus] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
+  const [versionInfo, setVersionInfo] = useState<{
+    agentVersion?: string;
+    codexVersion?: string;
+    geminiVersion?: string;
+    cliproxyapiVersion?: string;
+  }>({});
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -115,6 +121,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
   const isOpenRouter = aiConfig.provider === 'openrouter';
   const isAgent = aiConfig.provider === 'agent';
+  const isCliproxy = aiConfig.provider === 'cliproxy';
   const filtersByProvider = aiConfig.filtersByProvider ?? DEFAULT_AI_CONFIG.filtersByProvider;
   const activeFilters = isOpenRouter
     ? filtersByProvider.openrouter
@@ -265,6 +272,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     const endpoint = aiConfig.agentEndpoint?.trim();
     if (!endpoint) {
       setAgentStatus({ state: 'unknown' });
+      setVersionInfo((prev) => ({ ...prev, agentVersion: undefined, codexVersion: undefined, geminiVersion: undefined }));
       return;
     }
     const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
@@ -277,6 +285,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         if (!response.ok) {
           setAgentStatus({ state: 'offline', message: `HTTP ${response.status}` });
           return;
+        }
+        const json = await response.json().catch(() => null);
+        if (json && typeof json === 'object') {
+          const data = json as Record<string, unknown>;
+          const agentVersion = typeof data.agent_version === 'string' ? data.agent_version : undefined;
+          const codexVersion = typeof data.codex_version === 'string' ? data.codex_version : undefined;
+          const geminiVersion = typeof data.gemini_version === 'string' ? data.gemini_version : undefined;
+          setVersionInfo((prev) => ({ ...prev, agentVersion, codexVersion, geminiVersion }));
         }
         setAgentStatus({ state: 'online' });
       } catch (error: unknown) {
@@ -293,6 +309,64 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       window.clearInterval(interval);
     };
   }, [aiConfig.agentEndpoint, isAgent, isOpen]);
+
+  useEffect(() => {
+    if (!isCliproxy) return;
+    if (!isOpen) return;
+    const endpoint = aiConfig.proxyEndpoint?.trim();
+    if (!endpoint) {
+      setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: undefined }));
+      return;
+    }
+    const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
+    let cancelled = false;
+
+    const headers: Record<string, string> = {};
+    if (aiConfig.proxyKey) headers.Authorization = `Bearer ${aiConfig.proxyKey}`;
+
+    const parseVersionFromJson = (value: unknown): string | undefined => {
+      if (!value || typeof value !== 'object') return undefined;
+      const data = value as Record<string, unknown>;
+      if (typeof data.version === 'string') return data.version;
+      if (typeof data.app_version === 'string') return data.app_version;
+      if (typeof data.cliproxyapi_version === 'string') return data.cliproxyapi_version;
+      return undefined;
+    };
+
+    const fetchVersion = async () => {
+      const paths = ['/api/health', '/health', '/api/version', '/version'];
+      for (const path of paths) {
+        try {
+          const response = await fetch(`${base}${path}`, { headers });
+          if (cancelled) return;
+          if (!response.ok) continue;
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const json = await response.json().catch(() => null);
+            const version = parseVersionFromJson(json);
+            if (version) {
+              setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: version }));
+              return;
+            }
+            continue;
+          }
+          const text = (await response.text().catch(() => '')).trim();
+          if (text) {
+            setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: text.split('\n')[0] }));
+            return;
+          }
+        } catch {
+          // ignore and try next
+        }
+      }
+      setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: undefined }));
+    };
+
+    fetchVersion();
+    return () => {
+      cancelled = true;
+    };
+  }, [aiConfig.proxyEndpoint, aiConfig.proxyKey, isCliproxy, isOpen]);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -529,6 +603,21 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                 </Button>
               )}
             </div>
+
+            {(isAgent || isCliproxy) && connectionState.status === 'connected' && (
+              <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 flex flex-col gap-1">
+                {isAgent && (
+                  <div>
+                    Agent: {versionInfo.agentVersion ?? '(unknown)'} · CLI: codex {versionInfo.codexVersion ?? '(unknown)'} · gemini {versionInfo.geminiVersion ?? '(unknown)'}
+                  </div>
+                )}
+                {isCliproxy && (
+                  <div>
+                    cliproxyapi: {versionInfo.cliproxyapiVersion ?? '(unknown)'}
+                  </div>
+                )}
+              </div>
+            )}
           </form>
 
           {connectionState.status === 'connected' && (
