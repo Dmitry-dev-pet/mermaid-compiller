@@ -844,60 +844,68 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                 );
                               })()}
 
-                              {(() => {
-                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => f.provider === 'gemini-cli' && !f.runtimeOnly);
-                                if (files.length === 0) return (
-                                  <div className="text-slate-400">Gemini CLI Quota: no auth files</div>
-                                );
-                                const bestByItemId = new Map<string, { label: string; remainingPercent: number | null; resetLabel: string }>();
-                                files.forEach((file) => {
-                                  const quota = cliproxyQuotas.geminiCli?.[file.id];
-                                  const items = quota?.items ?? [];
-                                  items.forEach((it) => {
-                                    if (!it?.id) return;
-                                    const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
-                                    const prev = bestByItemId.get(it.id);
-                                    if (!prev) {
-                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, resetLabel: it.resetLabel });
-                                      return;
-                                    }
-                                    if (percent === null) return;
-                                    if (prev.remainingPercent === null || percent > prev.remainingPercent) {
-                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, resetLabel: it.resetLabel });
-                                    }
-                                  });
-                                });
-                                const bestItems = Array.from(bestByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
-                                return (
-                                  <div className="flex flex-col gap-2">
-                                    <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
-                                    <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
-                                      {bestItems.length ? (
-                                        <div className="flex flex-col gap-1">
-                                          {bestItems.map((it) => {
-                                            const percent = it.remainingPercent;
-                                            const tone = percent === null
-                                              ? 'bg-slate-200 dark:bg-slate-700'
-                                              : percent >= 60
-                                                ? 'bg-emerald-500'
-                                                : percent >= 20
-                                                  ? 'bg-amber-500'
-                                                  : 'bg-rose-500';
-                                            return (
-                                              <div key={it.label} className="flex flex-col gap-0.5">
-                                                <div className="flex items-center justify-between gap-2">
-                                                  <span className="truncate">{it.label}</span>
-                                                  <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
-                                                </div>
-                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                                                  <div
-                                                    className={`h-full ${tone}`}
-                                                    style={{ width: `${percent === null ? 0 : Math.max(0, Math.min(100, percent))}%` }}
-                                                  />
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
+	                              {(() => {
+	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => f.provider === 'gemini-cli' && !f.runtimeOnly);
+	                                if (files.length === 0) return (
+	                                  <div className="text-slate-400">Gemini CLI Quota: no auth files</div>
+	                                );
+	                                const pooledByItemId = new Map<string, { label: string; remainingSum: number | null; eligibleCount: number; resetLabel: string }>();
+	                                files.forEach((file) => {
+	                                  const quota = cliproxyQuotas.geminiCli?.[file.id];
+	                                  const items = quota?.items ?? [];
+	                                  items.forEach((it) => {
+	                                    if (!it?.id) return;
+	                                    const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
+	                                    const prev = pooledByItemId.get(it.id);
+	                                    const eligibleCount = (prev?.eligibleCount ?? 0) + 1;
+	                                    const remainingSum =
+	                                      typeof percent === 'number'
+	                                        ? (prev?.remainingSum ?? 0) + percent
+	                                        : prev?.remainingSum ?? null;
+	                                    const resetLabel = prev?.resetLabel && prev.resetLabel !== '-' ? prev.resetLabel : it.resetLabel;
+	                                    pooledByItemId.set(it.id, {
+	                                      label: it.label,
+	                                      remainingSum,
+	                                      eligibleCount,
+	                                      resetLabel,
+	                                    });
+	                                  });
+	                                });
+	                                const bestItems = Array.from(pooledByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
+	                                return (
+	                                  <div className="flex flex-col gap-2">
+	                                    <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
+	                                    <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+	                                      {bestItems.length ? (
+	                                        <div className="flex flex-col gap-1">
+	                                          {bestItems.map((it) => {
+	                                            const percent = it.remainingSum;
+	                                            const eligibleCount = it.eligibleCount ?? 1;
+	                                            const poolPercent = percent === null
+	                                              ? null
+	                                              : Math.max(0, Math.min(100, (percent / Math.max(1, eligibleCount * 100)) * 100));
+	                                            const tone = poolPercent === null
+	                                              ? 'bg-slate-200 dark:bg-slate-700'
+	                                              : poolPercent >= 60
+	                                                ? 'bg-emerald-500'
+	                                                : poolPercent >= 20
+	                                                  ? 'bg-amber-500'
+	                                                  : 'bg-rose-500';
+	                                            return (
+	                                              <div key={it.label} className="flex flex-col gap-0.5">
+	                                                <div className="flex items-center justify-between gap-2">
+	                                                  <span className="truncate">{it.label}</span>
+	                                                  <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
+	                                                </div>
+	                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+	                                                  <div
+	                                                    className={`h-full ${tone}`}
+	                                                    style={{ width: `${poolPercent === null ? 0 : poolPercent}%` }}
+	                                                  />
+	                                                </div>
+	                                              </div>
+	                                            );
+	                                          })}
                                         </div>
                                       ) : (
                                         <div className="text-slate-400">No quota data</div>
@@ -908,60 +916,68 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                 );
                               })()}
 
-                              {(() => {
-                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => f.provider === 'antigravity' && !f.runtimeOnly);
-                                if (files.length === 0) return (
-                                  <div className="text-slate-400">Antigravity Quota: no auth files</div>
-                                );
-                                const bestByItemId = new Map<string, { label: string; remainingPercent: number | null; resetLabel: string }>();
-                                files.forEach((file) => {
-                                  const quota = cliproxyQuotas.antigravity?.[file.id];
-                                  const items = quota?.items ?? [];
-                                  items.forEach((it) => {
-                                    if (!it?.id) return;
-                                    const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
-                                    const prev = bestByItemId.get(it.id);
-                                    if (!prev) {
-                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, resetLabel: it.resetLabel });
-                                      return;
-                                    }
-                                    if (percent === null) return;
-                                    if (prev.remainingPercent === null || percent > prev.remainingPercent) {
-                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, resetLabel: it.resetLabel });
-                                    }
-                                  });
-                                });
-                                const bestItems = Array.from(bestByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
-                                return (
-                                  <div className="flex flex-col gap-2">
-                                    <div className="text-slate-500 dark:text-slate-400">Antigravity Quota</div>
-                                    <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
-                                      {bestItems.length ? (
-                                        <div className="flex flex-col gap-1">
-                                          {bestItems.map((it) => {
-                                            const percent = it.remainingPercent;
-                                            const tone = percent === null
-                                              ? 'bg-slate-200 dark:bg-slate-700'
-                                              : percent >= 60
-                                                ? 'bg-emerald-500'
-                                                : percent >= 20
-                                                  ? 'bg-amber-500'
-                                                  : 'bg-rose-500';
-                                            return (
-                                              <div key={it.label} className="flex flex-col gap-0.5">
-                                                <div className="flex items-center justify-between gap-2">
-                                                  <span className="truncate">{it.label}</span>
-                                                  <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
-                                                </div>
-                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                                                  <div
-                                                    className={`h-full ${tone}`}
-                                                    style={{ width: `${percent === null ? 0 : Math.max(0, Math.min(100, percent))}%` }}
-                                                  />
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
+	                              {(() => {
+	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => f.provider === 'antigravity' && !f.runtimeOnly);
+	                                if (files.length === 0) return (
+	                                  <div className="text-slate-400">Antigravity Quota: no auth files</div>
+	                                );
+	                                const pooledByItemId = new Map<string, { label: string; remainingSum: number | null; eligibleCount: number; resetLabel: string }>();
+	                                files.forEach((file) => {
+	                                  const quota = cliproxyQuotas.antigravity?.[file.id];
+	                                  const items = quota?.items ?? [];
+	                                  items.forEach((it) => {
+	                                    if (!it?.id) return;
+	                                    const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
+	                                    const prev = pooledByItemId.get(it.id);
+	                                    const eligibleCount = (prev?.eligibleCount ?? 0) + 1;
+	                                    const remainingSum =
+	                                      typeof percent === 'number'
+	                                        ? (prev?.remainingSum ?? 0) + percent
+	                                        : prev?.remainingSum ?? null;
+	                                    const resetLabel = prev?.resetLabel && prev.resetLabel !== '-' ? prev.resetLabel : it.resetLabel;
+	                                    pooledByItemId.set(it.id, {
+	                                      label: it.label,
+	                                      remainingSum,
+	                                      eligibleCount,
+	                                      resetLabel,
+	                                    });
+	                                  });
+	                                });
+	                                const bestItems = Array.from(pooledByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
+	                                return (
+	                                  <div className="flex flex-col gap-2">
+	                                    <div className="text-slate-500 dark:text-slate-400">Antigravity Quota</div>
+	                                    <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+	                                      {bestItems.length ? (
+	                                        <div className="flex flex-col gap-1">
+	                                          {bestItems.map((it) => {
+	                                            const percent = it.remainingSum;
+	                                            const eligibleCount = it.eligibleCount ?? 1;
+	                                            const poolPercent = percent === null
+	                                              ? null
+	                                              : Math.max(0, Math.min(100, (percent / Math.max(1, eligibleCount * 100)) * 100));
+	                                            const tone = poolPercent === null
+	                                              ? 'bg-slate-200 dark:bg-slate-700'
+	                                              : poolPercent >= 60
+	                                                ? 'bg-emerald-500'
+	                                                : poolPercent >= 20
+	                                                  ? 'bg-amber-500'
+	                                                  : 'bg-rose-500';
+	                                            return (
+	                                              <div key={it.label} className="flex flex-col gap-0.5">
+	                                                <div className="flex items-center justify-between gap-2">
+	                                                  <span className="truncate">{it.label}</span>
+	                                                  <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
+	                                                </div>
+	                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+	                                                  <div
+	                                                    className={`h-full ${tone}`}
+	                                                    style={{ width: `${poolPercent === null ? 0 : poolPercent}%` }}
+	                                                  />
+	                                                </div>
+	                                              </div>
+	                                            );
+	                                          })}
                                         </div>
                                       ) : (
                                         <div className="text-slate-400">No quota data</div>
