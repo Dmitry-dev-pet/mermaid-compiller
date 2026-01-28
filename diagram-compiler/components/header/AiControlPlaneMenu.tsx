@@ -746,7 +746,13 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                 if (files.length === 0) return (
                                   <div className="text-slate-400">Codex Quota: no auth files</div>
                                 );
-	                                const bestByWindowId = new Map<string, { label: string; remainingPercent: number | null; resetLabel: string }>();
+	                                const bestByWindowId = new Map<string, {
+	                                  label: string;
+	                                  remainingPercent: number | null;
+	                                  resetLabel: string;
+	                                  eligibleCount: number;
+	                                  remainingSum: number | null;
+	                                }>();
 	                                files.forEach((file) => {
 	                                  const quota = cliproxyQuotas.codex?.[file.id];
 	                                  const windows = quota?.windows ?? [];
@@ -762,20 +768,36 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 	                                    const remainingPercent =
 	                                      usedPercent === null ? null : Math.max(0, Math.min(100, 100 - usedPercent));
 	                                    const prev = bestByWindowId.get(w.id);
+	                                    const eligibleCount = (prev?.eligibleCount ?? 0) + 1;
+	                                    const remainingSum =
+	                                      typeof remainingPercent === 'number'
+	                                        ? (prev?.remainingSum ?? 0) + remainingPercent
+	                                        : prev?.remainingSum ?? null;
 	                                    if (!prev) {
-	                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel });
+	                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel, eligibleCount, remainingSum });
 	                                      return;
 	                                    }
-                                    if (remainingPercent === null) return;
-                                    if (prev.remainingPercent === null || remainingPercent > prev.remainingPercent) {
-                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel });
-                                    }
-                                  });
-                                });
+	                                    if (remainingPercent === null) {
+	                                      bestByWindowId.set(w.id, { ...prev, eligibleCount, remainingSum });
+	                                      return;
+	                                    }
+	                                    if (prev.remainingPercent === null || remainingPercent > prev.remainingPercent) {
+	                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel, eligibleCount, remainingSum });
+	                                      return;
+	                                    }
+	                                    bestByWindowId.set(w.id, { ...prev, eligibleCount, remainingSum });
+	                                  });
+	                                });
 
-                                const ordered = ['primary', 'secondary', 'code-review']
-                                  .map((id) => bestByWindowId.get(id))
-                                  .filter(Boolean) as Array<{ label: string; remainingPercent: number | null; resetLabel: string }>;
+	                                const ordered = ['primary', 'secondary', 'code-review']
+	                                  .map((id) => bestByWindowId.get(id))
+	                                  .filter(Boolean) as Array<{
+	                                    label: string;
+	                                    remainingPercent: number | null;
+	                                    resetLabel: string;
+	                                    eligibleCount: number;
+	                                    remainingSum: number | null;
+	                                  }>;
 
                                 return (
                                   <div className="flex flex-col gap-2">
@@ -783,30 +805,35 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                     <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
                                       {ordered.length ? (
                                         <div className="flex flex-col gap-1">
-                                          {ordered.map((w) => {
-                                            const percent = w.remainingPercent;
-                                            const tone = percent === null
-                                              ? 'bg-slate-200 dark:bg-slate-700'
-                                              : percent >= 60
-                                                ? 'bg-emerald-500'
-                                                : percent >= 20
-                                                  ? 'bg-amber-500'
-                                                  : 'bg-rose-500';
-                                            return (
-                                              <div key={w.label} className="flex flex-col gap-0.5">
-                                                <div className="flex items-center justify-between gap-2">
-                                                  <span className="truncate">{w.label}</span>
-                                                  <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {w.resetLabel}</span>
-                                                </div>
-                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                                                  <div
-                                                    className={`h-full ${tone}`}
-                                                    style={{ width: `${percent === null ? 0 : Math.max(0, Math.min(100, percent))}%` }}
-                                                  />
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
+	                                          {ordered.map((w) => {
+	                                            const remainingSum = w.remainingSum;
+	                                            const eligibleCount = w.eligibleCount ?? 1;
+	                                            const percent = remainingSum;
+	                                            const poolPercent = percent === null
+	                                              ? null
+	                                              : Math.max(0, Math.min(100, (percent / Math.max(1, eligibleCount * 100)) * 100));
+	                                            const tone = poolPercent === null
+	                                              ? 'bg-slate-200 dark:bg-slate-700'
+	                                              : poolPercent >= 60
+	                                                ? 'bg-emerald-500'
+	                                                : poolPercent >= 20
+	                                                  ? 'bg-amber-500'
+	                                                  : 'bg-rose-500';
+	                                            return (
+	                                              <div key={w.label} className="flex flex-col gap-0.5">
+	                                                <div className="flex items-center justify-between gap-2">
+	                                                  <span className="truncate">{w.label}</span>
+	                                                  <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {w.resetLabel}</span>
+	                                                </div>
+	                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+	                                                  <div
+	                                                    className={`h-full ${tone}`}
+	                                                    style={{ width: `${poolPercent === null ? 0 : poolPercent}%` }}
+	                                                  />
+	                                                </div>
+	                                              </div>
+	                                            );
+	                                          })}
                                         </div>
                                       ) : (
                                         <div className="text-slate-400">No quota data</div>
