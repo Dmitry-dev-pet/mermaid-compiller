@@ -46,7 +46,6 @@ export interface OpenRouterFilters {
 }
 
 export interface CliproxyFilters {
-  vendor: string;
   ownedBy: string;
 }
 

@@ -44,11 +44,9 @@ describe('requestNotebookPlan', () => {
             minContextWindow: 0,
           },
           agent: {
-            vendor: '',
             ownedBy: '',
           },
           cliproxy: {
-            vendor: '',
             ownedBy: '',
           },
         },
@@ -96,11 +94,9 @@ describe('requestNotebookPlan', () => {
             minContextWindow: 0,
           },
           agent: {
-            vendor: '',
             ownedBy: '',
           },
           cliproxy: {
-            vendor: '',
             ownedBy: '',
           },
         },
@@ -148,11 +144,9 @@ describe('requestNotebookPlan', () => {
             minContextWindow: 0,
           },
           agent: {
-            vendor: '',
             ownedBy: '',
           },
           cliproxy: {
-            vendor: '',
             ownedBy: '',
           },
         },

@@ -152,11 +152,8 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const isAgent = aiConfig.provider === 'agent';
   const isCliproxy = aiConfig.provider === 'cliproxy';
   const filtersByProvider = aiConfig.filtersByProvider ?? DEFAULT_AI_CONFIG.filtersByProvider;
-  const activeFilters = isOpenRouter
-    ? filtersByProvider.openrouter
-    : isAgent
-      ? filtersByProvider.agent
-      : filtersByProvider.cliproxy;
+  const openRouterFilters = filtersByProvider.openrouter;
+  const proxyFilters = isOpenRouter ? null : (isAgent ? filtersByProvider.agent : filtersByProvider.cliproxy);
   const timeoutSeconds = Math.max(5, Math.min(300, Math.round(llmTimeoutMs / 1000)));
   const statusToneClass = getStatusTone();
   const reasoningEffort =
@@ -172,9 +169,24 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     /\bgoogle\/gemini\b/i.test(aiConfig.selectedModelId);
   const showReasoningControl = isAgent && !isGeminiModel;
 
-  const updateFilters = (updates: Partial<OpenRouterFilters & CliproxyFilters>) => {
+  const updateOpenRouterFilters = (updates: Partial<OpenRouterFilters>) => {
     onConfigChange((prev) => {
-      const provider = prev.provider;
+      return {
+        ...prev,
+        filtersByProvider: {
+          ...prev.filtersByProvider,
+          openrouter: {
+            ...(prev.filtersByProvider?.openrouter ?? {}),
+            ...updates,
+          },
+        },
+      };
+    });
+  };
+
+  const updateProxyFilters = (updates: Partial<CliproxyFilters>) => {
+    onConfigChange((prev) => {
+      const provider = prev.provider === 'agent' ? 'agent' : 'cliproxy';
       return {
         ...prev,
         filtersByProvider: {
@@ -219,7 +231,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const baseFilteredModels = connectionState.availableModels.filter((m) => {
     if (!m) return false;
     if (isOpenRouter) {
-      const openRouterFilters = aiConfig.filtersByProvider.openrouter;
       if (openRouterFilters.freeOnly && !m.isFree) return false;
       if (openRouterFilters.minContextWindow > 0 && (m.contextLength ?? 0) < openRouterFilters.minContextWindow) return false;
     }
@@ -227,40 +238,49 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   });
 
   const vendorCounts = new Map<string, number>();
-  baseFilteredModels.forEach((model) => {
-    if (!model || !model.vendor) return;
-    vendorCounts.set(model.vendor, (vendorCounts.get(model.vendor) ?? 0) + 1);
-  });
+  if (isOpenRouter) {
+    baseFilteredModels.forEach((model) => {
+      if (!model || !model.vendor) return;
+      vendorCounts.set(model.vendor, (vendorCounts.get(model.vendor) ?? 0) + 1);
+    });
+  }
 
   const ownedByCounts = new Map<string, number>();
-  baseFilteredModels.forEach((model) => {
-    const ownedBy = typeof model?.ownedBy === 'string' ? model.ownedBy.trim() : '';
-    if (!ownedBy) return;
-    ownedByCounts.set(ownedBy, (ownedByCounts.get(ownedBy) ?? 0) + 1);
-  });
+  if (!isOpenRouter) {
+    baseFilteredModels.forEach((model) => {
+      const ownedBy = typeof model?.ownedBy === 'string' ? model.ownedBy.trim() : '';
+      if (!ownedBy) return;
+      ownedByCounts.set(ownedBy, (ownedByCounts.get(ownedBy) ?? 0) + 1);
+    });
+  }
 
   const vendorOptions = Array.from(vendorCounts.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([vendor, count]) => ({ vendor, count }));
 
-  if (activeFilters.vendor && !vendorCounts.has(activeFilters.vendor)) {
-    vendorOptions.unshift({ vendor: activeFilters.vendor, count: 0 });
+  if (isOpenRouter && openRouterFilters.vendor && !vendorCounts.has(openRouterFilters.vendor)) {
+    vendorOptions.unshift({ vendor: openRouterFilters.vendor, count: 0 });
   }
 
   const ownedByOptions = Array.from(ownedByCounts.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([ownedBy, count]) => ({ ownedBy, count }));
 
-  if ('ownedBy' in activeFilters && activeFilters.ownedBy && !ownedByCounts.has(activeFilters.ownedBy)) {
-    ownedByOptions.unshift({ ownedBy: activeFilters.ownedBy, count: 0 });
+  if (!isOpenRouter && proxyFilters?.ownedBy && !ownedByCounts.has(proxyFilters.ownedBy)) {
+    ownedByOptions.unshift({ ownedBy: proxyFilters.ownedBy, count: 0 });
   }
 
-  const vendorPills = [...vendorOptions].sort((a, b) => (b.count - a.count) || a.vendor.localeCompare(b.vendor));
   const ownedByPills = [...ownedByOptions].sort((a, b) => (b.count - a.count) || a.ownedBy.localeCompare(b.ownedBy));
 
   const filteredModels = baseFilteredModels.filter((m) => {
-    if ('ownedBy' in activeFilters && activeFilters.ownedBy && (m.ownedBy ?? '') !== activeFilters.ownedBy) return false;
-    if (activeFilters.vendor && m.vendor !== activeFilters.vendor) return false;
+    if (!m) return false;
+    if (isOpenRouter) {
+      if (openRouterFilters.vendor && m.vendor !== openRouterFilters.vendor) return false;
+      return true;
+    }
+
+    const filterOwnedBy = proxyFilters?.ownedBy ?? '';
+    if (filterOwnedBy && (m.ownedBy ?? '') !== filterOwnedBy) return false;
     return true;
   });
 
@@ -913,15 +933,15 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
               {showFilters && (
                 <div className="mb-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded text-xs grid grid-cols-2 gap-2 border border-slate-100 dark:border-slate-700 dark:text-slate-300">
-                  {'ownedBy' in activeFilters && ownedByOptions.length > 0 && (
+                  {!isOpenRouter && ownedByOptions.length > 0 && (
                     <div className="col-span-2">
                       <label className="block text-[10px] uppercase text-slate-400 mb-1">Provider</label>
                       <div className="flex flex-wrap gap-1">
                         <button
                           type="button"
-                          onClick={() => updateFilters({ ownedBy: '' })}
+                          onClick={() => updateProxyFilters({ ownedBy: '' })}
                           className={`px-2 py-1 rounded border text-[11px] ${
-                            !activeFilters.ownedBy
+                            !proxyFilters?.ownedBy
                               ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
                               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                           }`}
@@ -929,12 +949,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                           All ({baseFilteredModels.length})
                         </button>
                         {ownedByPills.map(({ ownedBy, count }) => {
-                          const selected = activeFilters.ownedBy === ownedBy;
+                          const selected = (proxyFilters?.ownedBy ?? '') === ownedBy;
                           return (
                             <button
                               key={ownedBy}
                               type="button"
-                              onClick={() => updateFilters({ ownedBy })}
+                              onClick={() => updateProxyFilters({ ownedBy })}
                               className={`px-2 py-1 rounded border text-[11px] ${
                                 selected
                                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
@@ -948,12 +968,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                       </div>
                     </div>
                   )}
-                  <div className="col-span-2">
-                    <label className="block text-[10px] uppercase text-slate-400 mb-1">Vendor</label>
-                    {isOpenRouter ? (
+                  {isOpenRouter && (
+                    <div className="col-span-2">
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Vendor</label>
                       <Select
-                        value={activeFilters.vendor}
-                        onChange={(e) => updateFilters({ vendor: e.target.value })}
+                        value={openRouterFilters.vendor}
+                        onChange={(e) => updateOpenRouterFilters({ vendor: e.target.value })}
                         size="sm"
                       >
                         <option value="">
@@ -965,45 +985,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                           </option>
                         ))}
                       </Select>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        <button
-                          type="button"
-                          onClick={() => updateFilters({ vendor: '' })}
-                          className={`px-2 py-1 rounded border text-[11px] ${
-                            !activeFilters.vendor
-                              ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-                          }`}
-                        >
-                          All ({baseFilteredModels.length})
-                        </button>
-                        {vendorPills.map(({ vendor, count }) => {
-                          const selected = activeFilters.vendor === vendor;
-                          return (
-                            <button
-                              key={vendor}
-                              type="button"
-                              onClick={() => updateFilters({ vendor })}
-                              className={`px-2 py-1 rounded border text-[11px] ${
-                                selected
-                                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
-                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-                              }`}
-                            >
-                              {vendor} ({count})
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   {isOpenRouter && (
                     <div className="col-span-2">
                       <label className="block text-[10px] uppercase text-slate-400 mb-1">Min Context Window</label>
                       <Select
-                        value={activeFilters.minContextWindow}
-                        onChange={(e) => updateFilters({ minContextWindow: Number(e.target.value) })}
+                        value={openRouterFilters.minContextWindow}
+                        onChange={(e) => updateOpenRouterFilters({ minContextWindow: Number(e.target.value) })}
                         size="sm"
                       >
                         <option value="0">Any size</option>
@@ -1020,16 +1009,16 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={aiConfig.filtersByProvider.openrouter.freeOnly}
-                          onChange={(e) => updateFilters({ freeOnly: e.target.checked })}
+                          checked={openRouterFilters.freeOnly}
+                          onChange={(e) => updateOpenRouterFilters({ freeOnly: e.target.checked })}
                         />
                         Free only
                       </label>
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={aiConfig.filtersByProvider.openrouter.testedOnly}
-                          onChange={(e) => updateFilters({ testedOnly: e.target.checked })}
+                          checked={openRouterFilters.testedOnly}
+                          onChange={(e) => updateOpenRouterFilters({ testedOnly: e.target.checked })}
                         />
                         Tested only
                       </label>

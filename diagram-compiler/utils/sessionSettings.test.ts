@@ -60,7 +60,7 @@ describe('sessionSettings', () => {
           experimental: false,
           minContextWindow: 0,
         },
-        cliproxy: { vendor: '' },
+        cliproxy: { ownedBy: '' },
       },
     } as unknown as AIConfig;
 
@@ -71,7 +71,7 @@ describe('sessionSettings', () => {
     );
 
     expect(appliedAiConfig.selectedModelIdByProvider.agent).toBe('');
-    expect(appliedAiConfig.filtersByProvider.agent).toEqual({ vendor: '', ownedBy: '' });
+    expect(appliedAiConfig.filtersByProvider.agent).toEqual({ ownedBy: '' });
     expect(typeof appliedAiConfig.agentEndpoint).toBe('string');
     expect(typeof appliedAiConfig.agentToken).toBe('string');
   });
