@@ -48,8 +48,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
   const [showAgentToken, setShowAgentToken] = useState(false);
   const [showProxyKey, setShowProxyKey] = useState(false);
-  const [loginStatus, setLoginStatus] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
-  const [loginLoading, setLoginLoading] = useState(false);
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
   const [versionInfo, setVersionInfo] = useState<{
     agentVersion?: string;
@@ -166,7 +164,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     onDisconnect();
     const storedModelId = aiConfig.selectedModelIdByProvider?.[provider] ?? '';
     updateConfig({ provider, selectedModelId: storedModelId });
-    setLoginStatus(null);
   };
 
   const updateReasoningEffort = useCallback((value: string) => {
@@ -218,48 +215,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     return true;
   });
 
-  const handleAgentLogin = useCallback(async () => {
-    setLoginStatus(null);
-    const endpoint = aiConfig.agentEndpoint?.trim();
-    if (!endpoint) {
-      setLoginStatus({ tone: 'error', message: 'Agent endpoint is required.' });
-      return;
-    }
-    if (!aiConfig.agentToken) {
-      setLoginStatus({ tone: 'error', message: 'Agent token is required.' });
-      return;
-    }
-    const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
-    setLoginLoading(true);
-    try {
-      const response = await fetch(`${base}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${aiConfig.agentToken}`,
-        },
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message = body?.error || `Login failed (${response.status})`;
-        setLoginStatus({ tone: 'error', message });
-        return;
-      }
-      const authUrl = body?.auth_url;
-      if (authUrl && typeof authUrl === 'string') {
-        window.open(authUrl, '_blank', 'noopener');
-      }
-      const userCode = body?.user_code;
-      const baseMessage = body?.message || 'Login started. Complete it in the opened browser.';
-      const message = userCode ? `${baseMessage} Code: ${userCode}` : baseMessage;
-      setLoginStatus({ tone: 'success', message });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Login failed';
-      setLoginStatus({ tone: 'error', message });
-    } finally {
-      setLoginLoading(false);
-    }
-  }, [aiConfig.agentEndpoint, aiConfig.agentToken]);
-
   useEffect(() => {
     if (connectionState.status !== 'connected') return;
     if (filteredModels.length !== 1) return;
@@ -272,16 +227,10 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   useEffect(() => {
     if (!isAgent) return;
     if (!isOpen) return;
-    const endpoint = aiConfig.agentEndpoint?.trim();
-    if (!endpoint) {
-      setAgentStatus({ state: 'unknown' });
-      setVersionInfo((prev) => ({ ...prev, agentVersion: undefined, codexVersion: undefined, geminiVersion: undefined }));
-      return;
-    }
-    const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
     let cancelled = false;
 
-    const checkHealth = async () => {
+    const endpoint = aiConfig.agentEndpoint?.trim();
+    const checkHealth = async (base: string) => {
       try {
         const response = await fetch(`${base}/api/health`);
         if (cancelled) return;
@@ -307,23 +256,30 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       }
     };
 
-    checkHealth();
-    const interval = window.setInterval(checkHealth, 5000);
+    const run = async () => {
+      if (!endpoint) {
+        setAgentStatus({ state: 'unknown' });
+        setVersionInfo((prev) => ({ ...prev, agentVersion: undefined, codexVersion: undefined, geminiVersion: undefined }));
+        return;
+      }
+      const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
+      await checkHealth(base);
+      const interval = window.setInterval(() => void checkHealth(base), 5000);
+      return () => {
+        window.clearInterval(interval);
+      };
+    };
+
+    const teardownPromise = run();
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      void teardownPromise.then((teardown) => teardown?.());
     };
   }, [aiConfig.agentEndpoint, isAgent, isOpen]);
 
   useEffect(() => {
     if (!isCliproxy) return;
     if (!isOpen) return;
-    const endpoint = aiConfig.proxyEndpoint?.trim();
-    if (!endpoint) {
-      setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: undefined }));
-      return;
-    }
-    const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
     let cancelled = false;
 
     const headers: Record<string, string> = {};
@@ -339,6 +295,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     };
 
     const fetchVersion = async () => {
+      const endpoint = aiConfig.proxyEndpoint?.trim();
+      if (!endpoint) {
+        setVersionInfo((prev) => ({ ...prev, cliproxyapiVersion: undefined }));
+        return;
+      }
+      const base = endpoint.replace(/\/v1\/?$/, '').replace(/\/$/, '');
       const paths = ['/api/health', '/health', '/api/version', '/version'];
       for (const path of paths) {
         try {
@@ -493,40 +455,18 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                     </Button>
                   </div>
                 </div>
-                <div className="flex items-center justify-between gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleAgentLogin}
-                    disabled={loginLoading || !aiConfig.agentEndpoint || !aiConfig.agentToken}
-                    className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600"
-                  >
-                    {loginLoading ? <Loader2 size={12} className="animate-spin" /> : null}
-                    Sign in via local agent
-                  </Button>
-                  <span
-                    className={`text-[11px] flex items-center gap-1 ${
-                      agentStatus.state === 'online'
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : agentStatus.state === 'offline'
-                          ? 'text-rose-600 dark:text-rose-400'
-                          : 'text-slate-500 dark:text-slate-400'
-                    }`}
-                  >
-                    <span className="inline-block h-2 w-2 rounded-full border border-current" />
-                    Agent {agentStatus.state === 'unknown' ? 'unknown' : agentStatus.state}
-                    {agentStatus.message ? ` · ${agentStatus.message}` : ''}
-                  </span>
-                  {loginStatus && (
-                    <span
-                      className={`text-[11px] ${
-                        loginStatus.tone === 'success'
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
-                      {loginStatus.message}
-                    </span>
-                  )}
+                <div
+                  className={`text-[11px] flex items-center gap-1 ${
+                    agentStatus.state === 'online'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : agentStatus.state === 'offline'
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  <span className="inline-block h-2 w-2 rounded-full border border-current" />
+                  Agent {agentStatus.state === 'unknown' ? 'unknown' : agentStatus.state}
+                  {agentStatus.message ? ` · ${agentStatus.message}` : ''}
                 </div>
               </div>
             ) : (
