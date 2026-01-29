@@ -4,13 +4,19 @@ import type { DiagramType } from '../../types';
 import type { MermaidThemePresetId } from '../../utils/mermaidThemePreset';
 import { MERMAID_THEME_PRESETS } from '../../utils/mermaidThemePreset';
 import type { MermaidMarkdownBlock } from '../../services/mermaidService';
-import { buildNotebookExcalidrawScene } from '../../services/excalidraw/notebookRibbonBuilder';
 import { hashString } from '../../utils/hashString';
 import { extractFrontmatterThemeVariables } from '../../utils/mermaidFrontmatterThemeVariables';
 import { isDarkColor } from '../../services/excalidraw/excalidrawTheme';
 
 const EXCALIDRAW_THEME_STORAGE_KEY = 'mlg.excalidrawThemeByDiagramKey.v1';
 const EXCALIDRAW_CANVAS_BG_STORAGE_KEY = 'mlg.excalidrawCanvasBackgroundByDiagramKey.v1';
+
+let notebookRibbonBuilderModulePromise: Promise<typeof import('../../services/excalidraw/notebookRibbonBuilder')> | null = null;
+
+const loadNotebookRibbonBuilder = () => {
+  notebookRibbonBuilderModulePromise ??= import('../../services/excalidraw/notebookRibbonBuilder');
+  return notebookRibbonBuilderModulePromise;
+};
 
 const readExcalidrawThemeFromSceneJson = (sceneJson: string | null | undefined): 'light' | 'dark' | null => {
   if (!sceneJson) return null;
@@ -318,6 +324,7 @@ export const usePreviewWhiteboard = ({
 
     const timer = window.setTimeout(() => {
       void (async () => {
+        const { buildNotebookExcalidrawScene } = await loadNotebookRibbonBuilder();
         const nextScene = await buildNotebookExcalidrawScene({
           mermaidCode,
           markdownBlocks: markdownMermaidBlocks,

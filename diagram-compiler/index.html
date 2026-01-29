@@ -161,6 +161,20 @@
 </head>
   <body class="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 h-screen overflow-hidden">
     <div id="root" class="h-full"></div>
+    <script>
+      // When a user keeps the tab open across deployments, Vite's code-split chunks
+      // can 404 (stale hashed filenames). Reload once to get the latest asset map.
+      window.addEventListener('vite:preloadError', (event) => {
+        event.preventDefault();
+        const key = '__vite_preload_error_reload__';
+        if (sessionStorage.getItem(key)) return;
+        sessionStorage.setItem(key, '1');
+        window.location.reload();
+      });
+      window.addEventListener('load', () => {
+        sessionStorage.removeItem('__vite_preload_error_reload__');
+      });
+    </script>
   <script type="module" src="/index.tsx"></script>
 </body>
 </html>

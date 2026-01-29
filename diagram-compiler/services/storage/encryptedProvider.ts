@@ -7,7 +7,13 @@ import type {
   StorageProvider,
   StorageProviderInitResult,
 } from './types';
-import { decryptBytes, encryptBytes, unwrapVaultKey } from './crypto';
+import {
+  decryptBytes,
+  encryptBytes,
+  generateVaultKey,
+  unwrapVaultKey,
+  wrapVaultKey,
+} from './crypto';
 import type { EncryptedPayload } from './crypto';
 
 export type EncryptedProviderConfig = {
@@ -45,7 +51,6 @@ export const createEncryptedProvider = (
 
   const ensureVaultKey = async () => {
     if (!vaultEnvelope) {
-      const { generateVaultKey, wrapVaultKey } = await import('./crypto');
       const key = await generateVaultKey();
       const env = await wrapVaultKey(key, config.passphrase);
       vaultEnvelope = env;
