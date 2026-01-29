@@ -984,7 +984,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
                                   const preview = emailGroups.slice(0, 8);
                                   return (
-                                    <div className="mt-2 pl-2 border-l border-slate-200/60 dark:border-slate-700/60">
+                                    <div className="mt-2 pl-4 border-l-2 border-slate-300/70 dark:border-slate-600/70">
                                       {preview.map((g) => {
                                         const providerCounts = g.items.reduce((acc, f) => {
                                           const p = getProviderKey(f);
@@ -1003,7 +1003,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                                 {g.label}{g.items.length > 1 ? ` ×${g.items.length}` : ''}
                                               </div>
                                               {providersLabel ? (
-                                                <div className="text-[10px] text-slate-400 truncate">{providersLabel}</div>
+                                                <div className="pl-3 text-[10px] text-slate-400 truncate">via {providersLabel}</div>
                                               ) : null}
                                             </div>
                                             <div className={`shrink-0 font-mono tabular-nums ${status.tone}`}>{status.text}</div>
@@ -1011,7 +1011,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                         );
                                       })}
                                       {emailGroups.length > preview.length ? (
-                                        <div className="text-slate-400">…and {emailGroups.length - preview.length} more</div>
+                                        <div className="pl-3 text-slate-400">…and {emailGroups.length - preview.length} more</div>
                                       ) : null}
                                     </div>
                                   );
