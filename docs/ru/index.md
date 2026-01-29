@@ -32,4 +32,4 @@
 - **[Обновление доков](internal-docs-update.md)**: как обновлять Mermaid‑документацию.
 
 ---
-[← Назад к README](../../README.md)
+[← Назад к README](README.md)

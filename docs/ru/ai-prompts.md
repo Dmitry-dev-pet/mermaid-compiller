@@ -1,6 +1,6 @@
 # Prompt Engineering & Context
 
-[← Back to Index](INDEX.md) | [← Prev: Mermaid Agent](ai-agent.md)
+[← Back to Index](./) | [← Prev: Mermaid Agent](ai-agent.md)
 
 Качество генерации достигается за счет сложной системы сборки промптов.
 
@@ -18,4 +18,4 @@
 Если код невалиден, приложение запускает цикл исправления, передавая ошибку парсера обратно в модель (до 5 попыток).
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)

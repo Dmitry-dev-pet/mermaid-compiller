@@ -1,6 +1,6 @@
 # Mermaid Core: Validation & Rendering
 
-[← Back to Index](INDEX.md) | [← Prev: System Architecture](internal-architecture.md)
+[← Back to Index](./) | [← Prev: System Architecture](internal-architecture.md)
 
 ## Жизненный цикл кода
 
@@ -16,4 +16,4 @@
 - **Whiteboard**: Рисование поверх SVG.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Updating Docs →](internal-docs-update.md)
+[← Back to Index](./) | [Next: Updating Docs →](internal-docs-update.md)

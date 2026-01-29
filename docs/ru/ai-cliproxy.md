@@ -1,6 +1,6 @@
 # CLIProxyAPI Integration
 
-[← Back to Index](INDEX.md) | [← Prev: AI Overview](ai-overview.md)
+[← Back to Index](./) | [← Prev: AI Overview](ai-overview.md)
 
 **CLIProxyAPI** (Cliproxy) — это сердце продвинутой интеграции. Этот режим позволяет использовать профессиональные модели ИИ без ручного управления API-ключами.
 
@@ -26,4 +26,4 @@ Cliproxy умеет переключаться между несколькими
 3. Укажите эндпоинт `http://localhost:8317`.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Mermaid Agent →](ai-agent.md)
+[← Back to Index](./) | [Next: Mermaid Agent →](ai-agent.md)

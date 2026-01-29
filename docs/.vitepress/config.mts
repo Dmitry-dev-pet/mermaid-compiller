@@ -112,12 +112,13 @@ export default defineConfig({
   base,
   title: "Mermaid Compiler",
   description: "AI Diagramming IDE with Local Privacy",
-  ignoreDeadLinks: true,
+  srcExclude: ['project/**'],
   locales: {
     root: {
       label: 'EN',
       lang: 'en-US',
       themeConfig: {
+        langMenuLabel: 'Language',
         nav: navEn(''),
         sidebar: sidebarEn(''),
       }
@@ -127,6 +128,7 @@ export default defineConfig({
       lang: 'ru-RU',
       link: '/ru/',
       themeConfig: {
+        langMenuLabel: 'Язык',
         nav: navRu('/ru'),
         sidebar: sidebarRu('/ru'),
         outlineTitle: 'На этой странице',

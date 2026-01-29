@@ -1,6 +1,6 @@
 # Markdown Notebooks & Planner
 
-[← Back to Index](INDEX.md) | [← Prev: Basic Workflow](guide-basic.md)
+[← Back to Index](./) | [← Prev: Basic Workflow](guide-basic.md)
 
 **Markdown Notebooks** — это самый мощный режим приложения, позволяющий создавать целые технические документы с множеством взаимосвязанных диаграмм.
 
@@ -25,4 +25,4 @@
 В режиме превью Markdown каждый блок кликабелен. Вы можете выбрать конкретный блок и применить к нему **Fix** или **Analyze**, не затрагивая остальной документ.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Whiteboard Integration →](guide-whiteboard.md)
+[← Back to Index](./) | [Next: Whiteboard Integration →](guide-whiteboard.md)

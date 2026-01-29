@@ -1,6 +1,6 @@
 # Testing & Linting
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
 Документация по обеспечению качества кода.
 
@@ -38,4 +38,4 @@ npm run typecheck
 ```
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)

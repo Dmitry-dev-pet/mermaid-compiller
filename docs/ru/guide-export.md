@@ -1,6 +1,6 @@
 # Export & Sharing
 
-[← Back to Index](INDEX.md) | [← Prev: Whiteboard](guide-whiteboard.md)
+[← Back to Index](./) | [← Prev: Whiteboard](guide-whiteboard.md)
 
 ## Экспорт изображений
 
@@ -39,4 +39,4 @@
 Восстановить проект можно через **Import Bundle**.
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)

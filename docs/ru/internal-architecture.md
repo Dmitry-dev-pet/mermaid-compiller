@@ -1,6 +1,6 @@
 # System Architecture
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
 Проект построен как SPA на React 19 с модульной архитектурой.
 
@@ -21,4 +21,4 @@
 - **Mermaid**: Валидация.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Mermaid Core →](internal-mermaid.md)
+[← Back to Index](./) | [Next: Mermaid Core →](internal-mermaid.md)

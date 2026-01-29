@@ -91,7 +91,7 @@ const formatProvidersSummary = (items: CliproxyAuthFile[]): string => {
       if (ra !== rb) return ra - rb;
       return a.localeCompare(b);
     })
-    .map((p) => `${p}${counts[p] > 1 ? `×${counts[p]}` : ''}`)
+    .map((p) => `${p}${counts[p] > 1 ? ` ×${counts[p]}` : ''}`)
     .join(' · ');
 };
 
@@ -174,4 +174,3 @@ export const isCliproxyAnyProviderReady = (files: CliproxyAuthFile[], providerKe
   const p = normalizeCliproxyProviderKey(providerKey);
   return files.some((f) => normalizeCliproxyProviderKey(f.provider ?? null) === p && !f.runtimeOnly && isCliproxyAuthFileReady(f));
 };
-

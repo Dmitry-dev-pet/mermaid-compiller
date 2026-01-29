@@ -1,6 +1,6 @@
 # AI Strategies Overview
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
 В приложении реализовано три независимых пути (стратегии) подключения к LLM.
 
@@ -38,4 +38,4 @@
 - **Подробнее**: [Mermaid Agent Guide](ai-agent.md)
 
 ---
-[← Back to Index](INDEX.md) | [Next: CLIProxyAPI Integration →](ai-cliproxy.md)
+[← Back to Index](./) | [Next: CLIProxyAPI Integration →](ai-cliproxy.md)

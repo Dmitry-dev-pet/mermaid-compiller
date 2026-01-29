@@ -1,6 +1,6 @@
 # Desktop Agent Setup
 
-[← Back to Index](INDEX.md) | [← Prev: Web Setup](setup-web.md)
+[← Back to Index](./) | [← Prev: Web Setup](setup-web.md)
 
 Desktop-версия включает в себя нативное приложение на Tauri и фоновый агент для работы с CLI.
 
@@ -47,4 +47,4 @@ cargo tauri build
 | `CODEX_CMD` | Путь к Codex CLI | `codex` |
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
