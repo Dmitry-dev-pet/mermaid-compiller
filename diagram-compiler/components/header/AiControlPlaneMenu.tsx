@@ -9,6 +9,7 @@ import {
   Filter,
   LogOut,
   Timer,
+  ExternalLink,
 } from 'lucide-react';
 import { AIConfig, CliproxyFilters, ConnectionState, ModelParams, OpenRouterFilters } from '../../types';
 import { DEFAULT_AI_CONFIG } from '../../constants';
@@ -38,6 +39,8 @@ type AiControlPlaneMenuProps = {
 };
 
 const normalizeCliproxyBase = (endpoint: string) => endpoint.trim().replace(/\/v1\/?$/, '').replace(/\/$/, '');
+
+const DEFAULT_DOCS_URL = 'https://<user>.github.io/mermaid-langgraph/';
 
 const formatMonthDayTime = (date: Date) => date.toLocaleString(void 0, {
   month: '2-digit',
@@ -133,6 +136,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     endpoint: aiConfig.agentEndpoint || '',
     token: aiConfig.agentToken || '',
   });
+
+  const docsUrl = (import.meta.env.VITE_DOCS_URL ?? DEFAULT_DOCS_URL).trim();
+  const handleOpenDocs = useCallback(() => {
+    if (!docsUrl) return;
+    window.open(docsUrl, '_blank', 'noopener,noreferrer');
+  }, [docsUrl]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -489,7 +498,20 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       {isOpen && (
         <div className="absolute top-full right-0 mt-2 w-[400px] bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-4 animate-in fade-in slide-in-from-top-2 duration-200 z-50">
           <div className="mb-4">
-            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">Provider</label>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Provider</label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleOpenDocs}
+                className="gap-1"
+                title={docsUrl}
+              >
+                <ExternalLink size={12} className="opacity-80" />
+                Docs
+              </Button>
+            </div>
             <RadioGroup>
               <RadioOption
                 name="provider"
