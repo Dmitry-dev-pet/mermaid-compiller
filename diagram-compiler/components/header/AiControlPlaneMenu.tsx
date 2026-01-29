@@ -1007,7 +1007,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
                                   const preview = emailGroups.slice(0, 8);
                                   return (
-                                    <div className="mt-2 pl-4 border-l-2 border-slate-300/70 dark:border-slate-600/70">
+                                    <div className="mt-2 flex flex-col gap-1">
                                       {preview.map((g) => {
                                         const providerCounts = g.items.reduce((acc, f) => {
                                           const p = getProviderKey(f);
