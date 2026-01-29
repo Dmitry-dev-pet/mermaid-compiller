@@ -1,9 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Trash2, X } from 'lucide-react';
+import { Cloud, LogIn, LogOut, Trash2, User as UserIcon, X } from 'lucide-react';
 import type { HistorySession } from '../../services/history/types';
+import type { StorageMode } from '../../hooks/core/useStorageMode';
+import type { CloudSyncStatus } from '../../hooks/studio/useCloudSync';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
+import { useAuth } from '../../contexts/AuthContext';
 
 type SortKey = 'updated' | 'created' | 'name';
 
@@ -28,6 +31,9 @@ type ProjectsMenuProps = {
   byoConfig: { url: string; anonKey: string };
   onByoConfigChange: (updates: { url?: string; anonKey?: string }) => void;
   onTestByoConfig: () => Promise<{ ok: boolean; error?: string }>;
+  storageMode?: StorageMode;
+  onStorageModeChange?: (mode: StorageMode) => void;
+  cloudSync?: { status: CloudSyncStatus; syncActive: () => Promise<void>; syncAll: () => Promise<void> };
 };
 
 const formatProjectTimestamp = (ts?: number) => {
@@ -62,7 +68,12 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
   byoConfig,
   onByoConfigChange,
   onTestByoConfig,
+  storageMode,
+  onStorageModeChange,
+  cloudSync,
 }) => {
+  const auth = useAuth();
+  const [cloudBusy, setCloudBusy] = useState(false);
   const sortedProjects = useMemo(() => {
     const next = [...projects];
     if (sortKey === 'name') {
@@ -84,6 +95,54 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
   const [byoStatus, setByoStatus] = useState<{ kind: 'idle' | 'error' | 'success'; message?: string }>({
     kind: 'idle',
   });
+
+  const cloudLabel = useMemo(() => {
+    if (auth.status === 'disabled') return 'disabled';
+    if (auth.status === 'loading') return 'loading…';
+    if (auth.status === 'error') return auth.error ?? 'error';
+    if (auth.status === 'signed_in') {
+      const email = auth.user?.email;
+      const login = typeof auth.user?.user_metadata?.login === 'string' ? auth.user.user_metadata.login : null;
+      return email || login || 'signed in';
+    }
+    return 'signed out';
+  }, [auth.error, auth.status, auth.user]);
+
+  const canSync =
+    !!cloudSync &&
+    (storageMode === 'cloud_hosted' || storageMode === 'cloud_byo') &&
+    auth.status === 'signed_in' &&
+    cloudSync.status.kind !== 'syncing';
+
+  const handleCloudLogin = async () => {
+    if (cloudBusy) return;
+    setCloudBusy(true);
+    try {
+      await auth.loginWithGitHub();
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const handleCloudLogout = async () => {
+    if (cloudBusy) return;
+    setCloudBusy(true);
+    try {
+      await auth.logout();
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const handleSyncActive = async () => {
+    if (!cloudSync) return;
+    await cloudSync.syncActive();
+  };
+
+  const handleSyncAll = async () => {
+    if (!cloudSync) return;
+    await cloudSync.syncAll();
+  };
 
   const handleExport = async () => {
     if (!activeProjectId) return;
@@ -285,6 +344,94 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
           </span>
         </div>
       )}
+
+      {(storageMode || cloudSync || onStorageModeChange) && (
+        <div className="px-3 py-2 border-t border-[var(--panel-border)]">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 inline-flex items-center gap-1">
+              <Cloud size={12} className="opacity-80" /> Cloud
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={auth.status === 'signed_in' ? handleCloudLogout : handleCloudLogin}
+              disabled={cloudBusy || auth.status === 'disabled' || auth.status === 'loading'}
+              className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 gap-1"
+              title={cloudLabel}
+            >
+              <UserIcon size={12} className="opacity-80" />
+              {auth.status === 'signed_in' ? (
+                <LogOut size={12} className="opacity-80" />
+              ) : (
+                <LogIn size={12} className="opacity-80" />
+              )}
+              {auth.status === 'signed_in' ? 'Logout' : 'Login'}
+            </Button>
+          </div>
+
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="text-[10px] text-slate-400 dark:text-slate-500">Status</span>
+            <span className="text-[10px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate max-w-[220px]">
+              {cloudLabel}
+            </span>
+          </div>
+
+          {storageMode && onStorageModeChange && (
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500">Mode</span>
+              <Select
+                value={storageMode}
+                onChange={(event) => onStorageModeChange(event.target.value as StorageMode)}
+                size="xs"
+                className="w-[200px]"
+              >
+                <option value="local">Local</option>
+                <option value="cloud_hosted">Cloud (hosted)</option>
+                <option value="cloud_byo">Cloud (BYO)</option>
+              </Select>
+            </div>
+          )}
+
+          {cloudSync && (
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500">Sync</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleSyncActive}
+                  disabled={!canSync}
+                  className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
+                >
+                  Active
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleSyncAll}
+                  disabled={!canSync}
+                  className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
+                >
+                  All
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {cloudSync?.status.kind !== 'idle' && (
+            <div className="mt-2 text-[10px] text-slate-400 dark:text-slate-500">
+              {cloudSync.status.kind === 'syncing' ? (
+                <span className="text-amber-600 dark:text-amber-300">{cloudSync.status.message}</span>
+              ) : cloudSync.status.kind === 'error' ? (
+                <span className="text-rose-600 dark:text-rose-300">{cloudSync.status.message}</span>
+              ) : (
+                <span className="text-emerald-600 dark:text-emerald-300">{cloudSync.status.message}</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="px-3 py-2 border-t border-[var(--panel-border)]">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[10px] text-slate-400 dark:text-slate-500">BYO Supabase</span>
