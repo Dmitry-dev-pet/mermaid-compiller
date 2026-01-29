@@ -86,11 +86,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showCliproxyUsageDetails, setShowCliproxyUsageDetails] = useState(false);
   const [showCliproxySubscriptions, setShowCliproxySubscriptions] = useState(false);
   const [showCliproxyQuotas, setShowCliproxyQuotas] = useState(false);
-  const [usedFamiliesByProvider, setUsedFamiliesByProvider] = useState<Record<AIConfig['provider'], ModelFamilyKey[]>>({
-    openrouter: [],
-    agent: [],
-    cliproxy: [],
-  });
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
   const [versionInfo, setVersionInfo] = useState<{
     agentVersion?: string;
@@ -142,12 +137,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
           : 'Proxy';
     const ownedBy = typeof model?.ownedBy === 'string' ? model.ownedBy.trim() : '';
     const ownedByLabel = ownedBy ? ` · owned_by: ${ownedBy}` : '';
-    const usedFamilies = usedFamiliesByProvider[aiConfig.provider] ?? [];
-    const usedLabel =
-      usedFamilies.length > 0
-        ? ` · Used: ${usedFamilies.map(getModelFamilyLabel).join('/')}`
-        : '';
-    return `AI: ${providerName} · ${modelName}${contextLabel}${ownedByLabel}${usedLabel}`;
+    return `AI: ${providerName} · ${modelName}${contextLabel}${ownedByLabel}`;
   };
 
   const getStatusTone = () => {
@@ -161,20 +151,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     onConfigChange((prev) => ({ ...prev, ...updates }));
   }, [onConfigChange]);
 
-  const trackUsedFamily = useCallback((modelId: string) => {
-    const id = modelId.trim();
-    if (!id) return;
-    const model = connectionState.availableModels.find((m) => m?.id === id);
-    const family = getModelFamilyKey({ id, vendor: model?.vendor ?? null });
-    setUsedFamiliesByProvider((prev) => {
-      const existing = prev[aiConfig.provider] ?? [];
-      if (existing.includes(family)) return prev;
-      return { ...prev, [aiConfig.provider]: [...existing, family] };
-    });
-  }, [aiConfig.provider, connectionState.availableModels]);
-
   const updateSelectedModel = useCallback((modelId: string) => {
-    trackUsedFamily(modelId);
     onConfigChange((prev) => ({
       ...prev,
       selectedModelId: modelId,
@@ -183,7 +160,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         [prev.provider]: modelId,
       },
     }));
-  }, [onConfigChange, trackUsedFamily]);
+  }, [onConfigChange]);
 
   const formatContextLength = (value?: number) => {
     if (!value || value <= 0) return '';
