@@ -1,6 +1,6 @@
 # Basic Workflow: Chat, Build, Fix
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
 Основной рабочий цикл в Mermaid Diagram Compiler разделен на фазы проектирования и реализации. Это гарантирует точность и минимизирует ошибки.
 
@@ -27,4 +27,4 @@
 - **Snapshot**: Ручное сохранение версии диаграммы в историю.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Markdown Notebooks →](guide-notebooks.md)
+[← Back to Index](./) | [Next: Markdown Notebooks →](guide-notebooks.md)

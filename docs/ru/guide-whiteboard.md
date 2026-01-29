@@ -1,6 +1,6 @@
 # Whiteboard Integration (Excalidraw)
 
-[← Back to Index](INDEX.md) | [← Prev: Markdown Notebooks](guide-notebooks.md)
+[← Back to Index](./) | [← Prev: Markdown Notebooks](guide-notebooks.md)
 
 Иногда диаграммы, сгенерированные кодом, нужно дополнить набросками, аннотациями или просто "порисовать руками". Для этого в проект интегрирован **Excalidraw**.
 
@@ -21,4 +21,4 @@
 В шапке превью доступен переключатель **Mermaid / Whiteboard**. Состояние холста сохраняется автоматически при каждом изменении.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Export & Sharing →](guide-export.md)
+[← Back to Index](./) | [Next: Export & Sharing →](guide-export.md)

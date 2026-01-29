@@ -1,24 +1,38 @@
-# Полная документация проекта Mermaid Diagram Compiler
+# Mermaid Diagram Compiler — Documentation
 
-Этот набор документов описывает текущее устройство, архитектуру, данные, LLM-интеграцию и эксплуатацию приложения.
+This documentation set describes how to run Mermaid Diagram Compiler, how the AI/Proxy integrations work, and how the app is structured internally.
 
-## Содержание
+## Contents
 
-- `docs/project/overview.md` — обзор и ключевые возможности.
-- `docs/project/architecture.md` — архитектура и структура модулей.
-- `docs/project/setup.md` — установка, запуск, сборка, конфигурация.
-- `docs/project/usage.md` — пользовательские сценарии и UX.
-- `docs/project/llm.md` — LLM-провайдеры, промпты и контекст документации.
-- `docs/project/desktop-agent.md` — Desktop Agent и интеграция с CLIProxyAPI.
-- `docs/project/history.md` — история, TimeStep, ревизии и хранилище.
-- `docs/project/data-storage.md` — localStorage и хранение данных.
-- `docs/project/mermaid.md` — Mermaid/рендер, валидация, превью, zoom.
+- **Getting started**
+  - `index.md` — docs index
+  - `setup-web.md` — web setup
+  - `setup-desktop.md` — desktop setup (Mermaid Agent)
+- **Guides**
+  - `guide-basic.md` — Chat / Build / Fix workflow
+  - `guide-notebooks.md` — notebooks & planner pipeline
+  - `guide-whiteboard.md` — whiteboard / Excalidraw
+  - `guide-export.md` — export & share
+  - `guide-troubleshooting.md` — troubleshooting
+- **AI**
+  - `ai-overview.md` — strategies overview
+  - `ai-cliproxy.md` — CLIProxyAPI integration
+  - `ai-agent.md` — local Mermaid Agent
+  - `ai-prompts.md` — prompt engineering
+- **Storage**
+  - `storage-local.md` — local IndexedDB/history
+  - `storage-sync.md` — cloud sync & E2EE
+- **Internals**
+  - `internal-architecture.md` — architecture
+  - `internal-mermaid.md` — Mermaid validation/rendering
+  - `internal-testing.md` — tests/lint/typecheck
+  - `internal-docs-update.md` — updating embedded Mermaid docs
 
-## Где что находится
+## Code locations
 
-- SPA-приложение: `diagram-compiler/` (React + Vite + TypeScript).
-- Desktop Agent: `agent/` (Tauri + Rust).
+- SPA app: `diagram-compiler/` (React + Vite + TypeScript)
+- Desktop agent: `agent/` (Tauri + Rust)
 
 ---
 
-Обновлено: 2026-01-29. Добавлены Desktop Agent и Cliproxy.
+Updated: 2026-01-29.

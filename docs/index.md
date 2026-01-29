@@ -32,4 +32,4 @@ Welcome to the Mermaid Diagram Compiler documentation. This guide is organized i
 - **[Updating Docs](internal-docs-update.md)**: How to update the embedded Mermaid documentation.
 
 ---
-[← Back to Main README](../../README.md)
+[← Back to Main README](README.md)

@@ -1,6 +1,6 @@
 # Mermaid Agent Guide
 
-[← Back to Index](INDEX.md) | [← Prev: CLIProxyAPI](ai-cliproxy.md)
+[← Back to Index](./) | [← Prev: CLIProxyAPI](ai-cliproxy.md)
 
 **Mermaid Agent** — это нативный компонент Desktop-версии, который служит мостом между веб-интерфейсом и системными CLI-утилитами.
 
@@ -23,4 +23,4 @@
 - Быстро вызвать команды логина.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Prompt Engineering →](ai-prompts.md)
+[← Back to Index](./) | [Next: Prompt Engineering →](ai-prompts.md)

@@ -1,6 +1,6 @@
 # Web Setup & Installation
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
 Это руководство по запуску стандартной веб-версии Mermaid Diagram Compiler.
 
@@ -44,4 +44,4 @@ npm test
 ```
 
 ---
-[← Back to Index](INDEX.md) | [Next: Desktop Setup →](setup-desktop.md)
+[← Back to Index](./) | [Next: Desktop Setup →](setup-desktop.md)

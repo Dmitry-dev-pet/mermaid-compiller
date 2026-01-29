@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
 Решение типовых проблем при работе с Mermaid Diagram Compiler.
 
@@ -23,4 +23,4 @@
 - Используйте **Cloud Sync** (Supabase) для надежного сохранения проектов.
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)

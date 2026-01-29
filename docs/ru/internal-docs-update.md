@@ -1,6 +1,6 @@
 # Updating Mermaid Documentation
 
-[← Back to Index](INDEX.md) | [← Prev: Mermaid Core](internal-mermaid.md)
+[← Back to Index](./) | [← Prev: Mermaid Core](internal-mermaid.md)
 
 Для обеспечения качественной генерации приложение хранит локальную копию документации Mermaid.
 
@@ -12,4 +12,4 @@
 4.  Обновите константу `MERMAID_VERSION` в `constants.ts`.
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)

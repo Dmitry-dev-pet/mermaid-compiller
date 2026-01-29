@@ -1,6 +1,6 @@
 # Local Storage (IndexedDB)
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
 Приложение работает по принципу **Local-First**. Это значит, что все ваши данные всегда сохраняются локально в браузере, даже если интернет отключен.
 
@@ -17,4 +17,4 @@
 Данные из IndexedDB никогда не покидают ваше устройство, если вы сами не включите облачную синхронизацию.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Cloud Sync →](storage-sync.md)
+[← Back to Index](./) | [Next: Cloud Sync →](storage-sync.md)

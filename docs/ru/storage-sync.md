@@ -1,6 +1,6 @@
 # Cloud Sync, Sharing & E2EE
 
-[← Back to Index](INDEX.md) | [← Prev: Local Storage](storage-local.md)
+[← Back to Index](./) | [← Prev: Local Storage](storage-local.md)
 
 ## Провайдеры хранения
 
@@ -20,4 +20,4 @@
 - **Editor Link**: Ссылка для совместного редактирования.
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
