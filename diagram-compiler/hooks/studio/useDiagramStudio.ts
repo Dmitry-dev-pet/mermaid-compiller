@@ -25,6 +25,7 @@ import { StorageConflictError } from "../../services/storage/types";
 import { useStorageConfig } from "../core/useStorageConfig";
 import { useStorageMode } from "../core/useStorageMode";
 import { useCloudSync } from "./useCloudSync";
+import { useCloudProjects } from "./useCloudProjects";
 import { createSupabaseByoProvider } from "../../services/storage";
 import type {
   DiagramIntent,
@@ -625,6 +626,14 @@ export const useDiagramStudio = () => {
     exportProjectBundle,
   });
 
+  const cloudProjects = useCloudProjects({
+    enabled: storageMode === "cloud_hosted" || storageMode === "cloud_byo",
+    mode: storageMode === "cloud_byo" ? "cloud_byo" : "cloud_hosted",
+    byoConfig,
+    importProjectBundle,
+    openProject,
+  });
+
   const sanitizeFileName = useCallback((value: string) => {
     return value
       .trim()
@@ -1194,6 +1203,7 @@ export const useDiagramStudio = () => {
     storageMode,
     setStorageMode,
     cloudSync,
+    cloudProjects,
     deleteUndoMs: projectsUndoMs,
     loadSessionPreview,
     showProjectPreview,

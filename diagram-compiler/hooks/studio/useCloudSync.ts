@@ -4,12 +4,13 @@ import type { SessionBundle } from '../../services/history/bundle';
 import {
   createSupabaseByoProvider,
   createSupabaseHostedProvider,
+  getCloudLink,
   encodeProjectBundleToBlob,
+  setCloudLink,
   StorageConflictError,
   type StorageProvider,
 } from '../../services/storage';
 import type { StorageProviderKind } from '../../services/storage/types';
-import { safeParse } from '../../utils';
 
 export type CloudSyncMode = 'cloud_hosted' | 'cloud_byo';
 
@@ -18,26 +19,6 @@ export type CloudSyncStatus =
   | { kind: 'syncing'; message: string }
   | { kind: 'success'; message: string; syncedAt: number }
   | { kind: 'error'; message: string };
-
-type CloudLink = {
-  providerKind: StorageProviderKind;
-  remoteProjectId: string;
-  remoteVersion: number;
-};
-
-type CloudLinks = Record<string, CloudLink>;
-
-const LINKS_KEY = 'dc_cloud_links_v1';
-
-const readLinks = (): CloudLinks => {
-  const parsed = safeParse(LINKS_KEY, {});
-  if (!parsed || typeof parsed !== 'object') return {};
-  return parsed as CloudLinks;
-};
-
-const writeLinks = (links: CloudLinks) => {
-  localStorage.setItem(LINKS_KEY, JSON.stringify(links));
-};
 
 const resolveProviderKind = (mode: CloudSyncMode): StorageProviderKind => {
   return mode === 'cloud_byo' ? 'supabase_byo' : 'supabase_hosted';
@@ -85,20 +66,18 @@ export const useCloudSync = (args: {
     const blob = encodeProjectBundleToBlob(bundle);
     const title = bundle.session.title;
 
-    const links = readLinks();
-    const existing = links[sessionId];
+    const existing = getCloudLink(sessionId);
     const canReuse = existing && existing.providerKind === providerKind && typeof existing.remoteProjectId === 'string';
 
     try {
       if (!canReuse) {
         setStatus({ kind: 'syncing', message: 'Creating cloud project…' });
         const meta = await provider.createProject({ title: title ?? undefined, blob });
-        links[sessionId] = {
+        setCloudLink(sessionId, {
           providerKind,
           remoteProjectId: meta.id,
           remoteVersion: meta.version,
-        };
-        writeLinks(links);
+        });
         setStatus({ kind: 'success', message: 'Uploaded', syncedAt: Date.now() });
         return;
       }
@@ -110,12 +89,11 @@ export const useCloudSync = (args: {
         baseVersion: existing.remoteVersion,
         title: title ?? undefined,
       });
-      links[sessionId] = {
+      setCloudLink(sessionId, {
         providerKind,
         remoteProjectId: meta.id,
         remoteVersion: meta.version,
-      };
-      writeLinks(links);
+      });
       setStatus({ kind: 'success', message: 'Synced', syncedAt: Date.now() });
     } catch (e: unknown) {
       if (e instanceof StorageConflictError) {

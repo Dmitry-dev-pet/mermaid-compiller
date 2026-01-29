@@ -4,6 +4,8 @@ import type { DiagramType, ThinkingStyle } from '../types';
 import type { HistorySession } from '../services/history/types';
 import type { StorageMode } from '../hooks/core/useStorageMode';
 import type { CloudSyncStatus } from '../hooks/studio/useCloudSync';
+import type { CloudProjectsStatus } from '../hooks/studio/useCloudProjects';
+import type { ProjectMeta } from '../services/storage';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
 import { Select } from './ui/Select';
@@ -38,6 +40,12 @@ type ChatProjectsProps = {
   storageMode?: StorageMode;
   onStorageModeChange?: (mode: StorageMode) => void;
   cloudSync?: { status: CloudSyncStatus; syncActive: () => Promise<void>; syncAll: () => Promise<void> };
+  cloudProjects?: {
+    status: CloudProjectsStatus;
+    projects: ProjectMeta[];
+    refresh: () => Promise<void>;
+    importFromCloud: (projectId: string) => Promise<void>;
+  };
   mode?: 'header' | 'panel';
   chatStatus?: 'idle' | 'running';
 };
@@ -69,6 +77,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   storageMode,
   onStorageModeChange,
   cloudSync,
+  cloudProjects,
   mode = 'panel',
   chatStatus = 'idle',
 }) => {
@@ -399,6 +408,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
           storageMode={storageMode}
           onStorageModeChange={onStorageModeChange}
           cloudSync={cloudSync}
+          cloudProjects={cloudProjects}
         />
       )}
 
