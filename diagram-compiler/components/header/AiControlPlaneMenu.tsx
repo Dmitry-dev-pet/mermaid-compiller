@@ -16,6 +16,7 @@ import { AIConfig, CliproxyFilters, ConnectionState, ModelParams, OpenRouterFilt
 import { DEFAULT_AI_CONFIG } from '../../constants';
 import { useCliproxyQuotas } from '../../hooks/core/useCliproxyQuotas';
 import { useCliproxyManagementInfo } from '../../hooks/core/useCliproxyManagementInfo';
+import { useAgentGeminiQuota } from '../../hooks/core/useAgentGeminiQuota';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { RadioGroup, RadioOption } from '../ui/Radio';
@@ -94,6 +95,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showCliproxyUsageDetails, setShowCliproxyUsageDetails] = useState(false);
   const [showCliproxySubscriptions, setShowCliproxySubscriptions] = useState(false);
   const [showCliproxyQuotas, setShowCliproxyQuotas] = useState(false);
+  const [showAgentQuotas, setShowAgentQuotas] = useState(false);
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
   const [versionInfo, setVersionInfo] = useState<{
     agentVersion?: string;
@@ -115,6 +117,11 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     authFiles: cliproxyInfo.cliproxyAuthFiles ?? [],
     showAll: true,
     pageSize: 3,
+  });
+  const { quota: agentGeminiQuota, refresh: refreshAgentGeminiQuota } = useAgentGeminiQuota({
+    enabled: aiConfig.provider === 'agent' && isOpen && showAgentQuotas,
+    endpoint: aiConfig.agentEndpoint || '',
+    token: aiConfig.agentToken || '',
   });
 
   useEffect(() => {
@@ -578,6 +585,79 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                   <span className="inline-block h-2 w-2 rounded-full border border-current" />
                   Agent {agentStatus.state === 'unknown' ? 'unknown' : agentStatus.state}
                   {agentStatus.message ? ` · ${agentStatus.message}` : ''}
+                </div>
+
+                <div className="text-[10px] leading-tight">
+                  <button
+                    type="button"
+                    className="text-blue-600 dark:text-blue-400 hover:underline"
+                    onClick={() => setShowAgentQuotas((prev) => !prev)}
+                  >
+                    {showAgentQuotas ? 'Hide quotas' : 'Show quotas'}
+                  </button>
+                  {showAgentQuotas && (
+                    <div className="mt-1 flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-2 text-slate-400">
+                        <span />
+                        <button
+                          type="button"
+                          className="hover:underline"
+                          onClick={refreshAgentGeminiQuota}
+                        >
+                          Refresh
+                        </button>
+                      </div>
+                      {agentGeminiQuota.status === 'loading' ? (
+                        <div className="text-slate-400">Loading quota...</div>
+                      ) : agentGeminiQuota.status === 'error' ? (
+                        <div className="text-amber-600 dark:text-amber-400">quota {agentGeminiQuota.message ?? 'failed'}</div>
+                      ) : null}
+
+                      <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2">
+                          <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
+                          <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                            {agentGeminiQuota.items.length ? (
+                              <div className="flex flex-col gap-1">
+                                {agentGeminiQuota.items.map((it) => {
+                                  const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
+                                  const tone = percent === null
+                                    ? 'bg-slate-200 dark:bg-slate-700'
+                                    : percent >= 60
+                                      ? 'bg-emerald-500'
+                                      : percent >= 20
+                                        ? 'bg-amber-500'
+                                        : 'bg-rose-500';
+                                  return (
+                                    <div key={it.id} className="flex flex-col gap-0.5">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="truncate">{it.label}</span>
+                                        <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
+                                      </div>
+                                      <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                        <div
+                                          className={`h-full ${tone}`}
+                                          style={{ width: `${percent === null ? 0 : percent}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-slate-400">No quota data</div>
+                            )}
+                            {agentGeminiQuota.email ? (
+                              <div className="mt-1 text-[10px] text-slate-400">account {agentGeminiQuota.email}</div>
+                            ) : null}
+                            {typeof agentGeminiQuota.updatedAt === 'number' && agentGeminiQuota.updatedAt > 0 ? (
+                              <div className="mt-1 text-[10px] text-slate-400">updated {formatMonthDayTime(new Date(agentGeminiQuota.updatedAt * 1000))}</div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (

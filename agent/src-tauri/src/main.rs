@@ -34,7 +34,26 @@ use uuid::Uuid;
 struct GeminiQuotaCache {
   updated_at: u64,
   line: String,
+  snapshot: GeminiQuotaSnapshot,
   in_flight: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct GeminiQuotaItem {
+  id: String,
+  label: String,
+  remaining_percent: Option<i64>,
+  reset_label: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct GeminiQuotaSnapshot {
+  status: String,
+  updated_at: u64,
+  message: Option<String>,
+  email: Option<String>,
+  project_id: Option<String>,
+  items: Vec<GeminiQuotaItem>,
 }
 
 #[derive(Clone)]
@@ -506,6 +525,7 @@ async fn start_server(config: Arc<Config>, app_state_slot: Arc<RwLock<Option<App
     .route("/api/capabilities", get(capabilities))
     .route("/api/status", get(status))
     .route("/api/token", get(get_token).post(set_token))
+    .route("/api/gemini/quota", get(get_gemini_quota))
     .route("/api/tasks/:id", get(task_details))
     .route("/api/cancel", post(cancel))
     .route("/api/auth/login", post(auth_login))
@@ -777,83 +797,22 @@ fn resolve_gemini_cli_core_entry(gemini_cmd: &str) -> Option<PathBuf> {
   core_entry.exists().then_some(core_entry)
 }
 
-async fn fetch_gemini_quota_line(config: Arc<Config>) -> String {
-  if !which_gemini(&config.gemini_cmd) {
-    return "Gemini quota: gemini missing".to_string();
-  }
-  let Some(node) = resolve_node_path() else {
-    return "Gemini quota: node missing".to_string();
-  };
-  let Some(core_entry) = resolve_gemini_cli_core_entry(&config.gemini_cmd) else {
-    return "Gemini quota: core missing".to_string();
-  };
-
-  let script = r#"
-    const fs = require('fs');
-    const core = require(process.env.CORE_PATH);
-    const credsPath = core.Storage.getOAuthCredsPath();
-    if (!fs.existsSync(credsPath)) {
-      console.log(JSON.stringify({ ok: false, error: 'missing oauth creds', credsPath }));
-      process.exit(0);
-    }
-    const cfg = core.makeFakeConfig({ targetDir: process.cwd(), cwd: process.cwd(), debugMode: false, usageStatisticsEnabled: true, model: 'gemini-2.5-pro' });
-    (async () => {
-      const client = await core.getOauthClient(core.AuthType.LOGIN_WITH_GOOGLE, cfg);
-      const envProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID || null;
-      const server = new core.CodeAssistServer(client, envProject || undefined, {}, '', undefined, undefined);
-      const metadata = { ideType: 'GEMINI_CLI', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' };
-      const load = await server.loadCodeAssist({
-        cloudaicompanionProject: envProject || undefined,
-        metadata: { ...metadata, duetProject: envProject || undefined },
-      });
-      const projectId = (load && load.cloudaicompanionProject) ? load.cloudaicompanionProject : envProject;
-      if (!projectId) {
-        console.log(JSON.stringify({ ok: false, error: 'project id unavailable', load }));
-        return;
-      }
-      const quota = await server.retrieveUserQuota({ project: projectId });
-      const email = new core.UserAccountManager().getCachedGoogleAccount() || null;
-      console.log(JSON.stringify({ ok: true, email, projectId, quota }));
-    })().catch((err) => {
-      const message = (err && (err.message || err.toString())) ? (err.message || err.toString()) : 'unknown error';
-      console.log(JSON.stringify({ ok: false, error: message }));
-    });
-  "#;
-
-  let mut cmd = Command::new(node);
-  cmd.arg("-e")
-    .arg(script)
-    .env("CORE_PATH", core_entry)
-    .stdin(Stdio::null())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
-
-  let output = match tokio::time::timeout(Duration::from_secs(5), cmd.output()).await {
-    Ok(result) => match result {
-      Ok(output) => output,
-      Err(err) => return format!("Gemini quota: failed to run node ({err})"),
-    },
-    Err(_) => return "Gemini quota: timeout".to_string(),
-  };
-
-  let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-  let json = extract_json_payload(&stdout);
-  let Some(json) = json else {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    return if stderr.is_empty() {
-      "Gemini quota: unavailable".to_string()
-    } else {
-      format!("Gemini quota: {stderr}")
-    };
-  };
-
+fn parse_gemini_quota_snapshot_from_json(json: Value) -> GeminiQuotaSnapshot {
   let ok = json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
   if !ok {
-    let err = json.get("error").and_then(|v| v.as_str()).unwrap_or("unavailable");
-    return format!("Gemini quota: {err}");
+    let err = json.get("error").and_then(|v| v.as_str()).unwrap_or("unavailable").trim();
+    return GeminiQuotaSnapshot {
+      status: "error".to_string(),
+      updated_at: now_unix(),
+      message: Some(err.to_string()),
+      email: None,
+      project_id: None,
+      items: Vec::new(),
+    };
   }
 
-  let email = json.get("email").and_then(|v| v.as_str()).unwrap_or("");
+  let email = json.get("email").and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+  let project_id = json.get("projectId").and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
   let buckets = json
     .get("quota")
     .and_then(|q| q.get("buckets"))
@@ -912,30 +871,63 @@ async fn fetch_gemini_quota_line(config: Arc<Config>) -> String {
   consider_bucket(&flash_models, &mut flash_remaining, &mut flash_reset, "gemini-3-flash-preview");
   consider_bucket(&pro_models, &mut pro_remaining, &mut pro_reset, "gemini-3-pro-preview");
 
-  let fmt = |frac: Option<f64>| -> String {
-    match frac {
-      None => "-".to_string(),
-      Some(v) => format!("{}%", (v * 100.0).round() as i64),
-    }
-  };
-  let fmt_reset = |s: Option<String>| -> String {
-    s.unwrap_or_else(|| "-".to_string())
-  };
+  let to_percent = |frac: Option<f64>| frac.map(|v| (v * 100.0).round() as i64);
+  let items = vec![
+    GeminiQuotaItem {
+      id: "gemini-flash-series".to_string(),
+      label: "Gemini Flash Series".to_string(),
+      remaining_percent: to_percent(flash_remaining),
+      reset_label: flash_reset.unwrap_or_else(|| "-".to_string()),
+    },
+    GeminiQuotaItem {
+      id: "gemini-pro-series".to_string(),
+      label: "Gemini Pro Series".to_string(),
+      remaining_percent: to_percent(pro_remaining),
+      reset_label: pro_reset.unwrap_or_else(|| "-".to_string()),
+    },
+  ];
 
-  let email_label = if email.trim().is_empty() { "".to_string() } else { format!(" ({email})") };
-  format!(
-    "Gemini quota{email_label}: Flash {} · {} | Pro {} · {}",
-    fmt(flash_remaining),
-    fmt_reset(flash_reset),
-    fmt(pro_remaining),
-    fmt_reset(pro_reset),
-  )
+  GeminiQuotaSnapshot {
+    status: "ok".to_string(),
+    updated_at: now_unix(),
+    message: None,
+    email,
+    project_id,
+    items,
+  }
+}
+
+fn format_gemini_quota_line(snapshot: &GeminiQuotaSnapshot) -> String {
+  if snapshot.status != "ok" {
+    let msg = snapshot.message.clone().unwrap_or_else(|| "unavailable".to_string());
+    return format!("Gemini quota: {msg}");
+  }
+  let email_label = snapshot.email.as_ref().map(|e| format!(" ({e})")).unwrap_or_default();
+  let mut flash = snapshot.items.iter().find(|it| it.id == "gemini-flash-series");
+  let mut pro = snapshot.items.iter().find(|it| it.id == "gemini-pro-series");
+  let fmt = |item: Option<&GeminiQuotaItem>| -> (String, String) {
+    let Some(item) = item else { return ("-".to_string(), "-".to_string()); };
+    let p = item.remaining_percent.map(|v| format!("{v}%")).unwrap_or_else(|| "-".to_string());
+    let r = item.reset_label.clone();
+    (p, r)
+  };
+  let (flash_p, flash_r) = fmt(flash.take());
+  let (pro_p, pro_r) = fmt(pro.take());
+  format!("Gemini quota{email_label}: Flash {flash_p} · {flash_r} | Pro {pro_p} · {pro_r}")
 }
 
 async fn get_cached_gemini_quota_line(config: Arc<Config>) -> String {
   let cache = GEMINI_QUOTA_CACHE.get_or_init(|| Mutex::new(GeminiQuotaCache {
     updated_at: 0,
     line: "Gemini quota: —".to_string(),
+    snapshot: GeminiQuotaSnapshot {
+      status: "idle".to_string(),
+      updated_at: 0,
+      message: None,
+      email: None,
+      project_id: None,
+      items: Vec::new(),
+    },
     in_flight: false,
   }));
 
@@ -953,14 +945,184 @@ async fn get_cached_gemini_quota_line(config: Arc<Config>) -> String {
 
   let cache_ptr: &'static Mutex<GeminiQuotaCache> = cache;
   tauri::async_runtime::spawn(async move {
-    let line = fetch_gemini_quota_line(config).await;
+    let (snapshot, line) = fetch_gemini_quota_snapshot_and_line(config).await;
     let mut state = cache_ptr.lock().await;
-    state.updated_at = now_unix();
+    state.updated_at = snapshot.updated_at;
     state.line = line;
+    state.snapshot = snapshot;
     state.in_flight = false;
   });
 
   cache.lock().await.line.clone()
+}
+
+async fn get_cached_gemini_quota_snapshot(config: Arc<Config>) -> GeminiQuotaSnapshot {
+  let cache = GEMINI_QUOTA_CACHE.get_or_init(|| Mutex::new(GeminiQuotaCache {
+    updated_at: 0,
+    line: "Gemini quota: —".to_string(),
+    snapshot: GeminiQuotaSnapshot {
+      status: "idle".to_string(),
+      updated_at: 0,
+      message: None,
+      email: None,
+      project_id: None,
+      items: Vec::new(),
+    },
+    in_flight: false,
+  }));
+
+  let now = now_unix();
+  {
+    let mut state = cache.lock().await;
+    if now.saturating_sub(state.updated_at) < 60 {
+      return state.snapshot.clone();
+    }
+    if state.in_flight {
+      let mut snapshot = state.snapshot.clone();
+      if snapshot.status == "idle" {
+        snapshot.status = "loading".to_string();
+      }
+      return snapshot;
+    }
+    state.in_flight = true;
+  }
+
+  let cache_ptr: &'static Mutex<GeminiQuotaCache> = cache;
+  tauri::async_runtime::spawn(async move {
+    let (snapshot, line) = fetch_gemini_quota_snapshot_and_line(config).await;
+    let mut state = cache_ptr.lock().await;
+    state.updated_at = snapshot.updated_at;
+    state.snapshot = snapshot;
+    state.line = line;
+    state.in_flight = false;
+  });
+
+  let state = cache.lock().await;
+  let mut snapshot = state.snapshot.clone();
+  if snapshot.status == "idle" {
+    snapshot.status = "loading".to_string();
+  }
+  snapshot
+}
+
+async fn fetch_gemini_quota_snapshot_and_line(config: Arc<Config>) -> (GeminiQuotaSnapshot, String) {
+  // Reuse the existing node script execution but keep the JSON to derive a structured snapshot.
+  if !which_gemini(&config.gemini_cmd) {
+    let snapshot = GeminiQuotaSnapshot {
+      status: "error".to_string(),
+      updated_at: now_unix(),
+      message: Some("gemini missing".to_string()),
+      email: None,
+      project_id: None,
+      items: Vec::new(),
+    };
+    return (snapshot.clone(), format_gemini_quota_line(&snapshot));
+  }
+  let Some(node) = resolve_node_path() else {
+    let snapshot = GeminiQuotaSnapshot {
+      status: "error".to_string(),
+      updated_at: now_unix(),
+      message: Some("node missing".to_string()),
+      email: None,
+      project_id: None,
+      items: Vec::new(),
+    };
+    return (snapshot.clone(), format_gemini_quota_line(&snapshot));
+  };
+  let Some(core_entry) = resolve_gemini_cli_core_entry(&config.gemini_cmd) else {
+    let snapshot = GeminiQuotaSnapshot {
+      status: "error".to_string(),
+      updated_at: now_unix(),
+      message: Some("core missing".to_string()),
+      email: None,
+      project_id: None,
+      items: Vec::new(),
+    };
+    return (snapshot.clone(), format_gemini_quota_line(&snapshot));
+  };
+
+  let script = r#"
+    const fs = require('fs');
+    const core = require(process.env.CORE_PATH);
+    const credsPath = core.Storage.getOAuthCredsPath();
+    if (!fs.existsSync(credsPath)) {
+      console.log(JSON.stringify({ ok: false, error: 'missing oauth creds', credsPath }));
+      process.exit(0);
+    }
+    const cfg = core.makeFakeConfig({ targetDir: process.cwd(), cwd: process.cwd(), debugMode: false, usageStatisticsEnabled: true, model: 'gemini-2.5-pro' });
+    (async () => {
+      const client = await core.getOauthClient(core.AuthType.LOGIN_WITH_GOOGLE, cfg);
+      const envProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID || null;
+      const server = new core.CodeAssistServer(client, envProject || undefined, {}, '', undefined, undefined);
+      const metadata = { ideType: 'GEMINI_CLI', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' };
+      const load = await server.loadCodeAssist({
+        cloudaicompanionProject: envProject || undefined,
+        metadata: { ...metadata, duetProject: envProject || undefined },
+      });
+      const projectId = (load && load.cloudaicompanionProject) ? load.cloudaicompanionProject : envProject;
+      if (!projectId) {
+        console.log(JSON.stringify({ ok: false, error: 'project id unavailable', load }));
+        return;
+      }
+      const quota = await server.retrieveUserQuota({ project: projectId });
+      const email = new core.UserAccountManager().getCachedGoogleAccount() || null;
+      console.log(JSON.stringify({ ok: true, email, projectId, quota }));
+    })().catch((err) => {
+      const message = (err && (err.message || err.toString())) ? (err.message || err.toString()) : 'unknown error';
+      console.log(JSON.stringify({ ok: false, error: message }));
+    });
+  "#;
+
+  let mut cmd = Command::new(node);
+  cmd.arg("-e")
+    .arg(script)
+    .env("CORE_PATH", core_entry)
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+
+  let output = match tokio::time::timeout(Duration::from_secs(5), cmd.output()).await {
+    Ok(result) => match result {
+      Ok(output) => output,
+      Err(err) => {
+        let snapshot = GeminiQuotaSnapshot {
+          status: "error".to_string(),
+          updated_at: now_unix(),
+          message: Some(format!("failed to run node ({err})")),
+          email: None,
+          project_id: None,
+          items: Vec::new(),
+        };
+        return (snapshot.clone(), format_gemini_quota_line(&snapshot));
+      }
+    },
+    Err(_) => {
+      let snapshot = GeminiQuotaSnapshot {
+        status: "error".to_string(),
+        updated_at: now_unix(),
+        message: Some("timeout".to_string()),
+        email: None,
+        project_id: None,
+        items: Vec::new(),
+      };
+      return (snapshot.clone(), format_gemini_quota_line(&snapshot));
+    }
+  };
+
+  let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+  let json = extract_json_payload(&stdout).unwrap_or_else(|| json!({ "ok": false, "error": "unavailable" }));
+  let snapshot = parse_gemini_quota_snapshot_from_json(json);
+  let line = format_gemini_quota_line(&snapshot);
+  (snapshot, line)
+}
+
+async fn get_gemini_quota(
+  State(state): State<AppState>,
+  headers: HeaderMap,
+) -> Result<Json<GeminiQuotaSnapshot>, (StatusCode, Json<ErrorBody>)> {
+  authorize(&state, &headers).await?;
+  let snapshot = get_cached_gemini_quota_snapshot(state.config.clone()).await;
+  Ok(Json(snapshot))
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
