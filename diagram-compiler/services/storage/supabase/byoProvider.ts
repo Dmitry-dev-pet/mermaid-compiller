@@ -15,6 +15,16 @@ type SupabaseConfig = {
   anonKey: string;
 };
 
+const createStorageKey = (url: string) => {
+  const normalized = url
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z]+:\/\//, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return `dc_supabase_byo_${normalized || 'default'}`;
+};
+
 type ProjectRow = {
   id: string;
   owner_id: string;
@@ -95,7 +105,13 @@ export const createSupabaseByoProvider = (config: SupabaseConfig): StorageProvid
   let clientInitError: string | null = null;
   if (config.url && config.anonKey) {
     try {
-      client = createClient(config.url, config.anonKey, { auth: { persistSession: true } });
+      client = createClient(config.url, config.anonKey, {
+        auth: {
+          persistSession: true,
+          detectSessionInUrl: true,
+          storageKey: createStorageKey(config.url),
+        },
+      });
     } catch (e: unknown) {
       client = null;
       clientInitError = e instanceof Error ? e.message : 'Invalid Supabase config';

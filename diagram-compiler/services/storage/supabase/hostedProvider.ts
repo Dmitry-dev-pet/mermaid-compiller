@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ProjectBlob,
   ProjectMeta,
@@ -9,6 +9,7 @@ import type {
   StorageProviderInitResult,
 } from '../types';
 import { StorageConflictError } from '../types';
+import { getHostedSupabaseClient } from '../../supabaseClient';
 
 type ProjectRow = {
   id: string;
@@ -85,10 +86,7 @@ const requireUser = async (client: SupabaseClient) => {
 
 export const createSupabaseHostedProvider = (): StorageProvider => {
   const { url, anonKey } = resolveEnv();
-  const client =
-    url && anonKey
-      ? createClient(url, anonKey, { auth: { persistSession: true } })
-      : null;
+  const client = getHostedSupabaseClient();
 
   const capabilities: StorageCapabilities = {
     sync: true,
