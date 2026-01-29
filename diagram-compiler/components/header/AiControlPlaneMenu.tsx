@@ -830,27 +830,20 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                         </button>
                         {showCliproxySubscriptions && (
                           <div className="mt-1 flex flex-col gap-1">
-                            <div className="flex items-center gap-2 text-[10px]">
-                              <button
-                                type="button"
-                                className={cliproxySubscriptionsGroupBy === 'provider'
-                                  ? 'text-slate-700 dark:text-slate-200'
-                                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}
-                                onClick={() => setCliproxySubscriptionsGroupBy('provider')}
-                              >
-                                By provider
-                              </button>
-                              <span className="text-slate-300 dark:text-slate-600">|</span>
-                              <button
-                                type="button"
-                                className={cliproxySubscriptionsGroupBy === 'email'
-                                  ? 'text-slate-700 dark:text-slate-200'
-                                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}
-                                onClick={() => setCliproxySubscriptionsGroupBy('email')}
-                              >
-                                By email
-                              </button>
-                            </div>
+                            <RadioGroup>
+                              <RadioOption
+                                name="cliproxy-subscriptions-groupby"
+                                checked={cliproxySubscriptionsGroupBy === 'provider'}
+                                onChange={() => setCliproxySubscriptionsGroupBy('provider')}
+                                label="By provider"
+                              />
+                              <RadioOption
+                                name="cliproxy-subscriptions-groupby"
+                                checked={cliproxySubscriptionsGroupBy === 'email'}
+                                onChange={() => setCliproxySubscriptionsGroupBy('email')}
+                                label="By email"
+                              />
+                            </RadioGroup>
                             {cliproxyInfo.cliproxyAuthFiles.length === 0 ? (
                               <div className="text-slate-400">No auth files</div>
                             ) : (
@@ -863,14 +856,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                           {row.primary}{row.count > 1 ? ` ×${row.count}` : ''}
                                         </div>
                                         {row.secondary ? (
-                                          <div className="pl-3 text-[10px] text-slate-400 truncate">{row.secondary}</div>
+                                          <div className="mt-0.5 pl-4 text-[10px] text-slate-400 truncate">{row.secondary}</div>
                                         ) : null}
                                       </div>
                                       <div className={`shrink-0 font-mono tabular-nums ${row.statusTone}`}>{row.statusText}</div>
                                     </div>
                                   ))}
                                   {cliproxySubscriptionsVm.moreCount > 0 ? (
-                                    <div className="pl-3 text-slate-400">…and {cliproxySubscriptionsVm.moreCount} more</div>
+                                    <div className="pl-4 text-slate-400">…and {cliproxySubscriptionsVm.moreCount} more</div>
                                   ) : null}
                                 </div>
                               ) : cliproxySubscriptionsVm?.kind === 'provider' ? (
