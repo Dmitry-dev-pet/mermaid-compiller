@@ -1,8 +1,13 @@
 import { defineConfig } from 'vitepress'
 
+const repoName = process.env.GITHUB_REPOSITORY?.split('/')[1] ?? ''
+const base = process.env.GITHUB_ACTIONS && repoName ? `/${repoName}/` : '/'
+
 export default defineConfig({
+  base,
   title: "Mermaid Compiler",
   description: "AI Diagramming IDE with Local Privacy",
+  ignoreDeadLinks: true,
   themeConfig: {
     nav: [
       { text: 'Home', link: '/' },

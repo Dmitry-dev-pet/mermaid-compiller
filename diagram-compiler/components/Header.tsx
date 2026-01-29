@@ -23,7 +23,7 @@ interface HeaderProps {
   projectsHeader?: React.ReactNode;
 }
 
-const DEFAULT_DOCS_URL = 'https://dmitry-dev-pet.github.io/mermaid-langgraph/';
+const DEFAULT_DOCS_URL = 'https://dmitry-dev-pet.github.io/mermaid-compiller/';
 
 const HeaderNotebookSlot: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   if (!children) return null;
