@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient, type Session, type SupabaseClient, type User } from '@supabase/supabase-js';
 
 export type AuthStatus = 'disabled' | 'loading' | 'signed_out' | 'signed_in' | 'error';
@@ -39,6 +39,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     session: null,
   }));
 
+  const didHandleOauthRedirectRef = useRef(false);
+
   useEffect(() => {
     if (!supabase) return;
 
@@ -46,6 +48,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const init = async () => {
       try {
+        const urlObj = new URL(window.location.href);
+        const code = urlObj.searchParams.get('code');
+        if (code && !didHandleOauthRedirectRef.current) {
+          didHandleOauthRedirectRef.current = true;
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (cancelled) return;
+          if (error) {
+            setState({ status: 'error', user: null, session: null, error: error.message });
+            return;
+          }
+          // Clean up auth code from URL (avoids re-processing and keeps URLs shareable).
+          urlObj.searchParams.delete('code');
+          urlObj.searchParams.delete('state');
+          window.history.replaceState({}, document.title, urlObj.pathname + urlObj.search + urlObj.hash);
+
+          const session = data.session ?? null;
+          setState({
+            status: session ? 'signed_in' : 'signed_out',
+            user: session?.user ?? null,
+            session,
+          });
+          return;
+        }
+
         const { data, error } = await supabase.auth.getSession();
         if (cancelled) return;
         if (error) {
