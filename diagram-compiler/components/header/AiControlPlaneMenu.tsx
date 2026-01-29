@@ -153,10 +153,15 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       if (providers.size === 0) return '';
 
       const family = getModelFamilyKey({ id: aiConfig.selectedModelId, vendor: model?.vendor ?? null });
+      const selectedModelId = aiConfig.selectedModelId.trim().toLowerCase();
       const relevant = family === 'gemini'
         ? ['gemini-cli', 'antigravity']
         : family === 'gpt'
-          ? ['codex', 'antigravity']
+          ? (
+            (selectedModelId.includes('gpt-oss') || (model?.ownedBy ?? '').trim().toLowerCase() === 'antigravity')
+              ? ['antigravity']
+              : ['codex']
+          )
           : family === 'claude'
             ? ['antigravity']
             : [];
