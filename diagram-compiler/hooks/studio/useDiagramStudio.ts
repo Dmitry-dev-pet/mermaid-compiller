@@ -26,6 +26,7 @@ import { useStorageConfig } from "../core/useStorageConfig";
 import { useStorageMode } from "../core/useStorageMode";
 import { useCloudSync } from "./useCloudSync";
 import { useCloudProjects } from "./useCloudProjects";
+import { useCloudMigration } from "./useCloudMigration";
 import { createSupabaseByoProvider } from "../../services/storage";
 import type {
   DiagramIntent,
@@ -634,6 +635,16 @@ export const useDiagramStudio = () => {
     openProject,
   });
 
+  const cloudMigration = useCloudMigration({
+    enabled: storageMode === "cloud_hosted" || storageMode === "cloud_byo",
+    mode: storageMode === "cloud_byo" ? "cloud_byo" : "cloud_hosted",
+    byoConfig,
+    localProjects: sessions,
+    activeProjectId: historySession?.id ?? null,
+    exportProjectBundle,
+    onAfterMigration: cloudProjects.refresh,
+  });
+
   const sanitizeFileName = useCallback((value: string) => {
     return value
       .trim()
@@ -1204,6 +1215,7 @@ export const useDiagramStudio = () => {
     setStorageMode,
     cloudSync,
     cloudProjects,
+    cloudMigration,
     deleteUndoMs: projectsUndoMs,
     loadSessionPreview,
     showProjectPreview,

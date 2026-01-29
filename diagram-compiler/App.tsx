@@ -110,6 +110,7 @@ function App() {
     setStorageMode,
     cloudSync,
     cloudProjects,
+    cloudMigration,
     deleteUndoMs,
 	    showProjectPreview,
 	    clearProjectPreview,
@@ -498,6 +499,7 @@ function App() {
             onStorageModeChange={setStorageMode}
             cloudSync={cloudSync}
             cloudProjects={cloudProjects}
+            cloudMigration={cloudMigration}
             diagramType={appState.diagramType}
             onDiagramTypeChange={setDiagramType}
             mainDiagramTypes={appState.mainDiagramTypes}

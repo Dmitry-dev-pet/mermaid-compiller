@@ -1,9 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Cloud, Download, LogIn, LogOut, RefreshCw, Trash2, User as UserIcon, X } from 'lucide-react';
+import { Cloud, Download, LogIn, LogOut, RefreshCw, Trash2, UploadCloud, User as UserIcon, X } from 'lucide-react';
 import type { HistorySession } from '../../services/history/types';
 import type { StorageMode } from '../../hooks/core/useStorageMode';
 import type { CloudSyncStatus } from '../../hooks/studio/useCloudSync';
 import type { CloudProjectsStatus } from '../../hooks/studio/useCloudProjects';
+import type { CloudMigrationItem, CloudMigrationStatus } from '../../hooks/studio/useCloudMigration';
 import type { ProjectMeta } from '../../services/storage';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -41,6 +42,15 @@ type ProjectsMenuProps = {
     projects: ProjectMeta[];
     refresh: () => Promise<void>;
     importFromCloud: (projectId: string) => Promise<void>;
+  };
+  cloudMigration?: {
+    status: CloudMigrationStatus;
+    items: CloudMigrationItem[];
+    unlinkedCount: number;
+    migrateAll: () => Promise<void>;
+    migrateActive: () => Promise<void>;
+    cancel: () => void;
+    reset: () => void;
   };
 };
 
@@ -80,10 +90,12 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
   onStorageModeChange,
   cloudSync,
   cloudProjects,
+  cloudMigration,
 }) => {
   const auth = useAuth();
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudProjectsExpanded, setCloudProjectsExpanded] = useState(false);
+  const [cloudMigrationExpanded, setCloudMigrationExpanded] = useState(false);
   const sortedProjects = useMemo(() => {
     const next = [...projects];
     if (sortKey === 'name') {
@@ -130,6 +142,13 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
     auth.status === 'signed_in' &&
     cloudProjects.status.kind !== 'loading';
 
+  const canMigrate =
+    !!cloudMigration &&
+    (storageMode === 'cloud_hosted' || storageMode === 'cloud_byo') &&
+    auth.status === 'signed_in' &&
+    cloudMigration.status.kind !== 'syncing' &&
+    cloudMigration.unlinkedCount > 0;
+
   const handleCloudLogin = async () => {
     if (cloudBusy) return;
     setCloudBusy(true);
@@ -163,6 +182,18 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
   const handleRefreshCloudProjects = async () => {
     if (!cloudProjects) return;
     await cloudProjects.refresh();
+  };
+
+  const handleMigrateAll = async () => {
+    if (!cloudMigration) return;
+    setCloudMigrationExpanded(true);
+    await cloudMigration.migrateAll();
+  };
+
+  const handleMigrateActive = async () => {
+    if (!cloudMigration) return;
+    setCloudMigrationExpanded(true);
+    await cloudMigration.migrateActive();
   };
 
   const handleExport = async () => {
@@ -453,6 +484,101 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
 
           {cloudProjects && (
             <div className="mt-3 border-t border-[var(--panel-border)] pt-2">
+              {cloudMigration && (
+                <div className="mb-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500">Migration</span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setCloudMigrationExpanded((v) => !v)}
+                        className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
+                      >
+                        {cloudMigrationExpanded ? 'Less' : 'More'}
+                      </Button>
+                      {cloudMigration.status.kind === 'syncing' ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={cloudMigration.cancel}
+                          className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
+                        >
+                          Cancel
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={handleMigrateActive}
+                            disabled={!canMigrate}
+                            className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 gap-1"
+                            title={auth.status === 'signed_in' ? 'Upload active local project' : 'Login required'}
+                          >
+                            <UploadCloud size={12} className="opacity-80" />
+                            Active
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={handleMigrateAll}
+                            disabled={!canMigrate}
+                            className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 gap-1"
+                            title={auth.status === 'signed_in' ? 'Upload all local projects' : 'Login required'}
+                          >
+                            <UploadCloud size={12} className="opacity-80" />
+                            All
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500">Unlinked</span>
+                    <span className="text-[10px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                      {cloudMigration.unlinkedCount}
+                    </span>
+                  </div>
+
+                  {cloudMigration.status.kind !== 'idle' && (
+                    <div className="mt-2 text-[10px] text-slate-400 dark:text-slate-500">
+                      {cloudMigration.status.kind === 'syncing' ? (
+                        <span className="text-amber-600 dark:text-amber-300">{cloudMigration.status.message}</span>
+                      ) : cloudMigration.status.kind === 'error' ? (
+                        <span className="text-rose-600 dark:text-rose-300">{cloudMigration.status.message}</span>
+                      ) : cloudMigration.status.kind === 'cancelled' ? (
+                        <span className="text-slate-500 dark:text-slate-400">{cloudMigration.status.message}</span>
+                      ) : (
+                        <span className="text-emerald-600 dark:text-emerald-300">{cloudMigration.status.message}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {(cloudMigrationExpanded || cloudMigration.status.kind === 'syncing') && cloudMigration.items.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {cloudMigration.items.slice(0, cloudMigrationExpanded ? cloudMigration.items.length : 5).map((it) => (
+                        <div
+                          key={it.sessionId}
+                          className="px-2 py-1.5 rounded-md border border-[var(--panel-border)] bg-[var(--control-bg)]"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-[11px] text-slate-700 dark:text-slate-200 truncate">{it.title}</div>
+                              <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                                {it.status}
+                                {it.message ? ` · ${it.message}` : ''}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] text-slate-400 dark:text-slate-500">Cloud projects</span>
                 <div className="flex items-center gap-2">

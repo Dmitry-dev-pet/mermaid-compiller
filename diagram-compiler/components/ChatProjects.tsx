@@ -5,6 +5,7 @@ import type { HistorySession } from '../services/history/types';
 import type { StorageMode } from '../hooks/core/useStorageMode';
 import type { CloudSyncStatus } from '../hooks/studio/useCloudSync';
 import type { CloudProjectsStatus } from '../hooks/studio/useCloudProjects';
+import type { CloudMigrationItem, CloudMigrationStatus } from '../hooks/studio/useCloudMigration';
 import type { ProjectMeta } from '../services/storage';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
@@ -46,6 +47,15 @@ type ChatProjectsProps = {
     refresh: () => Promise<void>;
     importFromCloud: (projectId: string) => Promise<void>;
   };
+  cloudMigration?: {
+    status: CloudMigrationStatus;
+    items: CloudMigrationItem[];
+    unlinkedCount: number;
+    migrateAll: () => Promise<void>;
+    migrateActive: () => Promise<void>;
+    cancel: () => void;
+    reset: () => void;
+  };
   mode?: 'header' | 'panel';
   chatStatus?: 'idle' | 'running';
 };
@@ -78,6 +88,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   onStorageModeChange,
   cloudSync,
   cloudProjects,
+  cloudMigration,
   mode = 'panel',
   chatStatus = 'idle',
 }) => {
@@ -409,6 +420,7 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
           onStorageModeChange={onStorageModeChange}
           cloudSync={cloudSync}
           cloudProjects={cloudProjects}
+          cloudMigration={cloudMigration}
         />
       )}
 
