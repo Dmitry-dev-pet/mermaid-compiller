@@ -2,67 +2,87 @@ import { defineConfig } from 'vitepress'
 
 const repoName = process.env.GITHUB_REPOSITORY?.split('/')[1] ?? ''
 const base = process.env.GITHUB_ACTIONS && repoName ? `/${repoName}/` : '/'
+const repoUrl = process.env.GITHUB_REPOSITORY ? `https://github.com/${process.env.GITHUB_REPOSITORY}` : 'https://github.com/dmitry-dev-pet/mermaid-compiller'
+
+const nav = (prefix: string) => ([
+  { text: 'Home', link: `${prefix}/` },
+  { text: 'Guide', link: `${prefix}/guide-basic` },
+  { text: 'AI Strategies', link: `${prefix}/ai-overview` },
+]);
+
+const sidebar = (prefix: string) => ([
+  {
+    text: 'Getting Started',
+    items: [
+      { text: 'Web Setup', link: `${prefix}/setup-web` },
+      { text: 'Desktop Setup', link: `${prefix}/setup-desktop` }
+    ]
+  },
+  {
+    text: 'User Guides',
+    items: [
+      { text: 'Basic Workflow', link: `${prefix}/guide-basic` },
+      { text: 'Markdown Notebooks', link: `${prefix}/guide-notebooks` },
+      { text: 'Whiteboard', link: `${prefix}/guide-whiteboard` },
+      { text: 'Export & Share', link: `${prefix}/guide-export` },
+      { text: 'Troubleshooting', link: `${prefix}/guide-troubleshooting` }
+    ]
+  },
+  {
+    text: 'AI & Integrations',
+    items: [
+      { text: 'Overview', link: `${prefix}/ai-overview` },
+      { text: 'CLIProxyAPI', link: `${prefix}/ai-cliproxy` },
+      { text: 'Mermaid Agent', link: `${prefix}/ai-agent` },
+      { text: 'Prompt Engineering', link: `${prefix}/ai-prompts` }
+    ]
+  },
+  {
+    text: 'Data & Storage',
+    items: [
+      { text: 'Local Storage', link: `${prefix}/storage-local` },
+      { text: 'Cloud Sync (E2EE)', link: `${prefix}/storage-sync` }
+    ]
+  },
+  {
+    text: 'Internals',
+    collapsed: true,
+    items: [
+      { text: 'Architecture', link: `${prefix}/internal-architecture` },
+      { text: 'Mermaid Core', link: `${prefix}/internal-mermaid` },
+      { text: 'Testing', link: `${prefix}/internal-testing` },
+      { text: 'Docs Update', link: `${prefix}/internal-docs-update` }
+    ]
+  }
+]);
 
 export default defineConfig({
   base,
   title: "Mermaid Compiler",
   description: "AI Diagramming IDE with Local Privacy",
   ignoreDeadLinks: true,
-  themeConfig: {
-    nav: [
-      { text: 'Home', link: '/' },
-      { text: 'Guide', link: '/guide-basic' },
-      { text: 'AI Strategies', link: '/ai-overview' },
-    ],
-
-    sidebar: [
-      {
-        text: 'Getting Started',
-        items: [
-          { text: 'Web Setup', link: '/setup-web' },
-          { text: 'Desktop Setup', link: '/setup-desktop' }
-        ]
-      },
-      {
-        text: 'User Guides',
-        items: [
-          { text: 'Basic Workflow', link: '/guide-basic' },
-          { text: 'Markdown Notebooks', link: '/guide-notebooks' },
-          { text: 'Whiteboard', link: '/guide-whiteboard' },
-          { text: 'Export & Share', link: '/guide-export' },
-          { text: 'Troubleshooting', link: '/guide-troubleshooting' }
-        ]
-      },
-      {
-        text: 'AI & Integrations',
-        items: [
-          { text: 'Overview', link: '/ai-overview' },
-          { text: 'CLIProxyAPI', link: '/ai-cliproxy' },
-          { text: 'Mermaid Agent', link: '/ai-agent' },
-          { text: 'Prompt Engineering', link: '/ai-prompts' }
-        ]
-      },
-      {
-        text: 'Data & Storage',
-        items: [
-          { text: 'Local Storage', link: '/storage-local' },
-          { text: 'Cloud Sync (E2EE)', link: '/storage-sync' }
-        ]
-      },
-      {
-        text: 'Internals',
-        collapsed: true,
-        items: [
-          { text: 'Architecture', link: '/internal-architecture' },
-          { text: 'Mermaid Core', link: '/internal-mermaid' },
-          { text: 'Testing', link: '/internal-testing' },
-          { text: 'Docs Update', link: '/internal-docs-update' }
-        ]
+  locales: {
+    root: {
+      label: 'EN',
+      lang: 'en-US',
+      themeConfig: {
+        nav: nav(''),
+        sidebar: sidebar(''),
       }
-    ],
-
+    },
+    ru: {
+      label: 'RU',
+      lang: 'ru-RU',
+      link: '/ru/',
+      themeConfig: {
+        nav: nav('/ru'),
+        sidebar: sidebar('/ru'),
+      }
+    }
+  },
+  themeConfig: {
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/dmitry-brazhenko/mermaid-langgraph' }
+      { icon: 'github', link: repoUrl }
     ]
   }
 })
