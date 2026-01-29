@@ -6,7 +6,7 @@ import PanelHeader from './ui/PanelHeader';
 import { Button } from './ui/Button';
 import AiControlPlaneMenu from './header/AiControlPlaneMenu';
 import ThemeMenu from './header/ThemeMenu';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/auth';
 
 interface HeaderProps {
   aiConfig: AIConfig;

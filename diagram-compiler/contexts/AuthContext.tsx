@@ -1,23 +1,6 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { createClient, type Session, type SupabaseClient, type User } from '@supabase/supabase-js';
-
-export type AuthStatus = 'disabled' | 'loading' | 'signed_out' | 'signed_in' | 'error';
-
-export type AuthState = {
-  status: AuthStatus;
-  user: User | null;
-  session: Session | null;
-  error?: string;
-};
-
-export type AuthContextValue = AuthState & {
-  supabase: SupabaseClient | null;
-  loginWithGoogle: () => Promise<void>;
-  loginWithGitHub: () => Promise<void>;
-  logout: () => Promise<void>;
-};
-
-const AuthContext = createContext<AuthContextValue | null>(null);
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import { AuthContext, type AuthContextValue, type AuthState } from './auth';
 
 const resolveHostedSupabaseConfig = () => {
   const url = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
@@ -145,12 +128,4 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [loginWithGoogle, loginWithGitHub, logout, state, supabase]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
-
-export const useAuth = (): AuthContextValue => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within <AuthProvider />');
-  }
-  return ctx;
 };

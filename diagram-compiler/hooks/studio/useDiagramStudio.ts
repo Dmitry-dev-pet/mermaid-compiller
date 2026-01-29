@@ -24,9 +24,7 @@ import { useStudioChatFlow } from "./useStudioChatFlow";
 import { StorageConflictError } from "../../services/storage/types";
 import { useStorageConfig } from "../core/useStorageConfig";
 import { useStorageMode } from "../core/useStorageMode";
-import { useCloudSync } from "./useCloudSync";
-import { useCloudProjects } from "./useCloudProjects";
-import { useCloudMigration } from "./useCloudMigration";
+import { useCloudControlPlane } from "./useCloudControlPlane";
 import { createSupabaseByoProvider } from "../../services/storage";
 import type {
   DiagramIntent,
@@ -618,32 +616,20 @@ export const useDiagramStudio = () => {
     return provider.init();
   }, [byoConfig]);
 
-  const cloudSync = useCloudSync({
-    enabled: storageMode === 'cloud_hosted' || storageMode === 'cloud_byo',
-    mode: storageMode === 'cloud_byo' ? 'cloud_byo' : 'cloud_hosted',
-    byoConfig,
-    projects: sessions,
-    activeProjectId: historySession?.id ?? null,
-    exportProjectBundle,
-  });
-
-  const cloudProjects = useCloudProjects({
-    enabled: storageMode === "cloud_hosted" || storageMode === "cloud_byo",
-    mode: storageMode === "cloud_byo" ? "cloud_byo" : "cloud_hosted",
-    byoConfig,
-    importProjectBundle,
-    openProject,
-  });
-
-  const cloudMigration = useCloudMigration({
+  const cloud = useCloudControlPlane({
     enabled: storageMode === "cloud_hosted" || storageMode === "cloud_byo",
     mode: storageMode === "cloud_byo" ? "cloud_byo" : "cloud_hosted",
     byoConfig,
     localProjects: sessions,
     activeProjectId: historySession?.id ?? null,
     exportProjectBundle,
-    onAfterMigration: cloudProjects.refresh,
+    importProjectBundle,
+    openProject,
   });
+
+  const cloudSync = cloud.sync;
+  const cloudProjects = cloud.projects;
+  const cloudMigration = cloud.migration;
 
   const sanitizeFileName = useCallback((value: string) => {
     return value

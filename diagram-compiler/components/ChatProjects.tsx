@@ -3,9 +3,12 @@ import { ChevronDown, ChevronRight, Folder, Plus, Trash2 } from 'lucide-react';
 import type { DiagramType, ThinkingStyle } from '../types';
 import type { HistorySession } from '../services/history/types';
 import type { StorageMode } from '../hooks/core/useStorageMode';
-import type { CloudSyncStatus } from '../hooks/studio/useCloudSync';
-import type { CloudProjectsStatus } from '../hooks/studio/useCloudProjects';
-import type { CloudMigrationItem, CloudMigrationStatus } from '../hooks/studio/useCloudMigration';
+import type {
+  CloudMigrationItem,
+  CloudMigrationStatus,
+  CloudProjectsStatus,
+  CloudSyncStatus,
+} from '../hooks/studio/useCloudControlPlane';
 import type { ProjectMeta } from '../services/storage';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
