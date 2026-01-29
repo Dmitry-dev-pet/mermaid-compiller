@@ -91,10 +91,16 @@ const validateSchema = async (client: SupabaseClient): Promise<void> => {
 };
 
 export const createSupabaseByoProvider = (config: SupabaseConfig): StorageProvider => {
-  const client =
-    config.url && config.anonKey
-      ? createClient(config.url, config.anonKey, { auth: { persistSession: true } })
-      : null;
+  let client: SupabaseClient | null = null;
+  let clientInitError: string | null = null;
+  if (config.url && config.anonKey) {
+    try {
+      client = createClient(config.url, config.anonKey, { auth: { persistSession: true } });
+    } catch (e: unknown) {
+      client = null;
+      clientInitError = e instanceof Error ? e.message : 'Invalid Supabase config';
+    }
+  }
 
   const capabilities: StorageCapabilities = {
     sync: true,
@@ -107,7 +113,7 @@ export const createSupabaseByoProvider = (config: SupabaseConfig): StorageProvid
     kind: 'supabase_byo',
     capabilities,
     async init(): Promise<StorageProviderInitResult> {
-      if (!client) return { ok: false, error: 'Missing Supabase config' };
+      if (!client) return { ok: false, error: clientInitError ?? 'Missing Supabase config' };
       try {
         await validateSchema(client);
         return { ok: true };

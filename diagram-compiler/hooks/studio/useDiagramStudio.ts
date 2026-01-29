@@ -23,6 +23,8 @@ import { useStudioHydration } from "./useStudioHydration";
 import { useStudioChatFlow } from "./useStudioChatFlow";
 import { StorageConflictError } from "../../services/storage/types";
 import { useStorageConfig } from "../core/useStorageConfig";
+import { useStorageMode } from "../core/useStorageMode";
+import { useCloudControlPlane } from "./useCloudControlPlane";
 import { createSupabaseByoProvider } from "../../services/storage";
 import type {
   DiagramIntent,
@@ -607,11 +609,27 @@ export const useDiagramStudio = () => {
   });
 
   const { byoConfig, updateByoConfig } = useStorageConfig();
+  const { storageMode, setStorageMode } = useStorageMode();
 
   const testByoConfig = useCallback(async () => {
     const provider = createSupabaseByoProvider(byoConfig);
     return provider.init();
   }, [byoConfig]);
+
+  const cloud = useCloudControlPlane({
+    enabled: storageMode === "cloud_hosted" || storageMode === "cloud_byo",
+    mode: storageMode === "cloud_byo" ? "cloud_byo" : "cloud_hosted",
+    byoConfig,
+    localProjects: sessions,
+    activeProjectId: historySession?.id ?? null,
+    exportProjectBundle,
+    importProjectBundle,
+    openProject,
+  });
+
+  const cloudSync = cloud.sync;
+  const cloudProjects = cloud.projects;
+  const cloudMigration = cloud.migration;
 
   const sanitizeFileName = useCallback((value: string) => {
     return value
@@ -1179,6 +1197,11 @@ export const useDiagramStudio = () => {
     byoConfig,
     updateByoConfig,
     testByoConfig,
+    storageMode,
+    setStorageMode,
+    cloudSync,
+    cloudProjects,
+    cloudMigration,
     deleteUndoMs: projectsUndoMs,
     loadSessionPreview,
     showProjectPreview,

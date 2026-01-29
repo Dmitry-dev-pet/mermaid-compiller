@@ -52,4 +52,14 @@ Storage Providers (2026-01-25):
 
 ---
 
+SaaS / Hybrid Storage (2026-01-29):
+
+- [ ] Добавить AuthContext (Supabase OAuth + reactive session).
+- [ ] Добавить dynamic storage factory (local/hosted/byo) и настройку активного режима.
+- [ ] Реализовать миграцию local → cloud (initial sync/upsert).
+- [ ] Deep link `/share/:token`: read-only режим без autosave/локального стейта.
+- [ ] Fork/copy shared → user storage.
+
+---
+
 Обновлено: 2026-01-23.

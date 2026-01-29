@@ -106,6 +106,11 @@ function App() {
     byoConfig,
     updateByoConfig,
     testByoConfig,
+    storageMode,
+    setStorageMode,
+    cloudSync,
+    cloudProjects,
+    cloudMigration,
     deleteUndoMs,
 	    showProjectPreview,
 	    clearProjectPreview,
@@ -490,6 +495,11 @@ function App() {
             byoConfig={byoConfig}
             onByoConfigChange={updateByoConfig}
             onTestByoConfig={testByoConfig}
+            storageMode={storageMode}
+            onStorageModeChange={setStorageMode}
+            cloudSync={cloudSync}
+            cloudProjects={cloudProjects}
+            cloudMigration={cloudMigration}
             diagramType={appState.diagramType}
             onDiagramTypeChange={setDiagramType}
             mainDiagramTypes={appState.mainDiagramTypes}

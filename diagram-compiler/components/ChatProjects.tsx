@@ -2,6 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Folder, Plus, Trash2 } from 'lucide-react';
 import type { DiagramType, ThinkingStyle } from '../types';
 import type { HistorySession } from '../services/history/types';
+import type { StorageMode } from '../hooks/core/useStorageMode';
+import type {
+  CloudMigrationItem,
+  CloudMigrationStatus,
+  CloudProjectsStatus,
+  CloudSyncStatus,
+} from '../hooks/studio/useCloudControlPlane';
+import type { ProjectMeta } from '../services/storage';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
 import { Select } from './ui/Select';
@@ -33,6 +41,24 @@ type ChatProjectsProps = {
   onNotebookBuildCountChange: (count: number | string | null) => void;
   thinkingStyle: ThinkingStyle;
   onThinkingStyleChange: (style: ThinkingStyle) => void;
+  storageMode?: StorageMode;
+  onStorageModeChange?: (mode: StorageMode) => void;
+  cloudSync?: { status: CloudSyncStatus; syncActive: () => Promise<void>; syncAll: () => Promise<void> };
+  cloudProjects?: {
+    status: CloudProjectsStatus;
+    projects: ProjectMeta[];
+    refresh: () => Promise<void>;
+    importFromCloud: (projectId: string) => Promise<void>;
+  };
+  cloudMigration?: {
+    status: CloudMigrationStatus;
+    items: CloudMigrationItem[];
+    unlinkedCount: number;
+    migrateAll: () => Promise<void>;
+    migrateActive: () => Promise<void>;
+    cancel: () => void;
+    reset: () => void;
+  };
   mode?: 'header' | 'panel';
   chatStatus?: 'idle' | 'running';
 };
@@ -61,6 +87,11 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
   onNotebookBuildCountChange,
   thinkingStyle,
   onThinkingStyleChange,
+  storageMode,
+  onStorageModeChange,
+  cloudSync,
+  cloudProjects,
+  cloudMigration,
   mode = 'panel',
   chatStatus = 'idle',
 }) => {
@@ -388,6 +419,11 @@ const ChatProjects: React.FC<ChatProjectsProps> = ({
           byoConfig={byoConfig}
           onByoConfigChange={onByoConfigChange}
           onTestByoConfig={onTestByoConfig}
+          storageMode={storageMode}
+          onStorageModeChange={onStorageModeChange}
+          cloudSync={cloudSync}
+          cloudProjects={cloudProjects}
+          cloudMigration={cloudMigration}
         />
       )}
 
