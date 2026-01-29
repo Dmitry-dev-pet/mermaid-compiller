@@ -28,6 +28,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
@@ -35,6 +36,14 @@ struct GeminiQuotaCache {
   updated_at: u64,
   line: String,
   snapshot: GeminiQuotaSnapshot,
+  in_flight: bool,
+}
+
+#[derive(Clone, Debug)]
+struct CodexRateLimitsCache {
+  updated_at: u64,
+  line: String,
+  snapshot: CodexRateLimitsSnapshot,
   in_flight: bool,
 }
 
@@ -54,6 +63,27 @@ struct GeminiQuotaSnapshot {
   email: Option<String>,
   project_id: Option<String>,
   items: Vec<GeminiQuotaItem>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct CodexRateLimitWindow {
+  id: String,
+  label: String,
+  used_percent: Option<i64>,
+  remaining_percent: Option<i64>,
+  reset_label: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct CodexRateLimitsSnapshot {
+  status: String,
+  updated_at: u64,
+  message: Option<String>,
+  plan_type: Option<String>,
+  credits_balance: Option<String>,
+  has_credits: Option<bool>,
+  unlimited: Option<bool>,
+  windows: Vec<CodexRateLimitWindow>,
 }
 
 #[derive(Clone)]
@@ -78,6 +108,7 @@ type TrayMenuItem = MenuItem<tauri::Wry>;
 struct TrayMenu {
   status_title: TrayMenuItem,
   status_details: TrayMenuItem,
+  codex_quota_line: TrayMenuItem,
   gemini_quota_line: TrayMenuItem,
   token_line: TrayMenuItem,
 }
@@ -86,6 +117,7 @@ struct TrayMenu {
 struct TrayStatusSnapshot {
   title: String,
   details: String,
+  codex_quota_line: String,
   gemini_quota_line: String,
   token_line: String,
 }
@@ -374,6 +406,7 @@ fn build_tray(app: &AppHandle, tray_state: Arc<TrayState>) -> tauri::Result<taur
     false,
     None::<&str>,
   )?;
+  let codex_quota_line = MenuItem::with_id(app, "codex_quota", "Codex quota: —", false, None::<&str>)?;
   let gemini_quota_line = MenuItem::with_id(app, "gemini_quota", "Gemini quota: —", false, None::<&str>)?;
   let token_line = MenuItem::with_id(app, "token_line", "Token: (empty)", false, None::<&str>)?;
   let set_token_clipboard = MenuItem::with_id(app, "set_token_clipboard", "Set Token from Clipboard", true, None::<&str>)?;
@@ -389,6 +422,7 @@ fn build_tray(app: &AppHandle, tray_state: Arc<TrayState>) -> tauri::Result<taur
     &[
       &status_title,
       &status_details,
+      &codex_quota_line,
       &gemini_quota_line,
       &token_line,
       &separator_top,
@@ -404,6 +438,7 @@ fn build_tray(app: &AppHandle, tray_state: Arc<TrayState>) -> tauri::Result<taur
     *menu_slot = Some(TrayMenu {
       status_title: status_title.clone(),
       status_details: status_details.clone(),
+      codex_quota_line: codex_quota_line.clone(),
       gemini_quota_line: gemini_quota_line.clone(),
       token_line: token_line.clone(),
     });
@@ -525,6 +560,7 @@ async fn start_server(config: Arc<Config>, app_state_slot: Arc<RwLock<Option<App
     .route("/api/capabilities", get(capabilities))
     .route("/api/status", get(status))
     .route("/api/token", get(get_token).post(set_token))
+    .route("/api/codex/quota", get(get_codex_rate_limits))
     .route("/api/gemini/quota", get(get_gemini_quota))
     .route("/api/tasks/:id", get(task_details))
     .route("/api/cancel", post(cancel))
@@ -637,11 +673,17 @@ async fn build_tray_status_snapshot(tray_state: &TrayState) -> TrayStatusSnapsho
     details.push_str(" · unreachable");
   }
 
+  let codex_quota_line = if let Some(state) = app_state.as_ref() {
+    get_cached_codex_rate_limits_line(state.codex.clone()).await
+  } else {
+    "Codex quota: —".to_string()
+  };
   let gemini_quota_line = get_cached_gemini_quota_line(config.clone()).await;
 
   TrayStatusSnapshot {
     title: format!("Mermaid Agent — {}", status_label),
     details,
+    codex_quota_line,
     gemini_quota_line,
     token_line: format!("Token: {}", mask_token(&token_value)),
   }
@@ -654,6 +696,7 @@ async fn apply_tray_status(tray_state: &TrayState, snapshot: &TrayStatusSnapshot
   };
   let _ = menu.status_title.set_text(&snapshot.title);
   let _ = menu.status_details.set_text(&snapshot.details);
+  let _ = menu.codex_quota_line.set_text(&snapshot.codex_quota_line);
   let _ = menu.gemini_quota_line.set_text(&snapshot.gemini_quota_line);
   let _ = menu.token_line.set_text(&snapshot.token_line);
 }
@@ -743,6 +786,7 @@ fn normalize_host_for_check(host: &str) -> &str {
 static CODEX_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
 static GEMINI_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
 static CLIPROXYAPI_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
+static CODEX_RATE_LIMITS_CACHE: OnceLock<Mutex<CodexRateLimitsCache>> = OnceLock::new();
 static GEMINI_QUOTA_CACHE: OnceLock<Mutex<GeminiQuotaCache>> = OnceLock::new();
 
 fn detect_cli_version(command: &str) -> Option<String> {
@@ -765,6 +809,16 @@ fn detect_cli_version(command: &str) -> Option<String> {
 
 fn cached_cli_version(cache: &'static OnceLock<Option<String>>, command: &str) -> Option<String> {
   cache.get_or_init(|| detect_cli_version(command)).clone()
+}
+
+fn format_unix_reset_label(seconds: u64) -> Option<String> {
+  let ts = i64::try_from(seconds).ok()?;
+  let dt = OffsetDateTime::from_unix_timestamp(ts).ok()?;
+  let month = dt.month() as u8;
+  let day = dt.day();
+  let hh = dt.hour();
+  let mm = dt.minute();
+  Some(format!("{month:02}.{day:02}, {hh:02}:{mm:02}"))
 }
 
 fn parse_gemini_reset_label(value: &str) -> Option<String> {
@@ -914,6 +968,195 @@ fn format_gemini_quota_line(snapshot: &GeminiQuotaSnapshot) -> String {
   let (flash_p, flash_r) = fmt(flash.take());
   let (pro_p, pro_r) = fmt(pro.take());
   format!("Gemini quota{email_label}: Flash {flash_p} · {flash_r} | Pro {pro_p} · {pro_r}")
+}
+
+fn format_codex_rate_limits_line(snapshot: &CodexRateLimitsSnapshot) -> String {
+  if snapshot.status != "ok" {
+    let msg = snapshot.message.clone().unwrap_or_else(|| "unavailable".to_string());
+    return format!("Codex quota: {msg}");
+  }
+  let mut primary = "-".to_string();
+  let mut secondary = "-".to_string();
+  for w in snapshot.windows.iter() {
+    let p = w.remaining_percent.map(|v| format!("{v}%")).unwrap_or_else(|| "-".to_string());
+    let r = w.reset_label.clone();
+    if w.id == "primary" {
+      primary = format!("{p} · {r}");
+    } else if w.id == "secondary" {
+      secondary = format!("{p} · {r}");
+    }
+  }
+  format!("Codex quota: 5h {primary} | wk {secondary}")
+}
+
+async fn get_cached_codex_rate_limits_line(codex: Option<Arc<CodexAppServer>>) -> String {
+  let cache = CODEX_RATE_LIMITS_CACHE.get_or_init(|| Mutex::new(CodexRateLimitsCache {
+    updated_at: 0,
+    line: "Codex quota: —".to_string(),
+    snapshot: CodexRateLimitsSnapshot {
+      status: "idle".to_string(),
+      updated_at: 0,
+      message: None,
+      plan_type: None,
+      credits_balance: None,
+      has_credits: None,
+      unlimited: None,
+      windows: Vec::new(),
+    },
+    in_flight: false,
+  }));
+
+  let now = now_unix();
+  {
+    let mut state = cache.lock().await;
+    if now.saturating_sub(state.updated_at) < 60 {
+      return state.line.clone();
+    }
+    if state.in_flight {
+      return state.line.clone();
+    }
+    state.in_flight = true;
+  }
+
+  let cache_ptr: &'static Mutex<CodexRateLimitsCache> = cache;
+  tauri::async_runtime::spawn(async move {
+    let (snapshot, line) = fetch_codex_rate_limits_snapshot_and_line(codex).await;
+    let mut state = cache_ptr.lock().await;
+    state.updated_at = snapshot.updated_at;
+    state.line = line;
+    state.snapshot = snapshot;
+    state.in_flight = false;
+  });
+
+  cache.lock().await.line.clone()
+}
+
+async fn get_cached_codex_rate_limits_snapshot(codex: Option<Arc<CodexAppServer>>) -> CodexRateLimitsSnapshot {
+  let cache = CODEX_RATE_LIMITS_CACHE.get_or_init(|| Mutex::new(CodexRateLimitsCache {
+    updated_at: 0,
+    line: "Codex quota: —".to_string(),
+    snapshot: CodexRateLimitsSnapshot {
+      status: "idle".to_string(),
+      updated_at: 0,
+      message: None,
+      plan_type: None,
+      credits_balance: None,
+      has_credits: None,
+      unlimited: None,
+      windows: Vec::new(),
+    },
+    in_flight: false,
+  }));
+
+  let now = now_unix();
+  {
+    let mut state = cache.lock().await;
+    if now.saturating_sub(state.updated_at) < 60 {
+      return state.snapshot.clone();
+    }
+    if state.in_flight {
+      return state.snapshot.clone();
+    }
+    state.in_flight = true;
+  }
+
+  let cache_ptr: &'static Mutex<CodexRateLimitsCache> = cache;
+  tauri::async_runtime::spawn(async move {
+    let (snapshot, line) = fetch_codex_rate_limits_snapshot_and_line(codex).await;
+    let mut state = cache_ptr.lock().await;
+    state.updated_at = snapshot.updated_at;
+    state.line = line;
+    state.snapshot = snapshot;
+    state.in_flight = false;
+  });
+
+  cache.lock().await.snapshot.clone()
+}
+
+async fn fetch_codex_rate_limits_snapshot_and_line(codex: Option<Arc<CodexAppServer>>) -> (CodexRateLimitsSnapshot, String) {
+  let now = now_unix();
+  let Some(codex) = codex else {
+    let snapshot = CodexRateLimitsSnapshot {
+      status: "error".to_string(),
+      updated_at: now,
+      message: Some("codex unavailable".to_string()),
+      plan_type: None,
+      credits_balance: None,
+      has_credits: None,
+      unlimited: None,
+      windows: Vec::new(),
+    };
+    return (snapshot.clone(), format_codex_rate_limits_line(&snapshot));
+  };
+
+  let response = match tokio::time::timeout(Duration::from_secs(5), codex.read_rate_limits()).await {
+    Ok(Ok(value)) => value,
+    Ok(Err(err)) => {
+      let snapshot = CodexRateLimitsSnapshot {
+        status: "error".to_string(),
+        updated_at: now,
+        message: Some(err),
+        plan_type: None,
+        credits_balance: None,
+        has_credits: None,
+        unlimited: None,
+        windows: Vec::new(),
+      };
+      return (snapshot.clone(), format_codex_rate_limits_line(&snapshot));
+    }
+    Err(_) => {
+      let snapshot = CodexRateLimitsSnapshot {
+        status: "error".to_string(),
+        updated_at: now,
+        message: Some("timeout".to_string()),
+        plan_type: None,
+        credits_balance: None,
+        has_credits: None,
+        unlimited: None,
+        windows: Vec::new(),
+      };
+      return (snapshot.clone(), format_codex_rate_limits_line(&snapshot));
+    }
+  };
+
+  let rate_limits = response.get("rateLimits").cloned().unwrap_or(Value::Null);
+  let plan_type = rate_limits.get("planType").and_then(|v| v.as_str()).map(|s| s.to_string());
+  let credits = rate_limits.get("credits").cloned().unwrap_or(Value::Null);
+  let credits_balance = credits.get("balance").and_then(|v| v.as_str()).map(|s| s.to_string());
+  let has_credits = credits.get("hasCredits").and_then(|v| v.as_bool());
+  let unlimited = credits.get("unlimited").and_then(|v| v.as_bool());
+
+  let mut windows = Vec::new();
+  for (id, label) in [("primary", "5-hour limit"), ("secondary", "Weekly limit")] {
+    let window = rate_limits.get(id).cloned().unwrap_or(Value::Null);
+    let used_percent = window.get("usedPercent").and_then(|v| v.as_i64()).map(|v| v.max(0).min(100));
+    let remaining_percent = used_percent.map(|v| 100 - v);
+    let reset_label = window
+      .get("resetsAt")
+      .and_then(|v| v.as_u64())
+      .and_then(format_unix_reset_label)
+      .unwrap_or_else(|| "-".to_string());
+    windows.push(CodexRateLimitWindow {
+      id: id.to_string(),
+      label: label.to_string(),
+      used_percent,
+      remaining_percent,
+      reset_label,
+    });
+  }
+
+  let snapshot = CodexRateLimitsSnapshot {
+    status: "ok".to_string(),
+    updated_at: now,
+    message: None,
+    plan_type,
+    credits_balance,
+    has_credits,
+    unlimited,
+    windows,
+  };
+  let line = format_codex_rate_limits_line(&snapshot);
+  (snapshot, line)
 }
 
 async fn get_cached_gemini_quota_line(config: Arc<Config>) -> String {
@@ -1122,6 +1365,15 @@ async fn get_gemini_quota(
 ) -> Result<Json<GeminiQuotaSnapshot>, (StatusCode, Json<ErrorBody>)> {
   authorize(&state, &headers).await?;
   let snapshot = get_cached_gemini_quota_snapshot(state.config.clone()).await;
+  Ok(Json(snapshot))
+}
+
+async fn get_codex_rate_limits(
+  State(state): State<AppState>,
+  headers: HeaderMap,
+) -> Result<Json<CodexRateLimitsSnapshot>, (StatusCode, Json<ErrorBody>)> {
+  authorize(&state, &headers).await?;
+  let snapshot = get_cached_codex_rate_limits_snapshot(state.codex.clone()).await;
   Ok(Json(snapshot))
 }
 
@@ -2659,6 +2911,11 @@ impl CodexAppServer {
       });
     }
     Ok(result)
+  }
+
+  async fn read_rate_limits(&self) -> Result<Value, String> {
+    let _guard = self.run_lock.lock().await;
+    self.send_request("account/rateLimits/read", Value::Null).await
   }
 
   async fn run_chat_stream(

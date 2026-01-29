@@ -1856,6 +1856,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "time",
  "tokio",
  "tokio-stream",
  "tower-http 0.5.2",

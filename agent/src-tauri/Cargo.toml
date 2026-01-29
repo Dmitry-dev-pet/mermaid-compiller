@@ -17,6 +17,7 @@ tauri = { version = "2.5.3", features = ["tray-icon", "image-png"] }
 tokio = { version = "1.38", features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tower-http = { version = "0.5", features = ["fs", "cors"] }
+time = "0.3"
 uuid = { version = "1.11", features = ["v4"] }
 
 [target.'cfg(unix)'.dependencies]

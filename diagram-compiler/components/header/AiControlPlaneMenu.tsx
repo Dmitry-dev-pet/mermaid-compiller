@@ -16,6 +16,7 @@ import { AIConfig, CliproxyFilters, ConnectionState, ModelParams, OpenRouterFilt
 import { DEFAULT_AI_CONFIG } from '../../constants';
 import { useCliproxyQuotas } from '../../hooks/core/useCliproxyQuotas';
 import { useCliproxyManagementInfo } from '../../hooks/core/useCliproxyManagementInfo';
+import { useAgentCodexQuota } from '../../hooks/core/useAgentCodexQuota';
 import { useAgentGeminiQuota } from '../../hooks/core/useAgentGeminiQuota';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -117,6 +118,11 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     authFiles: cliproxyInfo.cliproxyAuthFiles ?? [],
     showAll: true,
     pageSize: 3,
+  });
+  const { quota: agentCodexQuota, refresh: refreshAgentCodexQuota } = useAgentCodexQuota({
+    enabled: aiConfig.provider === 'agent' && isOpen && showAgentQuotas,
+    endpoint: aiConfig.agentEndpoint || '',
+    token: aiConfig.agentToken || '',
   });
   const { quota: agentGeminiQuota, refresh: refreshAgentGeminiQuota } = useAgentGeminiQuota({
     enabled: aiConfig.provider === 'agent' && isOpen && showAgentQuotas,
@@ -602,21 +608,72 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                         <button
                           type="button"
                           className="hover:underline"
-                          onClick={refreshAgentGeminiQuota}
+                          onClick={() => {
+                            refreshAgentCodexQuota();
+                            refreshAgentGeminiQuota();
+                          }}
                         >
                           Refresh
                         </button>
                       </div>
-                      {agentGeminiQuota.status === 'loading' ? (
-                        <div className="text-slate-400">Loading quota...</div>
-                      ) : agentGeminiQuota.status === 'error' ? (
-                        <div className="text-amber-600 dark:text-amber-400">quota {agentGeminiQuota.message ?? 'failed'}</div>
-                      ) : null}
 
                       <div className="flex flex-col gap-2">
                         <div className="flex flex-col gap-2">
+                          <div className="text-slate-500 dark:text-slate-400">Codex CLI Quota</div>
+                          <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                            {agentCodexQuota.status === 'loading' ? (
+                              <div className="text-slate-400">Loading quota...</div>
+                            ) : agentCodexQuota.status === 'error' ? (
+                              <div className="text-amber-600 dark:text-amber-400">codex quota {agentCodexQuota.message ?? 'failed'}</div>
+                            ) : null}
+                            {agentCodexQuota.windows.length ? (
+                              <div className="flex flex-col gap-1">
+                                {agentCodexQuota.windows.map((w) => {
+                                  const percent = typeof w.remainingPercent === 'number' ? Math.max(0, Math.min(100, w.remainingPercent)) : null;
+                                  const tone = percent === null
+                                    ? 'bg-slate-200 dark:bg-slate-700'
+                                    : percent >= 60
+                                      ? 'bg-emerald-500'
+                                      : percent >= 20
+                                        ? 'bg-amber-500'
+                                        : 'bg-rose-500';
+                                  return (
+                                    <div key={w.id} className="flex flex-col gap-0.5">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="truncate">{w.label}</span>
+                                        <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {w.resetLabel}</span>
+                                      </div>
+                                      <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                        <div
+                                          className={`h-full ${tone}`}
+                                          style={{ width: `${percent === null ? 0 : percent}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-slate-400">No quota data</div>
+                            )}
+                            {agentCodexQuota.planType ? (
+                              <div className="mt-1 text-[10px] text-slate-400">plan {agentCodexQuota.planType}</div>
+                            ) : null}
+                            {agentCodexQuota.creditsBalance ? (
+                              <div className="mt-1 text-[10px] text-slate-400">credits {agentCodexQuota.creditsBalance}</div>
+                            ) : null}
+                            {typeof agentCodexQuota.updatedAt === 'number' && agentCodexQuota.updatedAt > 0 ? (
+                              <div className="mt-1 text-[10px] text-slate-400">updated {formatMonthDayTime(new Date(agentCodexQuota.updatedAt * 1000))}</div>
+                            ) : null}
+                          </div>
+
                           <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
                           <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                            {agentGeminiQuota.status === 'loading' ? (
+                              <div className="text-slate-400">Loading quota...</div>
+                            ) : agentGeminiQuota.status === 'error' ? (
+                              <div className="text-amber-600 dark:text-amber-400">gemini quota {agentGeminiQuota.message ?? 'failed'}</div>
+                            ) : null}
                             {agentGeminiQuota.items.length ? (
                               <div className="flex flex-col gap-1">
                                 {agentGeminiQuota.items.map((it) => {
