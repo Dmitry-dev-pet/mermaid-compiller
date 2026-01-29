@@ -952,7 +952,7 @@ async fn get_cached_gemini_quota_line(config: Arc<Config>) -> String {
   }
 
   let cache_ptr: &'static Mutex<GeminiQuotaCache> = cache;
-  tokio::spawn(async move {
+  tauri::async_runtime::spawn(async move {
     let line = fetch_gemini_quota_line(config).await;
     let mut state = cache_ptr.lock().await;
     state.updated_at = now_unix();
