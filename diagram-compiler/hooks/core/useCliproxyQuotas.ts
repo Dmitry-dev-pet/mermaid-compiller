@@ -405,15 +405,18 @@ export const useCliproxyQuotas = (args: {
       const authIndex = toTrimmedString(file.authIndex) ?? null;
       if (!authIndex) throw new Error('missing auth_index');
       const projectId = extractGeminiProjectId({ account: file.account, metadata: file.metadata, attributes: file.attributes });
-      if (!projectId) throw new Error('missing project id');
 
-      const { statusCode, body } = await apiCall({
+      const payload: Record<string, unknown> = {
         authIndex,
         method: 'POST',
         url: cliproxyQuotaEndpoints.geminiCliQuota,
         header: { ...cliproxyQuotaHeaders.geminiCli },
-        data: JSON.stringify({ project: projectId }),
-      });
+      };
+      if (projectId) {
+        payload.data = JSON.stringify({ project: projectId });
+      }
+
+      const { statusCode, body } = await apiCall(payload);
       if (statusCode < 200 || statusCode >= 300) {
         throw new Error(`HTTP ${statusCode}`);
       }

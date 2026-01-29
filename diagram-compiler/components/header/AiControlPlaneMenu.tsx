@@ -45,6 +45,14 @@ const formatMonthDayTime = (date: Date) => date.toLocaleString(void 0, {
 
 type ModelFamilyKey = 'gpt' | 'claude' | 'gemini' | 'other';
 
+const GEMINI_CLI_SUPPORTED_MODEL_IDS = new Set<string>([
+  'gemini-3-pro-preview',
+  'gemini-3-flash-preview',
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+].map((m) => m.toLowerCase()));
+
 const getModelFamilyKey = (model: { id: string; vendor?: string | null }): ModelFamilyKey => {
   const vendor = typeof model.vendor === 'string' ? model.vendor.trim().toLowerCase() : '';
   if (vendor === 'openai' || vendor === 'gpt') return 'gpt';
@@ -155,22 +163,32 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       const family = getModelFamilyKey({ id: aiConfig.selectedModelId, vendor: model?.vendor ?? null });
       const selectedModelId = aiConfig.selectedModelId.trim().toLowerCase();
       const modelOwnedBy = typeof model?.ownedBy === 'string' ? model.ownedBy.trim().toLowerCase() : '';
-      const relevant = family === 'gemini'
-        ? (
-          modelOwnedBy === 'antigravity'
-            ? ['gemini-cli', 'antigravity']
-            : ['gemini-cli']
-        )
-        : family === 'gpt'
-          ? (
-            (selectedModelId.includes('gpt-oss') || (model?.ownedBy ?? '').trim().toLowerCase() === 'antigravity')
-              ? ['antigravity']
-              : ['codex']
-          )
-          : family === 'claude'
-            ? ['antigravity']
-            : [];
-      const present = relevant.length > 0 ? relevant.filter((p) => providers.has(p)) : Array.from(providers.values());
+      const present: string[] = [];
+
+      const hasGeminiCli = providers.has('gemini-cli');
+      const hasCodex = providers.has('codex');
+      const hasAntigravity = providers.has('antigravity');
+
+      if (family === 'gemini') {
+        if (hasGeminiCli && GEMINI_CLI_SUPPORTED_MODEL_IDS.has(selectedModelId)) {
+          present.push('gemini-cli');
+        }
+        if (hasAntigravity && modelOwnedBy === 'antigravity') {
+          present.push('antigravity');
+        }
+      } else if (family === 'gpt') {
+        if (hasAntigravity && modelOwnedBy === 'antigravity') {
+          present.push('antigravity');
+        } else if (hasCodex && !selectedModelId.startsWith('gpt-oss')) {
+          present.push('codex');
+        }
+      } else if (family === 'claude') {
+        if (hasAntigravity) present.push('antigravity');
+      }
+
+      if (present.length === 0) {
+        present.push(...Array.from(providers.values()));
+      }
       if (present.length === 0) return '';
       return ` · via: ${present.join('+')}`;
     })();

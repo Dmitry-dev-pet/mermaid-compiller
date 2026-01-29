@@ -1803,6 +1803,23 @@ fn resolve_command_path(command: &str) -> Option<PathBuf> {
   None
 }
 
+fn resolve_node_path() -> Option<PathBuf> {
+  resolve_command_path("node")
+    .or_else(|| resolve_command_path("nodejs"))
+    .or_else(|| {
+      // macOS GUI apps might not inherit shell PATH; probe common install locations.
+      let candidates = [
+        "/opt/homebrew/bin/node",
+        "/usr/local/bin/node",
+        "/usr/bin/node",
+      ];
+      candidates
+        .into_iter()
+        .find(|p| FsPath::new(p).exists())
+        .map(PathBuf::from)
+    })
+}
+
 fn which_codex(command: &str) -> bool {
   which_command(command)
 }
@@ -1969,7 +1986,7 @@ async fn append_agent_log(config: &Config, line: &str) {
 }
 
 fn discover_gemini_models_from_cli(gemini_cmd: &str, include_preview: bool) -> Option<Vec<String>> {
-  let node = resolve_command_path("node")?;
+  let node = resolve_node_path()?;
   let gemini_path = resolve_command_path(gemini_cmd).or_else(|| FsPath::new(gemini_cmd).exists().then(|| PathBuf::from(gemini_cmd)))?;
   let gemini_real = std::fs::canonicalize(gemini_path).ok()?;
 
