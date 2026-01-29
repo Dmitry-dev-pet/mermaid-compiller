@@ -175,6 +175,47 @@ UI (Build Docs):
 - Строгая типизация, без `any`.
 - UI в hooks, компоненты остаются презентационными.
 
+---
+
+## SaaS-трансформация: Hybrid Storage Architecture (в работе)
+
+Цель: приложение перестаёт быть только локальным редактором и становится клиентом платформы с гибридным хранением и шарингом.
+
+### Архитектурные блоки (C4 / component-level)
+
+A. **Auth Context (слой идентификации)**
+- Глобальный синглтон, который держит состояние сессии пользователя.
+- Инициализирует `SupabaseClient` (hosted или BYO в зависимости от режима).
+- Реактивно обновляет `user/session` при перезагрузке/смене вкладок.
+- Методы: `loginWithGitHub()`, `logout()`.
+- Используется UI (Header) и Storage layer (для RLS / прав доступа).
+
+B. **Dynamic Storage Factory (слой данных)**
+- Стратегия: активный `StorageProvider` выбирается динамически, с возможностью горячего переключения.
+- Режимы:
+  - `local` → `createLocalProvider()` (IndexedDB/History).
+  - `cloud_hosted` → `createSupabaseHostedProvider()` (Supabase по `VITE_SUPABASE_*`).
+  - `cloud_byo` → `createSupabaseByoProvider()` (Supabase по конфигу пользователя).
+- Критично: миграция `local → cloud` (initial sync/upsert) сохраняет стабильные project IDs/UUID и консистентность ревизий.
+
+C. **Route Guard & Deep Linking (слой входа)**
+- Приложение должно корректно стартовать в разных режимах по URL:
+  - Default Mode (`/`): полный редактор, загрузка последнего проекта из активного storage.
+  - Share Mode (`/share/:token`): read-only просмотр расшаренного проекта (без autosave/локального состояния).
+    - Кнопка `Fork / Copy to my account` создаёт копию проекта в активном storage пользователя.
+
+### Потоки (data flow)
+
+1) Login:
+- User нажимает Login → OAuth → возврат в приложение → AuthContext обновляет user.
+- StorageFactory видит user и (если выбран cloud) поднимает cloud provider.
+- UI предлагает «слить» локальные проекты в облако (migration/sync).
+
+2) Open by share link:
+- `/share/:token` → включается `readOnly`.
+- Данные берутся через `fetchShared(token)` (анонимный доступ через server-side share API/edge function).
+- UI скрывает/блокирует действия сохранения; доступен `Fork`.
+
 ## Constraints
 
 - Keep UI state in hooks; components should remain presentation-focused.
