@@ -95,7 +95,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     geminiVersion?: string;
   }>({});
   const cliproxyInfo = useCliproxyManagementInfo({
-    enabled: aiConfig.provider === 'cliproxy' && isOpen,
+    enabled: aiConfig.provider === 'cliproxy' && (isOpen || connectionState.status === 'connected'),
     endpoint: aiConfig.proxyEndpoint || '',
     proxyKey: aiConfig.proxyKey,
     managementKey: aiConfig.proxyManagementKey,
@@ -137,7 +137,38 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
           : 'Proxy';
     const ownedBy = typeof model?.ownedBy === 'string' ? model.ownedBy.trim() : '';
     const ownedByLabel = ownedBy ? ` · owned_by: ${ownedBy}` : '';
-    return `AI: ${providerName} · ${modelName}${contextLabel}${ownedByLabel}`;
+
+    const viaLabel = (() => {
+      if (aiConfig.provider !== 'cliproxy') return '';
+      const files = cliproxyInfo.cliproxyAuthFiles ?? [];
+      if (files.length === 0) return '';
+      const isActive = (file: { status?: string; disabled?: boolean; unavailable?: boolean }) => {
+        if (file.disabled || file.unavailable) return false;
+        const status = typeof file.status === 'string' ? file.status.trim().toLowerCase() : '';
+        return status === 'active' || status === 'ready';
+      };
+      const providers = new Set(
+        files
+          .filter((f) => !f.runtimeOnly && isActive(f))
+          .map((f) => (typeof f.provider === 'string' ? f.provider.trim().toLowerCase() : ''))
+          .filter(Boolean),
+      );
+      if (providers.size === 0) return '';
+
+      const family = getModelFamilyKey({ id: aiConfig.selectedModelId, vendor: model?.vendor ?? null });
+      const relevant = family === 'gemini'
+        ? ['gemini-cli', 'antigravity']
+        : family === 'gpt'
+          ? ['codex', 'antigravity']
+          : family === 'claude'
+            ? ['antigravity']
+            : [];
+      const present = relevant.length > 0 ? relevant.filter((p) => providers.has(p)) : Array.from(providers.values());
+      if (present.length === 0) return '';
+      return ` · via: ${present.join('+')}`;
+    })();
+
+    return `AI: ${providerName} · ${modelName}${contextLabel}${ownedByLabel}${viaLabel}`;
   };
 
   const getStatusTone = () => {
