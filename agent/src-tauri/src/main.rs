@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::net::SocketAddr;
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -28,63 +28,10 @@ use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
-use time::OffsetDateTime;
 use uuid::Uuid;
 
-#[derive(Clone, Debug)]
-struct GeminiQuotaCache {
-  updated_at: u64,
-  line: String,
-  snapshot: GeminiQuotaSnapshot,
-  in_flight: bool,
-}
-
-#[derive(Clone, Debug)]
-struct CodexRateLimitsCache {
-  updated_at: u64,
-  line: String,
-  snapshot: CodexRateLimitsSnapshot,
-  in_flight: bool,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct GeminiQuotaItem {
-  id: String,
-  label: String,
-  remaining_percent: Option<i64>,
-  reset_label: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct GeminiQuotaSnapshot {
-  status: String,
-  updated_at: u64,
-  message: Option<String>,
-  email: Option<String>,
-  project_id: Option<String>,
-  items: Vec<GeminiQuotaItem>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct CodexRateLimitWindow {
-  id: String,
-  label: String,
-  used_percent: Option<i64>,
-  remaining_percent: Option<i64>,
-  reset_label: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct CodexRateLimitsSnapshot {
-  status: String,
-  updated_at: u64,
-  message: Option<String>,
-  plan_type: Option<String>,
-  credits_balance: Option<String>,
-  has_credits: Option<bool>,
-  unlimited: Option<bool>,
-  windows: Vec<CodexRateLimitWindow>,
-}
+mod cli;
+mod quota;
 
 #[derive(Clone)]
 struct AppState {
@@ -634,9 +581,9 @@ async fn build_tray_status_snapshot(tray_state: &TrayState) -> TrayStatusSnapsho
     "Offline"
   };
 
-  let codex_detected = which_codex(&config.codex_cmd);
-  let gemini_detected = which_gemini(&config.gemini_cmd);
-  let cliproxyapi_detected = which_cliproxyapi(&config.cliproxyapi_cmd);
+  let codex_detected = cli::which_codex(&config.codex_cmd);
+  let gemini_detected = cli::which_gemini(&config.gemini_cmd);
+  let cliproxyapi_detected = cli::which_cliproxyapi(&config.cliproxyapi_cmd);
   let token_value = if let Some(state) = app_state.as_ref() {
     state.token.read().await.clone()
   } else {
@@ -657,7 +604,7 @@ async fn build_tray_status_snapshot(tray_state: &TrayState) -> TrayStatusSnapsho
     details.push_str(" · gemini missing");
   }
   if cliproxyapi_detected {
-    let version = cached_cli_version(&CLIPROXYAPI_VERSION_CACHE, &config.cliproxyapi_cmd)
+    let version = cli::cached_cli_version(&cli::CLIPROXYAPI_VERSION_CACHE, &config.cliproxyapi_cmd)
       .unwrap_or_else(|| "cliproxyapi ok".to_string());
     details.push_str(&format!(" · {}", version));
   } else {
@@ -674,11 +621,11 @@ async fn build_tray_status_snapshot(tray_state: &TrayState) -> TrayStatusSnapsho
   }
 
   let codex_quota_line = if let Some(state) = app_state.as_ref() {
-    get_cached_codex_rate_limits_line(state.codex.clone()).await
+    quota::get_cached_codex_rate_limits_line(state.codex.clone()).await
   } else {
     "Codex quota: —".to_string()
   };
-  let gemini_quota_line = get_cached_gemini_quota_line(config.clone()).await;
+  let gemini_quota_line = quota::get_cached_gemini_quota_line(config.clone()).await;
 
   TrayStatusSnapshot {
     title: format!("Mermaid Agent — {}", status_label),
@@ -783,614 +730,38 @@ fn normalize_host_for_check(host: &str) -> &str {
   }
 }
 
-static CODEX_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
-static GEMINI_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
-static CLIPROXYAPI_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
-static CODEX_RATE_LIMITS_CACHE: OnceLock<Mutex<CodexRateLimitsCache>> = OnceLock::new();
-static GEMINI_QUOTA_CACHE: OnceLock<Mutex<GeminiQuotaCache>> = OnceLock::new();
-
-fn detect_cli_version(command: &str) -> Option<String> {
-  let output = std::process::Command::new(command)
-    .arg("--version")
-    .output()
-    .ok()?;
-  let raw = if output.stdout.is_empty() {
-    String::from_utf8_lossy(&output.stderr).to_string()
-  } else {
-    String::from_utf8_lossy(&output.stdout).to_string()
-  };
-  let first_line = raw.lines().next().unwrap_or("").trim().to_string();
-  if first_line.is_empty() {
-    None
-  } else {
-    Some(first_line)
-  }
-}
-
-fn cached_cli_version(cache: &'static OnceLock<Option<String>>, command: &str) -> Option<String> {
-  cache.get_or_init(|| detect_cli_version(command)).clone()
-}
-
-fn format_unix_reset_label(seconds: u64) -> Option<String> {
-  let ts = i64::try_from(seconds).ok()?;
-  let dt = OffsetDateTime::from_unix_timestamp(ts).ok()?;
-  let month = dt.month() as u8;
-  let day = dt.day();
-  let hh = dt.hour();
-  let mm = dt.minute();
-  Some(format!("{month:02}.{day:02}, {hh:02}:{mm:02}"))
-}
-
-fn parse_gemini_reset_label(value: &str) -> Option<String> {
-  let trimmed = value.trim();
-  if trimmed.is_empty() {
-    return None;
-  }
-  // Common format from CloudCode API is RFC3339: YYYY-MM-DDTHH:MM:SSZ
-  // Render it as MM.DD, HH:MM (local-ish without tz conversion).
-  if trimmed.len() >= 16 {
-    let bytes = trimmed.as_bytes();
-    if bytes.get(4) == Some(&b'-') && bytes.get(7) == Some(&b'-') && bytes.get(10) == Some(&b'T') {
-      let month = &trimmed[5..7];
-      let day = &trimmed[8..10];
-      let hh = &trimmed[11..13];
-      let mm = &trimmed[14..16];
-      return Some(format!("{month}.{day}, {hh}:{mm}"));
-    }
-  }
-  Some(trimmed.to_string())
-}
-
-fn resolve_gemini_cli_core_entry(gemini_cmd: &str) -> Option<PathBuf> {
-  let gemini_path = resolve_command_path(gemini_cmd)
-    .or_else(|| FsPath::new(gemini_cmd).exists().then(|| PathBuf::from(gemini_cmd)))?;
-  let gemini_real = std::fs::canonicalize(gemini_path).ok()?;
-  // Layout: .../@google/gemini-cli/dist/index.js
-  let cli_root = gemini_real.parent()?.parent()?;
-  let core_entry = cli_root.join("node_modules/@google/gemini-cli-core/dist/index.js");
-  core_entry.exists().then_some(core_entry)
-}
-
-fn parse_gemini_quota_snapshot_from_json(json: Value) -> GeminiQuotaSnapshot {
-  let ok = json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-  if !ok {
-    let err = json.get("error").and_then(|v| v.as_str()).unwrap_or("unavailable").trim();
-    return GeminiQuotaSnapshot {
-      status: "error".to_string(),
-      updated_at: now_unix(),
-      message: Some(err.to_string()),
-      email: None,
-      project_id: None,
-      items: Vec::new(),
-    };
-  }
-
-  let email = json.get("email").and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-  let project_id = json.get("projectId").and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-  let buckets = json
-    .get("quota")
-    .and_then(|q| q.get("buckets"))
-    .and_then(|b| b.as_array())
-    .cloned()
-    .unwrap_or_default();
-
-  let mut flash_remaining: Option<f64> = None;
-  let mut flash_reset: Option<String> = None;
-  let mut pro_remaining: Option<f64> = None;
-  let mut pro_reset: Option<String> = None;
-
-  let flash_models = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
-  let pro_models = ["gemini-3-pro-preview", "gemini-2.5-pro"];
-
-  let consider_bucket = |model_ids: &[&str], remaining: &mut Option<f64>, reset: &mut Option<String>, prefer: &str| {
-    let mut preferred: Option<(f64, Option<String>)> = None;
-    let mut min_other: Option<(f64, Option<String>)> = None;
-    for b in buckets.iter() {
-      let model_id = b.get("modelId").and_then(|v| v.as_str()).unwrap_or("").trim();
-      if model_id.is_empty() {
-        continue;
-      }
-      if model_id.starts_with("gemini-2.0-flash") {
-        continue;
-      }
-      if !model_ids.iter().any(|m| model_id.eq_ignore_ascii_case(m)) {
-        continue;
-      }
-      let frac = b.get("remainingFraction").and_then(|v| v.as_f64());
-      let Some(frac) = frac else { continue; };
-      let frac = frac.max(0.0).min(1.0);
-      let reset_time = b.get("resetTime").and_then(|v| v.as_str()).and_then(parse_gemini_reset_label);
-      if model_id.eq_ignore_ascii_case(prefer) {
-        preferred = Some((frac, reset_time));
-      } else {
-        match min_other {
-          None => min_other = Some((frac, reset_time)),
-          Some((prev, prev_reset)) => {
-            if frac < prev {
-              min_other = Some((frac, reset_time));
-            } else {
-              min_other = Some((prev, prev_reset));
-            }
-          }
-        }
-      }
-    }
-    let chosen = preferred.or(min_other);
-    if let Some((frac, reset_time)) = chosen {
-      *remaining = Some(frac);
-      *reset = reset_time;
-    }
-  };
-
-  consider_bucket(&flash_models, &mut flash_remaining, &mut flash_reset, "gemini-3-flash-preview");
-  consider_bucket(&pro_models, &mut pro_remaining, &mut pro_reset, "gemini-3-pro-preview");
-
-  let to_percent = |frac: Option<f64>| frac.map(|v| (v * 100.0).round() as i64);
-  let items = vec![
-    GeminiQuotaItem {
-      id: "gemini-flash-series".to_string(),
-      label: "Gemini Flash Series".to_string(),
-      remaining_percent: to_percent(flash_remaining),
-      reset_label: flash_reset.unwrap_or_else(|| "-".to_string()),
-    },
-    GeminiQuotaItem {
-      id: "gemini-pro-series".to_string(),
-      label: "Gemini Pro Series".to_string(),
-      remaining_percent: to_percent(pro_remaining),
-      reset_label: pro_reset.unwrap_or_else(|| "-".to_string()),
-    },
-  ];
-
-  GeminiQuotaSnapshot {
-    status: "ok".to_string(),
-    updated_at: now_unix(),
-    message: None,
-    email,
-    project_id,
-    items,
-  }
-}
-
-fn format_gemini_quota_line(snapshot: &GeminiQuotaSnapshot) -> String {
-  if snapshot.status != "ok" {
-    let msg = snapshot.message.clone().unwrap_or_else(|| "unavailable".to_string());
-    return format!("Gemini quota: {msg}");
-  }
-  let email_label = snapshot.email.as_ref().map(|e| format!(" ({e})")).unwrap_or_default();
-  let mut flash = snapshot.items.iter().find(|it| it.id == "gemini-flash-series");
-  let mut pro = snapshot.items.iter().find(|it| it.id == "gemini-pro-series");
-  let fmt = |item: Option<&GeminiQuotaItem>| -> (String, String) {
-    let Some(item) = item else { return ("-".to_string(), "-".to_string()); };
-    let p = item.remaining_percent.map(|v| format!("{v}%")).unwrap_or_else(|| "-".to_string());
-    let r = item.reset_label.clone();
-    (p, r)
-  };
-  let (flash_p, flash_r) = fmt(flash.take());
-  let (pro_p, pro_r) = fmt(pro.take());
-  format!("Gemini quota{email_label}: Flash {flash_p} · {flash_r} | Pro {pro_p} · {pro_r}")
-}
-
-fn format_codex_rate_limits_line(snapshot: &CodexRateLimitsSnapshot) -> String {
-  if snapshot.status != "ok" {
-    let msg = snapshot.message.clone().unwrap_or_else(|| "unavailable".to_string());
-    return format!("Codex quota: {msg}");
-  }
-  let mut primary = "-".to_string();
-  let mut secondary = "-".to_string();
-  for w in snapshot.windows.iter() {
-    let p = w.remaining_percent.map(|v| format!("{v}%")).unwrap_or_else(|| "-".to_string());
-    let r = w.reset_label.clone();
-    if w.id == "primary" {
-      primary = format!("{p} · {r}");
-    } else if w.id == "secondary" {
-      secondary = format!("{p} · {r}");
-    }
-  }
-  format!("Codex quota: 5h {primary} | wk {secondary}")
-}
-
-async fn get_cached_codex_rate_limits_line(codex: Option<Arc<CodexAppServer>>) -> String {
-  let cache = CODEX_RATE_LIMITS_CACHE.get_or_init(|| Mutex::new(CodexRateLimitsCache {
-    updated_at: 0,
-    line: "Codex quota: —".to_string(),
-    snapshot: CodexRateLimitsSnapshot {
-      status: "idle".to_string(),
-      updated_at: 0,
-      message: None,
-      plan_type: None,
-      credits_balance: None,
-      has_credits: None,
-      unlimited: None,
-      windows: Vec::new(),
-    },
-    in_flight: false,
-  }));
-
-  let now = now_unix();
-  {
-    let mut state = cache.lock().await;
-    if now.saturating_sub(state.updated_at) < 60 {
-      return state.line.clone();
-    }
-    if state.in_flight {
-      return state.line.clone();
-    }
-    state.in_flight = true;
-  }
-
-  let cache_ptr: &'static Mutex<CodexRateLimitsCache> = cache;
-  tauri::async_runtime::spawn(async move {
-    let (snapshot, line) = fetch_codex_rate_limits_snapshot_and_line(codex).await;
-    let mut state = cache_ptr.lock().await;
-    state.updated_at = snapshot.updated_at;
-    state.line = line;
-    state.snapshot = snapshot;
-    state.in_flight = false;
-  });
-
-  cache.lock().await.line.clone()
-}
-
-async fn get_cached_codex_rate_limits_snapshot(codex: Option<Arc<CodexAppServer>>) -> CodexRateLimitsSnapshot {
-  let cache = CODEX_RATE_LIMITS_CACHE.get_or_init(|| Mutex::new(CodexRateLimitsCache {
-    updated_at: 0,
-    line: "Codex quota: —".to_string(),
-    snapshot: CodexRateLimitsSnapshot {
-      status: "idle".to_string(),
-      updated_at: 0,
-      message: None,
-      plan_type: None,
-      credits_balance: None,
-      has_credits: None,
-      unlimited: None,
-      windows: Vec::new(),
-    },
-    in_flight: false,
-  }));
-
-  let now = now_unix();
-  {
-    let mut state = cache.lock().await;
-    if now.saturating_sub(state.updated_at) < 60 {
-      return state.snapshot.clone();
-    }
-    if state.in_flight {
-      return state.snapshot.clone();
-    }
-    state.in_flight = true;
-  }
-
-  let cache_ptr: &'static Mutex<CodexRateLimitsCache> = cache;
-  tauri::async_runtime::spawn(async move {
-    let (snapshot, line) = fetch_codex_rate_limits_snapshot_and_line(codex).await;
-    let mut state = cache_ptr.lock().await;
-    state.updated_at = snapshot.updated_at;
-    state.line = line;
-    state.snapshot = snapshot;
-    state.in_flight = false;
-  });
-
-  cache.lock().await.snapshot.clone()
-}
-
-async fn fetch_codex_rate_limits_snapshot_and_line(codex: Option<Arc<CodexAppServer>>) -> (CodexRateLimitsSnapshot, String) {
-  let now = now_unix();
-  let Some(codex) = codex else {
-    let snapshot = CodexRateLimitsSnapshot {
-      status: "error".to_string(),
-      updated_at: now,
-      message: Some("codex unavailable".to_string()),
-      plan_type: None,
-      credits_balance: None,
-      has_credits: None,
-      unlimited: None,
-      windows: Vec::new(),
-    };
-    return (snapshot.clone(), format_codex_rate_limits_line(&snapshot));
-  };
-
-  let response = match tokio::time::timeout(Duration::from_secs(5), codex.read_rate_limits()).await {
-    Ok(Ok(value)) => value,
-    Ok(Err(err)) => {
-      let snapshot = CodexRateLimitsSnapshot {
-        status: "error".to_string(),
-        updated_at: now,
-        message: Some(err),
-        plan_type: None,
-        credits_balance: None,
-        has_credits: None,
-        unlimited: None,
-        windows: Vec::new(),
-      };
-      return (snapshot.clone(), format_codex_rate_limits_line(&snapshot));
-    }
-    Err(_) => {
-      let snapshot = CodexRateLimitsSnapshot {
-        status: "error".to_string(),
-        updated_at: now,
-        message: Some("timeout".to_string()),
-        plan_type: None,
-        credits_balance: None,
-        has_credits: None,
-        unlimited: None,
-        windows: Vec::new(),
-      };
-      return (snapshot.clone(), format_codex_rate_limits_line(&snapshot));
-    }
-  };
-
-  let rate_limits = response.get("rateLimits").cloned().unwrap_or(Value::Null);
-  let plan_type = rate_limits.get("planType").and_then(|v| v.as_str()).map(|s| s.to_string());
-  let credits = rate_limits.get("credits").cloned().unwrap_or(Value::Null);
-  let credits_balance = credits.get("balance").and_then(|v| v.as_str()).map(|s| s.to_string());
-  let has_credits = credits.get("hasCredits").and_then(|v| v.as_bool());
-  let unlimited = credits.get("unlimited").and_then(|v| v.as_bool());
-
-  let mut windows = Vec::new();
-  for (id, label) in [("primary", "5-hour limit"), ("secondary", "Weekly limit")] {
-    let window = rate_limits.get(id).cloned().unwrap_or(Value::Null);
-    let used_percent = window.get("usedPercent").and_then(|v| v.as_i64()).map(|v| v.max(0).min(100));
-    let remaining_percent = used_percent.map(|v| 100 - v);
-    let reset_label = window
-      .get("resetsAt")
-      .and_then(|v| v.as_u64())
-      .and_then(format_unix_reset_label)
-      .unwrap_or_else(|| "-".to_string());
-    windows.push(CodexRateLimitWindow {
-      id: id.to_string(),
-      label: label.to_string(),
-      used_percent,
-      remaining_percent,
-      reset_label,
-    });
-  }
-
-  let snapshot = CodexRateLimitsSnapshot {
-    status: "ok".to_string(),
-    updated_at: now,
-    message: None,
-    plan_type,
-    credits_balance,
-    has_credits,
-    unlimited,
-    windows,
-  };
-  let line = format_codex_rate_limits_line(&snapshot);
-  (snapshot, line)
-}
-
-async fn get_cached_gemini_quota_line(config: Arc<Config>) -> String {
-  let cache = GEMINI_QUOTA_CACHE.get_or_init(|| Mutex::new(GeminiQuotaCache {
-    updated_at: 0,
-    line: "Gemini quota: —".to_string(),
-    snapshot: GeminiQuotaSnapshot {
-      status: "idle".to_string(),
-      updated_at: 0,
-      message: None,
-      email: None,
-      project_id: None,
-      items: Vec::new(),
-    },
-    in_flight: false,
-  }));
-
-  let now = now_unix();
-  {
-    let mut state = cache.lock().await;
-    if now.saturating_sub(state.updated_at) < 60 {
-      return state.line.clone();
-    }
-    if state.in_flight {
-      return state.line.clone();
-    }
-    state.in_flight = true;
-  }
-
-  let cache_ptr: &'static Mutex<GeminiQuotaCache> = cache;
-  tauri::async_runtime::spawn(async move {
-    let (snapshot, line) = fetch_gemini_quota_snapshot_and_line(config).await;
-    let mut state = cache_ptr.lock().await;
-    state.updated_at = snapshot.updated_at;
-    state.line = line;
-    state.snapshot = snapshot;
-    state.in_flight = false;
-  });
-
-  cache.lock().await.line.clone()
-}
-
-async fn get_cached_gemini_quota_snapshot(config: Arc<Config>) -> GeminiQuotaSnapshot {
-  let cache = GEMINI_QUOTA_CACHE.get_or_init(|| Mutex::new(GeminiQuotaCache {
-    updated_at: 0,
-    line: "Gemini quota: —".to_string(),
-    snapshot: GeminiQuotaSnapshot {
-      status: "idle".to_string(),
-      updated_at: 0,
-      message: None,
-      email: None,
-      project_id: None,
-      items: Vec::new(),
-    },
-    in_flight: false,
-  }));
-
-  let now = now_unix();
-  {
-    let mut state = cache.lock().await;
-    if now.saturating_sub(state.updated_at) < 60 {
-      return state.snapshot.clone();
-    }
-    if state.in_flight {
-      let mut snapshot = state.snapshot.clone();
-      if snapshot.status == "idle" {
-        snapshot.status = "loading".to_string();
-      }
-      return snapshot;
-    }
-    state.in_flight = true;
-  }
-
-  let cache_ptr: &'static Mutex<GeminiQuotaCache> = cache;
-  tauri::async_runtime::spawn(async move {
-    let (snapshot, line) = fetch_gemini_quota_snapshot_and_line(config).await;
-    let mut state = cache_ptr.lock().await;
-    state.updated_at = snapshot.updated_at;
-    state.snapshot = snapshot;
-    state.line = line;
-    state.in_flight = false;
-  });
-
-  let state = cache.lock().await;
-  let mut snapshot = state.snapshot.clone();
-  if snapshot.status == "idle" {
-    snapshot.status = "loading".to_string();
-  }
-  snapshot
-}
-
-async fn fetch_gemini_quota_snapshot_and_line(config: Arc<Config>) -> (GeminiQuotaSnapshot, String) {
-  // Reuse the existing node script execution but keep the JSON to derive a structured snapshot.
-  if !which_gemini(&config.gemini_cmd) {
-    let snapshot = GeminiQuotaSnapshot {
-      status: "error".to_string(),
-      updated_at: now_unix(),
-      message: Some("gemini missing".to_string()),
-      email: None,
-      project_id: None,
-      items: Vec::new(),
-    };
-    return (snapshot.clone(), format_gemini_quota_line(&snapshot));
-  }
-  let Some(node) = resolve_node_path() else {
-    let snapshot = GeminiQuotaSnapshot {
-      status: "error".to_string(),
-      updated_at: now_unix(),
-      message: Some("node missing".to_string()),
-      email: None,
-      project_id: None,
-      items: Vec::new(),
-    };
-    return (snapshot.clone(), format_gemini_quota_line(&snapshot));
-  };
-  let Some(core_entry) = resolve_gemini_cli_core_entry(&config.gemini_cmd) else {
-    let snapshot = GeminiQuotaSnapshot {
-      status: "error".to_string(),
-      updated_at: now_unix(),
-      message: Some("core missing".to_string()),
-      email: None,
-      project_id: None,
-      items: Vec::new(),
-    };
-    return (snapshot.clone(), format_gemini_quota_line(&snapshot));
-  };
-
-  let script = r#"
-    const fs = require('fs');
-    const core = require(process.env.CORE_PATH);
-    const credsPath = core.Storage.getOAuthCredsPath();
-    if (!fs.existsSync(credsPath)) {
-      console.log(JSON.stringify({ ok: false, error: 'missing oauth creds', credsPath }));
-      process.exit(0);
-    }
-    const cfg = core.makeFakeConfig({ targetDir: process.cwd(), cwd: process.cwd(), debugMode: false, usageStatisticsEnabled: true, model: 'gemini-2.5-pro' });
-    (async () => {
-      const client = await core.getOauthClient(core.AuthType.LOGIN_WITH_GOOGLE, cfg);
-      const envProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID || null;
-      const server = new core.CodeAssistServer(client, envProject || undefined, {}, '', undefined, undefined);
-      const metadata = { ideType: 'GEMINI_CLI', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' };
-      const load = await server.loadCodeAssist({
-        cloudaicompanionProject: envProject || undefined,
-        metadata: { ...metadata, duetProject: envProject || undefined },
-      });
-      const projectId = (load && load.cloudaicompanionProject) ? load.cloudaicompanionProject : envProject;
-      if (!projectId) {
-        console.log(JSON.stringify({ ok: false, error: 'project id unavailable', load }));
-        return;
-      }
-      const quota = await server.retrieveUserQuota({ project: projectId });
-      const email = new core.UserAccountManager().getCachedGoogleAccount() || null;
-      console.log(JSON.stringify({ ok: true, email, projectId, quota }));
-    })().catch((err) => {
-      const message = (err && (err.message || err.toString())) ? (err.message || err.toString()) : 'unknown error';
-      console.log(JSON.stringify({ ok: false, error: message }));
-    });
-  "#;
-
-  let mut cmd = Command::new(node);
-  cmd.arg("-e")
-    .arg(script)
-    .env("CORE_PATH", core_entry)
-    .stdin(Stdio::null())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
-
-  let output = match tokio::time::timeout(Duration::from_secs(5), cmd.output()).await {
-    Ok(result) => match result {
-      Ok(output) => output,
-      Err(err) => {
-        let snapshot = GeminiQuotaSnapshot {
-          status: "error".to_string(),
-          updated_at: now_unix(),
-          message: Some(format!("failed to run node ({err})")),
-          email: None,
-          project_id: None,
-          items: Vec::new(),
-        };
-        return (snapshot.clone(), format_gemini_quota_line(&snapshot));
-      }
-    },
-    Err(_) => {
-      let snapshot = GeminiQuotaSnapshot {
-        status: "error".to_string(),
-        updated_at: now_unix(),
-        message: Some("timeout".to_string()),
-        email: None,
-        project_id: None,
-        items: Vec::new(),
-      };
-      return (snapshot.clone(), format_gemini_quota_line(&snapshot));
-    }
-  };
-
-  let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-  let json = extract_json_payload(&stdout).unwrap_or_else(|| json!({ "ok": false, "error": "unavailable" }));
-  let snapshot = parse_gemini_quota_snapshot_from_json(json);
-  let line = format_gemini_quota_line(&snapshot);
-  (snapshot, line)
-}
-
 async fn get_gemini_quota(
   State(state): State<AppState>,
   headers: HeaderMap,
-) -> Result<Json<GeminiQuotaSnapshot>, (StatusCode, Json<ErrorBody>)> {
+) -> Result<Json<quota::GeminiQuotaSnapshot>, (StatusCode, Json<ErrorBody>)> {
   authorize(&state, &headers).await?;
-  let snapshot = get_cached_gemini_quota_snapshot(state.config.clone()).await;
+  let snapshot = quota::get_cached_gemini_quota_snapshot(state.config.clone()).await;
   Ok(Json(snapshot))
 }
 
 async fn get_codex_rate_limits(
   State(state): State<AppState>,
   headers: HeaderMap,
-) -> Result<Json<CodexRateLimitsSnapshot>, (StatusCode, Json<ErrorBody>)> {
+) -> Result<Json<quota::CodexRateLimitsSnapshot>, (StatusCode, Json<ErrorBody>)> {
   authorize(&state, &headers).await?;
-  let snapshot = get_cached_codex_rate_limits_snapshot(state.codex.clone()).await;
+  let snapshot = quota::get_cached_codex_rate_limits_snapshot(state.codex.clone()).await;
   Ok(Json(snapshot))
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
-  let codex_detected = which_codex(&state.config.codex_cmd);
-  let gemini_detected = which_gemini(&state.config.gemini_cmd);
-  let cliproxyapi_detected = which_cliproxyapi(&state.config.cliproxyapi_cmd);
+  let codex_detected = cli::which_codex(&state.config.codex_cmd);
+  let gemini_detected = cli::which_gemini(&state.config.gemini_cmd);
+  let cliproxyapi_detected = cli::which_cliproxyapi(&state.config.cliproxyapi_cmd);
   Json(HealthResponse {
     ok: true,
     agent_version: format!("v{}", env!("CARGO_PKG_VERSION")),
     codex_detected,
-    codex_version: codex_detected.then(|| cached_cli_version(&CODEX_VERSION_CACHE, &state.config.codex_cmd)).flatten(),
+    codex_version: codex_detected.then(|| cli::cached_cli_version(&cli::CODEX_VERSION_CACHE, &state.config.codex_cmd)).flatten(),
     gemini_detected,
-    gemini_version: gemini_detected.then(|| cached_cli_version(&GEMINI_VERSION_CACHE, &state.config.gemini_cmd)).flatten(),
+    gemini_version: gemini_detected.then(|| cli::cached_cli_version(&cli::GEMINI_VERSION_CACHE, &state.config.gemini_cmd)).flatten(),
     cliproxyapi_detected,
     cliproxyapi_version: cliproxyapi_detected
-      .then(|| cached_cli_version(&CLIPROXYAPI_VERSION_CACHE, &state.config.cliproxyapi_cmd))
+      .then(|| cli::cached_cli_version(&cli::CLIPROXYAPI_VERSION_CACHE, &state.config.cliproxyapi_cmd))
       .flatten(),
     provider: state.provider.as_str().to_string(),
     port: state.config.port,
@@ -1756,7 +1127,7 @@ async fn models(
 }
 
 fn fallback_codex_models(config: &Config) -> Vec<ModelInfo> {
-  if which_codex(&config.codex_cmd) {
+  if cli::which_codex(&config.codex_cmd) {
     vec![ModelInfo {
       id: "codex".to_string(),
       object: "model".to_string(),
@@ -1771,7 +1142,7 @@ fn fallback_codex_models(config: &Config) -> Vec<ModelInfo> {
 }
 
 fn fallback_gemini_models(config: &Config) -> Vec<ModelInfo> {
-  if which_gemini(&config.gemini_cmd) {
+  if cli::which_gemini(&config.gemini_cmd) {
     let now = now_unix();
     gemini_model_ids(config)
       .into_iter()
@@ -2423,62 +1794,6 @@ fn now_unix() -> u64 {
   SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
-fn which_command(command: &str) -> bool {
-  if FsPath::new(command).is_absolute() {
-    return FsPath::new(command).exists();
-  }
-  std::env::var_os("PATH")
-    .unwrap_or_default()
-    .to_string_lossy()
-    .split(':')
-    .any(|segment| FsPath::new(segment).join(command).exists())
-}
-
-fn resolve_command_path(command: &str) -> Option<PathBuf> {
-  if FsPath::new(command).is_absolute() {
-    return FsPath::new(command).exists().then(|| PathBuf::from(command));
-  }
-  for segment in std::env::var_os("PATH").unwrap_or_default().to_string_lossy().split(':') {
-    if segment.trim().is_empty() {
-      continue;
-    }
-    let candidate = FsPath::new(segment).join(command);
-    if candidate.exists() {
-      return Some(candidate);
-    }
-  }
-  None
-}
-
-fn resolve_node_path() -> Option<PathBuf> {
-  resolve_command_path("node")
-    .or_else(|| resolve_command_path("nodejs"))
-    .or_else(|| {
-      // macOS GUI apps might not inherit shell PATH; probe common install locations.
-      let candidates = [
-        "/opt/homebrew/bin/node",
-        "/usr/local/bin/node",
-        "/usr/bin/node",
-      ];
-      candidates
-        .into_iter()
-        .find(|p| FsPath::new(p).exists())
-        .map(PathBuf::from)
-    })
-}
-
-fn which_codex(command: &str) -> bool {
-  which_command(command)
-}
-
-fn which_gemini(command: &str) -> bool {
-  which_command(command)
-}
-
-fn which_cliproxyapi(command: &str) -> bool {
-  which_command(command)
-}
-
 impl Config {
   fn from_env() -> Self {
     let host = std::env::var("AGENT_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -2506,7 +1821,7 @@ impl Config {
     let gemini_model = std::env::var("GEMINI_MODEL").ok().filter(|value| !value.is_empty());
     let gemini_include_preview_models = parse_bool(std::env::var("GEMINI_INCLUDE_PREVIEW_MODELS").ok(), true);
     let mut gemini_models = std::env::var("GEMINI_MODELS").ok().map(split_list).unwrap_or_default();
-    if gemini_models.is_empty() && which_gemini(&gemini_cmd) {
+    if gemini_models.is_empty() && cli::which_gemini(&gemini_cmd) {
       gemini_models = discover_gemini_models_from_cli(&gemini_cmd, gemini_include_preview_models).unwrap_or_default();
     }
     let gemini_approval_mode = std::env::var("GEMINI_APPROVAL_MODE").unwrap_or_else(|_| "yolo".to_string());
@@ -2633,8 +1948,8 @@ async fn append_agent_log(config: &Config, line: &str) {
 }
 
 fn discover_gemini_models_from_cli(gemini_cmd: &str, include_preview: bool) -> Option<Vec<String>> {
-  let node = resolve_node_path()?;
-  let gemini_path = resolve_command_path(gemini_cmd).or_else(|| FsPath::new(gemini_cmd).exists().then(|| PathBuf::from(gemini_cmd)))?;
+  let node = cli::resolve_node_path()?;
+  let gemini_path = cli::resolve_command_path(gemini_cmd).or_else(|| FsPath::new(gemini_cmd).exists().then(|| PathBuf::from(gemini_cmd)))?;
   let gemini_real = std::fs::canonicalize(gemini_path).ok()?;
 
   // Homebrew/npm install layout: .../@google/gemini-cli/dist/index.js
