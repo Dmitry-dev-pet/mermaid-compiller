@@ -984,7 +984,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
                                   const preview = emailGroups.slice(0, 8);
                                   return (
-                                    <div className="mt-1">
+                                    <div className="mt-2 pl-2 border-l border-slate-200/60 dark:border-slate-700/60">
                                       {preview.map((g) => {
                                         const providerCounts = g.items.reduce((acc, f) => {
                                           const p = getProviderKey(f);
@@ -1059,12 +1059,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                   const emailEntries = groupByEmailCollapsed(group);
 
                                   return (
-                                    <div key={provider} className="mt-1">
+                                    <div key={provider} className="mt-2">
                                       <div className="flex items-center justify-between gap-2 text-slate-400">
                                         <span className="font-mono tabular-nums">{providerLabel}</span>
                                         <span className="text-[10px]">{meta || `${group.length} subscriptions`}</span>
                                       </div>
-                                      <div className="mt-1 flex flex-col gap-1">
+                                      <div className="mt-1 pl-2 border-l border-slate-200/60 dark:border-slate-700/60 flex flex-col gap-1">
                                         {emailEntries.slice(0, 6).map((entry) => {
                                           const status = formatStatusSummary(entry.items);
                                           return (
