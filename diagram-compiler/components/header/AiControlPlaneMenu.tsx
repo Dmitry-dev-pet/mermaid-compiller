@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   Check,
@@ -9,8 +9,6 @@ import {
   Filter,
   LogOut,
   Timer,
-  Eye,
-  EyeOff,
 } from 'lucide-react';
 import { AIConfig, CliproxyFilters, ConnectionState, ModelParams, OpenRouterFilters } from '../../types';
 import { DEFAULT_AI_CONFIG } from '../../constants';
@@ -22,6 +20,10 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { RadioGroup, RadioOption } from '../ui/Radio';
 import { Select } from '../ui/Select';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
+import { SecretInput } from '../ui/SecretInput';
+import { CliproxyAuthFile, isCliproxyAuthFileReady, normalizeCliproxyProviderKey } from '../../utils/cliproxyAuthFileStatus';
+import { buildCliproxySubscriptionsViewModel, CliproxySubscriptionsGroupBy } from '../../utils/cliproxySubscriptionsViewModel';
 
 type AiControlPlaneMenuProps = {
   aiConfig: AIConfig;
@@ -46,7 +48,6 @@ const formatMonthDayTime = (date: Date) => date.toLocaleString(void 0, {
 });
 
 type ModelFamilyKey = 'gpt' | 'claude' | 'gemini' | 'other';
-type CliproxySubscriptionsGroupBy = 'provider' | 'email';
 
 const GEMINI_CLI_SUPPORTED_MODEL_IDS = new Set<string>([
   'gemini-3-pro-preview',
@@ -161,18 +162,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
           : 'Proxy';
     const viaLabel = (() => {
       if (aiConfig.provider !== 'cliproxy') return '';
-      const files = cliproxyInfo.cliproxyAuthFiles ?? [];
+      const files = (cliproxyInfo.cliproxyAuthFiles ?? []) as CliproxyAuthFile[];
       if (files.length === 0) return '';
-      const isActive = (file: { status?: string; disabled?: boolean; unavailable?: boolean }) => {
-        if (file.disabled || file.unavailable) return false;
-        const status = typeof file.status === 'string' ? file.status.trim().toLowerCase() : '';
-        return status === 'active' || status === 'ready';
-      };
       const providers = new Set(
         files
-          .filter((f) => !f.runtimeOnly && isActive(f))
-          .map((f) => (typeof f.provider === 'string' ? f.provider.trim().toLowerCase() : ''))
-          .filter(Boolean),
+          .filter((f) => !f.runtimeOnly && isCliproxyAuthFileReady(f))
+          .map((f) => normalizeCliproxyProviderKey(f.provider ?? null))
       );
       if (providers.size === 0) return '';
 
@@ -262,6 +257,19 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const isOpenRouter = aiConfig.provider === 'openrouter';
   const isAgent = aiConfig.provider === 'agent';
   const isCliproxy = aiConfig.provider === 'cliproxy';
+  const cliproxyAuthFiles = useMemo(
+    () => (cliproxyInfo.cliproxyAuthFiles ?? []) as CliproxyAuthFile[],
+    [cliproxyInfo.cliproxyAuthFiles],
+  );
+  const cliproxySubscriptionsVm = useMemo(() => {
+    if (!isCliproxy || !showCliproxySubscriptions) return null;
+    return buildCliproxySubscriptionsViewModel({
+      files: cliproxyAuthFiles,
+      groupBy: cliproxySubscriptionsGroupBy,
+      emailPreviewLimit: 8,
+      providerRowLimit: 6,
+    });
+  }, [cliproxyAuthFiles, cliproxySubscriptionsGroupBy, isCliproxy, showCliproxySubscriptions]);
   const filtersByProvider = aiConfig.filtersByProvider ?? DEFAULT_AI_CONFIG.filtersByProvider;
   const openRouterFilters = filtersByProvider.openrouter;
   const proxyFilters = isOpenRouter ? null : (isAgent ? filtersByProvider.agent : filtersByProvider.cliproxy);
@@ -513,97 +521,58 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Key</label>
-                  <div className="relative">
-                    <Input
-                      type="text"
-                      autoComplete="new-password"
-                      name="openrouter-secret"
-                      data-1p-ignore="true"
-                      data-lpignore="true"
-                      style={{ WebkitTextSecurity: showOpenRouterKey ? 'none' : 'disc' }}
-                      value={aiConfig.openRouterKey}
-                      onChange={(e) => updateConfig({ openRouterKey: e.target.value })}
-                      placeholder="sk-or-..."
-                      size="md"
-                      className="pr-8"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setShowOpenRouterKey((prev) => !prev)}
-                      className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                      aria-label={showOpenRouterKey ? 'Hide API key' : 'Show API key'}
-                    >
-                      {showOpenRouterKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </Button>
-                  </div>
+                  <SecretInput
+                    value={aiConfig.openRouterKey}
+                    onChange={(value) => updateConfig({ openRouterKey: value })}
+                    name="openrouter-secret"
+                    placeholder="sk-or-..."
+                    revealed={showOpenRouterKey}
+                    onRevealedChange={setShowOpenRouterKey}
+                    ariaLabelShow="Show API key"
+                    ariaLabelHide="Hide API key"
+                  />
                 </div>
               </div>
             ) : isAgent ? (
               <div className="space-y-3">
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowAgentSettings((prev) => !prev)}
-                    className="w-full flex items-center justify-between text-left"
-                    aria-expanded={showAgentSettings}
-                  >
-                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Agent settings</span>
-                    <ChevronDown size={14} className={`transition-transform ${showAgentSettings ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {!showAgentSettings ? (
+                <CollapsibleSection
+                  title="Agent settings"
+                  open={showAgentSettings}
+                  onToggle={() => setShowAgentSettings((prev) => !prev)}
+                  summary={(
                     <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Endpoint:{' '}
-                      <span className="font-mono">
-                        {aiConfig.agentEndpoint?.trim() ? aiConfig.agentEndpoint.trim() : '(not set)'}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
-                        <Input
-                          type="text"
-                          autoComplete="off"
-                          name="agent-endpoint"
-                          value={aiConfig.agentEndpoint}
-                          onChange={(e) => updateConfig({ agentEndpoint: e.target.value })}
-                          placeholder="http://127.0.0.1:8787"
-                          size="md"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Agent Token</label>
-                        <div className="relative">
-                          <Input
-                            type={showAgentToken ? 'text' : 'password'}
-                            autoComplete="new-password"
-                            name="agent-token"
-                            data-1p-ignore="true"
-                            data-lpignore="true"
-                            value={aiConfig.agentToken || ''}
-                            onChange={(e) => updateConfig({ agentToken: e.target.value })}
-                            placeholder="••••"
-                            size="md"
-                            className="pr-8"
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setShowAgentToken((prev) => !prev)}
-                            className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                            aria-label={showAgentToken ? 'Hide agent token' : 'Show agent token'}
-                          >
-                            {showAgentToken ? <EyeOff size={14} /> : <Eye size={14} />}
-                          </Button>
-                        </div>
-                      </div>
+                      Endpoint: <span className="font-mono">{aiConfig.agentEndpoint?.trim() ? aiConfig.agentEndpoint.trim() : '(not set)'}</span>
                     </div>
                   )}
-                </div>
+                >
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
+                      <Input
+                        type="text"
+                        autoComplete="off"
+                        name="agent-endpoint"
+                        value={aiConfig.agentEndpoint}
+                        onChange={(e) => updateConfig({ agentEndpoint: e.target.value })}
+                        placeholder="http://127.0.0.1:8787"
+                        size="md"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Agent Token</label>
+                      <SecretInput
+                        value={aiConfig.agentToken || ''}
+                        onChange={(value) => updateConfig({ agentToken: value })}
+                        name="agent-token"
+                        placeholder="••••"
+                        revealed={showAgentToken}
+                        onRevealedChange={setShowAgentToken}
+                        ariaLabelShow="Show agent token"
+                        ariaLabelHide="Hide agent token"
+                      />
+                    </div>
+                  </div>
+                </CollapsibleSection>
                 <div
                   className={`text-[11px] flex items-center gap-1 ${
                     agentStatus.state === 'online'
@@ -743,94 +712,57 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => setShowProxySettings((prev) => !prev)}
-                  className="w-full flex items-center justify-between text-left"
-                  aria-expanded={showProxySettings}
-                >
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Proxy settings</span>
-                  <ChevronDown size={14} className={`transition-transform ${showProxySettings ? 'rotate-180' : ''}`} />
-                </button>
-
-                {!showProxySettings ? (
+              <CollapsibleSection
+                title="Proxy settings"
+                open={showProxySettings}
+                onToggle={() => setShowProxySettings((prev) => !prev)}
+                summary={(
                   <div className="text-[11px] text-slate-500 dark:text-slate-400">
                     Endpoint: <span className="font-mono">{aiConfig.proxyEndpoint?.trim() ? aiConfig.proxyEndpoint.trim() : '(not set)'}</span>
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
-                      <Input
-                        type="text"
-                        autoComplete="off"
-                        name="proxy-endpoint"
-                        value={aiConfig.proxyEndpoint}
-                        onChange={(e) => updateConfig({ proxyEndpoint: e.target.value })}
-                        placeholder="http://localhost:8317"
-                        size="md"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Proxy Key</label>
-                      <div className="relative">
-                        <Input
-                          type="text"
-                          autoComplete="new-password"
-                          name="proxy-secret"
-                          data-1p-ignore="true"
-                          data-lpignore="true"
-                          style={{ WebkitTextSecurity: showProxyKey ? 'none' : 'disc' }}
-                          value={aiConfig.proxyKey || ''}
-                          onChange={(e) => updateConfig({ proxyKey: e.target.value })}
-                          placeholder="test"
-                          size="md"
-                          className="pr-8"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setShowProxyKey((prev) => !prev)}
-                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                          aria-label={showProxyKey ? 'Hide proxy key' : 'Show proxy key'}
-                        >
-                          {showProxyKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </Button>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Management Key</label>
-                      <div className="relative">
-                        <Input
-                          type="text"
-                          autoComplete="new-password"
-                          name="proxy-management-secret"
-                          data-1p-ignore="true"
-                          data-lpignore="true"
-                          style={{ WebkitTextSecurity: showProxyManagementKey ? 'none' : 'disc' }}
-                          value={aiConfig.proxyManagementKey || ''}
-                          onChange={(e) => updateConfig({ proxyManagementKey: e.target.value })}
-                          placeholder="X-Management-Key"
-                          size="md"
-                          className="pr-8"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setShowProxyManagementKey((prev) => !prev)}
-                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                          aria-label={showProxyManagementKey ? 'Hide management key' : 'Show management key'}
-                        >
-                          {showProxyManagementKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
                 )}
-              </div>
+              >
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
+                    <Input
+                      type="text"
+                      autoComplete="off"
+                      name="proxy-endpoint"
+                      value={aiConfig.proxyEndpoint}
+                      onChange={(e) => updateConfig({ proxyEndpoint: e.target.value })}
+                      placeholder="http://localhost:8317"
+                      size="md"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Proxy Key</label>
+                    <SecretInput
+                      value={aiConfig.proxyKey || ''}
+                      onChange={(value) => updateConfig({ proxyKey: value })}
+                      name="proxy-secret"
+                      placeholder="••••"
+                      revealed={showProxyKey}
+                      onRevealedChange={setShowProxyKey}
+                      ariaLabelShow="Show proxy key"
+                      ariaLabelHide="Hide proxy key"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Management Key</label>
+                    <SecretInput
+                      value={aiConfig.proxyManagementKey || ''}
+                      onChange={(value) => updateConfig({ proxyManagementKey: value })}
+                      name="proxy-management-secret"
+                      placeholder="X-Management-Key"
+                      revealed={showProxyManagementKey}
+                      onRevealedChange={setShowProxyManagementKey}
+                      ariaLabelShow="Show management key"
+                      ariaLabelHide="Hide management key"
+                    />
+                  </div>
+                </div>
+              </CollapsibleSection>
             )}
 
             <div className="mt-3 flex items-center justify-between">
@@ -922,191 +854,50 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                             {cliproxyInfo.cliproxyAuthFiles.length === 0 ? (
                               <div className="text-slate-400">No auth files</div>
                             ) : (
-                              (() => {
-                                const files = cliproxyInfo.cliproxyAuthFiles ?? [];
-                                const getProviderKey = (file: { provider?: string | null }) =>
-                                  typeof file.provider === 'string' && file.provider.trim()
-                                    ? file.provider.trim().toLowerCase()
-                                    : 'unknown';
-                                const getEmailKey = (file: { email?: string | null }) =>
-                                  typeof file.email === 'string' && file.email.trim()
-                                    ? file.email.trim().toLowerCase()
-                                    : null;
-
-                                const isAuthFileReady = (file: { status?: string; disabled?: boolean; unavailable?: boolean }) => {
-                                  if (file.disabled || file.unavailable) return false;
-                                  const status = typeof file.status === 'string' ? file.status.trim().toLowerCase() : '';
-                                  return status === 'ready' || status === 'active';
-                                };
-
-                                const formatStatusSummary = (group: Array<{ status?: string; disabled?: boolean; unavailable?: boolean }>) => {
-                                  const counts = group.reduce((acc, file) => {
-                                    const isOk = isAuthFileReady(file);
-                                    if (isOk) acc.ok += 1;
-                                    else if (file.disabled) acc.disabled += 1;
-                                    else if (file.unavailable) acc.unavailable += 1;
-                                    else acc.other += 1;
-                                    return acc;
-                                  }, { ok: 0, disabled: 0, unavailable: 0, other: 0 });
-                                  if (counts.ok === group.length) return { text: 'ready', tone: 'text-emerald-600 dark:text-emerald-400' };
-                                  if (counts.disabled === group.length) return { text: 'disabled', tone: 'text-slate-500 dark:text-slate-400' };
-                                  if (counts.unavailable === group.length) return { text: 'unavailable', tone: 'text-amber-600 dark:text-amber-400' };
-                                  if (counts.ok > 0 && counts.ok < group.length) return { text: `partial ${counts.ok}/${group.length}`, tone: 'text-amber-600 dark:text-amber-400' };
-                                  if (counts.ok === 0 && (counts.unavailable > 0 || counts.other > 0 || counts.disabled > 0)) return { text: 'not ready', tone: 'text-amber-600 dark:text-amber-400' };
-                                  return { text: 'unknown', tone: 'text-slate-400' };
-                                };
-
-                                const groupByEmailCollapsed = (group: typeof files) => {
-                                  const byEmail = new Map<string, typeof files>();
-                                  const singles: typeof files = [];
-                                  group.forEach((file) => {
-                                    const emailKey = getEmailKey(file);
-                                    if (!emailKey) {
-                                      singles.push(file);
-                                      return;
-                                    }
-                                    const prev = byEmail.get(emailKey);
-                                    if (prev) prev.push(file);
-                                    else byEmail.set(emailKey, [file]);
-                                  });
-                                  const entries: Array<{ key: string; label: string; items: typeof files }> = [];
-                                  Array.from(byEmail.entries()).forEach(([key, items]) => {
-                                    entries.push({ key, label: items[0]?.email ?? key, items });
-                                  });
-                                  singles.forEach((file) => {
-                                    const label = file.email || file.label || file.name || file.id;
-                                    entries.push({ key: file.id, label, items: [file] });
-                                  });
-                                  entries.sort((a, b) => a.label.localeCompare(b.label));
-                                  return entries;
-                                };
-
-                                if (cliproxySubscriptionsGroupBy === 'email') {
-                                  const byEmail = new Map<string, typeof files>();
-                                  const noEmail: typeof files = [];
-                                  files.forEach((file) => {
-                                    const emailKey = getEmailKey(file);
-                                    if (!emailKey) {
-                                      noEmail.push(file);
-                                      return;
-                                    }
-                                    const prev = byEmail.get(emailKey);
-                                    if (prev) prev.push(file);
-                                    else byEmail.set(emailKey, [file]);
-                                  });
-
-                                  const emailGroups: Array<{ key: string; label: string; items: typeof files }> = [];
-                                  Array.from(byEmail.entries()).forEach(([key, items]) => {
-                                    emailGroups.push({ key, label: items[0]?.email ?? key, items });
-                                  });
-                                  noEmail.forEach((file) => {
-                                    const label = file.email || file.label || file.name || file.id;
-                                    emailGroups.push({ key: file.id, label, items: [file] });
-                                  });
-                                  emailGroups.sort((a, b) => a.label.localeCompare(b.label));
-
-                                  const preview = emailGroups.slice(0, 8);
-                                  return (
-                                    <div className="mt-2 flex flex-col gap-1">
-                                      {preview.map((g) => {
-                                        const providerCounts = g.items.reduce((acc, f) => {
-                                          const p = getProviderKey(f);
-                                          acc[p] = (acc[p] ?? 0) + 1;
-                                          return acc;
-                                        }, {} as Record<string, number>);
-                                        const providersLabel = Object.keys(providerCounts)
-                                          .sort()
-                                          .map((p) => `${p}${providerCounts[p] > 1 ? `×${providerCounts[p]}` : ''}`)
-                                          .join(' · ');
-                                        const status = formatStatusSummary(g.items);
-                                        return (
-                                          <div key={g.key} className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                              <div className="font-mono tabular-nums truncate">
-                                                {g.label}{g.items.length > 1 ? ` ×${g.items.length}` : ''}
-                                              </div>
-                                              {providersLabel ? (
-                                                <div className="pl-3 text-[10px] text-slate-400 truncate">via {providersLabel}</div>
-                                              ) : null}
-                                            </div>
-                                            <div className={`shrink-0 font-mono tabular-nums ${status.tone}`}>{status.text}</div>
-                                          </div>
-                                        );
-                                      })}
-                                      {emailGroups.length > preview.length ? (
-                                        <div className="pl-3 text-slate-400">…and {emailGroups.length - preview.length} more</div>
-                                      ) : null}
+                              cliproxySubscriptionsVm?.kind === 'email' ? (
+                                <div className="mt-2 flex flex-col gap-1">
+                                  {cliproxySubscriptionsVm.rows.map((row) => (
+                                    <div key={row.key} className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <div className="font-mono tabular-nums truncate">
+                                          {row.primary}{row.count > 1 ? ` ×${row.count}` : ''}
+                                        </div>
+                                        {row.secondary ? (
+                                          <div className="pl-3 text-[10px] text-slate-400 truncate">{row.secondary}</div>
+                                        ) : null}
+                                      </div>
+                                      <div className={`shrink-0 font-mono tabular-nums ${row.statusTone}`}>{row.statusText}</div>
                                     </div>
-                                  );
-                                }
-
-                                const byProvider = new Map<string, typeof files>();
-                                files.forEach((file) => {
-                                  const provider = getProviderKey(file);
-                                  const prev = byProvider.get(provider);
-                                  if (prev) prev.push(file);
-                                  else byProvider.set(provider, [file]);
-                                });
-
-                                const providerRank = (provider: string) => {
-                                  if (provider === 'codex') return 1;
-                                  if (provider === 'gemini-cli') return 2;
-                                  if (provider === 'antigravity') return 3;
-                                  return 9;
-                                };
-                                const providers = Array.from(byProvider.keys()).sort((a, b) => {
-                                  const ra = providerRank(a);
-                                  const rb = providerRank(b);
-                                  if (ra !== rb) return ra - rb;
-                                  return a.localeCompare(b);
-                                });
-
-                                return providers.map((provider) => {
-                                  const group = byProvider.get(provider) ?? [];
-                                  const statusCounts = group.reduce((acc, file) => {
-                                    const isOk = isAuthFileReady(file);
-                                    if (isOk) acc.ok += 1;
-                                    else if (file.disabled) acc.disabled += 1;
-                                    else if (file.unavailable) acc.unavailable += 1;
-                                    else acc.other += 1;
-                                    return acc;
-                                  }, { ok: 0, disabled: 0, unavailable: 0, other: 0 });
-
-                                  const providerLabel = provider === 'unknown' ? 'unknown' : provider;
-                                  const meta = [
-                                    statusCounts.ok ? `${statusCounts.ok} ok` : null,
-                                    statusCounts.disabled ? `${statusCounts.disabled} disabled` : null,
-                                    statusCounts.unavailable ? `${statusCounts.unavailable} unavailable` : null,
-                                    statusCounts.other ? `${statusCounts.other} not ready` : null,
-                                  ].filter(Boolean).join(' · ');
-                                  const emailEntries = groupByEmailCollapsed(group);
-
-                                  return (
-                                    <div key={provider} className="mt-2">
+                                  ))}
+                                  {cliproxySubscriptionsVm.moreCount > 0 ? (
+                                    <div className="pl-3 text-slate-400">…and {cliproxySubscriptionsVm.moreCount} more</div>
+                                  ) : null}
+                                </div>
+                              ) : cliproxySubscriptionsVm?.kind === 'provider' ? (
+                                <div className="mt-2 flex flex-col gap-2">
+                                  {cliproxySubscriptionsVm.groups.map((g) => (
+                                    <div key={g.key} className="mt-2">
                                       <div className="flex items-center justify-between gap-2 text-slate-400">
-                                        <span className="font-mono tabular-nums">{providerLabel}</span>
-                                        <span className="text-[10px]">{meta || `${group.length} subscriptions`}</span>
+                                        <span className="font-mono tabular-nums">{g.label}</span>
+                                        <span className="text-[10px]">{g.meta}</span>
                                       </div>
                                       <div className="mt-1 pl-2 border-l border-slate-200/60 dark:border-slate-700/60 flex flex-col gap-1">
-                                        {emailEntries.slice(0, 6).map((entry) => {
-                                          const status = formatStatusSummary(entry.items);
-                                          return (
-                                            <div key={entry.key} className="flex items-center justify-between gap-2 font-mono tabular-nums">
-                                              <span className="truncate">
-                                                {entry.label}{entry.items.length > 1 ? ` ×${entry.items.length}` : ''}
-                                              </span>
-                                              <span className={status.tone}>{status.text}</span>
-                                            </div>
-                                          );
-                                        })}
-                                        {emailEntries.length > 6 ? (
-                                          <div className="text-slate-400">…and {emailEntries.length - 6} more</div>
+                                        {g.rows.map((row) => (
+                                          <div key={row.key} className="flex items-center justify-between gap-2 font-mono tabular-nums">
+                                            <span className="truncate">
+                                              {row.primary}{row.count > 1 ? ` ×${row.count}` : ''}
+                                            </span>
+                                            <span className={row.statusTone}>{row.statusText}</span>
+                                          </div>
+                                        ))}
+                                        {g.moreCount > 0 ? (
+                                          <div className="text-slate-400">…and {g.moreCount} more</div>
                                         ) : null}
                                       </div>
                                     </div>
-                                  );
-                                });
-                              })()
+                                  ))}
+                                </div>
+                              ) : null
                             )}
                             {cliproxyInfo.cliproxyAuthStatus ? (
                               <div className="text-amber-600 dark:text-amber-400">auth {cliproxyInfo.cliproxyAuthStatus}</div>
@@ -1144,7 +935,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
                             <div className="flex flex-col gap-2">
 	                              {(() => {
-	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => f.provider === 'codex' && !f.runtimeOnly);
+	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => normalizeCliproxyProviderKey(f.provider ?? null) === 'codex' && !f.runtimeOnly);
 	                                if (files.length === 0) return (
 	                                  <div className="text-slate-400">Codex Quota: no auth files</div>
 	                                );
@@ -1238,7 +1029,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                               })()}
 
 	                              {(() => {
-	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => f.provider === 'gemini-cli' && !f.runtimeOnly);
+	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => normalizeCliproxyProviderKey(f.provider ?? null) === 'gemini-cli' && !f.runtimeOnly);
 	                                if (files.length === 0) return (
 	                                  <div className="text-slate-400">Gemini CLI Quota: no auth files</div>
 	                                );
@@ -1309,7 +1100,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                               })()}
 
 	                              {(() => {
-	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => f.provider === 'antigravity' && !f.runtimeOnly);
+	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => normalizeCliproxyProviderKey(f.provider ?? null) === 'antigravity' && !f.runtimeOnly);
 	                                if (files.length === 0) return (
 	                                  <div className="text-slate-400">Antigravity Quota: no auth files</div>
 	                                );
