@@ -52,16 +52,16 @@ describe('sessionSettings', () => {
       proxyEndpoint: 'http://localhost:8317',
       selectedModelId: 'openai/gpt-4o',
       selectedModelIdByProvider: { openrouter: '', cliproxy: 'openai/gpt-4o' },
-	      filtersByProvider: {
-	        openrouter: {
-	          vendor: '',
-	          freeOnly: true,
-	          testedOnly: true,
-	          experimental: false,
-	          minContextWindow: 0,
-	        },
-	        cliproxy: { family: '', provider: '' },
-	      },
+      filtersByProvider: {
+        openrouter: {
+          vendor: '',
+          freeOnly: true,
+          testedOnly: true,
+          experimental: false,
+          minContextWindow: 0,
+        },
+        cliproxy: { family: '' },
+      },
 	    } as unknown as AIConfig;
 
     applySessionSettings(
@@ -70,9 +70,9 @@ describe('sessionSettings', () => {
       (value) => { appliedAiConfig = typeof value === 'function' ? value(appliedAiConfig) : value; },
     );
 
-	    expect(appliedAiConfig.selectedModelIdByProvider.agent).toBe('');
-	    expect(appliedAiConfig.filtersByProvider.agent).toEqual({ family: '', provider: '' });
-	    expect(typeof appliedAiConfig.agentEndpoint).toBe('string');
-	    expect(typeof appliedAiConfig.agentToken).toBe('string');
-	  });
+    expect(appliedAiConfig.selectedModelIdByProvider.agent).toBe('');
+    expect(appliedAiConfig.filtersByProvider.agent).toEqual({ family: '' });
+    expect(typeof appliedAiConfig.agentEndpoint).toBe('string');
+    expect(typeof appliedAiConfig.agentToken).toBe('string');
+  });
 });

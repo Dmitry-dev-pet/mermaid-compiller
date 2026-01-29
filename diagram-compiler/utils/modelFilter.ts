@@ -32,12 +32,6 @@ export const filterModels = (models: Model[], config: AIConfig): Model[] => {
       if (family) {
         if (getProxyFamilyKey(m) !== family) return false;
       }
-
-      const backend = (proxyFilters.provider ?? '').trim().toLowerCase();
-      if (backend) {
-        const ownedBy = (m.ownedBy ?? '').trim().toLowerCase();
-        if (ownedBy !== backend) return false;
-      }
     }
     return true;
   });

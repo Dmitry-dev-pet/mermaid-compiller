@@ -35,11 +35,9 @@ describe('modelFilter', () => {
       },
       agent: {
         family: '',
-        provider: '',
       },
       cliproxy: {
         family: '',
-        provider: '',
       },
     },
   };
@@ -106,7 +104,6 @@ describe('modelFilter', () => {
         ...baseConfig.filtersByProvider,
         cliproxy: {
           family: '',
-          provider: '',
         },
       },
     };

@@ -43,6 +43,27 @@ const formatMonthDayTime = (date: Date) => date.toLocaleString(void 0, {
   hour12: false,
 });
 
+type ModelFamilyKey = 'gpt' | 'claude' | 'gemini' | 'other';
+
+const getModelFamilyKey = (model: { id: string; vendor?: string | null }): ModelFamilyKey => {
+  const vendor = typeof model.vendor === 'string' ? model.vendor.trim().toLowerCase() : '';
+  if (vendor === 'openai' || vendor === 'gpt') return 'gpt';
+  if (vendor === 'anthropic') return 'claude';
+  if (vendor === 'google') return 'gemini';
+  const id = model.id.trim().toLowerCase();
+  if (id.includes('claude')) return 'claude';
+  if (id.includes('gemini')) return 'gemini';
+  if (id.startsWith('gpt') || id.includes('/gpt') || id.includes('gpt-')) return 'gpt';
+  return 'other';
+};
+
+const getModelFamilyLabel = (key: ModelFamilyKey) => {
+  if (key === 'gpt') return 'GPT';
+  if (key === 'claude') return 'Claude';
+  if (key === 'gemini') return 'Gemini';
+  return 'Other';
+};
+
 const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   aiConfig,
   modelParams,
@@ -65,6 +86,11 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showCliproxyUsageDetails, setShowCliproxyUsageDetails] = useState(false);
   const [showCliproxySubscriptions, setShowCliproxySubscriptions] = useState(false);
   const [showCliproxyQuotas, setShowCliproxyQuotas] = useState(false);
+  const [usedFamiliesByProvider, setUsedFamiliesByProvider] = useState<Record<AIConfig['provider'], ModelFamilyKey[]>>({
+    openrouter: [],
+    agent: [],
+    cliproxy: [],
+  });
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
   const [versionInfo, setVersionInfo] = useState<{
     agentVersion?: string;
@@ -114,7 +140,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         : aiConfig.provider === 'agent'
           ? 'Mermaid Agent'
           : 'Proxy';
-    return `AI: ${providerName} · ${modelName}${contextLabel}`;
+    const usedFamilies = usedFamiliesByProvider[aiConfig.provider] ?? [];
+    const usedLabel =
+      usedFamilies.length > 0
+        ? ` · Used: ${usedFamilies.map(getModelFamilyLabel).join('/')}`
+        : '';
+    return `AI: ${providerName} · ${modelName}${contextLabel}${usedLabel}`;
   };
 
   const getStatusTone = () => {
@@ -128,7 +159,20 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     onConfigChange((prev) => ({ ...prev, ...updates }));
   }, [onConfigChange]);
 
+  const trackUsedFamily = useCallback((modelId: string) => {
+    const id = modelId.trim();
+    if (!id) return;
+    const model = connectionState.availableModels.find((m) => m?.id === id);
+    const family = getModelFamilyKey({ id, vendor: model?.vendor ?? null });
+    setUsedFamiliesByProvider((prev) => {
+      const existing = prev[aiConfig.provider] ?? [];
+      if (existing.includes(family)) return prev;
+      return { ...prev, [aiConfig.provider]: [...existing, family] };
+    });
+  }, [aiConfig.provider, connectionState.availableModels]);
+
   const updateSelectedModel = useCallback((modelId: string) => {
+    trackUsedFamily(modelId);
     onConfigChange((prev) => ({
       ...prev,
       selectedModelId: modelId,
@@ -137,7 +181,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         [prev.provider]: modelId,
       },
     }));
-  }, [onConfigChange]);
+  }, [onConfigChange, trackUsedFamily]);
 
   const formatContextLength = (value?: number) => {
     if (!value || value <= 0) return '';
@@ -261,26 +305,11 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     });
   }
 
-  const getProxyFamilyKey = (model: { id: string; vendor?: string | null }): 'gpt' | 'claude' | 'gemini' | 'other' => {
-    const vendor = typeof model.vendor === 'string' ? model.vendor.trim().toLowerCase() : '';
-    if (vendor === 'openai') return 'gpt';
-    if (vendor === 'anthropic') return 'claude';
-    if (vendor === 'google') return 'gemini';
-    const id = model.id.trim().toLowerCase();
-    if (id.startsWith('gpt') || id.includes('/gpt') || id.includes('gpt-')) return 'gpt';
-    if (id.includes('claude')) return 'claude';
-    if (id.includes('gemini')) return 'gemini';
-    return 'other';
-  };
-
   const familyCandidates = new Set<'gpt' | 'claude' | 'gemini' | 'other'>();
-  const backendCandidates = new Set<string>();
   if (!isOpenRouter) {
     baseFilteredModels.forEach((model) => {
       if (!model) return;
-      const ownedBy = typeof model.ownedBy === 'string' ? model.ownedBy.trim().toLowerCase() : '';
-      if (ownedBy) backendCandidates.add(ownedBy);
-      familyCandidates.add(getProxyFamilyKey(model));
+      familyCandidates.add(getModelFamilyKey(model));
     });
   }
 
@@ -292,47 +321,21 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     vendorOptions.unshift({ vendor: openRouterFilters.vendor, count: 0 });
   }
 
-  const familyLabel = (key: 'gpt' | 'claude' | 'gemini' | 'other'): string => {
-    if (key === 'gpt') return 'GPT';
-    if (key === 'claude') return 'Claude';
-    if (key === 'gemini') return 'Gemini';
-    return 'Other';
-  };
-
   const familyOptions = Array.from(familyCandidates.values())
-    .sort((a, b) => familyLabel(a).localeCompare(familyLabel(b)))
+    .sort((a, b) => getModelFamilyLabel(a).localeCompare(getModelFamilyLabel(b)))
     .map((family) => {
-      const count = baseFilteredModels.filter((model) => model && getProxyFamilyKey(model) === family).length;
-      return { family, label: familyLabel(family), count };
-    });
-
-  const backendOptions = Array.from(backendCandidates.values())
-    .sort((a, b) => a.localeCompare(b))
-    .map((backend) => {
-      const count = baseFilteredModels.filter((model) => {
-        if (!model) return false;
-        const ob = typeof model.ownedBy === 'string' ? model.ownedBy.trim().toLowerCase() : '';
-        return ob === backend;
-      }).length;
-      return { backend, count };
+      const count = baseFilteredModels.filter((model) => model && getModelFamilyKey(model) === family).length;
+      return { family, label: getModelFamilyLabel(family), count };
     });
 
   if (!isOpenRouter && proxyFilters?.family) {
     const active = proxyFilters.family.trim().toLowerCase() as 'gpt' | 'claude' | 'gemini' | 'other';
     if (active && !familyCandidates.has(active)) {
-      familyOptions.unshift({ family: active, label: familyLabel(active), count: 0 });
-    }
-  }
-
-  if (!isOpenRouter && proxyFilters?.provider) {
-    const active = proxyFilters.provider.trim().toLowerCase();
-    if (active && !backendCandidates.has(active)) {
-      backendOptions.unshift({ backend: active, count: 0 });
+      familyOptions.unshift({ family: active, label: getModelFamilyLabel(active), count: 0 });
     }
   }
 
   const familyPills = [...familyOptions].sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label));
-  const backendPills = [...backendOptions].sort((a, b) => (b.count - a.count) || a.backend.localeCompare(b.backend));
 
   const filteredModels = baseFilteredModels.filter((m) => {
     if (!m) return false;
@@ -342,25 +345,10 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     }
 
     const filterFamily = (proxyFilters?.family ?? '').trim().toLowerCase();
-    if (filterFamily && getProxyFamilyKey(m) !== filterFamily) return false;
-
-    const filterBackend = (proxyFilters?.provider ?? '').trim().toLowerCase();
-    if (filterBackend) {
-      const ownedBy = (m.ownedBy ?? '').trim().toLowerCase();
-      if (ownedBy !== filterBackend) return false;
-    }
+    if (filterFamily && getModelFamilyKey(m) !== filterFamily) return false;
 
     return true;
   });
-
-  useEffect(() => {
-    if (connectionState.status !== 'connected') return;
-    if (filteredModels.length !== 1) return;
-    const onlyModelId = filteredModels[0]?.id;
-    if (!onlyModelId) return;
-    if (aiConfig.selectedModelId === onlyModelId) return;
-    updateSelectedModel(onlyModelId);
-  }, [aiConfig.selectedModelId, connectionState.status, filteredModels, updateSelectedModel]);
 
   useEffect(() => {
     if (!isAgent) return;
@@ -1078,10 +1066,10 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
               {showFilters && (
                 <div className="mb-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded text-xs grid grid-cols-2 gap-2 border border-slate-100 dark:border-slate-700 dark:text-slate-300">
-                  {!isOpenRouter && familyOptions.length > 0 && (
-                    <div className="col-span-2">
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Family</label>
-                      <div className="flex flex-wrap gap-1">
+	                  {!isOpenRouter && familyOptions.length > 0 && (
+	                    <div className="col-span-2">
+	                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Family</label>
+	                      <div className="flex flex-wrap gap-1">
                         <button
                           type="button"
                           onClick={() => updateProxyFilters({ family: '' })}
@@ -1110,47 +1098,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                             </button>
                           );
                         })}
-                      </div>
-                    </div>
-                  )}
-                  {!isOpenRouter && backendOptions.length > 0 && (
-                    <div className="col-span-2">
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Backend</label>
-                      <div className="flex flex-wrap gap-1">
-                        <button
-                          type="button"
-                          onClick={() => updateProxyFilters({ provider: '' })}
-                          className={`px-2 py-1 rounded border text-[11px] ${
-                            !(proxyFilters?.provider ?? '')
-                              ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-                          }`}
-                        >
-                          All ({baseFilteredModels.length})
-                        </button>
-                        {backendPills.map(({ backend, count }) => {
-                          const selected = (proxyFilters?.provider ?? '') === backend;
-                          return (
-                            <button
-                              key={backend}
-                              type="button"
-                              onClick={() => updateProxyFilters({ provider: backend })}
-                              className={`px-2 py-1 rounded border text-[11px] ${
-                                selected
-                                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
-                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-                              }`}
-                            >
-                              {backend} ({count})
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  {isOpenRouter && (
-                    <div className="col-span-2">
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Vendor</label>
+	                      </div>
+	                    </div>
+	                  )}
+	                  {isOpenRouter && (
+	                    <div className="col-span-2">
+	                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Vendor</label>
                       <Select
                         value={openRouterFilters.vendor}
                         onChange={(e) => updateOpenRouterFilters({ vendor: e.target.value })}

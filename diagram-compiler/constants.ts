@@ -34,11 +34,9 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     },
     agent: {
       family: '',
-      provider: '',
     },
     cliproxy: {
       family: '',
-      provider: '',
     },
   },
 };

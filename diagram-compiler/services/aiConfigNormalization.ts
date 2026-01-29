@@ -13,26 +13,27 @@ export type LegacyAIConfig = Partial<AIConfig> & {
   selectedModelIdByProvider?: Partial<Record<AIConfig['provider'], string>> | null;
 };
 
-const normalizeProxyFilters = (value: unknown): { family: string; provider: string } => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return { family: '', provider: '' };
+const normalizeProxyFilters = (value: unknown): { family: string } => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { family: '' };
   const obj = value as Record<string, unknown>;
-  const family = typeof obj.family === 'string' ? obj.family : '';
-  const provider =
+  const family = typeof obj.family === 'string' ? obj.family.trim().toLowerCase() : '';
+  const legacyProvider =
     typeof obj.provider === 'string'
-      ? obj.provider
+      ? obj.provider.trim().toLowerCase()
       : typeof obj.ownedBy === 'string'
-        ? obj.ownedBy
+        ? obj.ownedBy.trim().toLowerCase()
         : '';
-  const normalizedFamily = family.trim().toLowerCase();
-  const normalizedProvider = provider.trim().toLowerCase();
 
-  // Back-compat: old "provider=google" meant "Gemini models" (vendor google),
-  // not strictly owned_by=google.
-  if (!normalizedFamily && normalizedProvider === 'google') {
-    return { family: 'gemini', provider: '' };
-  }
+  if (family) return { family };
 
-  return { family, provider };
+  // Back-compat: historically "provider" sometimes stored a vendor/backend name.
+  // Map only known families; otherwise drop to avoid hiding models with a non-visible filter.
+  if (legacyProvider === 'google' || legacyProvider === 'gemini') return { family: 'gemini' };
+  if (legacyProvider === 'anthropic' || legacyProvider === 'claude') return { family: 'claude' };
+  if (legacyProvider === 'openai' || legacyProvider === 'gpt') return { family: 'gpt' };
+  if (legacyProvider === 'other') return { family: 'other' };
+
+  return { family: '' };
 };
 
 export const normalizeAiConfig = (config: LegacyAIConfig | null | undefined): AIConfig => {

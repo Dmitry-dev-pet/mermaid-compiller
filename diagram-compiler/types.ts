@@ -47,7 +47,6 @@ export interface OpenRouterFilters {
 
 export interface CliproxyFilters {
   family: string;
-  provider: string;
 }
 
 export type ProviderFilters = {
