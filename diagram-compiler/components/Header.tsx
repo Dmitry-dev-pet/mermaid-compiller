@@ -23,7 +23,7 @@ interface HeaderProps {
   projectsHeader?: React.ReactNode;
 }
 
-const DEFAULT_DOCS_URL = 'https://<user>.github.io/mermaid-langgraph/';
+const DEFAULT_DOCS_URL = 'https://dmitry-dev-pet.github.io/mermaid-langgraph/';
 
 const HeaderNotebookSlot: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   if (!children) return null;
@@ -68,7 +68,10 @@ const Header: React.FC<HeaderProps> = ({
   const docsUrl = (import.meta.env.VITE_DOCS_URL ?? DEFAULT_DOCS_URL).trim();
   const openDocs = () => {
     if (!docsUrl) return;
-    window.open(docsUrl, '_blank', 'noopener,noreferrer');
+    const opened = window.open(docsUrl, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      window.location.assign(docsUrl);
+    }
   };
 
   return (
