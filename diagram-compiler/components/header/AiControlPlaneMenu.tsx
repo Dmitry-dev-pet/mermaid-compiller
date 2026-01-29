@@ -46,6 +46,7 @@ const formatMonthDayTime = (date: Date) => date.toLocaleString(void 0, {
 });
 
 type ModelFamilyKey = 'gpt' | 'claude' | 'gemini' | 'other';
+type CliproxySubscriptionsGroupBy = 'provider' | 'email';
 
 const GEMINI_CLI_SUPPORTED_MODEL_IDS = new Set<string>([
   'gemini-3-pro-preview',
@@ -95,6 +96,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showProxySettings, setShowProxySettings] = useState(connectionState.status !== 'connected');
   const [showCliproxyUsageDetails, setShowCliproxyUsageDetails] = useState(false);
   const [showCliproxySubscriptions, setShowCliproxySubscriptions] = useState(false);
+  const [cliproxySubscriptionsGroupBy, setCliproxySubscriptionsGroupBy] = useState<CliproxySubscriptionsGroupBy>('provider');
   const [showCliproxyQuotas, setShowCliproxyQuotas] = useState(false);
   const [showAgentQuotas, setShowAgentQuotas] = useState(false);
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
@@ -873,14 +875,145 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                         </button>
                         {showCliproxySubscriptions && (
                           <div className="mt-1 flex flex-col gap-1">
+                            <div className="flex items-center gap-2 text-[10px]">
+                              <button
+                                type="button"
+                                className={cliproxySubscriptionsGroupBy === 'provider'
+                                  ? 'text-slate-700 dark:text-slate-200'
+                                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}
+                                onClick={() => setCliproxySubscriptionsGroupBy('provider')}
+                              >
+                                By provider
+                              </button>
+                              <span className="text-slate-300 dark:text-slate-600">|</span>
+                              <button
+                                type="button"
+                                className={cliproxySubscriptionsGroupBy === 'email'
+                                  ? 'text-slate-700 dark:text-slate-200'
+                                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}
+                                onClick={() => setCliproxySubscriptionsGroupBy('email')}
+                              >
+                                By email
+                              </button>
+                            </div>
                             {cliproxyInfo.cliproxyAuthFiles.length === 0 ? (
                               <div className="text-slate-400">No auth files</div>
                             ) : (
                               (() => {
                                 const files = cliproxyInfo.cliproxyAuthFiles ?? [];
+                                const getProviderKey = (file: { provider?: string | null }) =>
+                                  typeof file.provider === 'string' && file.provider.trim()
+                                    ? file.provider.trim().toLowerCase()
+                                    : 'unknown';
+                                const getEmailKey = (file: { email?: string | null }) =>
+                                  typeof file.email === 'string' && file.email.trim()
+                                    ? file.email.trim().toLowerCase()
+                                    : null;
+
+                                const formatStatusSummary = (group: Array<{ status?: string; disabled?: boolean; unavailable?: boolean }>) => {
+                                  const counts = group.reduce((acc, file) => {
+                                    const isOk = file.status === 'ready' && !file.disabled && !file.unavailable;
+                                    if (isOk) acc.ok += 1;
+                                    else if (file.disabled) acc.disabled += 1;
+                                    else if (file.unavailable) acc.unavailable += 1;
+                                    else acc.other += 1;
+                                    return acc;
+                                  }, { ok: 0, disabled: 0, unavailable: 0, other: 0 });
+                                  if (counts.ok === group.length) return { text: 'ready', tone: 'text-emerald-600 dark:text-emerald-400' };
+                                  if (counts.disabled === group.length) return { text: 'disabled', tone: 'text-slate-500 dark:text-slate-400' };
+                                  if (counts.unavailable === group.length) return { text: 'unavailable', tone: 'text-amber-600 dark:text-amber-400' };
+                                  if (counts.ok > 0 && counts.ok < group.length) return { text: 'partial', tone: 'text-amber-600 dark:text-amber-400' };
+                                  if (counts.ok === 0 && (counts.unavailable > 0 || counts.other > 0)) return { text: 'not ready', tone: 'text-amber-600 dark:text-amber-400' };
+                                  return { text: 'unknown', tone: 'text-slate-400' };
+                                };
+
+                                const groupByEmailCollapsed = (group: typeof files) => {
+                                  const byEmail = new Map<string, typeof files>();
+                                  const singles: typeof files = [];
+                                  group.forEach((file) => {
+                                    const emailKey = getEmailKey(file);
+                                    if (!emailKey) {
+                                      singles.push(file);
+                                      return;
+                                    }
+                                    const prev = byEmail.get(emailKey);
+                                    if (prev) prev.push(file);
+                                    else byEmail.set(emailKey, [file]);
+                                  });
+                                  const entries: Array<{ key: string; label: string; items: typeof files }> = [];
+                                  Array.from(byEmail.entries()).forEach(([key, items]) => {
+                                    entries.push({ key, label: items[0]?.email ?? key, items });
+                                  });
+                                  singles.forEach((file) => {
+                                    const label = file.email || file.label || file.name || file.id;
+                                    entries.push({ key: file.id, label, items: [file] });
+                                  });
+                                  entries.sort((a, b) => a.label.localeCompare(b.label));
+                                  return entries;
+                                };
+
+                                if (cliproxySubscriptionsGroupBy === 'email') {
+                                  const byEmail = new Map<string, typeof files>();
+                                  const noEmail: typeof files = [];
+                                  files.forEach((file) => {
+                                    const emailKey = getEmailKey(file);
+                                    if (!emailKey) {
+                                      noEmail.push(file);
+                                      return;
+                                    }
+                                    const prev = byEmail.get(emailKey);
+                                    if (prev) prev.push(file);
+                                    else byEmail.set(emailKey, [file]);
+                                  });
+
+                                  const emailGroups: Array<{ key: string; label: string; items: typeof files }> = [];
+                                  Array.from(byEmail.entries()).forEach(([key, items]) => {
+                                    emailGroups.push({ key, label: items[0]?.email ?? key, items });
+                                  });
+                                  noEmail.forEach((file) => {
+                                    const label = file.email || file.label || file.name || file.id;
+                                    emailGroups.push({ key: file.id, label, items: [file] });
+                                  });
+                                  emailGroups.sort((a, b) => a.label.localeCompare(b.label));
+
+                                  const preview = emailGroups.slice(0, 8);
+                                  return (
+                                    <div className="mt-1">
+                                      {preview.map((g) => {
+                                        const providerCounts = g.items.reduce((acc, f) => {
+                                          const p = getProviderKey(f);
+                                          acc[p] = (acc[p] ?? 0) + 1;
+                                          return acc;
+                                        }, {} as Record<string, number>);
+                                        const providersLabel = Object.keys(providerCounts)
+                                          .sort()
+                                          .map((p) => `${p}${providerCounts[p] > 1 ? `×${providerCounts[p]}` : ''}`)
+                                          .join(' · ');
+                                        const status = formatStatusSummary(g.items);
+                                        return (
+                                          <div key={g.key} className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                              <div className="font-mono tabular-nums truncate">
+                                                {g.label}{g.items.length > 1 ? ` ×${g.items.length}` : ''}
+                                              </div>
+                                              {providersLabel ? (
+                                                <div className="text-[10px] text-slate-400 truncate">{providersLabel}</div>
+                                              ) : null}
+                                            </div>
+                                            <div className={`shrink-0 font-mono tabular-nums ${status.tone}`}>{status.text}</div>
+                                          </div>
+                                        );
+                                      })}
+                                      {emailGroups.length > preview.length ? (
+                                        <div className="text-slate-400">…and {emailGroups.length - preview.length} more</div>
+                                      ) : null}
+                                    </div>
+                                  );
+                                }
+
                                 const byProvider = new Map<string, typeof files>();
                                 files.forEach((file) => {
-                                  const provider = typeof file.provider === 'string' ? file.provider.trim().toLowerCase() : 'unknown';
+                                  const provider = getProviderKey(file);
                                   const prev = byProvider.get(provider);
                                   if (prev) prev.push(file);
                                   else byProvider.set(provider, [file]);
@@ -901,7 +1034,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
                                 return providers.map((provider) => {
                                   const group = byProvider.get(provider) ?? [];
-                                  const preview = group.slice(0, 4);
                                   const statusCounts = group.reduce((acc, file) => {
                                     const isOk = file.status === 'ready' && !file.disabled && !file.unavailable;
                                     if (isOk) acc.ok += 1;
@@ -918,6 +1050,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                     statusCounts.unavailable ? `${statusCounts.unavailable} unavailable` : null,
                                     statusCounts.other ? `${statusCounts.other} other` : null,
                                   ].filter(Boolean).join(' · ');
+                                  const emailEntries = groupByEmailCollapsed(group);
 
                                   return (
                                     <div key={provider} className="mt-1">
@@ -926,24 +1059,19 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                         <span className="text-[10px]">{meta || `${group.length} subscriptions`}</span>
                                       </div>
                                       <div className="mt-1 flex flex-col gap-1">
-                                        {preview.map((file) => {
-                                          const isOk = file.status === 'ready' && !file.disabled && !file.unavailable;
-                                          const tone = isOk
-                                            ? 'text-emerald-600 dark:text-emerald-400'
-                                            : file.disabled
-                                              ? 'text-slate-500 dark:text-slate-400'
-                                              : 'text-amber-600 dark:text-amber-400';
-                                          const label = file.email || file.label || file.name || file.id;
-                                          const status = file.disabled ? 'disabled' : file.unavailable ? 'unavailable' : (file.status ?? 'unknown');
+                                        {emailEntries.slice(0, 6).map((entry) => {
+                                          const status = formatStatusSummary(entry.items);
                                           return (
-                                            <div key={file.id} className="flex items-center justify-between gap-2 font-mono tabular-nums">
-                                              <span className="truncate">{label}</span>
-                                              <span className={tone}>{status}</span>
+                                            <div key={entry.key} className="flex items-center justify-between gap-2 font-mono tabular-nums">
+                                              <span className="truncate">
+                                                {entry.label}{entry.items.length > 1 ? ` ×${entry.items.length}` : ''}
+                                              </span>
+                                              <span className={status.tone}>{status.text}</span>
                                             </div>
                                           );
                                         })}
-                                        {group.length > preview.length ? (
-                                          <div className="text-slate-400">…and {group.length - preview.length} more</div>
+                                        {emailEntries.length > 6 ? (
+                                          <div className="text-slate-400">…and {emailEntries.length - 6} more</div>
                                         ) : null}
                                       </div>
                                     </div>
