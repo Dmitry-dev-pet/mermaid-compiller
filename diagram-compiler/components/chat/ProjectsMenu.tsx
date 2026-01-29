@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Cloud, Download, LogIn, LogOut, RefreshCw, Trash2, UploadCloud, User as UserIcon, X } from 'lucide-react';
+import { Chrome, Cloud, Download, Github, LogOut, RefreshCw, Trash2, UploadCloud, User as UserIcon, X } from 'lucide-react';
 import type { HistorySession } from '../../services/history/types';
 import type { StorageMode } from '../../hooks/core/useStorageMode';
 import type { CloudSyncStatus } from '../../hooks/studio/useCloudSync';
@@ -94,6 +94,7 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
 }) => {
   const auth = useAuth();
   const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudAuthError, setCloudAuthError] = useState<string | null>(null);
   const [cloudProjectsExpanded, setCloudProjectsExpanded] = useState(false);
   const [cloudMigrationExpanded, setCloudMigrationExpanded] = useState(false);
   const sortedProjects = useMemo(() => {
@@ -149,11 +150,27 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
     cloudMigration.status.kind !== 'syncing' &&
     cloudMigration.unlinkedCount > 0;
 
-  const handleCloudLogin = async () => {
+  const handleCloudLoginGoogle = async () => {
     if (cloudBusy) return;
     setCloudBusy(true);
     try {
+      setCloudAuthError(null);
+      await auth.loginWithGoogle();
+    } catch (e: unknown) {
+      setCloudAuthError(e instanceof Error ? e.message : 'Login failed');
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const handleCloudLoginGitHub = async () => {
+    if (cloudBusy) return;
+    setCloudBusy(true);
+    try {
+      setCloudAuthError(null);
       await auth.loginWithGitHub();
+    } catch (e: unknown) {
+      setCloudAuthError(e instanceof Error ? e.message : 'Login failed');
     } finally {
       setCloudBusy(false);
     }
@@ -163,7 +180,10 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
     if (cloudBusy) return;
     setCloudBusy(true);
     try {
+      setCloudAuthError(null);
       await auth.logout();
+    } catch (e: unknown) {
+      setCloudAuthError(e instanceof Error ? e.message : 'Logout failed');
     } finally {
       setCloudBusy(false);
     }
@@ -403,22 +423,45 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
             <span className="text-[10px] text-slate-400 dark:text-slate-500 inline-flex items-center gap-1">
               <Cloud size={12} className="opacity-80" /> Cloud
             </span>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={auth.status === 'signed_in' ? handleCloudLogout : handleCloudLogin}
-              disabled={cloudBusy || auth.status === 'disabled' || auth.status === 'loading'}
-              className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 gap-1"
-              title={cloudLabel}
-            >
-              <UserIcon size={12} className="opacity-80" />
-              {auth.status === 'signed_in' ? (
+            {auth.status === 'signed_in' ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleCloudLogout}
+                disabled={cloudBusy || auth.status === 'disabled' || auth.status === 'loading'}
+                className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 gap-1"
+                title={cloudLabel}
+              >
+                <UserIcon size={12} className="opacity-80" />
                 <LogOut size={12} className="opacity-80" />
-              ) : (
-                <LogIn size={12} className="opacity-80" />
-              )}
-              {auth.status === 'signed_in' ? 'Logout' : 'Login'}
-            </Button>
+                Logout
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleCloudLoginGoogle}
+                  disabled={cloudBusy || auth.status === 'disabled' || auth.status === 'loading'}
+                  className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 gap-1"
+                  title="Login with Google"
+                >
+                  <Chrome size={12} className="opacity-80" />
+                  Google
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleCloudLoginGitHub}
+                  disabled={cloudBusy || auth.status === 'disabled' || auth.status === 'loading'}
+                  className="text-[10px] px-2 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 gap-1"
+                  title="Login with GitHub"
+                >
+                  <Github size={12} className="opacity-80" />
+                  GitHub
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="mt-2 flex items-center justify-between gap-2">
@@ -427,6 +470,12 @@ const ProjectsMenu: React.FC<ProjectsMenuProps> = ({
               {cloudLabel}
             </span>
           </div>
+
+          {cloudAuthError && (
+            <div className="mt-2 text-[10px] text-rose-600 dark:text-rose-300">
+              {cloudAuthError}
+            </div>
+          )}
 
           {storageMode && onStorageModeChange && (
             <div className="mt-2 flex items-center justify-between gap-2">

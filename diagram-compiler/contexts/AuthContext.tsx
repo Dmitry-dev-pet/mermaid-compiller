@@ -12,6 +12,7 @@ export type AuthState = {
 
 export type AuthContextValue = AuthState & {
   supabase: SupabaseClient | null;
+  loginWithGoogle: () => Promise<void>;
   loginWithGitHub: () => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -81,6 +82,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [supabase]);
 
+  const loginWithGoogle = useCallback(async () => {
+    if (!supabase) throw new Error('Supabase is not configured');
+    const redirectTo = `${window.location.origin}${window.location.pathname}`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo },
+    });
+    if (error) throw error;
+  }, [supabase]);
+
   const loginWithGitHub = useCallback(async () => {
     if (!supabase) throw new Error('Supabase is not configured');
     const redirectTo = `${window.location.origin}${window.location.pathname}`;
@@ -101,10 +112,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return {
       ...state,
       supabase,
+      loginWithGoogle,
       loginWithGitHub,
       logout,
     };
-  }, [loginWithGitHub, logout, state, supabase]);
+  }, [loginWithGoogle, loginWithGitHub, logout, state, supabase]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

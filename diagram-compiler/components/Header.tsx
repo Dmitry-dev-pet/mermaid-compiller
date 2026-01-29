@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
-import { LogIn, LogOut, User as UserIcon } from 'lucide-react';
+import { Chrome, Github, LogOut, User as UserIcon } from 'lucide-react';
 import { AIConfig, ConnectionState, ModelParams, ThemePresetId } from '../types';
 import PanelHeader from './ui/PanelHeader';
 import { Button } from './ui/Button';
@@ -51,6 +51,7 @@ const Header: React.FC<HeaderProps> = ({
   const headerRef = useRef<HTMLElement>(null);
   const auth = useAuth();
   const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const headerEl = headerRef.current;
@@ -90,13 +91,32 @@ const Header: React.FC<HeaderProps> = ({
     return 'Cloud: sign in';
   }, [auth.status, auth.user]);
 
-  const handleLogin = async () => {
+  const handleLoginGoogle = async () => {
     if (authBusy) return;
     setAuthBusy(true);
     try {
-      await auth.loginWithGitHub();
-    } catch (e) {
+      setAuthError(null);
+      await auth.loginWithGoogle();
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Login failed';
+      setAuthError(message);
       console.error('Login failed', e);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleLoginGitHub = async () => {
+    if (authBusy) return;
+    setAuthBusy(true);
+    try {
+      setAuthError(null);
+      await auth.loginWithGitHub();
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Login failed';
+      setAuthError(message);
+      console.error('Login failed', e);
+    } finally {
       setAuthBusy(false);
     }
   };
@@ -105,6 +125,7 @@ const Header: React.FC<HeaderProps> = ({
     if (authBusy) return;
     setAuthBusy(true);
     try {
+      setAuthError(null);
       await auth.logout();
     } catch (e) {
       console.error('Logout failed', e);
@@ -146,19 +167,48 @@ const Header: React.FC<HeaderProps> = ({
           onLLMTimeoutMsChange={onLLMTimeoutMsChange}
         />
         <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="gap-1 max-w-[180px]"
-            title={auth.status === 'error' ? (auth.error ?? authLabel) : authLabel}
-            disabled={authBusy || auth.status === 'disabled' || auth.status === 'loading'}
-            onClick={auth.status === 'signed_in' ? handleLogout : handleLogin}
-          >
-            <UserIcon size={12} className="opacity-80" />
-            <span className="truncate">{authLabel}</span>
-            {auth.status === 'signed_in' ? <LogOut size={12} className="opacity-80" /> : <LogIn size={12} className="opacity-80" />}
-          </Button>
+          {auth.status === 'signed_in' ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="gap-1 max-w-[180px]"
+              title={auth.status === 'error' ? (auth.error ?? authLabel) : authLabel}
+              disabled={authBusy || auth.status === 'disabled' || auth.status === 'loading'}
+              onClick={handleLogout}
+            >
+              <UserIcon size={12} className="opacity-80" />
+              <span className="truncate">{authLabel}</span>
+              <LogOut size={12} className="opacity-80" />
+            </Button>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-1"
+                title={authError ?? 'Login with Google'}
+                disabled={authBusy || auth.status === 'disabled' || auth.status === 'loading'}
+                onClick={handleLoginGoogle}
+              >
+                <Chrome size={12} className="opacity-80" />
+                Google
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-1"
+                title={authError ?? 'Login with GitHub'}
+                disabled={authBusy || auth.status === 'disabled' || auth.status === 'loading'}
+                onClick={handleLoginGitHub}
+              >
+                <Github size={12} className="opacity-80" />
+                GitHub
+              </Button>
+            </>
+          )}
         </div>
         <ThemeMenu theme={theme} onThemeChange={onThemeChange} />
         <Button
