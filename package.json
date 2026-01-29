@@ -9,7 +9,10 @@
     "start": "node server.js",
     "lint": "npm --prefix diagram-compiler run lint",
     "test": "npm --prefix diagram-compiler test",
-    "typecheck": "npm --prefix diagram-compiler run typecheck"
+    "typecheck": "npm --prefix diagram-compiler run typecheck",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "keywords": [],
   "author": "",
@@ -19,7 +22,8 @@
     "@eslint/js": "^9.39.1",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.6.2"
+    "prettier": "^3.6.2",
+    "vitepress": "^1.5.0"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",

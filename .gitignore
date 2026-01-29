@@ -21,3 +21,7 @@ vendor/gemini-cli/
 prompts-improvements.md
 PROMPTS.md
 mermaid_prompt_ru.md
+
+# Docs site build artifacts
+docs/.vitepress/cache/
+docs/.vitepress/dist/
