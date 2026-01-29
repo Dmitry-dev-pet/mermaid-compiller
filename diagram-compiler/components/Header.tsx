@@ -1,10 +1,12 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
+import { LogIn, LogOut, User as UserIcon } from 'lucide-react';
 import { AIConfig, ConnectionState, ModelParams, ThemePresetId } from '../types';
 import PanelHeader from './ui/PanelHeader';
 import { Button } from './ui/Button';
 import AiControlPlaneMenu from './header/AiControlPlaneMenu';
 import ThemeMenu from './header/ThemeMenu';
+import { useAuth } from '../contexts/AuthContext';
 
 interface HeaderProps {
   aiConfig: AIConfig;
@@ -47,6 +49,8 @@ const Header: React.FC<HeaderProps> = ({
   projectsHeader,
 }) => {
   const headerRef = useRef<HTMLElement>(null);
+  const auth = useAuth();
+  const [authBusy, setAuthBusy] = useState(false);
 
   useEffect(() => {
     const headerEl = headerRef.current;
@@ -71,6 +75,41 @@ const Header: React.FC<HeaderProps> = ({
     const opened = window.open(docsUrl, '_blank', 'noopener,noreferrer');
     if (!opened) {
       window.location.assign(docsUrl);
+    }
+  };
+
+  const authLabel = useMemo(() => {
+    if (auth.status === 'disabled') return 'Cloud: disabled';
+    if (auth.status === 'loading') return 'Cloud: ...';
+    if (auth.status === 'error') return 'Cloud: error';
+    if (auth.status === 'signed_in') {
+      const email = auth.user?.email;
+      const login = typeof auth.user?.user_metadata?.login === 'string' ? auth.user.user_metadata.login : null;
+      return email || login || 'Cloud: signed in';
+    }
+    return 'Cloud: sign in';
+  }, [auth.status, auth.user]);
+
+  const handleLogin = async () => {
+    if (authBusy) return;
+    setAuthBusy(true);
+    try {
+      await auth.loginWithGitHub();
+    } catch (e) {
+      console.error('Login failed', e);
+      setAuthBusy(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (authBusy) return;
+    setAuthBusy(true);
+    try {
+      await auth.logout();
+    } catch (e) {
+      console.error('Logout failed', e);
+    } finally {
+      setAuthBusy(false);
     }
   };
 
@@ -106,6 +145,21 @@ const Header: React.FC<HeaderProps> = ({
           llmTimeoutMs={llmTimeoutMs}
           onLLMTimeoutMsChange={onLLMTimeoutMsChange}
         />
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="gap-1 max-w-[180px]"
+            title={auth.status === 'error' ? (auth.error ?? authLabel) : authLabel}
+            disabled={authBusy || auth.status === 'disabled' || auth.status === 'loading'}
+            onClick={auth.status === 'signed_in' ? handleLogout : handleLogin}
+          >
+            <UserIcon size={12} className="opacity-80" />
+            <span className="truncate">{authLabel}</span>
+            {auth.status === 'signed_in' ? <LogOut size={12} className="opacity-80" /> : <LogIn size={12} className="opacity-80" />}
+          </Button>
+        </div>
         <ThemeMenu theme={theme} onThemeChange={onThemeChange} />
         <Button
           type="button"

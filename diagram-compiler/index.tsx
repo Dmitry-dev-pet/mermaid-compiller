@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { injectSpeedInsights } from '@vercel/speed-insights';
 import { inject as injectAnalytics } from '@vercel/analytics';
 import App from './App';
+import { AuthProvider } from './contexts/AuthContext';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -14,6 +15,8 @@ injectSpeedInsights();
 injectAnalytics();
 root.render(
   <React.StrictMode>
-    <App />
+    <AuthProvider>
+      <App />
+    </AuthProvider>
   </React.StrictMode>
 );
