@@ -140,12 +140,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         : aiConfig.provider === 'agent'
           ? 'Mermaid Agent'
           : 'Proxy';
+    const ownedBy = typeof model?.ownedBy === 'string' ? model.ownedBy.trim() : '';
+    const ownedByLabel = ownedBy ? ` · owned_by: ${ownedBy}` : '';
     const usedFamilies = usedFamiliesByProvider[aiConfig.provider] ?? [];
     const usedLabel =
       usedFamilies.length > 0
         ? ` · Used: ${usedFamilies.map(getModelFamilyLabel).join('/')}`
         : '';
-    return `AI: ${providerName} · ${modelName}${contextLabel}${usedLabel}`;
+    return `AI: ${providerName} · ${modelName}${contextLabel}${ownedByLabel}${usedLabel}`;
   };
 
   const getStatusTone = () => {
