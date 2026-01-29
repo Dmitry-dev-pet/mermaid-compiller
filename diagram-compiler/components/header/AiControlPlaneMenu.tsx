@@ -876,51 +876,48 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                             ) : null}
 
                             <div className="flex flex-col gap-2">
-                              {(() => {
-                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => f.provider === 'codex' && !f.runtimeOnly);
-                                if (files.length === 0) return (
-                                  <div className="text-slate-400">Codex Quota: no auth files</div>
-                                );
+	                              {(() => {
+	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => f.provider === 'codex' && !f.runtimeOnly);
+	                                if (files.length === 0) return (
+	                                  <div className="text-slate-400">Codex Quota: no auth files</div>
+	                                );
 	                                const bestByWindowId = new Map<string, {
 	                                  label: string;
 	                                  remainingPercent: number | null;
 	                                  resetLabel: string;
 	                                  eligibleCount: number;
-	                                  remainingSum: number | null;
 	                                }>();
 	                                files.forEach((file) => {
 	                                  const quota = cliproxyQuotas.codex?.[file.id];
 	                                  const windows = quota?.windows ?? [];
 	                                  const weeklyWindow = windows.find((w) => w?.id === 'secondary') ?? null;
-	                                  const weeklyUsedPercent = weeklyWindow?.usedPercent ?? null;
 	                                  const weeklyRemainingPercent =
-	                                    weeklyUsedPercent === null ? null : Math.max(0, Math.min(100, 100 - weeklyUsedPercent));
+	                                    typeof weeklyWindow?.usedPercent === 'number'
+	                                      ? Math.max(0, Math.min(100, weeklyWindow.usedPercent))
+	                                      : null;
 	                                  const weeklyExhausted = weeklyRemainingPercent === 0;
 	                                  windows.forEach((w) => {
 	                                    if (!w?.id) return;
 	                                    if (w.id === 'primary' && weeklyExhausted) return;
-	                                    const usedPercent = w.usedPercent;
 	                                    const remainingPercent =
-	                                      usedPercent === null ? null : Math.max(0, Math.min(100, 100 - usedPercent));
+	                                      typeof w.usedPercent === 'number'
+	                                        ? Math.max(0, Math.min(100, w.usedPercent))
+	                                        : null;
 	                                    const prev = bestByWindowId.get(w.id);
 	                                    const eligibleCount = (prev?.eligibleCount ?? 0) + 1;
-	                                    const remainingSum =
-	                                      typeof remainingPercent === 'number'
-	                                        ? (prev?.remainingSum ?? 0) + remainingPercent
-	                                        : prev?.remainingSum ?? null;
 	                                    if (!prev) {
-	                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel, eligibleCount, remainingSum });
+	                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel, eligibleCount });
 	                                      return;
 	                                    }
 	                                    if (remainingPercent === null) {
-	                                      bestByWindowId.set(w.id, { ...prev, eligibleCount, remainingSum });
+	                                      bestByWindowId.set(w.id, { ...prev, eligibleCount });
 	                                      return;
 	                                    }
 	                                    if (prev.remainingPercent === null || remainingPercent > prev.remainingPercent) {
-	                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel, eligibleCount, remainingSum });
+	                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel, eligibleCount });
 	                                      return;
 	                                    }
-	                                    bestByWindowId.set(w.id, { ...prev, eligibleCount, remainingSum });
+	                                    bestByWindowId.set(w.id, { ...prev, eligibleCount });
 	                                  });
 	                                });
 
@@ -931,27 +928,21 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 	                                    remainingPercent: number | null;
 	                                    resetLabel: string;
 	                                    eligibleCount: number;
-	                                    remainingSum: number | null;
 	                                  }>;
 
-                                return (
-                                  <div className="flex flex-col gap-2">
-                                    <div className="text-slate-500 dark:text-slate-400">Codex Quota</div>
-                                    <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
-                                      {ordered.length ? (
-                                        <div className="flex flex-col gap-1">
+	                                return (
+	                                  <div className="flex flex-col gap-2">
+	                                    <div className="text-slate-500 dark:text-slate-400">Codex Quota</div>
+	                                    <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+	                                      {ordered.length ? (
+	                                        <div className="flex flex-col gap-1">
 	                                          {ordered.map((w) => {
-	                                            const remainingSum = w.remainingSum;
-	                                            const eligibleCount = w.eligibleCount ?? 1;
-	                                            const percent = remainingSum;
-	                                            const poolPercent = percent === null
-	                                              ? null
-	                                              : Math.max(0, Math.min(100, (percent / Math.max(1, eligibleCount * 100)) * 100));
-	                                            const tone = poolPercent === null
+	                                            const percent = w.remainingPercent;
+	                                            const tone = percent === null
 	                                              ? 'bg-slate-200 dark:bg-slate-700'
-	                                              : poolPercent >= 60
+	                                              : percent >= 60
 	                                                ? 'bg-emerald-500'
-	                                                : poolPercent >= 20
+	                                                : percent >= 20
 	                                                  ? 'bg-amber-500'
 	                                                  : 'bg-rose-500';
 	                                            return (
@@ -963,14 +954,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 	                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
 	                                                  <div
 	                                                    className={`h-full ${tone}`}
-	                                                    style={{ width: `${poolPercent === null ? 0 : poolPercent}%` }}
+	                                                    style={{ width: `${percent === null ? 0 : percent}%` }}
 	                                                  />
 	                                                </div>
 	                                              </div>
 	                                            );
 	                                          })}
-                                        </div>
-                                      ) : (
+	                                        </div>
+	                                      ) : (
                                         <div className="text-slate-400">No quota data</div>
                                       )}
                                       <div className="mt-1 text-[10px] text-slate-400">{files.length} subscriptions</div>
@@ -984,29 +975,32 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 	                                if (files.length === 0) return (
 	                                  <div className="text-slate-400">Gemini CLI Quota: no auth files</div>
 	                                );
-	                                const pooledByItemId = new Map<string, { label: string; remainingSum: number | null; eligibleCount: number; resetLabel: string }>();
+	                                const bestByItemId = new Map<string, { label: string; remainingPercent: number | null; eligibleCount: number; resetLabel: string }>();
 	                                files.forEach((file) => {
 	                                  const quota = cliproxyQuotas.geminiCli?.[file.id];
 	                                  const items = quota?.items ?? [];
 	                                  items.forEach((it) => {
 	                                    if (!it?.id) return;
 	                                    const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
-	                                    const prev = pooledByItemId.get(it.id);
+	                                    const prev = bestByItemId.get(it.id);
 	                                    const eligibleCount = (prev?.eligibleCount ?? 0) + 1;
-	                                    const remainingSum =
-	                                      typeof percent === 'number'
-	                                        ? (prev?.remainingSum ?? 0) + percent
-	                                        : prev?.remainingSum ?? null;
 	                                    const resetLabel = prev?.resetLabel && prev.resetLabel !== '-' ? prev.resetLabel : it.resetLabel;
-	                                    pooledByItemId.set(it.id, {
-	                                      label: it.label,
-	                                      remainingSum,
-	                                      eligibleCount,
-	                                      resetLabel,
-	                                    });
+	                                    if (!prev) {
+	                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, eligibleCount, resetLabel });
+	                                      return;
+	                                    }
+	                                    if (percent === null) {
+	                                      bestByItemId.set(it.id, { ...prev, eligibleCount, resetLabel });
+	                                      return;
+	                                    }
+	                                    if (prev.remainingPercent === null || percent > prev.remainingPercent) {
+	                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, eligibleCount, resetLabel: it.resetLabel });
+	                                      return;
+	                                    }
+	                                    bestByItemId.set(it.id, { ...prev, eligibleCount, resetLabel });
 	                                  });
 	                                });
-	                                const bestItems = Array.from(pooledByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
+	                                const bestItems = Array.from(bestByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
 	                                return (
 	                                  <div className="flex flex-col gap-2">
 	                                    <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
@@ -1014,16 +1008,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 	                                      {bestItems.length ? (
 	                                        <div className="flex flex-col gap-1">
 	                                          {bestItems.map((it) => {
-	                                            const percent = it.remainingSum;
-	                                            const eligibleCount = it.eligibleCount ?? 1;
-	                                            const poolPercent = percent === null
-	                                              ? null
-	                                              : Math.max(0, Math.min(100, (percent / Math.max(1, eligibleCount * 100)) * 100));
-	                                            const tone = poolPercent === null
+	                                            const percent = it.remainingPercent;
+	                                            const tone = percent === null
 	                                              ? 'bg-slate-200 dark:bg-slate-700'
-	                                              : poolPercent >= 60
+	                                              : percent >= 60
 	                                                ? 'bg-emerald-500'
-	                                                : poolPercent >= 20
+	                                                : percent >= 20
 	                                                  ? 'bg-amber-500'
 	                                                  : 'bg-rose-500';
 	                                            return (
@@ -1035,13 +1025,13 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 	                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
 	                                                  <div
 	                                                    className={`h-full ${tone}`}
-	                                                    style={{ width: `${poolPercent === null ? 0 : poolPercent}%` }}
+	                                                    style={{ width: `${percent === null ? 0 : percent}%` }}
 	                                                  />
 	                                                </div>
 	                                              </div>
 	                                            );
 	                                          })}
-                                        </div>
+	                                        </div>
                                       ) : (
                                         <div className="text-slate-400">No quota data</div>
                                       )}
@@ -1056,29 +1046,32 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 	                                if (files.length === 0) return (
 	                                  <div className="text-slate-400">Antigravity Quota: no auth files</div>
 	                                );
-	                                const pooledByItemId = new Map<string, { label: string; remainingSum: number | null; eligibleCount: number; resetLabel: string }>();
+	                                const bestByItemId = new Map<string, { label: string; remainingPercent: number | null; eligibleCount: number; resetLabel: string }>();
 	                                files.forEach((file) => {
 	                                  const quota = cliproxyQuotas.antigravity?.[file.id];
 	                                  const items = quota?.items ?? [];
 	                                  items.forEach((it) => {
 	                                    if (!it?.id) return;
 	                                    const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
-	                                    const prev = pooledByItemId.get(it.id);
+	                                    const prev = bestByItemId.get(it.id);
 	                                    const eligibleCount = (prev?.eligibleCount ?? 0) + 1;
-	                                    const remainingSum =
-	                                      typeof percent === 'number'
-	                                        ? (prev?.remainingSum ?? 0) + percent
-	                                        : prev?.remainingSum ?? null;
 	                                    const resetLabel = prev?.resetLabel && prev.resetLabel !== '-' ? prev.resetLabel : it.resetLabel;
-	                                    pooledByItemId.set(it.id, {
-	                                      label: it.label,
-	                                      remainingSum,
-	                                      eligibleCount,
-	                                      resetLabel,
-	                                    });
+	                                    if (!prev) {
+	                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, eligibleCount, resetLabel });
+	                                      return;
+	                                    }
+	                                    if (percent === null) {
+	                                      bestByItemId.set(it.id, { ...prev, eligibleCount, resetLabel });
+	                                      return;
+	                                    }
+	                                    if (prev.remainingPercent === null || percent > prev.remainingPercent) {
+	                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, eligibleCount, resetLabel: it.resetLabel });
+	                                      return;
+	                                    }
+	                                    bestByItemId.set(it.id, { ...prev, eligibleCount, resetLabel });
 	                                  });
 	                                });
-	                                const bestItems = Array.from(pooledByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
+	                                const bestItems = Array.from(bestByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
 	                                return (
 	                                  <div className="flex flex-col gap-2">
 	                                    <div className="text-slate-500 dark:text-slate-400">Antigravity Quota</div>
@@ -1086,16 +1079,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 	                                      {bestItems.length ? (
 	                                        <div className="flex flex-col gap-1">
 	                                          {bestItems.map((it) => {
-	                                            const percent = it.remainingSum;
-	                                            const eligibleCount = it.eligibleCount ?? 1;
-	                                            const poolPercent = percent === null
-	                                              ? null
-	                                              : Math.max(0, Math.min(100, (percent / Math.max(1, eligibleCount * 100)) * 100));
-	                                            const tone = poolPercent === null
+	                                            const percent = it.remainingPercent;
+	                                            const tone = percent === null
 	                                              ? 'bg-slate-200 dark:bg-slate-700'
-	                                              : poolPercent >= 60
+	                                              : percent >= 60
 	                                                ? 'bg-emerald-500'
-	                                                : poolPercent >= 20
+	                                                : percent >= 20
 	                                                  ? 'bg-amber-500'
 	                                                  : 'bg-rose-500';
 	                                            return (
@@ -1107,13 +1096,13 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 	                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
 	                                                  <div
 	                                                    className={`h-full ${tone}`}
-	                                                    style={{ width: `${poolPercent === null ? 0 : poolPercent}%` }}
+	                                                    style={{ width: `${percent === null ? 0 : percent}%` }}
 	                                                  />
 	                                                </div>
 	                                              </div>
 	                                            );
 	                                          })}
-                                        </div>
+	                                        </div>
                                       ) : (
                                         <div className="text-slate-400">No quota data</div>
                                       )}
