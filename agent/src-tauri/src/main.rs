@@ -30,6 +30,13 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use uuid::Uuid;
 
+#[derive(Clone, Debug)]
+struct GeminiQuotaCache {
+  updated_at: u64,
+  line: String,
+  in_flight: bool,
+}
+
 #[derive(Clone)]
 struct AppState {
   tasks: Arc<Mutex<HashMap<String, Arc<Task>>>>,
@@ -52,6 +59,7 @@ type TrayMenuItem = MenuItem<tauri::Wry>;
 struct TrayMenu {
   status_title: TrayMenuItem,
   status_details: TrayMenuItem,
+  gemini_quota_line: TrayMenuItem,
   token_line: TrayMenuItem,
 }
 
@@ -59,6 +67,7 @@ struct TrayMenu {
 struct TrayStatusSnapshot {
   title: String,
   details: String,
+  gemini_quota_line: String,
   token_line: String,
 }
 
@@ -346,6 +355,7 @@ fn build_tray(app: &AppHandle, tray_state: Arc<TrayState>) -> tauri::Result<taur
     false,
     None::<&str>,
   )?;
+  let gemini_quota_line = MenuItem::with_id(app, "gemini_quota", "Gemini quota: —", false, None::<&str>)?;
   let token_line = MenuItem::with_id(app, "token_line", "Token: (empty)", false, None::<&str>)?;
   let set_token_clipboard = MenuItem::with_id(app, "set_token_clipboard", "Set Token from Clipboard", true, None::<&str>)?;
   let set_token = MenuItem::with_id(app, "set_token", "Set Token…", true, None::<&str>)?;
@@ -360,6 +370,7 @@ fn build_tray(app: &AppHandle, tray_state: Arc<TrayState>) -> tauri::Result<taur
     &[
       &status_title,
       &status_details,
+      &gemini_quota_line,
       &token_line,
       &separator_top,
       &set_token_clipboard,
@@ -374,6 +385,7 @@ fn build_tray(app: &AppHandle, tray_state: Arc<TrayState>) -> tauri::Result<taur
     *menu_slot = Some(TrayMenu {
       status_title: status_title.clone(),
       status_details: status_details.clone(),
+      gemini_quota_line: gemini_quota_line.clone(),
       token_line: token_line.clone(),
     });
   }
@@ -605,9 +617,12 @@ async fn build_tray_status_snapshot(tray_state: &TrayState) -> TrayStatusSnapsho
     details.push_str(" · unreachable");
   }
 
+  let gemini_quota_line = get_cached_gemini_quota_line(config.clone()).await;
+
   TrayStatusSnapshot {
     title: format!("Mermaid Agent — {}", status_label),
     details,
+    gemini_quota_line,
     token_line: format!("Token: {}", mask_token(&token_value)),
   }
 }
@@ -619,6 +634,7 @@ async fn apply_tray_status(tray_state: &TrayState, snapshot: &TrayStatusSnapshot
   };
   let _ = menu.status_title.set_text(&snapshot.title);
   let _ = menu.status_details.set_text(&snapshot.details);
+  let _ = menu.gemini_quota_line.set_text(&snapshot.gemini_quota_line);
   let _ = menu.token_line.set_text(&snapshot.token_line);
 }
 
@@ -707,6 +723,7 @@ fn normalize_host_for_check(host: &str) -> &str {
 static CODEX_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
 static GEMINI_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
 static CLIPROXYAPI_VERSION_CACHE: OnceLock<Option<String>> = OnceLock::new();
+static GEMINI_QUOTA_CACHE: OnceLock<Mutex<GeminiQuotaCache>> = OnceLock::new();
 
 fn detect_cli_version(command: &str) -> Option<String> {
   let output = std::process::Command::new(command)
@@ -728,6 +745,222 @@ fn detect_cli_version(command: &str) -> Option<String> {
 
 fn cached_cli_version(cache: &'static OnceLock<Option<String>>, command: &str) -> Option<String> {
   cache.get_or_init(|| detect_cli_version(command)).clone()
+}
+
+fn parse_gemini_reset_label(value: &str) -> Option<String> {
+  let trimmed = value.trim();
+  if trimmed.is_empty() {
+    return None;
+  }
+  // Common format from CloudCode API is RFC3339: YYYY-MM-DDTHH:MM:SSZ
+  // Render it as MM.DD, HH:MM (local-ish without tz conversion).
+  if trimmed.len() >= 16 {
+    let bytes = trimmed.as_bytes();
+    if bytes.get(4) == Some(&b'-') && bytes.get(7) == Some(&b'-') && bytes.get(10) == Some(&b'T') {
+      let month = &trimmed[5..7];
+      let day = &trimmed[8..10];
+      let hh = &trimmed[11..13];
+      let mm = &trimmed[14..16];
+      return Some(format!("{month}.{day}, {hh}:{mm}"));
+    }
+  }
+  Some(trimmed.to_string())
+}
+
+fn resolve_gemini_cli_core_entry(gemini_cmd: &str) -> Option<PathBuf> {
+  let gemini_path = resolve_command_path(gemini_cmd)
+    .or_else(|| FsPath::new(gemini_cmd).exists().then(|| PathBuf::from(gemini_cmd)))?;
+  let gemini_real = std::fs::canonicalize(gemini_path).ok()?;
+  // Layout: .../@google/gemini-cli/dist/index.js
+  let cli_root = gemini_real.parent()?.parent()?;
+  let core_entry = cli_root.join("node_modules/@google/gemini-cli-core/dist/index.js");
+  core_entry.exists().then_some(core_entry)
+}
+
+async fn fetch_gemini_quota_line(config: Arc<Config>) -> String {
+  if !which_gemini(&config.gemini_cmd) {
+    return "Gemini quota: gemini missing".to_string();
+  }
+  let Some(node) = resolve_node_path() else {
+    return "Gemini quota: node missing".to_string();
+  };
+  let Some(core_entry) = resolve_gemini_cli_core_entry(&config.gemini_cmd) else {
+    return "Gemini quota: core missing".to_string();
+  };
+
+  let script = r#"
+    const fs = require('fs');
+    const core = require(process.env.CORE_PATH);
+    const credsPath = core.Storage.getOAuthCredsPath();
+    if (!fs.existsSync(credsPath)) {
+      console.log(JSON.stringify({ ok: false, error: 'missing oauth creds', credsPath }));
+      process.exit(0);
+    }
+    const cfg = core.makeFakeConfig({ targetDir: process.cwd(), cwd: process.cwd(), debugMode: false, usageStatisticsEnabled: true, model: 'gemini-2.5-pro' });
+    (async () => {
+      const client = await core.getOauthClient(core.AuthType.LOGIN_WITH_GOOGLE, cfg);
+      const envProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID || null;
+      const server = new core.CodeAssistServer(client, envProject || undefined, {}, '', undefined, undefined);
+      const metadata = { ideType: 'GEMINI_CLI', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' };
+      const load = await server.loadCodeAssist({
+        cloudaicompanionProject: envProject || undefined,
+        metadata: { ...metadata, duetProject: envProject || undefined },
+      });
+      const projectId = (load && load.cloudaicompanionProject) ? load.cloudaicompanionProject : envProject;
+      if (!projectId) {
+        console.log(JSON.stringify({ ok: false, error: 'project id unavailable', load }));
+        return;
+      }
+      const quota = await server.retrieveUserQuota({ project: projectId });
+      const email = new core.UserAccountManager().getCachedGoogleAccount() || null;
+      console.log(JSON.stringify({ ok: true, email, projectId, quota }));
+    })().catch((err) => {
+      const message = (err && (err.message || err.toString())) ? (err.message || err.toString()) : 'unknown error';
+      console.log(JSON.stringify({ ok: false, error: message }));
+    });
+  "#;
+
+  let mut cmd = Command::new(node);
+  cmd.arg("-e")
+    .arg(script)
+    .env("CORE_PATH", core_entry)
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+
+  let output = match tokio::time::timeout(Duration::from_secs(5), cmd.output()).await {
+    Ok(result) => match result {
+      Ok(output) => output,
+      Err(err) => return format!("Gemini quota: failed to run node ({err})"),
+    },
+    Err(_) => return "Gemini quota: timeout".to_string(),
+  };
+
+  let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+  let json = extract_json_payload(&stdout);
+  let Some(json) = json else {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    return if stderr.is_empty() {
+      "Gemini quota: unavailable".to_string()
+    } else {
+      format!("Gemini quota: {stderr}")
+    };
+  };
+
+  let ok = json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+  if !ok {
+    let err = json.get("error").and_then(|v| v.as_str()).unwrap_or("unavailable");
+    return format!("Gemini quota: {err}");
+  }
+
+  let email = json.get("email").and_then(|v| v.as_str()).unwrap_or("");
+  let buckets = json
+    .get("quota")
+    .and_then(|q| q.get("buckets"))
+    .and_then(|b| b.as_array())
+    .cloned()
+    .unwrap_or_default();
+
+  let mut flash_remaining: Option<f64> = None;
+  let mut flash_reset: Option<String> = None;
+  let mut pro_remaining: Option<f64> = None;
+  let mut pro_reset: Option<String> = None;
+
+  let flash_models = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+  let pro_models = ["gemini-3-pro-preview", "gemini-2.5-pro"];
+
+  let consider_bucket = |model_ids: &[&str], remaining: &mut Option<f64>, reset: &mut Option<String>, prefer: &str| {
+    let mut preferred: Option<(f64, Option<String>)> = None;
+    let mut min_other: Option<(f64, Option<String>)> = None;
+    for b in buckets.iter() {
+      let model_id = b.get("modelId").and_then(|v| v.as_str()).unwrap_or("").trim();
+      if model_id.is_empty() {
+        continue;
+      }
+      if model_id.starts_with("gemini-2.0-flash") {
+        continue;
+      }
+      if !model_ids.iter().any(|m| model_id.eq_ignore_ascii_case(m)) {
+        continue;
+      }
+      let frac = b.get("remainingFraction").and_then(|v| v.as_f64());
+      let Some(frac) = frac else { continue; };
+      let frac = frac.max(0.0).min(1.0);
+      let reset_time = b.get("resetTime").and_then(|v| v.as_str()).and_then(parse_gemini_reset_label);
+      if model_id.eq_ignore_ascii_case(prefer) {
+        preferred = Some((frac, reset_time));
+      } else {
+        match min_other {
+          None => min_other = Some((frac, reset_time)),
+          Some((prev, prev_reset)) => {
+            if frac < prev {
+              min_other = Some((frac, reset_time));
+            } else {
+              min_other = Some((prev, prev_reset));
+            }
+          }
+        }
+      }
+    }
+    let chosen = preferred.or(min_other);
+    if let Some((frac, reset_time)) = chosen {
+      *remaining = Some(frac);
+      *reset = reset_time;
+    }
+  };
+
+  consider_bucket(&flash_models, &mut flash_remaining, &mut flash_reset, "gemini-3-flash-preview");
+  consider_bucket(&pro_models, &mut pro_remaining, &mut pro_reset, "gemini-3-pro-preview");
+
+  let fmt = |frac: Option<f64>| -> String {
+    match frac {
+      None => "-".to_string(),
+      Some(v) => format!("{}%", (v * 100.0).round() as i64),
+    }
+  };
+  let fmt_reset = |s: Option<String>| -> String {
+    s.unwrap_or_else(|| "-".to_string())
+  };
+
+  let email_label = if email.trim().is_empty() { "".to_string() } else { format!(" ({email})") };
+  format!(
+    "Gemini quota{email_label}: Flash {} · {} | Pro {} · {}",
+    fmt(flash_remaining),
+    fmt_reset(flash_reset),
+    fmt(pro_remaining),
+    fmt_reset(pro_reset),
+  )
+}
+
+async fn get_cached_gemini_quota_line(config: Arc<Config>) -> String {
+  let cache = GEMINI_QUOTA_CACHE.get_or_init(|| Mutex::new(GeminiQuotaCache {
+    updated_at: 0,
+    line: "Gemini quota: —".to_string(),
+    in_flight: false,
+  }));
+
+  let now = now_unix();
+  {
+    let mut state = cache.lock().await;
+    if now.saturating_sub(state.updated_at) < 60 {
+      return state.line.clone();
+    }
+    if state.in_flight {
+      return state.line.clone();
+    }
+    state.in_flight = true;
+  }
+
+  let cache_ptr: &'static Mutex<GeminiQuotaCache> = cache;
+  tokio::spawn(async move {
+    let line = fetch_gemini_quota_line(config).await;
+    let mut state = cache_ptr.lock().await;
+    state.updated_at = now_unix();
+    state.line = line;
+    state.in_flight = false;
+  });
+
+  cache.lock().await.line.clone()
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {

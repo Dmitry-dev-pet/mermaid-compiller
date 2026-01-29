@@ -14,6 +14,9 @@ opencode.json
 # Agent build artifacts
 agent/src-tauri/target/
 
+# Local clones / vendored sources (not committed)
+vendor/gemini-cli/
+
 # Local experiments
 prompts-improvements.md
 PROMPTS.md
