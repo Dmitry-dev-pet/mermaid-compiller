@@ -94,6 +94,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [showProxyKey, setShowProxyKey] = useState(false);
   const [showProxyManagementKey, setShowProxyManagementKey] = useState(false);
   const [showProxySettings, setShowProxySettings] = useState(connectionState.status !== 'connected');
+  const [showAgentSettings, setShowAgentSettings] = useState(connectionState.status !== 'connected');
   const [showCliproxyUsageDetails, setShowCliproxyUsageDetails] = useState(false);
   const [showCliproxySubscriptions, setShowCliproxySubscriptions] = useState(false);
   const [cliproxySubscriptionsGroupBy, setCliproxySubscriptionsGroupBy] = useState<CliproxySubscriptionsGroupBy>('provider');
@@ -541,44 +542,67 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
               </div>
             ) : isAgent ? (
               <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
-                  <Input
-                    type="text"
-                    autoComplete="off"
-                    name="agent-endpoint"
-                    value={aiConfig.agentEndpoint}
-                    onChange={(e) => updateConfig({ agentEndpoint: e.target.value })}
-                    placeholder="http://127.0.0.1:8787"
-                    size="md"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Agent Token</label>
-                  <div className="relative">
-                    <Input
-                      type={showAgentToken ? 'text' : 'password'}
-                      autoComplete="new-password"
-                      name="agent-token"
-                      data-1p-ignore="true"
-                      data-lpignore="true"
-                      value={aiConfig.agentToken || ''}
-                      onChange={(e) => updateConfig({ agentToken: e.target.value })}
-                      placeholder="••••"
-                      size="md"
-                      className="pr-8"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setShowAgentToken((prev) => !prev)}
-                      className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                      aria-label={showAgentToken ? 'Hide agent token' : 'Show agent token'}
-                    >
-                      {showAgentToken ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </Button>
-                  </div>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAgentSettings((prev) => !prev)}
+                    className="w-full flex items-center justify-between text-left"
+                    aria-expanded={showAgentSettings}
+                  >
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Agent settings</span>
+                    <ChevronDown size={14} className={`transition-transform ${showAgentSettings ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {!showAgentSettings ? (
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Endpoint:{' '}
+                      <span className="font-mono">
+                        {aiConfig.agentEndpoint?.trim() ? aiConfig.agentEndpoint.trim() : '(not set)'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Endpoint</label>
+                        <Input
+                          type="text"
+                          autoComplete="off"
+                          name="agent-endpoint"
+                          value={aiConfig.agentEndpoint}
+                          onChange={(e) => updateConfig({ agentEndpoint: e.target.value })}
+                          placeholder="http://127.0.0.1:8787"
+                          size="md"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Agent Token</label>
+                        <div className="relative">
+                          <Input
+                            type={showAgentToken ? 'text' : 'password'}
+                            autoComplete="new-password"
+                            name="agent-token"
+                            data-1p-ignore="true"
+                            data-lpignore="true"
+                            value={aiConfig.agentToken || ''}
+                            onChange={(e) => updateConfig({ agentToken: e.target.value })}
+                            placeholder="••••"
+                            size="md"
+                            className="pr-8"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setShowAgentToken((prev) => !prev)}
+                            className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                            aria-label={showAgentToken ? 'Hide agent token' : 'Show agent token'}
+                          >
+                            {showAgentToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div
                   className={`text-[11px] flex items-center gap-1 ${
