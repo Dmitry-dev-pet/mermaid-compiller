@@ -135,9 +135,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         : aiConfig.provider === 'agent'
           ? 'Mermaid Agent'
           : 'Proxy';
-    const ownedBy = typeof model?.ownedBy === 'string' ? model.ownedBy.trim() : '';
-    const ownedByLabel = ownedBy ? ` · owned_by: ${ownedBy}` : '';
-
     const viaLabel = (() => {
       if (aiConfig.provider !== 'cliproxy') return '';
       const files = cliproxyInfo.cliproxyAuthFiles ?? [];
@@ -168,7 +165,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       return ` · via: ${present.join('+')}`;
     })();
 
-    return `AI: ${providerName} · ${modelName}${contextLabel}${ownedByLabel}${viaLabel}`;
+    return `AI: ${providerName} · ${modelName}${contextLabel}${viaLabel}`;
   };
 
   const getStatusTone = () => {
