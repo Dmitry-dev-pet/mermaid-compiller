@@ -1,28 +1,28 @@
 # Markdown Notebooks & Planner
 
-[← Back to Index](INDEX.md) | [← Prev: Basic Workflow](guide-basic.md)
+[← Back to Index](./) | [← Prev: Basic Workflow](guide-basic.md)
 
-**Markdown Notebooks** — это самый мощный режим приложения, позволяющий создавать целые технические документы с множеством взаимосвязанных диаграмм.
+**Markdown Notebooks** is the most powerful mode in the app. It lets you generate complete technical documents with multiple related diagrams.
 
-## Принцип работы
-В этом режиме Build не просто генерирует одну диаграмму, а запускает конвейер:
-1.  **Planner**: ИИ анализирует общую задачу и составляет JSON-план документа.
-2.  **Structure**: Создается Markdown-скелет с заголовками, текстом и пустыми блоками диаграмм.
-3.  **Sequential Build**: ИИ последовательно "заполняет" каждый блок диаграммой, учитывая общий контекст (глоссарий терминов).
+## How it works
+In this mode, **Build** runs a pipeline instead of generating a single diagram:
+1. **Planner**: the AI analyzes the task and produces a JSON plan of the document.
+2. **Structure**: the app creates a Markdown skeleton with headings and empty Mermaid blocks.
+3. **Sequential Build**: the AI fills each block one-by-one, using shared context (a glossary).
 
-## Как запустить
-1. Включите переключатель **MD notebook** в панели чата.
-2. (Опционально) Укажите число диаграмм `N`, которые вы хотите видеть в документе.
-3. Опишите сложную систему (например, "Архитектура микросервисного банка").
-4. Нажмите **Build**.
+## How to run
+1. Enable **MD notebook** in the chat panel.
+2. (Optional) Specify the number of diagrams `N`.
+3. Describe a complex system (e.g. “Architecture of a microservice bank”).
+4. Press **Build**.
 
-## Преимущества
-- **Согласованность**: Все диаграммы в документе используют одни и те же названия сервисов и сущностей (благодаря общему Glossary в плане).
-- **Разнообразие**: Planner сам решает, где лучше использовать `sequenceDiagram`, а где `flowchart` или `ERDiagram`.
-- **Автономия**: Вы получаете готовый к публикации `.md` файл.
+## Benefits
+- **Consistency**: all diagrams reuse the same service/entity names (via the shared glossary).
+- **Variety**: the Planner chooses the best diagram type (`sequenceDiagram`, `flowchart`, `ERDiagram`, etc.) per section.
+- **Autonomy**: you get a publish-ready `.md` file.
 
-## Редактирование блоков
-В режиме превью Markdown каждый блок кликабелен. Вы можете выбрать конкретный блок и применить к нему **Fix** или **Analyze**, не затрагивая остальной документ.
+## Editing individual blocks
+In Markdown preview, each Mermaid block is clickable. You can select a specific block and run **Fix** or **Analyze** on it without affecting the rest of the document.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Whiteboard Integration →](guide-whiteboard.md)
+[← Back to Index](./) | [Next: Whiteboard Integration →](guide-whiteboard.md)

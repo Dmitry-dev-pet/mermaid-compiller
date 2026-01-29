@@ -1,29 +1,29 @@
 # CLIProxyAPI Integration
 
-[← Back to Index](INDEX.md) | [← Prev: AI Overview](ai-overview.md)
+[← Back to Index](./) | [← Prev: AI Overview](ai-overview.md)
 
-**CLIProxyAPI** (Cliproxy) — это сердце продвинутой интеграции. Этот режим позволяет использовать профессиональные модели ИИ без ручного управления API-ключами.
+**CLIProxyAPI** (Cliproxy) is the core of the “power user” integration. It lets you use advanced models without manually managing API keys.
 
-## Ключевые возможности
+## Key features
 
 ### 🔑 OAuth "No-Key" Magic
-Вы авторизуетесь в браузере через официальные инструменты (Google, OpenAI). Cliproxy перехватывает сессию и позволяет приложению использовать её.
+You authenticate in the browser using official tools (Google, OpenAI). Cliproxy reuses that session so the app can access the models.
 
-### 🚀 Канал Antigravity
-Доступ к высокопроизводительному шлюзу **Antigravity**, оптимизированному для кода.
+### 🚀 Antigravity channel
+Access to **Antigravity**, a high-performance gateway optimized for coding workloads.
 
-### 📊 Мониторинг квот
-При подключении к Cliproxy в меню AI появляются графики (Quota Bars):
-- Оставшиеся запросы для **Codex**.
-- Доступные токены для **Antigravity**.
+### 📊 Quota monitoring
+When connected to Cliproxy, the AI menu shows quota bars, for example:
+- Remaining requests for **Codex**
+- Available tokens for **Antigravity**
 
 ### ⚖️ Load Balancing
-Cliproxy умеет переключаться между несколькими аккаунтами (Round-robin) для обхода лимитов.
+Cliproxy can rotate between multiple accounts (round-robin) to spread rate limits.
 
-## Как использовать
-1. Запустите `cliproxyapi` (по умолчанию `localhost:8317`).
-2. В редакторе выберите провайдер **My Proxy**.
-3. Укажите эндпоинт `http://localhost:8317`.
+## How to use
+1. Run `cliproxyapi` (default: `localhost:8317`).
+2. In the editor, choose **My Proxy**.
+3. Set endpoint to `http://localhost:8317`.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Mermaid Agent →](ai-agent.md)
+[← Back to Index](./) | [Next: Mermaid Agent →](ai-agent.md)

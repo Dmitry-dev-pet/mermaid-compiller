@@ -1,24 +1,24 @@
 # System Architecture
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
-Проект построен как SPA на React 19 с модульной архитектурой.
+The project is a React SPA (React 19) with a modular architecture.
 
-## Модули
+## Modules
 
 ### UI Layer (`/components`)
-- **ChatColumn**: История, проекты.
-- **EditorColumn**: Редактор (PrismJS).
-- **PreviewColumn**: Рендеринг (SVG/Markdown/Whiteboard).
+- **ChatColumn**: chat history, projects.
+- **EditorColumn**: editor (PrismJS).
+- **PreviewColumn**: rendering (SVG / Markdown / Whiteboard).
 
 ### Logic Layer (`/hooks`)
 - **Core**: `useAI`, `useMermaid`.
-- **Studio**: `useDiagramStudio` (оркестрация).
+- **Studio**: `useDiagramStudio` (orchestration).
 
 ### Service Layer (`/services`)
-- **Strategies**: Адаптеры для LLM.
+- **Strategies**: LLM adapters.
 - **History**: IndexedDB.
-- **Mermaid**: Валидация.
+- **Mermaid**: validation.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Mermaid Core →](internal-mermaid.md)
+[← Back to Index](./) | [Next: Mermaid Core →](internal-mermaid.md)

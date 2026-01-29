@@ -1,26 +1,26 @@
 # Troubleshooting Guide
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
-Решение типовых проблем при работе с Mermaid Diagram Compiler.
+Common issues and solutions for Mermaid Diagram Compiler.
 
-## LLM не подключается
-- **OpenRouter**: Проверьте правильность API-ключа.
-- **My Proxy (Cliproxy)**: Убедитесь, что сервер запущен и доступен по адресу (например, `http://localhost:8317`).
-- **Mermaid Agent**: Проверьте, запущено ли приложение в трее.
+## The LLM won’t connect
+- **OpenRouter**: verify your API key.
+- **My Proxy (Cliproxy)**: make sure the server is running and reachable (e.g. `http://localhost:8317`).
+- **Mermaid Agent**: make sure the tray app is running.
 
 ## LLM Timeout
-Запросы к моделям могут занимать длительное время, особенно при генерации больших документов.
-- Увеличьте значение **Timeout (s)** в панели настроек AI.
-- Уменьшите объем документации в **Build Docs**, если модель перегружена контекстом.
+Requests can take a while, especially when generating large documents.
+- Increase **Timeout (s)** in the AI settings.
+- Reduce the amount of documentation selected in **Build Docs** if the model is overloaded with context.
 
-## Превью не рендерится
-- Если статус в редакторе **Invalid**, значит код содержит синтаксические ошибки. Нажмите **Fix**.
-- Если код **Valid**, но экран пустой — проверьте оверлей с системной ошибкой рендера.
+## Preview doesn’t render
+- If the editor shows **Invalid**, the code has syntax errors. Press **Fix**.
+- If the code is **Valid** but the screen is empty, check for a renderer error overlay.
 
-## Пропадают старые диаграммы
-- Приложение хранит историю в **IndexedDB**. Очистка кэша браузера или использование режима инкогнито может привести к удалению локальных данных.
-- Используйте **Cloud Sync** (Supabase) для надежного сохранения проектов.
+## Old diagrams disappear
+- The app stores history in **IndexedDB**. Clearing browser storage or using incognito/private mode can remove local data.
+- Use **Cloud Sync** (Supabase) for reliable project storage.
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)

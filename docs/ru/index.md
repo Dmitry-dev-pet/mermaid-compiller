@@ -1,35 +1,35 @@
-# Documentation Index
+# Индекс документации
 
-Welcome to the Mermaid Diagram Compiler documentation. This guide is organized into specialized sections to help you find information quickly.
-
----
-
-## 🚀 Getting Started
-- **[Web Setup](setup-web.md)**: How to run the editor in your browser.
-- **[Desktop Setup](setup-desktop.md)**: Installing the Mermaid Agent and native shell.
-
-## 📖 User Guides
-- **[Basic Workflow](guide-basic.md)**: Chat, Build, and Auto-Fix cycle.
-- **[Markdown Notebooks](guide-notebooks.md)**: Creating multi-diagram documents with the Planner.
-- **[Whiteboard Integration](guide-whiteboard.md)**: Sketching and annotating with Excalidraw.
-- **[Export & Sharing](guide-export.md)**: Saving to SVG/PNG and cloud sharing.
-- **[Troubleshooting](guide-troubleshooting.md)**: Common issues and solutions.
-
-## 🧠 AI & Integrations
-- **[AI Strategies Overview](ai-overview.md)**: Choosing between OpenRouter, My Proxy, and Agent.
-- **[CLIProxyAPI Integration](ai-cliproxy.md)**: Using OAuth "No-Key" access, Antigravity, and Quotas.
-- **[Mermaid Agent Guide](ai-agent.md)**: Using local CLI tools (`gemini`, `codex`).
-- **[Prompt Engineering](ai-prompts.md)**: How the compiler builds system prompts and context.
-
-## 💾 Data & Storage
-- **[Local Storage](storage-local.md)**: How IndexedDB and History work.
-- **[Cloud Sync & E2EE](storage-sync.md)**: Secure synchronization with Supabase and encryption.
-
-## 🛠 Developer Internals
-- **[System Architecture](internal-architecture.md)**: High-level design and module structure.
-- **[Mermaid Core](internal-mermaid.md)**: Rendering, validation, and syntax handling.
-- **[Testing & Linting](internal-testing.md)**: Quality assurance commands.
-- **[Updating Docs](internal-docs-update.md)**: How to update the embedded Mermaid documentation.
+Добро пожаловать в документацию Mermaid Diagram Compiler. Ниже — оглавление по основным разделам.
 
 ---
-[← Back to Main README](../../README.md)
+
+## 🚀 Начало
+- **[Веб-версия](setup-web.md)**: как запустить редактор в браузере.
+- **[Desktop-версия](setup-desktop.md)**: установка Mermaid Agent и нативной оболочки.
+
+## 📖 Гайды
+- **[Базовый рабочий цикл](guide-basic.md)**: Chat → Build → Fix.
+- **[Markdown Notebooks](guide-notebooks.md)**: многодиаграммные документы с Planner.
+- **[Whiteboard](guide-whiteboard.md)**: наброски и аннотации через Excalidraw.
+- **[Экспорт и шеринг](guide-export.md)**: SVG/PNG и облачные ссылки.
+- **[Troubleshooting](guide-troubleshooting.md)**: типовые проблемы и решения.
+
+## 🧠 ИИ и интеграции
+- **[Обзор стратегий](ai-overview.md)**: OpenRouter vs My Proxy vs Agent.
+- **[CLIProxyAPI](ai-cliproxy.md)**: OAuth “No‑Key”, Antigravity и квоты.
+- **[Mermaid Agent](ai-agent.md)**: локальные CLI (`gemini`, `codex`).
+- **[Промпты и контекст](ai-prompts.md)**: как собираются system prompts и docs context.
+
+## 💾 Данные и хранение
+- **[Локальное хранение](storage-local.md)**: IndexedDB и история.
+- **[Cloud Sync и E2EE](storage-sync.md)**: Supabase + шифрование.
+
+## 🛠 Внутренности
+- **[Архитектура](internal-architecture.md)**: структура модулей и компонентов.
+- **[Mermaid Core](internal-mermaid.md)**: валидация, рендеринг, синтаксис.
+- **[Тесты и линтинг](internal-testing.md)**: команды качества.
+- **[Обновление доков](internal-docs-update.md)**: как обновлять Mermaid‑документацию.
+
+---
+[← Назад к README](../../README.md)

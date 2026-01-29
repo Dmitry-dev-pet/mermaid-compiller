@@ -1,23 +1,23 @@
 # Cloud Sync, Sharing & E2EE
 
-[← Back to Index](INDEX.md) | [← Prev: Local Storage](storage-local.md)
+[← Back to Index](./) | [← Prev: Local Storage](storage-local.md)
 
-## Провайдеры хранения
+## Storage providers
 
-1.  **Local**: Только браузер.
-2.  **Hosted (Supabase)**: Синхронизация с официальным облаком.
-3.  **BYO Supabase**: Ваш личный сервер.
+1.  **Local**: browser-only.
+2.  **Hosted (Supabase)**: sync via the official cloud.
+3.  **BYO Supabase**: bring your own Supabase instance.
 
-## E2EE (Сквозное шифрование)
+## E2EE (End-to-end encryption)
 
-Вы можете включить шифрование для облачной синхронизации.
-- **Алгоритм**: AES-GCM.
-- **Ключ**: Генерируется из вашей Passphrase (PBKDF2).
-- **Гарантия**: Сервер видит только зашифрованный blob. Без пароля данные восстановить невозможно.
+You can enable encryption for cloud sync.
+- **Algorithm**: AES-GCM
+- **Key derivation**: derived from your passphrase (PBKDF2)
+- **Guarantee**: the server only sees an encrypted blob; without the passphrase, data cannot be recovered.
 
 ## Sharing
-- **Viewer Link**: Ссылка для просмотра.
-- **Editor Link**: Ссылка для совместного редактирования.
+- **Viewer link**: view-only.
+- **Editor link**: collaborative editing.
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)

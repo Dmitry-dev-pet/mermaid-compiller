@@ -1,42 +1,36 @@
 # Web Setup & Installation
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
-Это руководство по запуску стандартной веб-версии Mermaid Diagram Compiler.
+This guide explains how to run the web version of Mermaid Diagram Compiler.
 
-## Требования
-- **Node.js**: v20 или выше.
-- **npm**: v10 или выше.
+## Requirements
+- **Node.js**: v20 or newer
+- **npm**: v10 or newer
 
-## Установка
-
-Репозиторий содержит два `package.json`. Рекомендуется устанавливать зависимости из корня:
+This repository contains two `package.json` files. Install dependencies from the repo root:
 
 ```bash
-# В корне проекта
+# In the project root
 npm install
 npm --prefix diagram-compiler install
 ```
 
-## Запуск (Dev Mode)
-
-Для запуска локального сервера разработки:
+## Run (Dev)
 
 ```bash
 npm run dev
 ```
-Приложение откроется по адресу `http://localhost:5173`.
+The app will be available at `http://localhost:5173`.
 
-## Сборка (Production)
-
-Для создания оптимизированной сборки:
+## Build (Production)
 
 ```bash
 npm run build
 ```
-Файлы будут созданы в `diagram-compiler/dist`.
+Build output will be in `diagram-compiler/dist`.
 
-## Проверка типов и тесты
+## Typecheck & tests
 
 ```bash
 npm run typecheck
@@ -44,4 +38,4 @@ npm test
 ```
 
 ---
-[← Back to Index](INDEX.md) | [Next: Desktop Setup →](setup-desktop.md)
+[← Back to Index](./) | [Next: Desktop Setup →](setup-desktop.md)

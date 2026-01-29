@@ -1,42 +1,42 @@
 # Export & Sharing
 
-[← Back to Index](INDEX.md) | [← Prev: Whiteboard](guide-whiteboard.md)
+[← Back to Index](./) | [← Prev: Whiteboard](guide-whiteboard.md)
 
-## Экспорт изображений
+## Image export
 
-В шапке превью доступны кнопки экспорта:
+Export buttons are available in the preview header.
 
 ### SVG
-Сохраняет векторную версию диаграммы.
-- Идеально для вставки в веб-страницы или дальнейшего редактирования в векторных редакторах.
-- Поддерживает зум без потери качества.
+Exports a vector version of the diagram.
+- Great for embedding into web pages or editing in vector tools.
+- Zooms without quality loss.
 
 ### PNG
-Сохраняет растровую картинку.
-- Использует текущую тему (Dark/Light) для фона.
-- Автоматически инлайнит внешние ресурсы (шрифты, иконки), чтобы картинка выглядела идентично превью.
-- Защита от "Tainted Canvas": используется специальный механизм для безопасного экспорта даже при наличии `foreignObject`.
+Exports a raster image.
+- Uses the current theme (Dark/Light) as the background.
+- Inlines external resources (fonts, icons) so the export matches preview.
+- “Tainted Canvas” protection: uses a safe export pipeline even when `foreignObject` is present.
 
-## Облачный шеринг
+## Cloud sharing
 
-Если настроен провайдер **Hosted** или **BYO Supabase**:
-1. Нажмите кнопку **Share** в меню проекта.
-2. Выберите режим доступа:
-   - **Viewer**: Ссылка только для просмотра.
-   - **Editor**: Ссылка для совместного редактирования.
-3. Скопируйте ссылку и отправьте коллеге.
+If you use **Hosted** or **BYO Supabase** storage:
+1. Click **Share** in the Project menu.
+2. Choose access mode:
+   - **Viewer**: view-only link
+   - **Editor**: collaborative editing link
+3. Copy the link and share it.
 
-*Если включено E2EE, получателю потребуется ваша Passphrase.*
+*If E2EE is enabled, recipients will need your passphrase.*
 
 ## Project Bundle
 
-Для полного бэкапа используйте **Export Bundle** в меню проектов. Это создаст `.json` файл, содержащий:
-- Метаданные проекта.
-- Всю историю шагов.
-- Все ревизии кода.
-- Whiteboard-сцены.
+For a full backup, use **Export Bundle** in the Projects menu. This creates a `.json` file that contains:
+- Project metadata
+- Full steps history
+- All code revisions
+- Whiteboard scenes
 
-Восстановить проект можно через **Import Bundle**.
+Restore via **Import Bundle**.
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)

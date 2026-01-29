@@ -1,50 +1,50 @@
 # Desktop Agent Setup
 
-[← Back to Index](INDEX.md) | [← Prev: Web Setup](setup-web.md)
+[← Back to Index](./) | [← Prev: Web Setup](setup-web.md)
 
-Desktop-версия включает в себя нативное приложение на Tauri и фоновый агент для работы с CLI.
+The desktop version includes a native Tauri app and a background agent (tray app) to work with local CLI tools.
 
-## Требования
-- **Rust**: Актуальная версия (rustc & cargo).
-- **Node.js**: v20+.
-- **Системные зависимости**: 
-    - macOS: XCode command line tools.
-    - Linux: `libwebkit2gtk-4.0-dev`, `build-essential`, `curl`, `wget`, `file`, `libssl-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`.
-    - Windows: C++ Build Tools.
+## Requirements
+- **Rust**: latest stable (`rustc` + `cargo`)
+- **Node.js**: v20+
+- **System dependencies**:
+  - macOS: Xcode Command Line Tools
+  - Linux: `libwebkit2gtk-4.0-dev`, `build-essential`, `curl`, `wget`, `file`, `libssl-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`
+  - Windows: C++ Build Tools
 
-## Установка и Запуск
+## Install & run
 
 ```bash
-# Переходим в папку агента
+# Go to the agent folder
 cd agent/src-tauri
 
-# Запуск в режиме разработки
+# Run in dev mode
 cargo tauri dev
 ```
-Эта команда запустит:
-1.  Frontend (Vite).
-2.  Backend (Mermaid Agent Server).
-3.  Окно приложения.
-4.  Иконку в системном трее.
+This will start:
+1. Frontend (Vite)
+2. Backend (Mermaid Agent server)
+3. App window
+4. System tray icon
 
-## Сборка (Release)
+## Release build
 
-Для создания установщика (`.dmg`, `.msi`, `.deb`):
+To build an installer (`.dmg`, `.msi`, `.deb`):
 
 ```bash
 cargo tauri build
 ```
-Артефакты будут находиться в `agent/src-tauri/target/release/bundle`.
+Artifacts will be in `agent/src-tauri/target/release/bundle`.
 
-## Конфигурация Агента
-Агент читает переменные окружения. Вы можете создать `.env` файл рядом с бинарником.
+## Agent configuration
+The agent reads environment variables. You can create a `.env` file next to the binary.
 
-| Переменная | Описание | Дефолт |
+| Variable | Description | Default |
 | :--- | :--- | :--- |
-| `AGENT_PORT` | Порт API сервера | `8787` |
-| `AGENT_TOKEN` | Токен защиты API | (empty) |
-| `GEMINI_CMD` | Путь к Gemini CLI | `gemini` |
-| `CODEX_CMD` | Путь к Codex CLI | `codex` |
+| `AGENT_PORT` | Agent API server port | `8787` |
+| `AGENT_TOKEN` | Agent API auth token | (empty) |
+| `GEMINI_CMD` | Gemini CLI command/path | `gemini` |
+| `CODEX_CMD` | Codex CLI command/path | `codex` |
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)

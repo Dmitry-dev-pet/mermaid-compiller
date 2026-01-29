@@ -1,26 +1,26 @@
 # Mermaid Agent Guide
 
-[← Back to Index](INDEX.md) | [← Prev: CLIProxyAPI](ai-cliproxy.md)
+[← Back to Index](./) | [← Prev: CLIProxyAPI](ai-cliproxy.md)
 
-**Mermaid Agent** — это нативный компонент Desktop-версии, который служит мостом между веб-интерфейсом и системными CLI-утилитами.
+**Mermaid Agent** is a native desktop component that acts as a bridge between the web UI and local CLI tools installed on your machine.
 
-## Как это работает
-Агент запускает HTTP-сервер на порту `8787`. Когда вы отправляете запрос, Агент запускает в системе процесс (например, `gemini`) и передает ему ваш промпт.
+## How it works
+The agent runs an HTTP server on port `8787`. When you send a request, the agent starts a local process (e.g. `gemini`) and passes your prompt to it.
 
-## Поддерживаемые инструменты
+## Supported tools
 
 ### 1. Gemini CLI
-- Использует официальный `gemini` CLI от Google.
-- Авторизация через `gcloud auth login` или `gemini auth`.
+- Uses Google’s official `gemini` CLI.
+- Authentication via `gcloud auth login` or `gemini auth`.
 
 ### 2. Codex CLI
-- Использует `codex` CLI от OpenAI.
+- Uses OpenAI’s `codex` CLI.
 
-## Управление через Трей
-Иконка в системном трее позволяет:
-- Проверить статус (Online/Offline).
-- Увидеть, какие инструменты установлены.
-- Быстро вызвать команды логина.
+## Tray control
+The system tray icon lets you:
+- Check status (Online/Offline)
+- See which tools are installed
+- Trigger login flows quickly
 
 ---
-[← Back to Index](INDEX.md) | [Next: Prompt Engineering →](ai-prompts.md)
+[← Back to Index](./) | [Next: Prompt Engineering →](ai-prompts.md)

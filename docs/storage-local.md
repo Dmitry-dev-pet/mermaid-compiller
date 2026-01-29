@@ -1,20 +1,20 @@
 # Local Storage (IndexedDB)
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
-Приложение работает по принципу **Local-First**. Это значит, что все ваши данные всегда сохраняются локально в браузере, даже если интернет отключен.
+The app is **local-first**. This means your data is stored locally in the browser and remains available even when you’re offline.
 
-## База данных `dc_history`
+## `dc_history` database
 
-Мы используем IndexedDB для хранения всей истории.
+We use IndexedDB to store the full history.
 
-### Структура данных
-- **Sessions**: Проекты пользователя. Хранят настройки и метаданные.
-- **Steps**: История действий (Chat, Build, Fix). Каждый шаг — это снимок времени.
-- **Revisions**: Версии кода диаграммы. Благодаря этому вы можете "отмотать" состояние проекта на любой момент в прошлом.
+### Data model
+- **Sessions**: user projects, settings, and metadata.
+- **Steps**: history of actions (Chat, Build, Fix). Each step is a point-in-time snapshot.
+- **Revisions**: versions of diagram code, so you can roll back to any previous moment.
 
-### Приватность
-Данные из IndexedDB никогда не покидают ваше устройство, если вы сами не включите облачную синхронизацию.
+### Privacy
+IndexedDB data never leaves your device unless you enable cloud sync.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Cloud Sync →](storage-sync.md)
+[← Back to Index](./) | [Next: Cloud Sync →](storage-sync.md)

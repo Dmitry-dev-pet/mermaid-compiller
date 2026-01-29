@@ -1,21 +1,21 @@
 # Prompt Engineering & Context
 
-[← Back to Index](INDEX.md) | [← Prev: Mermaid Agent](ai-agent.md)
+[← Back to Index](./) | [← Prev: Mermaid Agent](ai-agent.md)
 
-Качество генерации достигается за счет сложной системы сборки промптов.
+Generation quality comes from a structured prompt-building pipeline.
 
-## Сборка промпта (The Pipeline)
+## Prompt pipeline
 
-1.  **Intent Injection**: Из истории чата берется последний "интент".
-2.  **Context Selection**: Подгружаются файлы документации для выбранного типа диаграммы.
-3.  **Code Context**: Текущий код передается как `current_state`.
-4.  **System Instructions**: Применяется промпт для режима (Generate/Fix/Analyze).
+1. **Intent injection**: take the latest Intent from chat history.
+2. **Context selection**: load Mermaid docs relevant to the selected diagram type.
+3. **Code context**: include current code as `current_state`.
+4. **System instructions**: apply mode-specific instructions (Generate/Fix/Analyze).
 
-## Управление документацией (Build Docs)
-В панели **Build Docs** вы можете вручную управлять контекстом, включая/выключая файлы документации.
+## Documentation controls (Build Docs)
+In **Build Docs**, you can manually control context by toggling documentation files on/off.
 
-## Цикл Auto-Fix
-Если код невалиден, приложение запускает цикл исправления, передавая ошибку парсера обратно в модель (до 5 попыток).
+## Auto-fix loop
+If code is invalid, the app runs an auto-fix loop by sending parser errors back to the model (up to 5 attempts).
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)

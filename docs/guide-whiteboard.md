@@ -1,24 +1,24 @@
 # Whiteboard Integration (Excalidraw)
 
-[← Back to Index](INDEX.md) | [← Prev: Markdown Notebooks](guide-notebooks.md)
+[← Back to Index](./) | [← Prev: Markdown Notebooks](guide-notebooks.md)
 
-Иногда диаграммы, сгенерированные кодом, нужно дополнить набросками, аннотациями или просто "порисовать руками". Для этого в проект интегрирован **Excalidraw**.
+Sometimes a code-generated diagram needs sketches, annotations, or manual notes. Mermaid Diagram Compiler integrates **Excalidraw** for that.
 
-## Режимы работы
+## Modes
 
-### 1. Поверх диаграммы (Annotations)
-Вы можете переключить Preview в режим **Whiteboard**. Текущая Mermaid-диаграмма станет фоном, а вы сможете рисовать стрелки, обводить блоки или добавлять стикеры поверх неё.
+### 1. On top of the diagram (Annotations)
+Switch Preview to **Whiteboard** mode. The current Mermaid diagram becomes a background, and you can draw arrows, highlight blocks, or add sticky notes on top.
 
-### 2. Свободный холст (Empty Board)
-Используйте Whiteboard как самостоятельный инструмент для быстрого проектирования схем, которые еще рано превращать в код.
+### 2. Free canvas (Empty Board)
+Use Whiteboard as a standalone tool for early-stage sketching before you turn things into Mermaid code.
 
-## Интеграция с Notebooks
-В режиме Markdown Notebook сцены Whiteboard привязываются к **активному блоку**.
-- Если вы нарисовали что-то для Блока 1, а потом переключились на Блок 2 — холст очистится (или покажет наброски для Блока 2).
-- Все рисунки сохраняются вместе с проектом в IndexedDB.
+## Notebook integration
+In Markdown Notebook mode, Whiteboard scenes are tied to the **active block**.
+- If you draw something for Block 1 and then switch to Block 2, you’ll see the scene for Block 2.
+- All drawings are saved with the project in IndexedDB.
 
-## Управление
-В шапке превью доступен переключатель **Mermaid / Whiteboard**. Состояние холста сохраняется автоматически при каждом изменении.
+## Controls
+Use the **Mermaid / Whiteboard** switch in the preview header. The canvas is saved automatically on every change.
 
 ---
-[← Back to Index](INDEX.md) | [Next: Export & Sharing →](guide-export.md)
+[← Back to Index](./) | [Next: Export & Sharing →](guide-export.md)

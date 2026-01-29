@@ -1,41 +1,39 @@
 # Testing & Linting
 
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
 
-Документация по обеспечению качества кода.
+Quality assurance commands and conventions.
 
-## Тесты (Unit Tests)
+## Unit tests
 
-Мы используем **Vitest** для тестирования бизнес-логики (хуки, сервисы, парсеры).
+We use **Vitest** to test business logic (hooks, services, parsers).
 
-Запуск тестов:
+Run tests:
 ```bash
-# Из корня проекта
+# From repo root
 npm test
 
-# Или в папке приложения
+# Or inside the app folder
 cd diagram-compiler
 npm test
 ```
 
-Критические области покрытия:
-- Сборка и валидация `NotebookPlan`.
-- Операционные логи и работа с контекстом.
-- Утилиты Mermaid-сервиса.
+High-priority coverage areas:
+- `NotebookPlan` build & validation
+- Operation logs and context
+- Mermaid service utilities
 
-## Линтинг (Lint)
+## Lint
 
-Проверка стиля кода:
 ```bash
 npm run lint
 ```
 
-## Проверка типов (Typecheck)
+## Typecheck
 
-Проверка TypeScript типов:
 ```bash
 npm run typecheck
 ```
 
 ---
-[← Back to Index](INDEX.md)
+[← Back to Index](./)
