@@ -910,9 +910,15 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                     ? file.email.trim().toLowerCase()
                                     : null;
 
+                                const isAuthFileReady = (file: { status?: string; disabled?: boolean; unavailable?: boolean }) => {
+                                  if (file.disabled || file.unavailable) return false;
+                                  const status = typeof file.status === 'string' ? file.status.trim().toLowerCase() : '';
+                                  return status === 'ready' || status === 'active';
+                                };
+
                                 const formatStatusSummary = (group: Array<{ status?: string; disabled?: boolean; unavailable?: boolean }>) => {
                                   const counts = group.reduce((acc, file) => {
-                                    const isOk = file.status === 'ready' && !file.disabled && !file.unavailable;
+                                    const isOk = isAuthFileReady(file);
                                     if (isOk) acc.ok += 1;
                                     else if (file.disabled) acc.disabled += 1;
                                     else if (file.unavailable) acc.unavailable += 1;
@@ -922,8 +928,8 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                   if (counts.ok === group.length) return { text: 'ready', tone: 'text-emerald-600 dark:text-emerald-400' };
                                   if (counts.disabled === group.length) return { text: 'disabled', tone: 'text-slate-500 dark:text-slate-400' };
                                   if (counts.unavailable === group.length) return { text: 'unavailable', tone: 'text-amber-600 dark:text-amber-400' };
-                                  if (counts.ok > 0 && counts.ok < group.length) return { text: 'partial', tone: 'text-amber-600 dark:text-amber-400' };
-                                  if (counts.ok === 0 && (counts.unavailable > 0 || counts.other > 0)) return { text: 'not ready', tone: 'text-amber-600 dark:text-amber-400' };
+                                  if (counts.ok > 0 && counts.ok < group.length) return { text: `partial ${counts.ok}/${group.length}`, tone: 'text-amber-600 dark:text-amber-400' };
+                                  if (counts.ok === 0 && (counts.unavailable > 0 || counts.other > 0 || counts.disabled > 0)) return { text: 'not ready', tone: 'text-amber-600 dark:text-amber-400' };
                                   return { text: 'unknown', tone: 'text-slate-400' };
                                 };
 
@@ -1035,7 +1041,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                 return providers.map((provider) => {
                                   const group = byProvider.get(provider) ?? [];
                                   const statusCounts = group.reduce((acc, file) => {
-                                    const isOk = file.status === 'ready' && !file.disabled && !file.unavailable;
+                                    const isOk = isAuthFileReady(file);
                                     if (isOk) acc.ok += 1;
                                     else if (file.disabled) acc.disabled += 1;
                                     else if (file.unavailable) acc.unavailable += 1;
@@ -1048,7 +1054,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                     statusCounts.ok ? `${statusCounts.ok} ok` : null,
                                     statusCounts.disabled ? `${statusCounts.disabled} disabled` : null,
                                     statusCounts.unavailable ? `${statusCounts.unavailable} unavailable` : null,
-                                    statusCounts.other ? `${statusCounts.other} other` : null,
+                                    statusCounts.other ? `${statusCounts.other} not ready` : null,
                                   ].filter(Boolean).join(' · ');
                                   const emailEntries = groupByEmailCollapsed(group);
 
