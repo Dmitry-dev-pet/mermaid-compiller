@@ -557,15 +557,14 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                   <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Agent Token</label>
                   <div className="relative">
                     <Input
-                      type="text"
+                      type={showAgentToken ? 'text' : 'password'}
                       autoComplete="new-password"
                       name="agent-token"
                       data-1p-ignore="true"
                       data-lpignore="true"
-                      style={{ WebkitTextSecurity: showAgentToken ? 'none' : 'disc' }}
                       value={aiConfig.agentToken || ''}
                       onChange={(e) => updateConfig({ agentToken: e.target.value })}
-                      placeholder="test"
+                      placeholder="••••"
                       size="md"
                       className="pr-8"
                     />
