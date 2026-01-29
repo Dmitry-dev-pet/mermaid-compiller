@@ -876,28 +876,81 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                             {cliproxyInfo.cliproxyAuthFiles.length === 0 ? (
                               <div className="text-slate-400">No auth files</div>
                             ) : (
-                              cliproxyInfo.cliproxyAuthFiles
-                                .slice(0, 8)
-                                .map((file) => {
-                                  const isOk = file.status === 'ready' && !file.disabled && !file.unavailable;
-                                  const tone = isOk
-                                    ? 'text-emerald-600 dark:text-emerald-400'
-                                    : file.disabled
-                                      ? 'text-slate-500 dark:text-slate-400'
-                                      : 'text-amber-600 dark:text-amber-400';
-                                  const label = file.email || file.label || file.name || file.id;
-                                  const status = file.disabled ? 'disabled' : file.unavailable ? 'unavailable' : (file.status ?? 'unknown');
+                              (() => {
+                                const files = cliproxyInfo.cliproxyAuthFiles ?? [];
+                                const byProvider = new Map<string, typeof files>();
+                                files.forEach((file) => {
+                                  const provider = typeof file.provider === 'string' ? file.provider.trim().toLowerCase() : 'unknown';
+                                  const prev = byProvider.get(provider);
+                                  if (prev) prev.push(file);
+                                  else byProvider.set(provider, [file]);
+                                });
+
+                                const providerRank = (provider: string) => {
+                                  if (provider === 'codex') return 1;
+                                  if (provider === 'gemini-cli') return 2;
+                                  if (provider === 'antigravity') return 3;
+                                  return 9;
+                                };
+                                const providers = Array.from(byProvider.keys()).sort((a, b) => {
+                                  const ra = providerRank(a);
+                                  const rb = providerRank(b);
+                                  if (ra !== rb) return ra - rb;
+                                  return a.localeCompare(b);
+                                });
+
+                                return providers.map((provider) => {
+                                  const group = byProvider.get(provider) ?? [];
+                                  const preview = group.slice(0, 4);
+                                  const statusCounts = group.reduce((acc, file) => {
+                                    const isOk = file.status === 'ready' && !file.disabled && !file.unavailable;
+                                    if (isOk) acc.ok += 1;
+                                    else if (file.disabled) acc.disabled += 1;
+                                    else if (file.unavailable) acc.unavailable += 1;
+                                    else acc.other += 1;
+                                    return acc;
+                                  }, { ok: 0, disabled: 0, unavailable: 0, other: 0 });
+
+                                  const providerLabel = provider === 'unknown' ? 'unknown' : provider;
+                                  const meta = [
+                                    statusCounts.ok ? `${statusCounts.ok} ok` : null,
+                                    statusCounts.disabled ? `${statusCounts.disabled} disabled` : null,
+                                    statusCounts.unavailable ? `${statusCounts.unavailable} unavailable` : null,
+                                    statusCounts.other ? `${statusCounts.other} other` : null,
+                                  ].filter(Boolean).join(' · ');
+
                                   return (
-                                    <div key={file.id} className="flex items-center justify-between gap-2 font-mono tabular-nums">
-                                      <span className="truncate">{file.provider}: {label}</span>
-                                      <span className={tone}>{status}</span>
+                                    <div key={provider} className="mt-1">
+                                      <div className="flex items-center justify-between gap-2 text-slate-400">
+                                        <span className="font-mono tabular-nums">{providerLabel}</span>
+                                        <span className="text-[10px]">{meta || `${group.length} subscriptions`}</span>
+                                      </div>
+                                      <div className="mt-1 flex flex-col gap-1">
+                                        {preview.map((file) => {
+                                          const isOk = file.status === 'ready' && !file.disabled && !file.unavailable;
+                                          const tone = isOk
+                                            ? 'text-emerald-600 dark:text-emerald-400'
+                                            : file.disabled
+                                              ? 'text-slate-500 dark:text-slate-400'
+                                              : 'text-amber-600 dark:text-amber-400';
+                                          const label = file.email || file.label || file.name || file.id;
+                                          const status = file.disabled ? 'disabled' : file.unavailable ? 'unavailable' : (file.status ?? 'unknown');
+                                          return (
+                                            <div key={file.id} className="flex items-center justify-between gap-2 font-mono tabular-nums">
+                                              <span className="truncate">{label}</span>
+                                              <span className={tone}>{status}</span>
+                                            </div>
+                                          );
+                                        })}
+                                        {group.length > preview.length ? (
+                                          <div className="text-slate-400">…and {group.length - preview.length} more</div>
+                                        ) : null}
+                                      </div>
                                     </div>
                                   );
-                                })
+                                });
+                              })()
                             )}
-                            {cliproxyInfo.cliproxyAuthFiles.length > 8 ? (
-                              <div className="text-slate-400">…and {cliproxyInfo.cliproxyAuthFiles.length - 8} more</div>
-                            ) : null}
                             {cliproxyInfo.cliproxyAuthStatus ? (
                               <div className="text-amber-600 dark:text-amber-400">auth {cliproxyInfo.cliproxyAuthStatus}</div>
                             ) : null}
