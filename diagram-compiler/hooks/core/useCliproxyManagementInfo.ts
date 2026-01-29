@@ -116,33 +116,19 @@ export const useCliproxyManagementInfo = (args: {
     }
 
     const fetchAll = async () => {
-      const detectPaths = [
-        '/api/health',
-        '/health',
-        '/api/version',
-        '/version',
-        '/api/status',
-        '/status',
-        '/api/info',
-        '/info',
-        '/api/meta',
-        '/meta',
-        '/v1/models',
-        '/models',
-        '/api/models',
-      ];
+      const detectPaths = ['/v1/models', '/models', '/api/models'];
 
       let detectedVersion: string | undefined;
       for (const path of detectPaths) {
         try {
           const response = await fetch(`${base}${path}`, { headers: inferenceHeaders });
           if (cancelled) return;
-          if (!response.ok) continue;
           const headerVersion = parseVersionFromHeaders(response.headers);
           if (headerVersion) {
             detectedVersion = headerVersion;
             break;
           }
+          if (!response.ok) continue;
           const contentType = response.headers.get('content-type') || '';
           if (contentType.includes('application/json')) {
             const json = await response.json().catch(() => null);
@@ -318,4 +304,3 @@ export const useCliproxyManagementInfo = (args: {
 
   return info;
 };
-
