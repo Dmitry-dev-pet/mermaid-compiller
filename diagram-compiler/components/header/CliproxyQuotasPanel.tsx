@@ -11,7 +11,6 @@ type CliproxyQuotasPanelProps = {
   onToggleMode: () => void;
   onRefresh: () => void;
   formatMonthDayTime: (date: Date) => string;
-  focusAntigravityBucket?: string | null;
 };
 
 export const CliproxyQuotasPanel: React.FC<CliproxyQuotasPanelProps> = ({
@@ -21,7 +20,6 @@ export const CliproxyQuotasPanel: React.FC<CliproxyQuotasPanelProps> = ({
   onToggleMode,
   onRefresh,
   formatMonthDayTime,
-  focusAntigravityBucket,
 }) => {
   return (
     <div className="mt-1 flex flex-col gap-2">
@@ -411,10 +409,7 @@ export const CliproxyQuotasPanel: React.FC<CliproxyQuotasPanelProps> = ({
             const entries = files
               .map((file) => {
                 const quota = quotas.antigravity?.[file.id];
-                const items = (quota?.items ?? [])
-                  .filter((it) => (focusAntigravityBucket ? it.label === focusAntigravityBucket : true))
-                  .slice()
-                  .sort((a, b) => a.label.localeCompare(b.label));
+                const items = (quota?.items ?? []).slice().sort((a, b) => a.label.localeCompare(b.label));
                 return {
                   id: file.id,
                   label: fileLabel(file),
@@ -480,7 +475,6 @@ export const CliproxyQuotasPanel: React.FC<CliproxyQuotasPanelProps> = ({
             const quota = quotas.antigravity?.[file.id];
             const items = quota?.items ?? [];
             items.forEach((it) => {
-              if (focusAntigravityBucket && it.label !== focusAntigravityBucket) return;
               if (!it?.id) return;
               const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
               const prev = aggByItemId.get(it.id) ?? {

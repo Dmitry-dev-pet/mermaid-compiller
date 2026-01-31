@@ -937,7 +937,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                             onToggleMode={() => setShowQuotaSums((prev) => !prev)}
                             onRefresh={refreshCliproxyQuotas}
                             formatMonthDayTime={formatMonthDayTime}
-                            focusAntigravityBucket={antigravityBucketLabel}
                           />
                         )}
                       </div>
