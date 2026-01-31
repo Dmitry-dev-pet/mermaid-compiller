@@ -204,14 +204,16 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         present.push(...Array.from(providers.values()));
       }
       if (present.length === 0) return '';
-      return ` · via: ${present.join('+')}`;
+      return `via ${present.join('+')}`;
     })();
 
     const ownerLabel = aiConfig.provider === 'cliproxy' && model?.ownedBy
-      ? ` · owner: ${model.ownedBy}`
+      ? `owner ${model.ownedBy}`
       : '';
+    const suffix = [ownerLabel, viaLabel].filter(Boolean).join(' · ');
+    const suffixText = suffix ? ` · ${suffix}` : '';
 
-    return `AI: ${providerName} · ${modelName}${contextLabel}${ownerLabel}${viaLabel}`;
+    return `AI: ${providerName} · ${modelName}${contextLabel}${suffixText}`;
   };
 
   const getStatusTone = () => {
