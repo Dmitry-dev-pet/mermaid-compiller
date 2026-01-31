@@ -206,7 +206,11 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       return ` · via: ${present.join('+')}`;
     })();
 
-    return `AI: ${providerName} · ${modelName}${contextLabel}${viaLabel}`;
+    const ownerLabel = aiConfig.provider === 'cliproxy' && model?.ownedBy
+      ? ` · owner: ${model.ownedBy}`
+      : '';
+
+    return `AI: ${providerName} · ${modelName}${contextLabel}${ownerLabel}${viaLabel}`;
   };
 
   const getStatusTone = () => {
@@ -1083,7 +1087,10 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                 <option value="" disabled>Select a model...</option>
                 {filteredModels.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} {m.contextLength ? `(${formatContextLength(m.contextLength)})` : ''} {m.isFree ? '(Free)' : ''}
+                    {m.name}
+                    {m.contextLength ? ` (${formatContextLength(m.contextLength)})` : ''}
+                    {m.isFree ? ' (Free)' : ''}
+                    {aiConfig.provider === 'cliproxy' && m.ownedBy ? ` · ${m.ownedBy}` : ''}
                   </option>
                 ))}
               </Select>
