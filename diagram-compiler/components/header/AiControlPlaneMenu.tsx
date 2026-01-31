@@ -288,6 +288,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const selectedModel = aiConfig.selectedModelId
     ? connectionState.availableModels.find((m) => m?.id === aiConfig.selectedModelId)
     : undefined;
+  const matchingNameModels = selectedModel?.name
+    ? connectionState.availableModels.filter((m) => m?.name === selectedModel.name && m?.id && m.id !== selectedModel.id)
+    : [];
   const isGeminiModel =
     selectedModel?.vendor === 'google' ||
     /^gemini[:/]/i.test(aiConfig.selectedModelId) ||
@@ -1094,6 +1097,22 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                   </option>
                 ))}
               </Select>
+              {isCliproxy && selectedModel ? (
+                <div className="mt-1 text-[10px] leading-tight text-slate-400 break-all">
+                  <div className="font-mono tabular-nums">id: {selectedModel.id}</div>
+                  {selectedModel.ownedBy ? (
+                    <div className="font-mono tabular-nums">owner: {selectedModel.ownedBy}</div>
+                  ) : null}
+                  {selectedModel.vendor ? (
+                    <div className="font-mono tabular-nums">vendor: {selectedModel.vendor}</div>
+                  ) : null}
+                  {matchingNameModels.length ? (
+                    <div className="font-mono tabular-nums">
+                      also: {matchingNameModels.map((m) => m.id).join(', ')}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           )}
 
