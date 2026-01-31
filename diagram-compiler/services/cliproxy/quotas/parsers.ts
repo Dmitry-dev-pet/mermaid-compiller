@@ -122,6 +122,13 @@ const categorizeAntigravityModel = (args: { modelKey: string; label: string }): 
   return null;
 };
 
+export const getAntigravityBucketLabel = (args: { modelId: string; modelName?: string | null }): string | null => {
+  const labelBase = toTrimmedString(args.modelName) ?? args.modelId;
+  const humanLabel = humanizeAntigravityBucketLabel(labelBase);
+  const category = categorizeAntigravityModel({ modelKey: args.modelId, label: humanLabel });
+  return category?.label ?? null;
+};
+
 const groupGeminiBuckets = (items: Array<{ modelId: string; tokenType?: string | null; remainingFraction: number | null; remainingAmount: number | null; resetTime?: string }>) => {
   if (items.length === 0) return [];
   const shouldIgnore = (modelId: string) => geminiIgnorePrefixes.some((prefix) => modelId === prefix || modelId.startsWith(`${prefix}-`));

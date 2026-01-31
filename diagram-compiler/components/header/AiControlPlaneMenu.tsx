@@ -25,6 +25,7 @@ import { SecretInput } from '../ui/SecretInput';
 import { CliproxyAuthFile, isCliproxyAuthFileReady, normalizeCliproxyProviderKey } from '../../utils/cliproxyAuthFileStatus';
 import { buildCliproxySubscriptionsViewModel, CliproxySubscriptionsGroupBy } from '../../utils/cliproxySubscriptionsViewModel';
 import { CliproxyQuotasPanel } from './CliproxyQuotasPanel';
+import { getAntigravityBucketLabel } from '../../services/cliproxy/quotas/parsers';
 
 type AiControlPlaneMenuProps = {
   aiConfig: AIConfig;
@@ -295,6 +296,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     selectedModel?.vendor === 'google' ||
     /^gemini[:/]/i.test(aiConfig.selectedModelId) ||
     /\bgoogle\/gemini\b/i.test(aiConfig.selectedModelId);
+  const antigravityBucketLabel = selectedModel && selectedModel.ownedBy === 'antigravity'
+    ? getAntigravityBucketLabel({ modelId: selectedModel.id, modelName: selectedModel.name })
+    : null;
   const showReasoningControl = isAgent && !isGeminiModel;
 
   const updateOpenRouterFilters = (updates: Partial<OpenRouterFilters>) => {
@@ -1105,6 +1109,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                   ) : null}
                   {selectedModel.vendor ? (
                     <div className="font-mono tabular-nums">vendor: {selectedModel.vendor}</div>
+                  ) : null}
+                  {antigravityBucketLabel ? (
+                    <div className="font-mono tabular-nums">bucket: {antigravityBucketLabel}</div>
                   ) : null}
                   {matchingNameModels.length ? (
                     <div className="font-mono tabular-nums">
