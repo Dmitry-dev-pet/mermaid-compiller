@@ -24,6 +24,7 @@ import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { SecretInput } from '../ui/SecretInput';
 import { CliproxyAuthFile, isCliproxyAuthFileReady, normalizeCliproxyProviderKey } from '../../utils/cliproxyAuthFileStatus';
 import { buildCliproxySubscriptionsViewModel, CliproxySubscriptionsGroupBy } from '../../utils/cliproxySubscriptionsViewModel';
+import { remainingPercentFromUsedPercent } from '../../utils/percent';
 
 type AiControlPlaneMenuProps = {
   aiConfig: AIConfig;
@@ -101,6 +102,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   const [cliproxySubscriptionsGroupBy, setCliproxySubscriptionsGroupBy] = useState<CliproxySubscriptionsGroupBy>('provider');
   const [showCliproxyQuotas, setShowCliproxyQuotas] = useState(false);
   const [showAgentQuotas, setShowAgentQuotas] = useState(false);
+  const [showQuotaSums, setShowQuotaSums] = useState(false);
   const [agentStatus, setAgentStatus] = useState<{ state: 'unknown' | 'online' | 'offline'; message?: string }>({ state: 'unknown' });
   const [versionInfo, setVersionInfo] = useState<{
     agentVersion?: string;
@@ -487,7 +489,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       </Button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-[400px] bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-4 animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+        <div className="absolute top-full right-0 mt-2 w-[400px] bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-4 animate-in fade-in slide-in-from-top-2 duration-200 z-50 max-h-[calc(100vh-5rem)] overflow-auto overscroll-contain">
           <div className="mb-4">
             <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">Provider</label>
             <RadioGroup>
@@ -596,60 +598,68 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                     {showAgentQuotas ? 'Hide quotas' : 'Show quotas'}
                   </button>
                   {showAgentQuotas && (
-                    <div className="mt-1 flex flex-col gap-2">
-                      <div className="flex items-center justify-between gap-2 text-slate-400">
-                        <span />
-                        <button
-                          type="button"
-                          className="hover:underline"
-                          onClick={() => {
-                            refreshAgentCodexQuota();
-                            refreshAgentGeminiQuota();
-                          }}
-                        >
-                          Refresh
-                        </button>
-                      </div>
+                        <div className="mt-1 flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-2 text-slate-400">
+                            <button
+                              type="button"
+                              className="hover:underline"
+                              onClick={() => setShowQuotaSums((prev) => !prev)}
+                            >
+                              {showQuotaSums ? 'Mode: avg' : 'Mode: all'}
+                            </button>
+                          <button
+                            type="button"
+                            className="hover:underline"
+                            onClick={() => {
+                              refreshAgentCodexQuota();
+                              refreshAgentGeminiQuota();
+                            }}
+                          >
+                            Refresh
+                          </button>
+                        </div>
 
                       <div className="flex flex-col gap-2">
                         <div className="flex flex-col gap-2">
                           <div className="text-slate-500 dark:text-slate-400">Codex CLI Quota</div>
-                          <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
-                            {agentCodexQuota.status === 'loading' ? (
-                              <div className="text-slate-400">Loading quota...</div>
-                            ) : agentCodexQuota.status === 'error' ? (
-                              <div className="text-amber-600 dark:text-amber-400">codex quota {agentCodexQuota.message ?? 'failed'}</div>
-                            ) : null}
-                            {agentCodexQuota.windows.length ? (
-                              <div className="flex flex-col gap-1">
-                                {agentCodexQuota.windows.map((w) => {
-                                  const percent = typeof w.remainingPercent === 'number' ? Math.max(0, Math.min(100, w.remainingPercent)) : null;
-                                  const tone = percent === null
-                                    ? 'bg-slate-200 dark:bg-slate-700'
-                                    : percent >= 60
-                                      ? 'bg-emerald-500'
-                                      : percent >= 20
-                                        ? 'bg-amber-500'
-                                        : 'bg-rose-500';
-                                  return (
-                                    <div key={w.id} className="flex flex-col gap-0.5">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="truncate">{w.label}</span>
-                                        <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {w.resetLabel}</span>
+                              <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                                {agentCodexQuota.status === 'loading' ? (
+                                  <div className="text-slate-400">Loading quota...</div>
+                                ) : agentCodexQuota.status === 'error' ? (
+                                  <div className="text-amber-600 dark:text-amber-400">codex quota {agentCodexQuota.message ?? 'failed'}</div>
+                                ) : null}
+                              {agentCodexQuota.windows.length ? (
+                                <div className="flex flex-col gap-1">
+                                  {agentCodexQuota.windows
+                                    .filter((w) => w.id === 'primary' || w.id === 'secondary')
+                                    .map((w) => {
+                                    const percent = typeof w.remainingPercent === 'number' ? Math.max(0, Math.min(100, w.remainingPercent)) : null;
+                                    const tone = percent === null
+                                      ? 'bg-slate-200 dark:bg-slate-700'
+                                      : percent >= 60
+                                        ? 'bg-emerald-500'
+                                          : percent >= 20
+                                            ? 'bg-amber-500'
+                                            : 'bg-rose-500';
+                                      return (
+                                        <div key={w.id} className="flex flex-col gap-0.5">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="truncate">{w.label}</span>
+                                            <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {w.resetLabel}</span>
+                                          </div>
+                                          <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                            <div
+                                              className={`h-full ${tone}`}
+                                              style={{ width: `${percent === null ? 0 : percent}%` }}
+                                          />
+                                        </div>
                                       </div>
-                                      <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                                        <div
-                                          className={`h-full ${tone}`}
-                                          style={{ width: `${percent === null ? 0 : percent}%` }}
-                                        />
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="text-slate-400">No quota data</div>
-                            )}
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="text-slate-400">No quota data</div>
+                              )}
                             {agentCodexQuota.planType ? (
                               <div className="mt-1 text-[10px] text-slate-400">plan {agentCodexQuota.planType}</div>
                             ) : null}
@@ -668,36 +678,36 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                             ) : agentGeminiQuota.status === 'error' ? (
                               <div className="text-amber-600 dark:text-amber-400">gemini quota {agentGeminiQuota.message ?? 'failed'}</div>
                             ) : null}
-                            {agentGeminiQuota.items.length ? (
-                              <div className="flex flex-col gap-1">
-                                {agentGeminiQuota.items.map((it) => {
-                                  const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
-                                  const tone = percent === null
-                                    ? 'bg-slate-200 dark:bg-slate-700'
-                                    : percent >= 60
-                                      ? 'bg-emerald-500'
-                                      : percent >= 20
-                                        ? 'bg-amber-500'
-                                        : 'bg-rose-500';
-                                  return (
-                                    <div key={it.id} className="flex flex-col gap-0.5">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="truncate">{it.label}</span>
-                                        <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
+                              {agentGeminiQuota.items.length ? (
+                                <div className="flex flex-col gap-1">
+                                  {agentGeminiQuota.items.map((it) => {
+                                    const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
+                                    const tone = percent === null
+                                      ? 'bg-slate-200 dark:bg-slate-700'
+                                      : percent >= 60
+                                        ? 'bg-emerald-500'
+                                        : percent >= 20
+                                          ? 'bg-amber-500'
+                                          : 'bg-rose-500';
+                                    return (
+                                      <div key={it.id} className="flex flex-col gap-0.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="truncate">{it.label}</span>
+                                          <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
+                                        </div>
+                                        <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                          <div
+                                            className={`h-full ${tone}`}
+                                            style={{ width: `${percent === null ? 0 : percent}%` }}
+                                          />
+                                        </div>
                                       </div>
-                                      <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                                        <div
-                                          className={`h-full ${tone}`}
-                                          style={{ width: `${percent === null ? 0 : percent}%` }}
-                                        />
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="text-slate-400">No quota data</div>
-                            )}
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="text-slate-400">No quota data</div>
+                              )}
                             {agentGeminiQuota.email ? (
                               <div className="mt-1 text-[10px] text-slate-400">account {agentGeminiQuota.email}</div>
                             ) : null}
@@ -910,13 +920,19 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                         </button>
                         {showCliproxyQuotas && (
                           <div className="mt-1 flex flex-col gap-2">
-                            <div className="flex items-center justify-between gap-2 text-slate-400">
-                              <span />
-                              <button
-                                type="button"
-                                className="hover:underline"
-                                onClick={refreshCliproxyQuotas}
-                              >
+                              <div className="flex items-center justify-between gap-2 text-slate-400">
+                                  <button
+                                    type="button"
+                                    className="hover:underline"
+                                    onClick={() => setShowQuotaSums((prev) => !prev)}
+                                  >
+                                    {showQuotaSums ? 'Mode: avg' : 'Mode: all'}
+                                  </button>
+                                <button
+                                  type="button"
+                                  className="hover:underline"
+                                  onClick={refreshCliproxyQuotas}
+                                >
                                 Refresh
                               </button>
                             </div>
@@ -927,236 +943,515 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                             ) : null}
 
                             <div className="flex flex-col gap-2">
-	                              {(() => {
-	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => normalizeCliproxyProviderKey(f.provider ?? null) === 'codex' && !f.runtimeOnly);
-	                                if (files.length === 0) return (
-	                                  <div className="text-slate-400">Codex Quota: no auth files</div>
-	                                );
-	                                const bestByWindowId = new Map<string, {
-	                                  label: string;
-	                                  remainingPercent: number | null;
-	                                  resetLabel: string;
-	                                  eligibleCount: number;
-	                                }>();
-	                                files.forEach((file) => {
-	                                  const quota = cliproxyQuotas.codex?.[file.id];
-	                                  const windows = quota?.windows ?? [];
-	                                  const weeklyWindow = windows.find((w) => w?.id === 'secondary') ?? null;
-	                                  const weeklyRemainingPercent =
-	                                    typeof weeklyWindow?.usedPercent === 'number'
-	                                      ? Math.max(0, Math.min(100, weeklyWindow.usedPercent))
-	                                      : null;
-	                                  const weeklyExhausted = weeklyRemainingPercent === 0;
-	                                  windows.forEach((w) => {
-	                                    if (!w?.id) return;
-	                                    if (w.id === 'primary' && weeklyExhausted) return;
-	                                    const remainingPercent =
-	                                      typeof w.usedPercent === 'number'
-	                                        ? Math.max(0, Math.min(100, w.usedPercent))
-	                                        : null;
-	                                    const prev = bestByWindowId.get(w.id);
-	                                    const eligibleCount = (prev?.eligibleCount ?? 0) + 1;
-	                                    if (!prev) {
-	                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel, eligibleCount });
-	                                      return;
-	                                    }
-	                                    if (remainingPercent === null) {
-	                                      bestByWindowId.set(w.id, { ...prev, eligibleCount });
-	                                      return;
-	                                    }
-	                                    if (prev.remainingPercent === null || remainingPercent > prev.remainingPercent) {
-	                                      bestByWindowId.set(w.id, { label: w.label, remainingPercent, resetLabel: w.resetLabel, eligibleCount });
-	                                      return;
-	                                    }
-	                                    bestByWindowId.set(w.id, { ...prev, eligibleCount });
-	                                  });
-	                                });
+                                  {(() => {
+                                    const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => normalizeCliproxyProviderKey(f.provider ?? null) === 'codex' && !f.runtimeOnly);
+                                    if (files.length === 0) return (
+                                      <div className="text-slate-400">Codex Quota: no auth files</div>
+                                    );
+                                    const fileLabel = (file: CliproxyAuthFile) => file.email ?? file.label ?? file.name ?? file.id;
+                                    if (!showQuotaSums) {
+                                      const entries = files
+                                        .map((file) => {
+                                          const quota = cliproxyQuotas.codex?.[file.id];
+                                          const planTypeRaw = typeof (quota?.planType ?? file.planType) === 'string'
+                                            ? (quota?.planType ?? file.planType).trim()
+                                            : '';
+                                          const planType = planTypeRaw ? planTypeRaw.toLowerCase() : null;
+                                          const windows = quota?.windows ?? [];
+                                          const primary = windows.find((w) => w?.id === 'primary') ?? null;
+                                          const weekly = windows.find((w) => w?.id === 'secondary') ?? null;
+                                          const primaryPercent = primary ? remainingPercentFromUsedPercent(primary.usedPercent) : null;
+                                          const weeklyPercent = weekly ? remainingPercentFromUsedPercent(weekly.usedPercent) : null;
+                                          const primaryLabel = primary?.label ?? '5-hour limit';
+                                          const weeklyLabel = weekly?.label ?? 'Weekly limit';
+                                          return {
+                                            id: file.id,
+                                            label: fileLabel(file),
+                                            planType,
+                                            items: [
+                                              { id: 'primary', label: primaryLabel, percent: primaryPercent, resetLabel: primary?.resetLabel ?? '-' },
+                                              { id: 'secondary', label: weeklyLabel, percent: weeklyPercent, resetLabel: weekly?.resetLabel ?? '-' },
+                                            ],
+                                          };
+                                        })
+                                        .sort((a, b) => a.label.localeCompare(b.label));
+                                      return (
+                                        <div className="flex flex-col gap-2">
+                                          <div className="text-slate-500 dark:text-slate-400">Codex Quota</div>
+                                          <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                                            <div className="flex flex-col gap-2">
+                                              {entries.map((e) => (
+                                                <div key={e.id} className="flex flex-col gap-1 pb-2 border-b border-slate-200/60 dark:border-slate-700/60 last:border-b-0 last:pb-0">
+                                                  <div className="flex items-center justify-between gap-2">
+                                                    <div className="truncate">{e.label}</div>
+                                                    {e.planType ? (
+                                                      <div className="shrink-0 font-mono tabular-nums text-[10px] text-slate-400">{e.planType}</div>
+                                                    ) : null}
+                                                  </div>
+                                                  <div className="flex flex-col gap-1">
+                                                    {e.items.map((it) => {
+                                                      const percent = typeof it.percent === 'number' ? Math.max(0, Math.min(100, it.percent)) : null;
+                                                      const tone = percent === null
+                                                        ? 'bg-slate-200 dark:bg-slate-700'
+                                                        : percent >= 60
+                                                          ? 'bg-emerald-500'
+                                                          : percent >= 20
+                                                            ? 'bg-amber-500'
+                                                            : 'bg-rose-500';
+                                                      return (
+                                                        <div key={it.id} className="flex flex-col gap-0.5">
+                                                          <div className="flex items-center justify-between gap-2">
+                                                            <span className="truncate">{it.label}</span>
+                                                            <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
+                                                          </div>
+                                                          <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                                            <div
+                                                              className={`h-full ${tone}`}
+                                                              style={{ width: `${percent === null ? 0 : percent}%` }}
+                                                            />
+                                                          </div>
+                                                        </div>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                            <div className="mt-1 text-[10px] text-slate-400">{files.length} subscriptions</div>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    const aggByWindowId = new Map<string, {
+                                      label: string;
+                                      bestRemaining: number | null;
+                                      bestResetLabel: string;
+                                      sumRemaining: number;
+                                      count: number;
+                                    }>();
+                                    files.forEach((file) => {
+                                      const quota = cliproxyQuotas.codex?.[file.id];
+                                      const windows = quota?.windows ?? [];
+                                      const weeklyWindow = windows.find((w) => w?.id === 'secondary') ?? null;
+                                      const weeklyRemainingPercent =
+                                        remainingPercentFromUsedPercent(weeklyWindow?.usedPercent);
+                                      const weeklyExhausted = weeklyRemainingPercent === 0;
+                                      windows.forEach((w) => {
+                                        if (!w?.id) return;
+                                        if (w.id === 'primary' && weeklyExhausted) return;
+                                        const remainingPercent = remainingPercentFromUsedPercent(w.usedPercent);
+                                        const prev = aggByWindowId.get(w.id) ?? {
+                                          label: w.label,
+                                          bestRemaining: null,
+                                          bestResetLabel: '-',
+                                          sumRemaining: 0,
+                                          count: 0,
+                                        };
+                                        if (remainingPercent !== null) {
+                                          prev.sumRemaining += remainingPercent;
+                                          prev.count += 1;
+                                        }
+                                        if (
+                                          remainingPercent !== null
+                                          && (prev.bestRemaining === null || remainingPercent > prev.bestRemaining)
+                                        ) {
+                                          prev.bestRemaining = remainingPercent;
+                                          prev.bestResetLabel = w.resetLabel;
+                                          prev.label = w.label;
+                                        } else if (prev.bestResetLabel === '-' && w.resetLabel !== '-') {
+                                          prev.bestResetLabel = w.resetLabel;
+                                        }
+                                        aggByWindowId.set(w.id, prev);
+                                      });
+                                    });
 
-	                                const ordered = ['primary', 'secondary', 'code-review']
-	                                  .map((id) => bestByWindowId.get(id))
-	                                  .filter(Boolean) as Array<{
-	                                    label: string;
-	                                    remainingPercent: number | null;
-	                                    resetLabel: string;
-	                                    eligibleCount: number;
-	                                  }>;
+                                    const ordered = ['primary', 'secondary']
+                                      .map((id) => {
+                                        const agg = aggByWindowId.get(id);
+                                        if (!agg) return null;
+                                        const percent = showQuotaSums ? (agg.count > 0 ? agg.sumRemaining : null) : agg.bestRemaining;
+                                        const barPercent = showQuotaSums ? (agg.count > 0 ? agg.sumRemaining / agg.count : null) : percent;
+                                        return {
+                                          id,
+                                          label: agg.label,
+                                          percent,
+                                          barPercent,
+                                          resetLabel: agg.bestResetLabel,
+                                          count: agg.count,
+                                        };
+                                      })
+                                      .filter(Boolean) as Array<{
+                                        id: string;
+                                        label: string;
+                                        percent: number | null;
+                                        barPercent: number | null;
+                                        resetLabel: string;
+                                        count: number;
+                                      }>;
 
-	                                return (
-	                                  <div className="flex flex-col gap-2">
-	                                    <div className="text-slate-500 dark:text-slate-400">Codex Quota</div>
-	                                    <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
-	                                      {ordered.length ? (
-	                                        <div className="flex flex-col gap-1">
-	                                          {ordered.map((w) => {
-	                                            const percent = w.remainingPercent;
-	                                            const tone = percent === null
-	                                              ? 'bg-slate-200 dark:bg-slate-700'
-	                                              : percent >= 60
-	                                                ? 'bg-emerald-500'
-	                                                : percent >= 20
-	                                                  ? 'bg-amber-500'
-	                                                  : 'bg-rose-500';
-	                                            return (
-	                                              <div key={w.label} className="flex flex-col gap-0.5">
-	                                                <div className="flex items-center justify-between gap-2">
-	                                                  <span className="truncate">{w.label}</span>
-	                                                  <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {w.resetLabel}</span>
-	                                                </div>
-	                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
-	                                                  <div
-	                                                    className={`h-full ${tone}`}
-	                                                    style={{ width: `${percent === null ? 0 : percent}%` }}
-	                                                  />
-	                                                </div>
-	                                              </div>
-	                                            );
-	                                          })}
-	                                        </div>
-	                                      ) : (
-                                        <div className="text-slate-400">No quota data</div>
-                                      )}
+                                    const planCounts = files.reduce<Record<string, number>>((acc, file) => {
+                                      const quotaPlan = cliproxyQuotas.codex?.[file.id]?.planType;
+                                      const planRaw = typeof (quotaPlan ?? file.planType) === 'string'
+                                        ? (quotaPlan ?? file.planType).trim().toLowerCase()
+                                        : '';
+                                      if (!planRaw) return acc;
+                                      acc[planRaw] = (acc[planRaw] ?? 0) + 1;
+                                      return acc;
+                                    }, {});
+                                    const planSummary = Object.entries(planCounts)
+                                      .sort(([a], [b]) => a.localeCompare(b))
+                                      .map(([plan, count]) => `${plan}×${count}`)
+                                      .join(' · ');
+
+                                    return (
+                                      <div className="flex flex-col gap-2">
+                                        <div className="text-slate-500 dark:text-slate-400">Codex Quota</div>
+                                        <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                                          {ordered.length ? (
+                                            <div className="flex flex-col gap-1">
+                                                {ordered.map((w) => {
+                                                  const bar = typeof w.barPercent === 'number' ? Math.max(0, Math.min(100, w.barPercent)) : null;
+                                                  const tone = bar === null
+                                                    ? 'bg-slate-200 dark:bg-slate-700'
+                                                    : bar >= 60
+                                                      ? 'bg-emerald-500'
+                                                      : bar >= 20
+                                                        ? 'bg-amber-500'
+                                                        : 'bg-rose-500';
+                                                  const label = w.percent === null
+                                                    ? '-'
+                                                    : showQuotaSums
+                                                      ? `${bar === null ? '-' : `${Math.round(bar)}%`}`
+                                                      : `${Math.round(w.percent)}%`;
+                                                  return (
+                                                    <div key={w.id} className="flex flex-col gap-0.5" title={showQuotaSums ? `${w.count} subscriptions` : undefined}>
+                                                      <div className="flex items-center justify-between gap-2">
+                                                        <span className="truncate">{w.label}</span>
+                                                        <span className="font-mono tabular-nums text-slate-400">{label} · {w.resetLabel}</span>
+                                                      </div>
+                                                    <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                                      <div
+                                                        className={`h-full ${tone}`}
+                                                        style={{ width: `${bar === null ? 0 : bar}%` }}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                              </div>
+                                          ) : (
+                                            <div className="text-slate-400">No quota data</div>
+                                          )}
+                                          <div className="mt-1 text-[10px] text-slate-400">
+                                            {files.length} subscriptions{planSummary ? ` · ${planSummary}` : ''}
+                                          </div>
+                                        </div>
+                                  </div>
+                                );
+                              })()}
+
+                                  {(() => {
+                                    const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => normalizeCliproxyProviderKey(f.provider ?? null) === 'gemini-cli' && !f.runtimeOnly);
+                                    if (files.length === 0) return (
+                                      <div className="text-slate-400">Gemini CLI Quota: no auth files</div>
+                                    );
+                                    const fileLabel = (file: CliproxyAuthFile) => file.email ?? file.label ?? file.name ?? file.id;
+                                    if (!showQuotaSums) {
+                                      const entries = files
+                                        .map((file) => {
+                                          const quota = cliproxyQuotas.geminiCli?.[file.id];
+                                          const items = (quota?.items ?? []).slice().sort((a, b) => a.label.localeCompare(b.label));
+                                          return {
+                                            id: file.id,
+                                            label: fileLabel(file),
+                                            items: items.map((it) => ({
+                                              id: it.id,
+                                              label: it.label,
+                                              percent: typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null,
+                                              resetLabel: it.resetLabel ?? '-',
+                                            })),
+                                          };
+                                        })
+                                        .sort((a, b) => a.label.localeCompare(b.label));
+                                      return (
+                                        <div className="flex flex-col gap-2">
+                                          <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
+                                          <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                                            <div className="flex flex-col gap-2">
+                                              {entries.map((e) => (
+                                                <div key={e.id} className="flex flex-col gap-1 pb-2 border-b border-slate-200/60 dark:border-slate-700/60 last:border-b-0 last:pb-0">
+                                                  <div className="truncate">{e.label}</div>
+                                                  <div className="flex flex-col gap-1">
+                                                    {e.items.map((it) => {
+                                                      const percent = typeof it.percent === 'number' ? Math.max(0, Math.min(100, it.percent)) : null;
+                                                      const tone = percent === null
+                                                        ? 'bg-slate-200 dark:bg-slate-700'
+                                                        : percent >= 60
+                                                          ? 'bg-emerald-500'
+                                                          : percent >= 20
+                                                            ? 'bg-amber-500'
+                                                            : 'bg-rose-500';
+                                                      return (
+                                                        <div key={it.id} className="flex flex-col gap-0.5">
+                                                          <div className="flex items-center justify-between gap-2">
+                                                            <span className="truncate">{it.label}</span>
+                                                            <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
+                                                          </div>
+                                                          <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                                            <div
+                                                              className={`h-full ${tone}`}
+                                                              style={{ width: `${percent === null ? 0 : percent}%` }}
+                                                            />
+                                                          </div>
+                                                        </div>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                            <div className="mt-1 text-[10px] text-slate-400">{files.length} subscriptions</div>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    const aggByItemId = new Map<string, {
+                                      label: string;
+                                      bestRemaining: number | null;
+                                      bestResetLabel: string;
+                                      sumRemaining: number;
+                                      count: number;
+                                    }>();
+                                    files.forEach((file) => {
+                                      const quota = cliproxyQuotas.geminiCli?.[file.id];
+                                      const items = quota?.items ?? [];
+                                      items.forEach((it) => {
+                                        if (!it?.id) return;
+                                        const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
+                                        const prev = aggByItemId.get(it.id) ?? {
+                                          label: it.label,
+                                          bestRemaining: null,
+                                          bestResetLabel: '-',
+                                          sumRemaining: 0,
+                                          count: 0,
+                                        };
+                                        if (percent !== null) {
+                                          prev.sumRemaining += percent;
+                                          prev.count += 1;
+                                        }
+                                        if (
+                                          percent !== null
+                                          && (prev.bestRemaining === null || percent > prev.bestRemaining)
+                                        ) {
+                                          prev.bestRemaining = percent;
+                                          prev.bestResetLabel = it.resetLabel;
+                                          prev.label = it.label;
+                                        } else if (prev.bestResetLabel === '-' && it.resetLabel !== '-') {
+                                          prev.bestResetLabel = it.resetLabel;
+                                        }
+                                        aggByItemId.set(it.id, prev);
+                                      });
+                                    });
+                                    const aggItems = Array.from(aggByItemId.entries())
+                                      .map(([id, agg]) => {
+                                        const percent = showQuotaSums ? (agg.count > 0 ? agg.sumRemaining : null) : agg.bestRemaining;
+                                        const barPercent = showQuotaSums ? (agg.count > 0 ? agg.sumRemaining / agg.count : null) : percent;
+                                        return { id, label: agg.label, percent, barPercent, resetLabel: agg.bestResetLabel, count: agg.count };
+                                      })
+                                      .sort((a, b) => a.label.localeCompare(b.label));
+                                    return (
+                                      <div className="flex flex-col gap-2">
+                                        <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
+                                        <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                                          {aggItems.length ? (
+                                            <div className="flex flex-col gap-1">
+                                                {aggItems.map((it) => {
+                                                  const bar = typeof it.barPercent === 'number' ? Math.max(0, Math.min(100, it.barPercent)) : null;
+                                                  const tone = bar === null
+                                                    ? 'bg-slate-200 dark:bg-slate-700'
+                                                    : bar >= 60
+                                                      ? 'bg-emerald-500'
+                                                      : bar >= 20
+                                                        ? 'bg-amber-500'
+                                                        : 'bg-rose-500';
+                                                  const label = it.percent === null
+                                                    ? '-'
+                                                    : showQuotaSums
+                                                      ? `${bar === null ? '-' : `${Math.round(bar)}%`}`
+                                                      : `${Math.round(it.percent)}%`;
+                                                  return (
+                                                    <div key={it.id} className="flex flex-col gap-0.5" title={showQuotaSums ? `${it.count} subscriptions` : undefined}>
+                                                      <div className="flex items-center justify-between gap-2">
+                                                        <span className="truncate">{it.label}</span>
+                                                        <span className="font-mono tabular-nums text-slate-400">{label} · {it.resetLabel}</span>
+                                                      </div>
+                                                    <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                                      <div
+                                                        className={`h-full ${tone}`}
+                                                        style={{ width: `${bar === null ? 0 : bar}%` }}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                        ) : (
+                                          <div className="text-slate-400">No quota data</div>
+                                        )}
                                       <div className="mt-1 text-[10px] text-slate-400">{files.length} subscriptions</div>
                                     </div>
                                   </div>
                                 );
                               })()}
 
-	                              {(() => {
-	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => normalizeCliproxyProviderKey(f.provider ?? null) === 'gemini-cli' && !f.runtimeOnly);
-	                                if (files.length === 0) return (
-	                                  <div className="text-slate-400">Gemini CLI Quota: no auth files</div>
-	                                );
-	                                const bestByItemId = new Map<string, { label: string; remainingPercent: number | null; eligibleCount: number; resetLabel: string }>();
-	                                files.forEach((file) => {
-	                                  const quota = cliproxyQuotas.geminiCli?.[file.id];
-	                                  const items = quota?.items ?? [];
-	                                  items.forEach((it) => {
-	                                    if (!it?.id) return;
-	                                    const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
-	                                    const prev = bestByItemId.get(it.id);
-	                                    const eligibleCount = (prev?.eligibleCount ?? 0) + 1;
-	                                    const resetLabel = prev?.resetLabel && prev.resetLabel !== '-' ? prev.resetLabel : it.resetLabel;
-	                                    if (!prev) {
-	                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, eligibleCount, resetLabel });
-	                                      return;
-	                                    }
-	                                    if (percent === null) {
-	                                      bestByItemId.set(it.id, { ...prev, eligibleCount, resetLabel });
-	                                      return;
-	                                    }
-	                                    if (prev.remainingPercent === null || percent > prev.remainingPercent) {
-	                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, eligibleCount, resetLabel: it.resetLabel });
-	                                      return;
-	                                    }
-	                                    bestByItemId.set(it.id, { ...prev, eligibleCount, resetLabel });
-	                                  });
-	                                });
-	                                const bestItems = Array.from(bestByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
-	                                return (
-	                                  <div className="flex flex-col gap-2">
-	                                    <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
-	                                    <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
-	                                      {bestItems.length ? (
-	                                        <div className="flex flex-col gap-1">
-	                                          {bestItems.map((it) => {
-	                                            const percent = it.remainingPercent;
-	                                            const tone = percent === null
-	                                              ? 'bg-slate-200 dark:bg-slate-700'
-	                                              : percent >= 60
-	                                                ? 'bg-emerald-500'
-	                                                : percent >= 20
-	                                                  ? 'bg-amber-500'
-	                                                  : 'bg-rose-500';
-	                                            return (
-	                                              <div key={it.label} className="flex flex-col gap-0.5">
-	                                                <div className="flex items-center justify-between gap-2">
-	                                                  <span className="truncate">{it.label}</span>
-	                                                  <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
-	                                                </div>
-	                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
-	                                                  <div
-	                                                    className={`h-full ${tone}`}
-	                                                    style={{ width: `${percent === null ? 0 : percent}%` }}
-	                                                  />
-	                                                </div>
-	                                              </div>
-	                                            );
-	                                          })}
-	                                        </div>
-                                      ) : (
-                                        <div className="text-slate-400">No quota data</div>
-                                      )}
-                                      <div className="mt-1 text-[10px] text-slate-400">{files.length} subscriptions</div>
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-
-	                              {(() => {
-	                                const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => normalizeCliproxyProviderKey(f.provider ?? null) === 'antigravity' && !f.runtimeOnly);
-	                                if (files.length === 0) return (
-	                                  <div className="text-slate-400">Antigravity Quota: no auth files</div>
-	                                );
-	                                const bestByItemId = new Map<string, { label: string; remainingPercent: number | null; eligibleCount: number; resetLabel: string }>();
-	                                files.forEach((file) => {
-	                                  const quota = cliproxyQuotas.antigravity?.[file.id];
-	                                  const items = quota?.items ?? [];
-	                                  items.forEach((it) => {
-	                                    if (!it?.id) return;
-	                                    const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
-	                                    const prev = bestByItemId.get(it.id);
-	                                    const eligibleCount = (prev?.eligibleCount ?? 0) + 1;
-	                                    const resetLabel = prev?.resetLabel && prev.resetLabel !== '-' ? prev.resetLabel : it.resetLabel;
-	                                    if (!prev) {
-	                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, eligibleCount, resetLabel });
-	                                      return;
-	                                    }
-	                                    if (percent === null) {
-	                                      bestByItemId.set(it.id, { ...prev, eligibleCount, resetLabel });
-	                                      return;
-	                                    }
-	                                    if (prev.remainingPercent === null || percent > prev.remainingPercent) {
-	                                      bestByItemId.set(it.id, { label: it.label, remainingPercent: percent, eligibleCount, resetLabel: it.resetLabel });
-	                                      return;
-	                                    }
-	                                    bestByItemId.set(it.id, { ...prev, eligibleCount, resetLabel });
-	                                  });
-	                                });
-	                                const bestItems = Array.from(bestByItemId.values()).sort((a, b) => a.label.localeCompare(b.label));
-	                                return (
-	                                  <div className="flex flex-col gap-2">
-	                                    <div className="text-slate-500 dark:text-slate-400">Antigravity Quota</div>
-	                                    <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
-	                                      {bestItems.length ? (
-	                                        <div className="flex flex-col gap-1">
-	                                          {bestItems.map((it) => {
-	                                            const percent = it.remainingPercent;
-	                                            const tone = percent === null
-	                                              ? 'bg-slate-200 dark:bg-slate-700'
-	                                              : percent >= 60
-	                                                ? 'bg-emerald-500'
-	                                                : percent >= 20
-	                                                  ? 'bg-amber-500'
-	                                                  : 'bg-rose-500';
-	                                            return (
-	                                              <div key={it.label} className="flex flex-col gap-0.5">
-	                                                <div className="flex items-center justify-between gap-2">
-	                                                  <span className="truncate">{it.label}</span>
-	                                                  <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
-	                                                </div>
-	                                                <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
-	                                                  <div
-	                                                    className={`h-full ${tone}`}
-	                                                    style={{ width: `${percent === null ? 0 : percent}%` }}
-	                                                  />
-	                                                </div>
-	                                              </div>
-	                                            );
-	                                          })}
-	                                        </div>
-                                      ) : (
-                                        <div className="text-slate-400">No quota data</div>
-                                      )}
+                                  {(() => {
+                                    const files = (cliproxyInfo.cliproxyAuthFiles ?? []).filter((f) => normalizeCliproxyProviderKey(f.provider ?? null) === 'antigravity' && !f.runtimeOnly);
+                                    if (files.length === 0) return (
+                                      <div className="text-slate-400">Antigravity Quota: no auth files</div>
+                                    );
+                                    const fileLabel = (file: CliproxyAuthFile) => file.email ?? file.label ?? file.name ?? file.id;
+                                    if (!showQuotaSums) {
+                                      const entries = files
+                                        .map((file) => {
+                                          const quota = cliproxyQuotas.antigravity?.[file.id];
+                                          const items = (quota?.items ?? []).slice().sort((a, b) => a.label.localeCompare(b.label));
+                                          return {
+                                            id: file.id,
+                                            label: fileLabel(file),
+                                            items: items.map((it) => ({
+                                              id: it.id,
+                                              label: it.label,
+                                              percent: typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null,
+                                              resetLabel: it.resetLabel ?? '-',
+                                            })),
+                                          };
+                                        })
+                                        .sort((a, b) => a.label.localeCompare(b.label));
+                                      return (
+                                        <div className="flex flex-col gap-2">
+                                          <div className="text-slate-500 dark:text-slate-400">Antigravity Quota</div>
+                                          <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                                            <div className="flex flex-col gap-2">
+                                              {entries.map((e) => (
+                                                <div key={e.id} className="flex flex-col gap-1 pb-2 border-b border-slate-200/60 dark:border-slate-700/60 last:border-b-0 last:pb-0">
+                                                  <div className="truncate">{e.label}</div>
+                                                  <div className="flex flex-col gap-1">
+                                                    {e.items.map((it) => {
+                                                      const percent = typeof it.percent === 'number' ? Math.max(0, Math.min(100, it.percent)) : null;
+                                                      const tone = percent === null
+                                                        ? 'bg-slate-200 dark:bg-slate-700'
+                                                        : percent >= 60
+                                                          ? 'bg-emerald-500'
+                                                          : percent >= 20
+                                                            ? 'bg-amber-500'
+                                                            : 'bg-rose-500';
+                                                      return (
+                                                        <div key={it.id} className="flex flex-col gap-0.5">
+                                                          <div className="flex items-center justify-between gap-2">
+                                                            <span className="truncate">{it.label}</span>
+                                                            <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
+                                                          </div>
+                                                          <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                                            <div
+                                                              className={`h-full ${tone}`}
+                                                              style={{ width: `${percent === null ? 0 : percent}%` }}
+                                                            />
+                                                          </div>
+                                                        </div>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                            <div className="mt-1 text-[10px] text-slate-400">{files.length} subscriptions</div>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    const aggByItemId = new Map<string, {
+                                      label: string;
+                                      bestRemaining: number | null;
+                                      bestResetLabel: string;
+                                      sumRemaining: number;
+                                      count: number;
+                                    }>();
+                                    files.forEach((file) => {
+                                      const quota = cliproxyQuotas.antigravity?.[file.id];
+                                      const items = quota?.items ?? [];
+                                      items.forEach((it) => {
+                                        if (!it?.id) return;
+                                        const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
+                                        const prev = aggByItemId.get(it.id) ?? {
+                                          label: it.label,
+                                          bestRemaining: null,
+                                          bestResetLabel: '-',
+                                          sumRemaining: 0,
+                                          count: 0,
+                                        };
+                                        if (percent !== null) {
+                                          prev.sumRemaining += percent;
+                                          prev.count += 1;
+                                        }
+                                        if (
+                                          percent !== null
+                                          && (prev.bestRemaining === null || percent > prev.bestRemaining)
+                                        ) {
+                                          prev.bestRemaining = percent;
+                                          prev.bestResetLabel = it.resetLabel;
+                                          prev.label = it.label;
+                                        } else if (prev.bestResetLabel === '-' && it.resetLabel !== '-') {
+                                          prev.bestResetLabel = it.resetLabel;
+                                        }
+                                        aggByItemId.set(it.id, prev);
+                                      });
+                                    });
+                                    const aggItems = Array.from(aggByItemId.entries())
+                                      .map(([id, agg]) => {
+                                        const percent = showQuotaSums ? (agg.count > 0 ? agg.sumRemaining : null) : agg.bestRemaining;
+                                        const barPercent = showQuotaSums ? (agg.count > 0 ? agg.sumRemaining / agg.count : null) : percent;
+                                        return { id, label: agg.label, percent, barPercent, resetLabel: agg.bestResetLabel, count: agg.count };
+                                      })
+                                      .sort((a, b) => a.label.localeCompare(b.label));
+                                    return (
+                                      <div className="flex flex-col gap-2">
+                                        <div className="text-slate-500 dark:text-slate-400">Antigravity Quota</div>
+                                        <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                                          {aggItems.length ? (
+                                            <div className="flex flex-col gap-1">
+                                                {aggItems.map((it) => {
+                                                  const bar = typeof it.barPercent === 'number' ? Math.max(0, Math.min(100, it.barPercent)) : null;
+                                                  const tone = bar === null
+                                                    ? 'bg-slate-200 dark:bg-slate-700'
+                                                    : bar >= 60
+                                                      ? 'bg-emerald-500'
+                                                      : bar >= 20
+                                                        ? 'bg-amber-500'
+                                                        : 'bg-rose-500';
+                                                  const label = it.percent === null
+                                                    ? '-'
+                                                    : showQuotaSums
+                                                      ? `${bar === null ? '-' : `${Math.round(bar)}%`}`
+                                                      : `${Math.round(it.percent)}%`;
+                                                  return (
+                                                    <div key={it.id} className="flex flex-col gap-0.5" title={showQuotaSums ? `${it.count} subscriptions` : undefined}>
+                                                      <div className="flex items-center justify-between gap-2">
+                                                        <span className="truncate">{it.label}</span>
+                                                        <span className="font-mono tabular-nums text-slate-400">{label} · {it.resetLabel}</span>
+                                                      </div>
+                                                    <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                                      <div
+                                                        className={`h-full ${tone}`}
+                                                        style={{ width: `${bar === null ? 0 : bar}%` }}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                        ) : (
+                                          <div className="text-slate-400">No quota data</div>
+                                        )}
                                       <div className="mt-1 text-[10px] text-slate-400">{files.length} subscriptions</div>
                                     </div>
                                   </div>
@@ -1221,10 +1516,10 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
               {showFilters && (
                 <div className="mb-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded text-xs grid grid-cols-2 gap-2 border border-slate-100 dark:border-slate-700 dark:text-slate-300">
-	                  {!isOpenRouter && familyOptions.length > 0 && (
-	                    <div className="col-span-2">
-	                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Family</label>
-	                      <div className="flex flex-wrap gap-1">
+                    {!isOpenRouter && familyOptions.length > 0 && (
+                      <div className="col-span-2">
+                        <label className="block text-[10px] uppercase text-slate-400 mb-1">Family</label>
+                        <div className="flex flex-wrap gap-1">
                         <button
                           type="button"
                           onClick={() => updateProxyFilters({ family: '' })}
@@ -1253,12 +1548,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                             </button>
                           );
                         })}
-	                      </div>
-	                    </div>
-	                  )}
-	                  {isOpenRouter && (
-	                    <div className="col-span-2">
-	                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Vendor</label>
+                        </div>
+                      </div>
+                    )}
+                    {isOpenRouter && (
+                      <div className="col-span-2">
+                        <label className="block text-[10px] uppercase text-slate-400 mb-1">Vendor</label>
                       <Select
                         value={openRouterFilters.vendor}
                         onChange={(e) => updateOpenRouterFilters({ vendor: e.target.value })}

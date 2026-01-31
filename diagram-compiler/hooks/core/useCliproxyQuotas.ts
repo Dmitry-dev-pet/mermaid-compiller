@@ -162,12 +162,67 @@ const cliproxyQuotaHeaders = {
     Authorization: 'Bearer $TOKEN$',
     'Content-Type': 'application/json',
   },
+  antigravity: {
+    Authorization: 'Bearer $TOKEN$',
+    'Content-Type': 'application/json',
+    // Match Antigravity client requests to get the correct model/quota catalog from Cloud Code Assist.
+    // (Based on public Antigravity auth tooling; not a secret.)
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/1.15.8 Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36',
+    'X-Goog-Api-Client': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
+    'Client-Metadata': '{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}',
+  },
 } as const;
 
 const cliproxyQuotaEndpoints = {
   codexUsage: 'https://chatgpt.com/backend-api/wham/usage',
   geminiCliQuota: 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota',
+  antigravityFetchAvailableModels: 'https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
 } as const;
+
+const humanizeAntigravityBucketLabel = (raw: string): string => {
+  const trimmed = raw.trim();
+  if (!trimmed) return raw;
+
+  const normalized = trimmed.toLowerCase();
+  if (/^(chat|tab)_\d+$/i.test(trimmed) || normalized.startsWith('tab_') || normalized.startsWith('chat_')) {
+    return trimmed;
+  }
+  if (normalized === 'claude/gpt' || normalized === 'claude-gpt' || (normalized.includes('claude') && normalized.includes('gpt'))) {
+    return 'Claude/GPT';
+  }
+
+  const stripSuffix = (value: string, suffix: string) => (value.endsWith(suffix) ? value.slice(0, -suffix.length) : value);
+  const stripped = stripSuffix(stripSuffix(stripSuffix(normalized, '-preview'), '-latest'), '-stable');
+  const base = stripped.startsWith('gemini-') ? stripped.slice('gemini-'.length) : stripped;
+  if (!stripped.startsWith('gemini-')) return trimmed;
+
+  const tokens = base.split('-').filter(Boolean);
+  const parts: string[] = ['Gemini'];
+  tokens.forEach((token) => {
+    if (/^\d+(\.\d+)?$/.test(token)) {
+      parts.push(token);
+      return;
+    }
+    if (token === 'pro') {
+      parts.push('Pro');
+      return;
+    }
+    if (token === 'flash') {
+      parts.push('Flash');
+      return;
+    }
+    if (token === 'lite') {
+      parts.push('Lite');
+      return;
+    }
+    if (token === 'image') {
+      parts.push('Image');
+      return;
+    }
+    parts.push(token.slice(0, 1).toUpperCase() + token.slice(1));
+  });
+  return parts.join(' ');
+};
 
 const geminiModelGroups = [
   {
@@ -189,6 +244,48 @@ const geminiIgnorePrefixes = ['gemini-2.0-flash'] as const;
 const geminiGroupByModelId = new Map<string, (typeof geminiModelGroups)[number]>(
   geminiModelGroups.flatMap((group) => group.modelIds.map((modelId) => [modelId, group] as const)),
 );
+
+type AntigravityCategoryId =
+  | 'claude-gpt'
+  | 'gemini-3-pro'
+  | 'gemini-3-flash'
+  | 'gemini-3-pro-image'
+  | 'gemini-2-5-pro'
+  | 'gemini-2-5-flash'
+  | 'gemini-2-5-flash-lite';
+
+const antigravityCategoryOrder: Record<AntigravityCategoryId, number> = {
+  'claude-gpt': 10,
+  'gemini-3-pro': 20,
+  'gemini-3-flash': 30,
+  'gemini-3-pro-image': 40,
+  'gemini-2-5-pro': 50,
+  'gemini-2-5-flash': 60,
+  'gemini-2-5-flash-lite': 70,
+};
+
+const categorizeAntigravityModel = (args: { modelKey: string; label: string }): { id: AntigravityCategoryId; label: string } | null => {
+  const { modelKey, label } = args;
+  const key = modelKey.trim().toLowerCase();
+  const text = label.trim().toLowerCase();
+
+  if (!text) return null;
+  if (/^(chat|tab)_\d+$/i.test(modelKey.trim()) || key.startsWith('chat_') || key.startsWith('tab_')) return null;
+  if (text.startsWith('chat_') || text.startsWith('tab_')) return null;
+
+  if (text.includes('gemini')) {
+    if (text.includes('3') && text.includes('image')) return { id: 'gemini-3-pro-image', label: 'Gemini 3 Pro Image' };
+    if (text.includes('3') && text.includes('pro')) return { id: 'gemini-3-pro', label: 'Gemini 3 Pro' };
+    if (text.includes('3') && text.includes('flash')) return { id: 'gemini-3-flash', label: 'Gemini 3 Flash' };
+    if (text.includes('2.5') && text.includes('pro')) return { id: 'gemini-2-5-pro', label: 'Gemini 2.5 Pro' };
+    if (text.includes('2.5') && text.includes('flash') && text.includes('lite')) return { id: 'gemini-2-5-flash-lite', label: 'Gemini 2.5 Flash Lite' };
+    if (text.includes('2.5') && text.includes('flash')) return { id: 'gemini-2-5-flash', label: 'Gemini 2.5 Flash' };
+    return null;
+  }
+
+  if (text.includes('claude') || text.includes('gpt')) return { id: 'claude-gpt', label: 'Claude/GPT' };
+  return null;
+};
 
 const formatResetFromWindow = (windowObj: Record<string, unknown> | null): string => {
   if (!windowObj) return '-';
@@ -324,12 +421,12 @@ export const useCliproxyQuotas = (args: {
       'Content-Type': 'application/json',
     };
 
-    const apiCall = async (payload: Record<string, unknown>) => {
-      const response = await fetch(`${base}/v0/management/api-call`, {
-        method: 'POST',
-        headers: managementHeaders,
-        body: JSON.stringify(payload),
-      });
+      const apiCall = async (payload: Record<string, unknown>) => {
+        const response = await fetch(`${base}/v0/management/api-call`, {
+          method: 'POST',
+          headers: managementHeaders,
+          body: JSON.stringify(payload),
+        });
       const text = await response.text().catch(() => '');
       if (!response.ok) {
         throw new Error(text.trim() || `unauthorized (${response.status})`);
@@ -342,32 +439,53 @@ export const useCliproxyQuotas = (args: {
       }
       const data = json as Record<string, unknown>;
       const statusCode = toNumberOrNull(data.status_code ?? data.statusCode) ?? 0;
-      const body = data.body ?? null;
-      return { statusCode, body };
-    };
+        const body = data.body ?? null;
+        return { statusCode, body };
+      };
 
-    const parseCodexQuota = async (file: CliproxyAuthFile): Promise<CliproxyCodexQuota> => {
-      const authIndex = toTrimmedString(file.authIndex) ?? null;
-      if (!authIndex) throw new Error('missing auth_index');
-      const accountId = extractCodexAccountId({ idToken: file.idToken, metadata: file.metadata, attributes: file.attributes });
-      if (!accountId) throw new Error('missing chatgpt account id');
+      const formatQuotaHttpError = (args: { statusCode: number; body: unknown; provider: 'codex' | 'gemini-cli' | 'antigravity' }) => {
+        const { statusCode, body, provider } = args;
+        const obj = parseJsonObject(body) ?? parseJsonObject(typeof body === 'string' ? body : null);
+        const errorObj = obj && typeof obj.error === 'object' && obj.error && !Array.isArray(obj.error) ? (obj.error as Record<string, unknown>) : null;
+        const detail =
+          toTrimmedString(errorObj?.message)
+          ?? toTrimmedString(obj?.message)
+          ?? toTrimmedString((obj as Record<string, unknown> | null)?.error_description)
+          ?? toTrimmedString((obj as Record<string, unknown> | null)?.error);
+        const hint = statusCode === 401
+          ? 'reauth required'
+          : statusCode === 403
+            ? 'forbidden'
+            : statusCode === 429
+              ? 'rate limited'
+              : null;
+        const providerLabel = provider === 'codex' ? 'codex' : provider === 'gemini-cli' ? 'gemini' : 'antigravity';
+        const suffix = [hint, detail].filter(Boolean).join(': ');
+        return suffix ? `HTTP ${statusCode} (${providerLabel}) ${suffix}` : `HTTP ${statusCode} (${providerLabel})`;
+      };
+
+      const parseCodexQuota = async (file: CliproxyAuthFile): Promise<CliproxyCodexQuota> => {
+        const authIndex = toTrimmedString(file.authIndex) ?? null;
+        if (!authIndex) throw new Error('missing auth_index');
+        const accountId = extractCodexAccountId({ idToken: file.idToken, metadata: file.metadata, attributes: file.attributes });
+        if (!accountId) throw new Error('missing chatgpt account id');
 
       const header = {
         ...cliproxyQuotaHeaders.codex,
         'Chatgpt-Account-Id': accountId,
       };
 
-      const { statusCode, body } = await apiCall({
-        authIndex,
-        method: 'GET',
-        url: cliproxyQuotaEndpoints.codexUsage,
-        header,
-      });
-      if (statusCode < 200 || statusCode >= 300) {
-        throw new Error(`HTTP ${statusCode}`);
-      }
-      const obj = parseJsonObject(body) ?? parseJsonObject(typeof body === 'string' ? body : null);
-      if (!obj) throw new Error('empty quota');
+        const { statusCode, body } = await apiCall({
+          authIndex,
+          method: 'GET',
+          url: cliproxyQuotaEndpoints.codexUsage,
+          header,
+        });
+        if (statusCode < 200 || statusCode >= 300) {
+          throw new Error(formatQuotaHttpError({ statusCode, body, provider: 'codex' }));
+        }
+        const obj = parseJsonObject(body) ?? parseJsonObject(typeof body === 'string' ? body : null);
+        if (!obj) throw new Error('empty quota');
 
       const planTypeRaw = toTrimmedString(obj.plan_type ?? obj.planType) ?? toTrimmedString(file.planType);
       const planType = planTypeRaw ? planTypeRaw.toLowerCase() : null;
@@ -416,10 +534,10 @@ export const useCliproxyQuotas = (args: {
         payload.data = JSON.stringify({ project: projectId });
       }
 
-      const { statusCode, body } = await apiCall(payload);
-      if (statusCode < 200 || statusCode >= 300) {
-        throw new Error(`HTTP ${statusCode}`);
-      }
+        const { statusCode, body } = await apiCall(payload);
+        if (statusCode < 200 || statusCode >= 300) {
+          throw new Error(formatQuotaHttpError({ statusCode, body, provider: 'gemini-cli' }));
+        }
 
       const obj = parseJsonObject(body) ?? parseJsonObject(typeof body === 'string' ? body : null);
       const bucketsRaw = obj && Array.isArray((obj as Record<string, unknown>).buckets) ? ((obj as Record<string, unknown>).buckets as unknown[]) : [];
@@ -454,52 +572,105 @@ export const useCliproxyQuotas = (args: {
       return { items };
     };
 
-    const parseAntigravityQuota = async (file: CliproxyAuthFile): Promise<CliproxyGeminiCliQuota> => {
-      const authIndex = toTrimmedString(file.authIndex) ?? null;
-      if (!authIndex) throw new Error('missing auth_index');
+      const parseAntigravityQuota = async (file: CliproxyAuthFile): Promise<CliproxyGeminiCliQuota> => {
+        const authIndex = toTrimmedString(file.authIndex) ?? null;
+        if (!authIndex) throw new Error('missing auth_index');
+        const projectId = extractGeminiProjectId({ account: file.account, metadata: file.metadata, attributes: file.attributes });
 
-      const { statusCode, body } = await apiCall({
-        authIndex,
-        method: 'POST',
-        url: cliproxyQuotaEndpoints.geminiCliQuota,
-        header: { ...cliproxyQuotaHeaders.geminiCli },
-      });
-      if (statusCode < 200 || statusCode >= 300) {
-        throw new Error(`HTTP ${statusCode}`);
-      }
+        const payload: Record<string, unknown> = {
+          authIndex,
+          method: 'POST',
+          url: cliproxyQuotaEndpoints.antigravityFetchAvailableModels,
+          header: { ...cliproxyQuotaHeaders.antigravity },
+        };
+        payload.data = JSON.stringify(projectId ? { project: projectId } : {});
 
-      const obj = parseJsonObject(body) ?? parseJsonObject(typeof body === 'string' ? body : null);
-      const bucketsRaw = obj && Array.isArray((obj as Record<string, unknown>).buckets) ? ((obj as Record<string, unknown>).buckets as unknown[]) : [];
-      const buckets = bucketsRaw
-        .filter((b) => b && typeof b === 'object')
-        .map((b) => {
-          const entry = b as Record<string, unknown>;
-          const modelId = toTrimmedString(entry.modelId ?? entry.model_id);
-          if (!modelId) return null;
-          const tokenType = toTrimmedString(entry.tokenType ?? entry.token_type);
-          const remainingFractionRaw = entry.remainingFraction ?? entry.remaining_fraction;
-          let remainingFraction = toNumberOrNull(remainingFractionRaw);
-          if (typeof remainingFractionRaw === 'string' && remainingFractionRaw.trim().endsWith('%')) {
-            const parsed = Number(remainingFractionRaw.trim().slice(0, -1));
-            remainingFraction = Number.isFinite(parsed) ? parsed / 100 : null;
+        const { statusCode, body } = await apiCall(payload);
+        if (statusCode < 200 || statusCode >= 300) {
+          throw new Error(formatQuotaHttpError({ statusCode, body, provider: 'antigravity' }));
+        }
+
+        const obj = parseJsonObject(body) ?? parseJsonObject(typeof body === 'string' ? body : null);
+        const modelsRaw = obj && typeof (obj as Record<string, unknown>).models === 'object' && (obj as Record<string, unknown>).models && !Array.isArray((obj as Record<string, unknown>).models)
+          ? ((obj as Record<string, unknown>).models as Record<string, unknown>)
+          : null;
+        if (!modelsRaw) return { items: [] };
+
+        const earliestReset = (a?: string, b?: string) => {
+          if (!a) return b;
+          if (!b) return a;
+          const at = new Date(a).getTime();
+          const bt = new Date(b).getTime();
+          if (Number.isNaN(at)) return b;
+          if (Number.isNaN(bt)) return a;
+          return at <= bt ? a : b;
+        };
+
+        const normalizeFraction = (raw: unknown): number | null => {
+          if (typeof raw === 'string') {
+            const trimmed = raw.trim();
+            if (!trimmed) return null;
+            if (trimmed.endsWith('%')) {
+              const parsed = Number(trimmed.slice(0, -1));
+              if (!Number.isFinite(parsed)) return null;
+              return Math.max(0, Math.min(1, parsed / 100));
+            }
+          }
+          let value = toNumberOrNull(raw);
+          if (value === null) return null;
+          if (value > 1 && value <= 100) value /= 100;
+          return Math.max(0, Math.min(1, value));
+        };
+
+        // Antigravity quotas are returned as a model map with quotaInfo (not Gemini CLI "buckets").
+        // Keep categories as-is; do not normalize into Flash/Pro series.
+        const agg = new Map<AntigravityCategoryId, { id: AntigravityCategoryId; label: string; remainingFraction: number | null; resetTime?: string }>();
+
+        Object.entries(modelsRaw).forEach(([modelKey, entryRaw]) => {
+          if (!entryRaw || typeof entryRaw !== 'object' || Array.isArray(entryRaw)) return;
+          const entry = entryRaw as Record<string, unknown>;
+
+          const quotaInfoRaw = entry.quotaInfo ?? entry.quota_info;
+          const quotaInfo = quotaInfoRaw && typeof quotaInfoRaw === 'object' && !Array.isArray(quotaInfoRaw) ? (quotaInfoRaw as Record<string, unknown>) : null;
+          const remainingFraction = normalizeFraction(quotaInfo?.remainingFraction ?? quotaInfo?.remaining_fraction);
+          const resetTime = toTrimmedString(quotaInfo?.resetTime ?? quotaInfo?.reset_time) ?? undefined;
+
+          const labelBase =
+            toTrimmedString(entry.displayName ?? entry.display_name)
+            ?? toTrimmedString(entry.modelName ?? entry.model_name)
+            ?? toTrimmedString(entry.name)
+            ?? modelKey;
+          const humanLabel = humanizeAntigravityBucketLabel(labelBase);
+          const category = categorizeAntigravityModel({ modelKey, label: humanLabel });
+          if (!category) return;
+
+          const prev = agg.get(category.id);
+          if (!prev) {
+            agg.set(category.id, { id: category.id, label: category.label, remainingFraction, resetTime });
+            return;
           }
           if (remainingFraction !== null) {
-            remainingFraction = Math.max(0, Math.min(1, remainingFraction));
+            prev.remainingFraction = prev.remainingFraction === null ? remainingFraction : Math.min(prev.remainingFraction, remainingFraction);
           }
-          const remainingAmount = toNumberOrNull(entry.remainingAmount ?? entry.remaining_amount);
-          const resetTime = toTrimmedString(entry.resetTime ?? entry.reset_time) ?? undefined;
-          return { modelId, tokenType, remainingFraction, remainingAmount, resetTime };
-        })
-        .filter((b) => b !== null) as Array<{ modelId: string; tokenType?: string | null; remainingFraction: number | null; remainingAmount: number | null; resetTime?: string }>;
+          prev.resetTime = earliestReset(prev.resetTime, resetTime);
+        });
 
-      const items = groupGeminiBuckets(buckets).map((group) => ({
-        id: group.id,
-        label: group.label,
-        remainingPercent: group.remainingPercent,
-        resetLabel: group.resetLabel,
-      }));
-      return { items };
-    };
+        const items: CliproxyGeminiCliQuota['items'] = Array.from(agg.values())
+          .map((it) => ({
+            id: it.id,
+            label: it.label,
+            remainingPercent: it.remainingFraction === null ? null : Math.round(Math.max(0, Math.min(1, it.remainingFraction)) * 100),
+            resetLabel: it.resetTime ? formatMonthDayTime(new Date(it.resetTime)) : '-',
+          }))
+          .sort((a, b) => {
+            const ao = antigravityCategoryOrder[a.id as AntigravityCategoryId] ?? 999;
+            const bo = antigravityCategoryOrder[b.id as AntigravityCategoryId] ?? 999;
+            if (ao !== bo) return ao - bo;
+            return a.label.localeCompare(b.label);
+          });
+
+        return { items };
+      };
 
     const run = async () => {
       void Promise.resolve().then(() => setState((prev) => ({ ...prev, status: 'loading', error: undefined })));
