@@ -9,12 +9,6 @@ import {
   Filter,
   LogOut,
   Timer,
-  Bot,
-  Sparkles,
-  Feather,
-  Cpu,
-  Shield,
-  Route,
 } from 'lucide-react';
 import { AIConfig, CliproxyFilters, ConnectionState, ModelParams, OpenRouterFilters } from '../../types';
 import { DEFAULT_AI_CONFIG } from '../../constants';
@@ -218,7 +212,13 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
       : '';
 
     const family = getModelFamilyKey({ id: aiConfig.selectedModelId, vendor: model?.vendor ?? null });
-    const ModelIcon = family === 'gemini' ? Sparkles : family === 'claude' ? Feather : family === 'gpt' ? Bot : Cpu;
+    const modelBadge = family === 'gemini'
+      ? 'GEM'
+      : family === 'claude'
+        ? 'CLD'
+        : family === 'gpt'
+          ? 'GPT'
+          : 'LLM';
 
     return (
       <span className="inline-flex items-center gap-1">
@@ -227,25 +227,21 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         <span>{providerName}</span>
         <span className="text-slate-400">·</span>
         <span className="inline-flex items-center gap-1">
-          <ModelIcon size={12} className="opacity-80" />
+          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-200 text-[8px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+            {modelBadge}
+          </span>
           <span className="truncate">{modelName}{contextLabel}</span>
         </span>
         {ownerLabel ? (
           <>
             <span className="text-slate-400">·</span>
-            <span className="inline-flex items-center gap-1">
-              <Shield size={12} className="opacity-80" />
-              <span>{ownerLabel}</span>
-            </span>
+            <span>{ownerLabel}</span>
           </>
         ) : null}
         {viaProviders ? (
           <>
             <span className="text-slate-400">·</span>
-            <span className="inline-flex items-center gap-1">
-              <Route size={12} className="opacity-80" />
-              <span>{viaProviders}</span>
-            </span>
+            <span>{viaProviders}</span>
           </>
         ) : null}
       </span>
