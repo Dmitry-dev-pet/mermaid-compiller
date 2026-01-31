@@ -221,7 +221,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
           : { label: 'LLM', className: 'bg-slate-500/20 text-slate-600 dark:text-slate-300' };
 
     return (
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-1 min-w-0 whitespace-nowrap">
         <span>AI</span>
         <span className="text-slate-400">·</span>
         <span>{providerName}</span>
@@ -525,7 +525,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         className="px-3"
       >
         {connectionState.status === 'connected' ? <Wifi size={14} className={statusToneClass} /> : <WifiOff size={14} className={statusToneClass} />}
-        <span className="truncate max-w-[320px] text-[10px] ml-1">{getStatusNode()}</span>
+        <span className="ml-1 text-[10px] max-w-[320px] min-w-0 truncate">{getStatusNode()}</span>
         <span className="ml-1 inline-flex items-center gap-1 text-[10px] font-mono tabular-nums text-slate-400 dark:text-slate-400">
           <Timer size={12} className="opacity-80" />
           {timeoutSeconds}s
