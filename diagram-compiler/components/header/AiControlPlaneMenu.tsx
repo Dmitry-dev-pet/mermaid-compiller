@@ -213,12 +213,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
 
     const family = getModelFamilyKey({ id: aiConfig.selectedModelId, vendor: model?.vendor ?? null });
     const modelBadge = family === 'gemini'
-      ? 'GEM'
+      ? { label: 'GEM', className: 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-300' }
       : family === 'claude'
-        ? 'CLD'
+        ? { label: 'CLD', className: 'bg-rose-500/20 text-rose-600 dark:text-rose-300' }
         : family === 'gpt'
-          ? 'GPT'
-          : 'LLM';
+          ? { label: 'GPT', className: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300' }
+          : { label: 'LLM', className: 'bg-slate-500/20 text-slate-600 dark:text-slate-300' };
 
     return (
       <span className="inline-flex items-center gap-1">
@@ -227,8 +227,8 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         <span>{providerName}</span>
         <span className="text-slate-400">·</span>
         <span className="inline-flex items-center gap-1">
-          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-200 text-[8px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-            {modelBadge}
+          <span className={`inline-flex h-4 px-1.5 items-center justify-center rounded-full text-[8px] font-semibold tracking-tight ${modelBadge.className}`}>
+            {modelBadge.label}
           </span>
           <span className="truncate">{modelName}{contextLabel}</span>
         </span>
