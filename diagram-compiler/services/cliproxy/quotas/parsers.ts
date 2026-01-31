@@ -108,6 +108,8 @@ const categorizeAntigravityModel = (args: { modelKey: string; label: string }): 
   if (/^(chat|tab)_\d+$/i.test(modelKey.trim()) || key.startsWith('chat_') || key.startsWith('tab_')) return null;
   if (text.startsWith('chat_') || text.startsWith('tab_')) return null;
 
+  if (text.includes('claude') || text.includes('gpt')) return { id: 'claude-gpt', label: 'Claude/GPT' };
+
   if (text.includes('gemini')) {
     if (text.includes('3') && text.includes('image')) return { id: 'gemini-3-pro-image', label: 'Gemini 3 Pro Image' };
     if (text.includes('3') && text.includes('pro')) return { id: 'gemini-3-pro', label: 'Gemini 3 Pro' };
@@ -117,8 +119,6 @@ const categorizeAntigravityModel = (args: { modelKey: string; label: string }): 
     if (text.includes('2.5') && text.includes('flash')) return { id: 'gemini-2-5-flash', label: 'Gemini 2.5 Flash' };
     return null;
   }
-
-  if (text.includes('claude') || text.includes('gpt')) return { id: 'claude-gpt', label: 'Claude/GPT' };
   return null;
 };
 
