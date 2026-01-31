@@ -43,7 +43,7 @@ const parseVersionFromJson = (value: unknown): string | undefined => {
   return undefined;
 };
 
-const parseVersionFromHeaders = (headers: Headers): string | undefined => {
+  const parseVersionFromHeaders = (headers: Headers): string | undefined => {
   const candidates = [
     headers.get('x-cliproxyapi-version'),
     headers.get('x-app-version'),
@@ -162,6 +162,10 @@ export const useCliproxyManagementInfo = (args: {
         } else if (!cancelled && response.ok) {
           const json = await response.json().catch(() => null);
           latestVersion = parseVersionFromJson(json);
+          if (!detectedVersion) {
+            const headerVersion = parseVersionFromHeaders(response.headers);
+            detectedVersion = headerVersion ?? parseVersionFromJson(json);
+          }
         }
       } catch {
         // ignore
@@ -176,6 +180,10 @@ export const useCliproxyManagementInfo = (args: {
           managementStatus = managementStatus ?? (errText.trim() || `unauthorized (${response.status})`);
         } else if (!cancelled && response.ok) {
           const json = (await response.json().catch(() => null)) as unknown;
+          if (!detectedVersion) {
+            const headerVersion = parseVersionFromHeaders(response.headers);
+            detectedVersion = headerVersion ?? parseVersionFromJson(json);
+          }
           if (json && typeof json === 'object') {
             const data = json as Record<string, unknown>;
             const usage = (data.usage && typeof data.usage === 'object') ? (data.usage as Record<string, unknown>) : null;
@@ -247,6 +255,10 @@ export const useCliproxyManagementInfo = (args: {
           authStatus = errText.trim() || `unauthorized (${response.status})`;
         } else if (!cancelled && response.ok) {
           const json = (await response.json().catch(() => null)) as unknown;
+          if (!detectedVersion) {
+            const headerVersion = parseVersionFromHeaders(response.headers);
+            detectedVersion = headerVersion ?? parseVersionFromJson(json);
+          }
           const list =
             Array.isArray(json)
               ? json
