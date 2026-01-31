@@ -9,6 +9,12 @@ import {
   Filter,
   LogOut,
   Timer,
+  Bot,
+  Sparkles,
+  Feather,
+  Cpu,
+  Shield,
+  Route,
 } from 'lucide-react';
 import { AIConfig, CliproxyFilters, ConnectionState, ModelParams, OpenRouterFilters } from '../../types';
 import { DEFAULT_AI_CONFIG } from '../../constants';
@@ -148,7 +154,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const getStatusText = () => {
+  const getStatusNode = () => {
     if (connectionState.status === 'disconnected') return 'AI: Not connected';
     if (connectionState.status === 'connecting') return 'AI: Connecting...';
     if (connectionState.status === 'failed') return 'AI: Connection Failed';
@@ -163,7 +169,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         : aiConfig.provider === 'agent'
           ? 'Mermaid Agent'
           : 'Proxy';
-    const viaLabel = (() => {
+    const viaProviders = (() => {
       if (aiConfig.provider !== 'cliproxy') return '';
       const files = (cliproxyInfo.cliproxyAuthFiles ?? []) as CliproxyAuthFile[];
       if (files.length === 0) return '';
@@ -204,16 +210,46 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         present.push(...Array.from(providers.values()));
       }
       if (present.length === 0) return '';
-      return `via ${present.join('+')}`;
+      return present.join('+');
     })();
 
     const ownerLabel = aiConfig.provider === 'cliproxy' && model?.ownedBy
-      ? `owner ${model.ownedBy}`
+      ? model.ownedBy
       : '';
-    const suffix = [ownerLabel, viaLabel].filter(Boolean).join(' · ');
-    const suffixText = suffix ? ` · ${suffix}` : '';
 
-    return `AI: ${providerName} · ${modelName}${contextLabel}${suffixText}`;
+    const family = getModelFamilyKey({ id: aiConfig.selectedModelId, vendor: model?.vendor ?? null });
+    const ModelIcon = family === 'gemini' ? Sparkles : family === 'claude' ? Feather : family === 'gpt' ? Bot : Cpu;
+
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span>AI</span>
+        <span className="text-slate-400">·</span>
+        <span>{providerName}</span>
+        <span className="text-slate-400">·</span>
+        <span className="inline-flex items-center gap-1">
+          <ModelIcon size={12} className="opacity-80" />
+          <span className="truncate">{modelName}{contextLabel}</span>
+        </span>
+        {ownerLabel ? (
+          <>
+            <span className="text-slate-400">·</span>
+            <span className="inline-flex items-center gap-1">
+              <Shield size={12} className="opacity-80" />
+              <span>{ownerLabel}</span>
+            </span>
+          </>
+        ) : null}
+        {viaProviders ? (
+          <>
+            <span className="text-slate-400">·</span>
+            <span className="inline-flex items-center gap-1">
+              <Route size={12} className="opacity-80" />
+              <span>{viaProviders}</span>
+            </span>
+          </>
+        ) : null}
+      </span>
+    );
   };
 
   const getStatusTone = () => {
@@ -493,7 +529,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         className="px-3"
       >
         {connectionState.status === 'connected' ? <Wifi size={14} className={statusToneClass} /> : <WifiOff size={14} className={statusToneClass} />}
-        <span className="truncate max-w-[320px] text-[10px] ml-1">{getStatusText()}</span>
+        <span className="truncate max-w-[320px] text-[10px] ml-1">{getStatusNode()}</span>
         <span className="ml-1 inline-flex items-center gap-1 text-[10px] font-mono tabular-nums text-slate-400 dark:text-slate-400">
           <Timer size={12} className="opacity-80" />
           {timeoutSeconds}s
