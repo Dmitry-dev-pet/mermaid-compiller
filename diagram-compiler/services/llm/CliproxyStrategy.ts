@@ -164,9 +164,10 @@ export class CliproxyStrategy implements LLMProviderStrategy {
     // For now, assuming raw list directly maps.
     return rawList.map((m) => {
       const id = typeof m === "string" ? m : m.id;
-      const name = typeof m === "string" ? m : m.name || m.id;
+      const rawName = typeof m === "string" ? m : m.name || m.id;
       const ownedByRaw = typeof m === "string" ? null : (m.owned_by ?? m.ownedBy ?? null);
       const ownedBy = typeof ownedByRaw === "string" ? ownedByRaw.trim().toLowerCase() : "";
+      const name = rawName;
 
       return {
         id,

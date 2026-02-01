@@ -22,10 +22,13 @@ import { RadioGroup, RadioOption } from '../ui/Radio';
 import { Select } from '../ui/Select';
 import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { SecretInput } from '../ui/SecretInput';
-import { CliproxyAuthFile, isCliproxyAuthFileReady, normalizeCliproxyProviderKey } from '../../utils/cliproxyAuthFileStatus';
+import { CliproxyAuthFile } from '../../utils/cliproxyAuthFileStatus';
 import { buildCliproxySubscriptionsViewModel, CliproxySubscriptionsGroupBy } from '../../utils/cliproxySubscriptionsViewModel';
 import { CliproxyQuotasPanel } from './CliproxyQuotasPanel';
 import { getAntigravityBucketLabel } from '../../services/cliproxy/quotas/parsers';
+import { AiStatusLine } from './AiStatusLine';
+import { getModelFamilyKey, getModelFamilyLabel } from '../../utils/aiModelUtils';
+import { getModelDisplayName } from '../../utils/aiModelDisplayName';
 
 type AiControlPlaneMenuProps = {
   aiConfig: AIConfig;
@@ -49,34 +52,6 @@ const formatMonthDayTime = (date: Date) => date.toLocaleString(void 0, {
   hour12: false,
 });
 
-type ModelFamilyKey = 'gpt' | 'claude' | 'gemini' | 'other';
-
-const GEMINI_CLI_SUPPORTED_MODEL_IDS = new Set<string>([
-  'gemini-3-pro-preview',
-  'gemini-3-flash-preview',
-  'gemini-2.5-pro',
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-].map((m) => m.toLowerCase()));
-
-const getModelFamilyKey = (model: { id: string; vendor?: string | null }): ModelFamilyKey => {
-  const vendor = typeof model.vendor === 'string' ? model.vendor.trim().toLowerCase() : '';
-  if (vendor === 'openai' || vendor === 'gpt') return 'gpt';
-  if (vendor === 'anthropic') return 'claude';
-  if (vendor === 'google') return 'gemini';
-  const id = model.id.trim().toLowerCase();
-  if (id.includes('claude')) return 'claude';
-  if (id.includes('gemini')) return 'gemini';
-  if (id.startsWith('gpt') || id.includes('/gpt') || id.includes('gpt-')) return 'gpt';
-  return 'other';
-};
-
-const getModelFamilyLabel = (key: ModelFamilyKey) => {
-  if (key === 'gpt') return 'GPT';
-  if (key === 'claude') return 'Claude';
-  if (key === 'gemini') return 'Gemini';
-  return 'Other';
-};
 
 const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
   aiConfig,
@@ -119,7 +94,7 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     managementKey: aiConfig.proxyManagementKey,
   });
   const { quotas: cliproxyQuotas, refresh: refreshCliproxyQuotas } = useCliproxyQuotas({
-    enabled: aiConfig.provider === 'cliproxy' && isOpen && showCliproxyQuotas,
+    enabled: aiConfig.provider === 'cliproxy' && connectionState.status === 'connected',
     endpoint: aiConfig.proxyEndpoint || '',
     managementKey: aiConfig.proxyManagementKey || '',
     authFiles: cliproxyInfo.cliproxyAuthFiles ?? [],
@@ -127,12 +102,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     pageSize: 3,
   });
   const { quota: agentCodexQuota, refresh: refreshAgentCodexQuota } = useAgentCodexQuota({
-    enabled: aiConfig.provider === 'agent' && isOpen && showAgentQuotas,
+    enabled: aiConfig.provider === 'agent' && connectionState.status === 'connected',
     endpoint: aiConfig.agentEndpoint || '',
     token: aiConfig.agentToken || '',
   });
   const { quota: agentGeminiQuota, refresh: refreshAgentGeminiQuota } = useAgentGeminiQuota({
-    enabled: aiConfig.provider === 'agent' && isOpen && showAgentQuotas,
+    enabled: aiConfig.provider === 'agent' && connectionState.status === 'connected',
     endpoint: aiConfig.agentEndpoint || '',
     token: aiConfig.agentToken || '',
   });
@@ -147,106 +122,6 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const getStatusNode = () => {
-    if (connectionState.status === 'disconnected') return 'AI: Not connected';
-    if (connectionState.status === 'connecting') return 'AI: Connecting...';
-    if (connectionState.status === 'failed') return 'AI: Connection Failed';
-    if (!aiConfig.selectedModelId) return 'AI: Connected · Select model';
-
-    const model = connectionState.availableModels.find((m) => m?.id === aiConfig.selectedModelId);
-    const modelName = model ? model.name : aiConfig.selectedModelId;
-    const contextLabel = model?.contextLength ? ` (${formatContextLength(model.contextLength)})` : '';
-    const providerName =
-      aiConfig.provider === 'openrouter'
-        ? 'OpenRouter'
-        : aiConfig.provider === 'agent'
-          ? 'Mermaid Agent'
-          : 'Proxy';
-    const viaProviders = (() => {
-      if (aiConfig.provider !== 'cliproxy') return '';
-      const files = (cliproxyInfo.cliproxyAuthFiles ?? []) as CliproxyAuthFile[];
-      if (files.length === 0) return '';
-      const providers = new Set(
-        files
-          .filter((f) => !f.runtimeOnly && isCliproxyAuthFileReady(f))
-          .map((f) => normalizeCliproxyProviderKey(f.provider ?? null))
-      );
-      if (providers.size === 0) return '';
-
-      const family = getModelFamilyKey({ id: aiConfig.selectedModelId, vendor: model?.vendor ?? null });
-      const selectedModelId = aiConfig.selectedModelId.trim().toLowerCase();
-      const modelOwnedBy = typeof model?.ownedBy === 'string' ? model.ownedBy.trim().toLowerCase() : '';
-      const present: string[] = [];
-
-      const hasGeminiCli = providers.has('gemini-cli');
-      const hasCodex = providers.has('codex');
-      const hasAntigravity = providers.has('antigravity');
-
-      if (family === 'gemini') {
-        if (hasGeminiCli && GEMINI_CLI_SUPPORTED_MODEL_IDS.has(selectedModelId)) {
-          present.push('gemini-cli');
-        }
-        if (hasAntigravity && modelOwnedBy === 'antigravity') {
-          present.push('antigravity');
-        }
-      } else if (family === 'gpt') {
-        if (hasAntigravity && modelOwnedBy === 'antigravity') {
-          present.push('antigravity');
-        } else if (hasCodex && !selectedModelId.startsWith('gpt-oss')) {
-          present.push('codex');
-        }
-      } else if (family === 'claude') {
-        if (hasAntigravity) present.push('antigravity');
-      }
-
-      if (present.length === 0) {
-        present.push(...Array.from(providers.values()));
-      }
-      if (present.length === 0) return '';
-      return present.join('+');
-    })();
-
-    const ownerLabel = aiConfig.provider === 'cliproxy' && model?.ownedBy
-      ? model.ownedBy
-      : '';
-
-    const family = getModelFamilyKey({ id: aiConfig.selectedModelId, vendor: model?.vendor ?? null });
-    const modelBadge = family === 'gemini'
-      ? { label: 'GEM', className: 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-300' }
-      : family === 'claude'
-        ? { label: 'CLD', className: 'bg-rose-500/20 text-rose-600 dark:text-rose-300' }
-        : family === 'gpt'
-          ? { label: 'GPT', className: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300' }
-          : { label: 'LLM', className: 'bg-slate-500/20 text-slate-600 dark:text-slate-300' };
-
-    return (
-      <span className="inline-flex items-center gap-1 min-w-0 whitespace-nowrap">
-        <span>AI</span>
-        <span className="text-slate-400">·</span>
-        <span>{providerName}</span>
-        <span className="text-slate-400">·</span>
-        <span className="inline-flex items-center gap-1">
-          <span className={`inline-flex h-4 px-1.5 items-center justify-center rounded-full text-[8px] font-semibold tracking-tight ${modelBadge.className}`}>
-            {modelBadge.label}
-          </span>
-          <span className="truncate">{modelName}{contextLabel}</span>
-        </span>
-        {ownerLabel ? (
-          <>
-            <span className="text-slate-400">·</span>
-            <span>{ownerLabel}</span>
-          </>
-        ) : null}
-        {viaProviders ? (
-          <>
-            <span className="text-slate-400">·</span>
-            <span>{viaProviders}</span>
-          </>
-        ) : null}
-      </span>
-    );
-  };
 
   const getStatusTone = () => {
     if (connectionState.status === 'connected') return 'text-emerald-500';
@@ -525,7 +400,16 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
         className="px-3"
       >
         {connectionState.status === 'connected' ? <Wifi size={14} className={statusToneClass} /> : <WifiOff size={14} className={statusToneClass} />}
-        <span className="ml-1 text-[10px] max-w-[320px] min-w-0 truncate">{getStatusNode()}</span>
+        <span className="ml-1 text-[10px] max-w-[320px] min-w-0 truncate">
+          <AiStatusLine
+            aiConfig={aiConfig}
+            connectionState={connectionState}
+            cliproxyInfo={cliproxyInfo}
+            cliproxyQuotas={cliproxyQuotas}
+            agentCodexQuota={agentCodexQuota}
+            agentGeminiQuota={agentGeminiQuota}
+          />
+        </span>
         <span className="ml-1 inline-flex items-center gap-1 text-[10px] font-mono tabular-nums text-slate-400 dark:text-slate-400">
           <Timer size={12} className="opacity-80" />
           {timeoutSeconds}s
@@ -634,137 +518,141 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                   {agentStatus.message ? ` · ${agentStatus.message}` : ''}
                 </div>
 
-                <div className="text-[10px] leading-tight">
-                  <button
-                    type="button"
-                    className="text-blue-600 dark:text-blue-400 hover:underline"
-                    onClick={() => setShowAgentQuotas((prev) => !prev)}
-                  >
-                    {showAgentQuotas ? 'Hide quotas' : 'Show quotas'}
-                  </button>
-                  {showAgentQuotas && (
-                        <div className="mt-1 flex flex-col gap-2">
-                        <div className="flex items-center justify-between gap-2 text-slate-400">
-                            <button
-                              type="button"
-                              className="hover:underline"
-                              onClick={() => setShowQuotaSums((prev) => !prev)}
-                            >
-                              {showQuotaSums ? 'Mode: Average' : 'Mode: All'}
-                            </button>
-                          <button
-                            type="button"
-                            className="hover:underline"
-                            onClick={() => {
-                              refreshAgentCodexQuota();
-                              refreshAgentGeminiQuota();
-                            }}
-                          >
-                            Refresh
-                          </button>
+                <CollapsibleSection
+                  title="Quotas"
+                  open={showAgentQuotas}
+                  onToggle={() => setShowAgentQuotas((prev) => !prev)}
+                >
+                  <div className="mt-1 flex flex-col gap-2 text-[10px] leading-tight">
+                    <div className="flex items-center justify-between gap-2 text-slate-400">
+                      <button
+                        type="button"
+                        className="hover:underline"
+                        onClick={() => setShowQuotaSums((prev) => !prev)}
+                      >
+                        Mode:{' '}
+                        <span className={showQuotaSums ? 'font-semibold text-blue-600 dark:text-blue-400' : ''}>
+                          Average
+                        </span>
+                        <span className="mx-1 text-slate-400">/</span>
+                        {!showQuotaSums ? (
+                          <span className="font-semibold text-blue-600 dark:text-blue-400">All</span>
+                        ) : (
+                          <span className="text-slate-400">All</span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="hover:underline"
+                        onClick={() => {
+                          refreshAgentCodexQuota();
+                          refreshAgentGeminiQuota();
+                        }}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-col gap-2">
+                        <div className="text-slate-500 dark:text-slate-400">Codex CLI Quota</div>
+                        <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                          {agentCodexQuota.status === 'loading' ? (
+                            <div className="text-slate-400">Loading quota...</div>
+                          ) : agentCodexQuota.status === 'error' ? (
+                            <div className="text-amber-600 dark:text-amber-400">codex quota {agentCodexQuota.message ?? 'failed'}</div>
+                          ) : null}
+                          {agentCodexQuota.windows.length ? (
+                            <div className="flex flex-col gap-1">
+                              {agentCodexQuota.windows
+                                .filter((w) => w.id === 'primary' || w.id === 'secondary')
+                                .map((w) => {
+                                  const percent = typeof w.remainingPercent === 'number' ? Math.max(0, Math.min(100, w.remainingPercent)) : null;
+                                  const tone = percent === null
+                                    ? 'bg-slate-200 dark:bg-slate-700'
+                                    : percent >= 60
+                                      ? 'bg-emerald-500'
+                                      : percent >= 20
+                                        ? 'bg-amber-500'
+                                        : 'bg-rose-500';
+                                  return (
+                                    <div key={w.id} className="flex flex-col gap-0.5">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="truncate">{w.label}</span>
+                                        <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {w.resetLabel}</span>
+                                      </div>
+                                      <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                        <div
+                                          className={`h-full ${tone}`}
+                                          style={{ width: `${percent === null ? 0 : percent}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          ) : (
+                            <div className="text-slate-400">No quota data</div>
+                          )}
+                          {agentCodexQuota.planType ? (
+                            <div className="mt-1 text-[10px] text-slate-400">plan {agentCodexQuota.planType}</div>
+                          ) : null}
+                          {agentCodexQuota.creditsBalance ? (
+                            <div className="mt-1 text-[10px] text-slate-400">credits {agentCodexQuota.creditsBalance}</div>
+                          ) : null}
+                          {typeof agentCodexQuota.updatedAt === 'number' && agentCodexQuota.updatedAt > 0 ? (
+                            <div className="mt-1 text-[10px] text-slate-400">updated {formatMonthDayTime(new Date(agentCodexQuota.updatedAt * 1000))}</div>
+                          ) : null}
                         </div>
 
-                      <div className="flex flex-col gap-2">
-                        <div className="flex flex-col gap-2">
-                          <div className="text-slate-500 dark:text-slate-400">Codex CLI Quota</div>
-                              <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
-                                {agentCodexQuota.status === 'loading' ? (
-                                  <div className="text-slate-400">Loading quota...</div>
-                                ) : agentCodexQuota.status === 'error' ? (
-                                  <div className="text-amber-600 dark:text-amber-400">codex quota {agentCodexQuota.message ?? 'failed'}</div>
-                                ) : null}
-                              {agentCodexQuota.windows.length ? (
-                                <div className="flex flex-col gap-1">
-                                  {agentCodexQuota.windows
-                                    .filter((w) => w.id === 'primary' || w.id === 'secondary')
-                                    .map((w) => {
-                                    const percent = typeof w.remainingPercent === 'number' ? Math.max(0, Math.min(100, w.remainingPercent)) : null;
-                                    const tone = percent === null
-                                      ? 'bg-slate-200 dark:bg-slate-700'
-                                      : percent >= 60
-                                        ? 'bg-emerald-500'
-                                          : percent >= 20
-                                            ? 'bg-amber-500'
-                                            : 'bg-rose-500';
-                                      return (
-                                        <div key={w.id} className="flex flex-col gap-0.5">
-                                          <div className="flex items-center justify-between gap-2">
-                                            <span className="truncate">{w.label}</span>
-                                            <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {w.resetLabel}</span>
-                                          </div>
-                                          <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                                            <div
-                                              className={`h-full ${tone}`}
-                                              style={{ width: `${percent === null ? 0 : percent}%` }}
-                                          />
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <div className="text-slate-400">No quota data</div>
-                              )}
-                            {agentCodexQuota.planType ? (
-                              <div className="mt-1 text-[10px] text-slate-400">plan {agentCodexQuota.planType}</div>
-                            ) : null}
-                            {agentCodexQuota.creditsBalance ? (
-                              <div className="mt-1 text-[10px] text-slate-400">credits {agentCodexQuota.creditsBalance}</div>
-                            ) : null}
-                            {typeof agentCodexQuota.updatedAt === 'number' && agentCodexQuota.updatedAt > 0 ? (
-                              <div className="mt-1 text-[10px] text-slate-400">updated {formatMonthDayTime(new Date(agentCodexQuota.updatedAt * 1000))}</div>
-                            ) : null}
-                          </div>
-
-                          <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
-                          <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
-                            {agentGeminiQuota.status === 'loading' ? (
-                              <div className="text-slate-400">Loading quota...</div>
-                            ) : agentGeminiQuota.status === 'error' ? (
-                              <div className="text-amber-600 dark:text-amber-400">gemini quota {agentGeminiQuota.message ?? 'failed'}</div>
-                            ) : null}
-                              {agentGeminiQuota.items.length ? (
-                                <div className="flex flex-col gap-1">
-                                  {agentGeminiQuota.items.map((it) => {
-                                    const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
-                                    const tone = percent === null
-                                      ? 'bg-slate-200 dark:bg-slate-700'
-                                      : percent >= 60
-                                        ? 'bg-emerald-500'
-                                        : percent >= 20
-                                          ? 'bg-amber-500'
-                                          : 'bg-rose-500';
-                                    return (
-                                      <div key={it.id} className="flex flex-col gap-0.5">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <span className="truncate">{it.label}</span>
-                                          <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
-                                        </div>
-                                        <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                                          <div
-                                            className={`h-full ${tone}`}
-                                            style={{ width: `${percent === null ? 0 : percent}%` }}
-                                          />
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <div className="text-slate-400">No quota data</div>
-                              )}
-                            {agentGeminiQuota.email ? (
-                              <div className="mt-1 text-[10px] text-slate-400">account {agentGeminiQuota.email}</div>
-                            ) : null}
-                            {typeof agentGeminiQuota.updatedAt === 'number' && agentGeminiQuota.updatedAt > 0 ? (
-                              <div className="mt-1 text-[10px] text-slate-400">updated {formatMonthDayTime(new Date(agentGeminiQuota.updatedAt * 1000))}</div>
-                            ) : null}
-                          </div>
+                        <div className="text-slate-500 dark:text-slate-400">Gemini CLI Quota</div>
+                        <div className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                          {agentGeminiQuota.status === 'loading' ? (
+                            <div className="text-slate-400">Loading quota...</div>
+                          ) : agentGeminiQuota.status === 'error' ? (
+                            <div className="text-amber-600 dark:text-amber-400">gemini quota {agentGeminiQuota.message ?? 'failed'}</div>
+                          ) : null}
+                          {agentGeminiQuota.items.length ? (
+                            <div className="flex flex-col gap-1">
+                              {agentGeminiQuota.items.map((it) => {
+                                const percent = typeof it.remainingPercent === 'number' ? Math.max(0, Math.min(100, it.remainingPercent)) : null;
+                                const tone = percent === null
+                                  ? 'bg-slate-200 dark:bg-slate-700'
+                                  : percent >= 60
+                                    ? 'bg-emerald-500'
+                                    : percent >= 20
+                                      ? 'bg-amber-500'
+                                      : 'bg-rose-500';
+                                return (
+                                  <div key={it.id} className="flex flex-col gap-0.5">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="truncate">{it.label}</span>
+                                      <span className="font-mono tabular-nums text-slate-400">{percent === null ? '-' : `${Math.round(percent)}%`} · {it.resetLabel}</span>
+                                    </div>
+                                    <div className="h-1.5 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                      <div
+                                        className={`h-full ${tone}`}
+                                        style={{ width: `${percent === null ? 0 : percent}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="text-slate-400">No quota data</div>
+                          )}
+                          {agentGeminiQuota.email ? (
+                            <div className="mt-1 text-[10px] text-slate-400">account {agentGeminiQuota.email}</div>
+                          ) : null}
+                          {typeof agentGeminiQuota.updatedAt === 'number' && agentGeminiQuota.updatedAt > 0 ? (
+                            <div className="mt-1 text-[10px] text-slate-400">updated {formatMonthDayTime(new Date(agentGeminiQuota.updatedAt * 1000))}</div>
+                          ) : null}
                         </div>
                       </div>
                     </div>
-                  )}
-                </div>
+                  </div>
+                </CollapsibleSection>
               </div>
             ) : (
               <CollapsibleSection
@@ -875,16 +763,12 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                       {cliproxyInfo.cliproxyManagementStatus ? ` · mgmt ${cliproxyInfo.cliproxyManagementStatus}` : ''}
                     </div>
                     {Array.isArray(cliproxyInfo.cliproxyAuthFiles) ? (
-                      <div className="text-[10px] leading-tight">
-                        <button
-                          type="button"
-                          className="text-blue-600 dark:text-blue-400 hover:underline"
-                          onClick={() => setShowCliproxySubscriptions((prev) => !prev)}
-                        >
-                          {showCliproxySubscriptions ? 'Hide subscriptions' : 'Show subscriptions'}
-                        </button>
-                        {showCliproxySubscriptions && (
-                          <div className="mt-1 flex flex-col gap-1">
+                      <CollapsibleSection
+                        title="Subscriptions"
+                        open={showCliproxySubscriptions}
+                        onToggle={() => setShowCliproxySubscriptions((prev) => !prev)}
+                      >
+                        <div className="mt-1 flex flex-col gap-1">
                             <RadioGroup>
                               <RadioOption
                                 name="cliproxy-subscriptions-groupby"
@@ -950,42 +834,32 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                             {cliproxyInfo.cliproxyAuthStatus ? (
                               <div className="text-amber-600 dark:text-amber-400">auth {cliproxyInfo.cliproxyAuthStatus}</div>
                             ) : null}
-                          </div>
-                        )}
-                      </div>
+                        </div>
+                      </CollapsibleSection>
                     ) : null}
                     {cliproxyInfo.cliproxyAuthFiles?.length ? (
-                      <div className="text-[10px] leading-tight">
-                        <button
-                          type="button"
-                          className="text-blue-600 dark:text-blue-400 hover:underline"
-                          onClick={() => setShowCliproxyQuotas((prev) => !prev)}
-                        >
-                          {showCliproxyQuotas ? 'Hide quotas' : 'Show quotas'}
-                        </button>
-                        {showCliproxyQuotas && (
-                          <CliproxyQuotasPanel
-                            authFiles={cliproxyInfo.cliproxyAuthFiles ?? []}
-                            quotas={cliproxyQuotas}
-                            showAverage={showQuotaSums}
-                            onToggleMode={() => setShowQuotaSums((prev) => !prev)}
-                            onRefresh={refreshCliproxyQuotas}
-                            formatMonthDayTime={formatMonthDayTime}
-                          />
-                        )}
-                      </div>
+                      <CollapsibleSection
+                        title="Quotas"
+                        open={showCliproxyQuotas}
+                        onToggle={() => setShowCliproxyQuotas((prev) => !prev)}
+                      >
+                        <CliproxyQuotasPanel
+                          authFiles={cliproxyInfo.cliproxyAuthFiles ?? []}
+                          quotas={cliproxyQuotas}
+                          showAverage={showQuotaSums}
+                          onToggleMode={() => setShowQuotaSums((prev) => !prev)}
+                          onRefresh={refreshCliproxyQuotas}
+                          formatMonthDayTime={formatMonthDayTime}
+                        />
+                      </CollapsibleSection>
                     ) : null}
                     {cliproxyInfo.cliproxyUsage?.requestsByDay?.length ? (
-                      <div className="text-[10px] leading-tight">
-                        <button
-                          type="button"
-                          className="text-blue-600 dark:text-blue-400 hover:underline"
-                          onClick={() => setShowCliproxyUsageDetails((prev) => !prev)}
-                        >
-                          {showCliproxyUsageDetails ? 'Hide usage details' : 'Show usage details'}
-                        </button>
-                        {showCliproxyUsageDetails && (
-                          <div className="mt-1 flex flex-col gap-1">
+                      <CollapsibleSection
+                        title="Usage details"
+                        open={showCliproxyUsageDetails}
+                        onToggle={() => setShowCliproxyUsageDetails((prev) => !prev)}
+                      >
+                        <div className="mt-1 flex flex-col gap-1">
                             <div className="font-mono tabular-nums">
                               req/day:{' '}
                               {cliproxyInfo.cliproxyUsage.requestsByDay
@@ -1000,9 +874,8 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                                   .join(' ')}
                               </div>
                             ) : null}
-                          </div>
-                        )}
-                      </div>
+                        </div>
+                      </CollapsibleSection>
                     ) : null}
                   </div>
                 )}
@@ -1128,10 +1001,9 @@ const AiControlPlaneMenu: React.FC<AiControlPlaneMenuProps> = ({
                 <option value="" disabled>Select a model...</option>
                 {filteredModels.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name}
+                    {getModelDisplayName(m)}
                     {m.contextLength ? ` (${formatContextLength(m.contextLength)})` : ''}
                     {m.isFree ? ' (Free)' : ''}
-                    {aiConfig.provider === 'cliproxy' && m.ownedBy ? ` · ${m.ownedBy}` : ''}
                   </option>
                 ))}
               </Select>

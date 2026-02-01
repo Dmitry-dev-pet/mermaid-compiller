@@ -139,6 +139,7 @@ export class OpenRouterStrategy implements LLMProviderStrategy {
         contextLength: m.context_length || 0,
         isFree: m.id.includes("free"), // naive check
         vendor: deriveModelVendor(m.id, m.name),
+        ownedBy: 'openrouter',
       }));
     } catch (error) {
       console.error("Error fetching OpenRouter models:", error);

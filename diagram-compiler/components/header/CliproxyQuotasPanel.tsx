@@ -24,8 +24,21 @@ export const CliproxyQuotasPanel: React.FC<CliproxyQuotasPanelProps> = ({
   return (
     <div className="mt-1 flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2 text-slate-400">
-        <button type="button" className="hover:underline" onClick={onToggleMode}>
-          {showAverage ? 'Mode: Average' : 'Mode: All'}
+        <button
+          type="button"
+          className="hover:underline"
+          onClick={onToggleMode}
+        >
+          Mode:{' '}
+          <span className={showAverage ? 'font-semibold text-blue-600 dark:text-blue-400' : ''}>
+            Average
+          </span>
+          <span className="mx-1 text-slate-400">/</span>
+          {!showAverage ? (
+            <span className="font-semibold text-blue-600 dark:text-blue-400">All</span>
+          ) : (
+            <span className="text-slate-400">All</span>
+          )}
         </button>
         <button type="button" className="hover:underline" onClick={onRefresh}>
           Refresh

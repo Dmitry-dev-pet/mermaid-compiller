@@ -16,6 +16,7 @@ agent/src-tauri/target/
 
 # Local clones / vendored sources (not committed)
 vendor/gemini-cli/
+vendor/cliproxyapi/
 
 # Local experiments
 prompts-improvements.md
