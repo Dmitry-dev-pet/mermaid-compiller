@@ -1,99 +1,101 @@
-# Mermaid Diagram Compiler (v2.0)
+# Mermaid Compiler
 
-Мощная среда разработки для генерации, редактирования и визуализации диаграмм Mermaid с помощью ИИ. 
-Приложение переписано на современный стек (React + Vite) и поддерживает локальные LLM через прокси или облачные провайдеры (OpenRouter).
+AI-assisted Mermaid diagram workspace for generating, editing, validating, fixing, and exporting technical diagrams.
 
-## ✨ Основные возможности
+## What It Demonstrates
 
-### 🤖 ИИ и Автоматизация
-*   **Chat / Build:** Чат отвечает только текстом (вопросы, уточнения, рекомендации). Диаграмма строится отдельным действием Build.
-*   **MD Notebook Build:** Build может создавать Markdown-файл с несколькими Mermaid-блоками по planner-плану.
-*   **Операционные логи:** После Chat/Build/Fix/Analyze доступны логи (тайминг, секции Plan/Diagrams, контекст messages/docs по клику).
-*   **Авто-подключение:** Приложение запоминает настройки и автоматически подключается к провайдеру при запуске.
-*   **Контекст документации:** При генерации используется актуальная документация Mermaid (загружается локально/параллельно).
-*   **Build из контекста:** Build можно запускать без нового промпта — используется история чата + текущий код из редактора.
-*   **Валидация и Авто-исправление:** Встроенная проверка синтаксиса и автофикс после Build (до 5 попыток), а также ручной Fix (Fix (5)).
-*   **Таймауты LLM:** Каждый LLM-запрос ограничен настраиваемым таймаутом; повторы выполняются для текущего шага.
+- React + TypeScript application for a real developer tool, not a static demo.
+- LLM workflow design: separate chat, build, fix, analyze, prompt preview, and operation logs.
+- Mermaid-specific validation and repair loops with syntax-aware feedback.
+- Local-first storage with optional sync/share architecture.
+- Agent-friendly architecture with docs context loading, explicit service boundaries, and testable hooks.
+- Multi-provider AI integration through OpenRouter and local cliproxy-compatible endpoints.
 
-### 🎨 Интерфейс и UX
-*   **Dark Mode:** Полная поддержка темной темы (цвета One Dark для редактора, адаптированный UI).
-*   **Syntax Highlighting:** Редактор кода с подсветкой синтаксиса Mermaid (PrismJS).
-*   **Live Preview:** Мгновенный рендер диаграммы при изменении кода.
-*   **Preview Controls:** Zoom/Pan + Fit/Reset и полноэкранный режим (fit при входе/выходе).
-*   **Resizable Layout:** Настраиваемые размеры колонок (Чат / Редактор / Превью).
-*   **Горячие клавиши:** Enter = Chat, Ctrl/Cmd+Enter = Build.
-*   **Проекты:** Список проектов (сессий) в чате; название можно редактировать. Если название не меняли, оно авто-генерируется после первого Chat.
-*   **Единый стиль UI:** общие примитивы и выровненные хедеры/переключатели.
+## Features
 
-### ⚙️ Технический Стек
-*   **Frontend:** React 19, TypeScript, Vite.
-*   **Styling:** Tailwind CSS (с поддержкой `darkMode`), Lucide Icons.
-*   **Editor:** `react-simple-code-editor` + `prismjs`.
-*   **Diagramming:** `mermaid` (npm package).
-*   **Architecture:** Feature-based structure, Custom Hooks (`hooks/core`, `hooks/studio`), Service Layer, Strategy Pattern для LLM.
+- Chat for clarification and design discussion.
+- Build action for generating Mermaid diagrams or Markdown notebooks with multiple Mermaid blocks.
+- Live Mermaid preview with zoom, pan, fit/reset, and fullscreen controls.
+- Syntax highlighting editor based on PrismJS.
+- Automatic validation and repair attempts after generation.
+- Manual fix flow with operation logs and context inspection.
+- Project/session history with editable names.
+- Dark theme and resizable three-column workspace.
+- Local Mermaid documentation context for more grounded generation.
+- Optional Desktop Agent / cliproxy integrations for local model workflows and quota visibility.
 
-## 🚀 Установка и Запуск
+## Tech Stack
 
-Приложение находится в директории `diagram-compiler`.
+- React 19, TypeScript, Vite.
+- Mermaid 11, PrismJS, `react-simple-code-editor`.
+- Tailwind-style utility CSS and Lucide icons.
+- Vitest, TypeScript checks, ESLint.
+- Optional Tauri/Rust desktop agent.
 
-1.  **Перейдите в директорию проекта:**
-    ```bash
-    cd diagram-compiler
-    ```
+## Repository Layout
 
-2.  **Установите зависимости:**
-    ```bash
-    npm install
-    ```
+```text
+diagram-compiler/          # React + Vite application
+diagram-compiler/src/      # app entry and runtime wiring
+diagram-compiler/components/
+diagram-compiler/hooks/    # core state and studio orchestration hooks
+diagram-compiler/services/ # LLM, Mermaid, docs, storage services
+agent/                     # optional Tauri desktop agent
+docs/                      # project and architecture documentation
+mermaid-docs/              # vendored Mermaid docs used as generation context
+```
 
-3.  **Запустите сервер разработки:**
-    ```bash
-    npm run dev
-    ```
-    Приложение будет доступно по адресу `http://localhost:5173` (или другой порт, указанный в консоли).
+## Run Locally
 
-4.  **Сборка для продакшена:**
-    ```bash
-    npm run build
-    npm run preview
-    ```
+Install dependencies:
 
-5.  **Проверка типов:**
-    ```bash
-    npm run typecheck
-    ```
+```bash
+npm install
+```
 
-## 📁 Структура Проекта
+Start the development server:
 
-*   `diagram-compiler/src/`
-    *   `components/`: UI компоненты (`Header`, `EditorColumn`, `ChatColumn`...).
-    *   `hooks/`: Кастомные хуки.
-        *   `hooks/core/`: Базовые хуки состояния (`useAI`, `useMermaid`, `useLayout`, `useChat`, `useHistory`).
-*   `hooks/studio/`: Оркестрация и studio-логика (`useDiagramStudio`, `useNotebookBuild`, `useNotebookChat`, `useBuildDocs`, `useFixFlow`, `useMarkdownMermaid`, `usePromptPreview`, `useManualEditRecorder`).
-    *   `services/`: Бизнес-логика.
-        *   `llm/`: Стратегии подключения к LLM (`OpenRouterStrategy`, `CliproxyStrategy`).
-        *   `mermaidService.ts`: Валидация и рендер.
-        *   `docsContextService.ts`: Загрузка документации.
-    *   `types.ts`: TypeScript интерфейсы.
+```bash
+npm run dev
+```
 
-## 🔧 Конфигурация
+The app runs from the `diagram-compiler` package and Vite will print the local URL, usually `http://localhost:5173`.
 
-Настройки ИИ (ключи, провайдеры) сохраняются в `localStorage`.
-Поддерживаются два провайдера:
-1.  **OpenRouter:** Доступ к моделям OpenAI, Anthropic, Google и др.
-2.  **Cliproxy (Local):** Локальный прокси для работы с локальными моделями или кастомными API.
+Build and preview:
 
----
-*Старая версия (Vanilla JS) находится в архиве/корневой папке (legacy), но разработка ведется в `diagram-compiler`.*
+```bash
+npm run build
+npm run preview
+```
 
-## 🧱 C4 / Memory Bank
+Quality checks:
 
-Архитектурная документация в формате C4: `docs/c4/README.md`.
+```bash
+npm run typecheck
+npm run lint
+npm test
+```
 
-## 📚 Полная документация
+## AI Configuration
 
-Полный набор документации проекта: `docs/project/README.md`.
+Provider settings are stored in browser `localStorage`.
 
----
+Supported modes:
 
-Обновлено: 2026-01-22. Согласовано с текущей реализацией (унификация UI-контролов, выравнивание хедеров).
+- OpenRouter for hosted model access.
+- Cliproxy-compatible local endpoint for local or custom model routing.
+- Optional Desktop Agent for local control plane and quota integrations.
+
+No API keys are required in the repository. Keys are entered at runtime in the app UI.
+
+## Documentation
+
+- `docs/project/README.md` - full project documentation index.
+- `docs/architecture.md` - architecture overview.
+- `docs/ai-overview.md` - AI workflow overview.
+- `docs/desktop-agent.md` - Desktop Agent notes.
+- `docs/testing.md` - test strategy.
+
+## Portfolio Notes
+
+This project shows how I build agent-aware developer tools: separate planning and execution flows, inspectable LLM operations, provider abstraction, validation loops, and a UI designed for repeated technical work rather than a one-off prompt box.
