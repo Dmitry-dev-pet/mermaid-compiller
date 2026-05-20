@@ -21,3 +21,6 @@ yarn-debug.log*
 yarn-error.log*
 .factory/docs/
 features/001-mermaid-core/
+
+# temporary screenshot crops
+docs/screenshots/_tmp-*.png
